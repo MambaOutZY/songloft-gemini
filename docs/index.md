@@ -19,6 +19,9 @@ hero:
     - theme: alt
       text: 插件合集
       link: /issues/4
+    - theme: alt
+      text: 插件开发
+      link: /js-plugin-development-guide
 
 features:
   - icon: 🔒
