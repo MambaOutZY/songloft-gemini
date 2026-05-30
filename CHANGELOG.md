@@ -1,3 +1,19 @@
+## [v2.0.2] - 2026-05-30
+### :sparkles: New Features
+- [`aa3cf97`](https://github.com/songloft-org/songloft/commit/aa3cf978a0d0cff3a9e32fc9e5892116af8950a9) - 新增备份和还原功能 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`0952e6a`](https://github.com/songloft-org/songloft/commit/0952e6a9889df87550475ad69c9cedd6efaa2b9e) - docker 镜像加入 ffmpeg *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`0d86aef`](https://github.com/songloft-org/songloft/commit/0d86aeff478c3aa08f8fc9f017846d8a377333e3) - 修复 icon 问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`045c177`](https://github.com/songloft-org/songloft/commit/045c177b20e4cac52700512506bf48e5a0b89c76) - 修复版本发布问题 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`b8e513e`](https://github.com/songloft-org/songloft/commit/b8e513e7a61e73feef0e29ee00e6740f090ad34d) - update CHANGELOG for v2.0.1 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`b84f7ba`](https://github.com/songloft-org/songloft/commit/b84f7ba9db5b6eea75dc5737a649d6a50fc218b7) - release version 2.0.2 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.0.1] - 2026-05-29
 ### :sparkles: New Features
 - [`0741adc`](https://github.com/songloft-org/songloft/commit/0741adcd0adc261c6997b42eed62d29f8793b628) - 新增前端调试模式打包 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -876,3 +892,4 @@
 - `f8fc2c5` 改名为mimusic
 [v2.0.0-alpha.1]: https://github.com/songloft-org/songloft/compare/e0a9fd8a53e21bc17982323664e10f8d9549531a...v2.0.0-alpha.1
 [v2.0.1]: https://github.com/songloft-org/songloft/compare/v2.0.0...v2.0.1
+[v2.0.2]: https://github.com/songloft-org/songloft/compare/v2.0.1...v2.0.2
