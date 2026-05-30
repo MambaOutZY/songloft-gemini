@@ -22,7 +22,7 @@
 - [web/src/main.ts](file://web/src/main.ts)
 - [web/src/router/index.ts](file://web/src/router/index.ts)
 - [web/src/stores/player.ts](file://web/src/stores/player.ts)
-- [docs/ARCHITECTURE.md](file://docs/ARCHITECTURE.md)
+- [docs/architecture.md](file://docs/architecture.md)
 </cite>
 
 ## 目录
@@ -77,7 +77,7 @@ PluginMgr --> DB
 ```
 
 **图表来源**
-- [docs/ARCHITECTURE.md](file://docs/ARCHITECTURE.md)
+- [docs/architecture.md](file://docs/architecture.md)
 - [internal/app/app.go](file://internal/app/app.go)
 - [internal/handlers/music.go](file://internal/handlers/music.go)
 - [internal/handlers/playlist.go](file://internal/handlers/playlist.go)
@@ -85,7 +85,7 @@ PluginMgr --> DB
 - [internal/plugins/manager.go](file://internal/plugins/manager.go)
 
 **章节来源**
-- [docs/ARCHITECTURE.md](file://docs/ARCHITECTURE.md)
+- [docs/architecture.md](file://docs/architecture.md)
 - [README.md](file://README.md)
 
 ## 核心组件
@@ -363,4 +363,4 @@ Frontend_Vue --> Pinia
 
 **章节来源**
 - [README.md](file://README.md)
-- [docs/ARCHITECTURE.md](file://docs/ARCHITECTURE.md)
+- [docs/architecture.md](file://docs/architecture.md)

@@ -216,7 +216,7 @@ type DB interface {
 }
 ```
 
-Service 层注入 `database.DB` 接口；单表写直接拿 `db.SongRepository().Create(...)`，跨表写走 `db.RunInTx(ctx, func(ctx, uow *UnitOfWork) error { uow.Songs.Create(...); uow.PlaylistSongs.ReplaceSong(...) })`，详见 [DATABASE_MIGRATIONS.md](DATABASE_MIGRATIONS.md)。
+Service 层注入 `database.DB` 接口；单表写直接拿 `db.SongRepository().Create(...)`，跨表写走 `db.RunInTx(ctx, func(ctx, uow *UnitOfWork) error { uow.Songs.Create(...); uow.PlaylistSongs.ReplaceSong(...) })`，详见 [database_migrations.md](database_migrations.md)。
 
 > 测试不再手写 mock，统一使用 `database/testutil.OpenMemoryDB(t)` 起 `:memory:` SQLite 跑真实迁移与真实 Repository。
 

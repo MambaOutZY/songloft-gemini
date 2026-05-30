@@ -3,8 +3,8 @@
 本文件为 AI 编程助手提供 Songloft 项目的**入口信息**：项目结构、常用命令、铁律与踩坑总结。代码本身就是真实来源的内容（目录树、依赖、API 表、表结构）请直接看代码或下方链接的详细文档。
 
 > **详细文档**：
-> - 架构：[整体](docs/ARCHITECTURE.md) · [后端](docs/ARCHITECTURE_BACKEND.md) · [前端](docs/ARCHITECTURE_FRONTEND.md)
-> - 专题：[数据库操作](docs/DATABASE_MIGRATIONS.md) · [颜色系统](docs/COLOR_SYSTEM.md) · [API 响应格式](docs/API_RESPONSE.md) · [快速上手](docs/QUICK_START.md)
+> - 架构：[整体](docs/architecture.md) · [后端](docs/architecture_backend.md) · [前端](docs/architecture_frontend.md)
+> - 专题：[数据库操作](docs/database_migrations.md) · [颜色系统](docs/color_system.md) · [API 响应格式](docs/api_response.md) · [快速上手](docs/quick-start.md)
 > - 插件开发：见 `plugin-toolchain/README.md`（独立仓库）
 > - API：开发模式启动后访问 `/swagger/index.html`
 
@@ -52,7 +52,7 @@ cd songloft-player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
 
 ## 数据库规范（铁律）
 
-> 完整操作步骤见 [docs/DATABASE_MIGRATIONS.md](docs/DATABASE_MIGRATIONS.md)。
+> 完整操作步骤见 [docs/database_migrations.md](docs/database_migrations.md)。
 
 访问栈：**goose 迁移 + sqlc 固定 SQL + squirrel 动态 SQL + Repository + UnitOfWork**。
 
@@ -71,7 +71,7 @@ cd songloft-player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
 - 标准 Go layout（`internal/` 防外部依赖），Chi v5 路由，JWT 双 Token
 - 依赖注入：service 层只接收 Repository 接口，**不接收** `DB`
 - 日志：标准库 `slog`；HTTP 错误：统一 `respondError`
-- **API 响应格式**：RESTful 直返，**禁止** `{code, data, message}` 信封；错误统一 `{"error","detail"}`。完整规范见 [docs/API_RESPONSE.md](docs/API_RESPONSE.md)
+- **API 响应格式**：RESTful 直返，**禁止** `{code, data, message}` 信封；错误统一 `{"error","detail"}`。完整规范见 [docs/api_response.md](docs/api_response.md)
 - 不用 ORM：固定 SQL → sqlc，动态 SQL → squirrel，跨表写 → `RunInTx + UnitOfWork`
 - 测试文件 `*_test.go` 与源码同目录
 

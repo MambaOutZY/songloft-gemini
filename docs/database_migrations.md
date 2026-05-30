@@ -1,6 +1,6 @@
 # 数据库操作指南
 
-涵盖三件事:**加 schema 变更**、**加/改 SQL 查询**、**写 Repository 与事务**。架构层面的方针(为什么这么分层)请看 [ARCHITECTURE_BACKEND.md](ARCHITECTURE_BACKEND.md);本文只讲怎么动手。
+涵盖三件事:**加 schema 变更**、**加/改 SQL 查询**、**写 Repository 与事务**。架构层面的方针(为什么这么分层)请看 [architecture_backend.md](architecture_backend.md);本文只讲怎么动手。
 
 ## 工具职责
 

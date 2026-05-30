@@ -9,7 +9,7 @@
 - [internal/config/types.go](file://internal/config/types.go)
 - [internal/handlers/health.go](file://internal/handlers/health.go)
 - [internal/services/config_service.go](file://internal/services/config_service.go)
-- [docs/QUICK_START.md](file://docs/QUICK_START.md)
+- [docs/quick-start.md](file://docs/quick-start.md)
 </cite>
 
 ## 目录
@@ -41,7 +41,7 @@
 - 配置管理
   - ConfigService 提供键值与 JSON 配置的读写与缓存，支持运行时配置更新。
 - 快速开始与端口说明
-  - docs/QUICK_START.md 提供端口、环境变量与运行示例，便于映射到 Kubernetes 的 Service 与探针配置。
+  - docs/quick-start.md 提供端口、环境变量与运行示例，便于映射到 Kubernetes 的 Service 与探针配置。
 
 ```mermaid
 graph TB
@@ -82,7 +82,7 @@ APP --> CS
 - [internal/config/types.go:1-10](file://internal/config/types.go#L1-L10)
 - [internal/handlers/health.go:1-28](file://internal/handlers/health.go#L1-L28)
 - [internal/services/config_service.go:1-198](file://internal/services/config_service.go#L1-L198)
-- [docs/QUICK_START.md:175-206](file://docs/QUICK_START.md#L175-L206)
+- [docs/quick-start.md:175-206](file://docs/quick-start.md#L175-L206)
 
 ## 核心组件
 - 应用容器
@@ -183,7 +183,7 @@ POD -. 指标/日志 .-> ELK
 
 **章节来源**
 - [internal/services/config_service.go:15-198](file://internal/services/config_service.go#L15-L198)
-- [docs/QUICK_START.md:175-186](file://docs/QUICK_START.md#L175-L186)
+- [docs/quick-start.md:175-186](file://docs/quick-start.md#L175-L186)
 
 ### PersistentVolume 与 PersistentVolumeClaim
 - 存储类选择
@@ -311,4 +311,4 @@ KUBE["K8s 探针"] --> HEALTH
 
 **章节来源**
 - [Dockerfile:64](file://Dockerfile#L64)
-- [docs/QUICK_START.md:175-206](file://docs/QUICK_START.md#L175-L206)
+- [docs/quick-start.md:175-206](file://docs/quick-start.md#L175-L206)

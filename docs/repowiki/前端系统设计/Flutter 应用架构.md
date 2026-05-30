@@ -12,7 +12,7 @@
 - [frontend/lib/core/theme/app_theme.dart](file://frontend/lib/core/theme/app_theme.dart)
 - [frontend/lib/shared/layouts/shell_layout.dart](file://frontend/lib/shared/layouts/shell_layout.dart)
 - [frontend/lib/features/settings/presentation/providers/settings_provider.dart](file://frontend/lib/features/settings/presentation/providers/settings_provider.dart)
-- [docs/ARCHITECTURE.md](file://docs/ARCHITECTURE.md)
+- [docs/architecture.md](file://docs/architecture.md)
 - [README.md](file://README.md)
 </cite>
 
@@ -448,5 +448,5 @@ Songloft Flutter 前端通过清晰的入口初始化、模块化的 core 基础
 - 项目总体架构：前后端分离、Flutter Web 嵌入 Go 后端、同域访问与 SPA 回退
 
 章节来源
-- [docs/ARCHITECTURE.md:13-37](file://docs/ARCHITECTURE.md#L13-L37)
+- [docs/architecture.md:13-37](file://docs/architecture.md#L13-L37)
 - [README.md:10-17](file://README.md#L10-L17)
