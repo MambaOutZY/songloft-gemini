@@ -54,7 +54,8 @@ ENV TZ=Asia/Shanghai
 
 WORKDIR /app
 
-COPY --from=hanxi/ffprobe /ffprobe /bin/ffprobe
+COPY --from=hanxi/ffmpeg /ffmpeg /bin/ffmpeg
+COPY --from=hanxi/ffmpeg /ffprobe /bin/ffprobe
 COPY --from=go-builder /app/songloft /app/songloft
 COPY scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
 
