@@ -47,12 +47,6 @@ help: ## 显示帮助信息
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[0;32m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 
-.PHONY: build-nuxt-web
-build-nuxt-web: ## 构建旧版 Nuxt Web 前端（已弃用，仅作备用）
-	@echo "$(BLUE)正在构建 Nuxt Web 前端...$(NC)"
-	cd web && bun install && bun run build
-	@echo "$(GREEN)✓ Nuxt Web 构建完成$(NC)"
-
 .PHONY: build-frontend-web-embedded
 build-frontend-web-embedded: ## 构建 Flutter Web（嵌入模式）：隐藏 API 地址 UI，输出至 songloft-player-build/web-embedded
 	@bash songloft-player/scripts/build-frontend.sh web-embedded $(if $(OUTPUT_DIR),$(OUTPUT_DIR),songloft-player-build)
