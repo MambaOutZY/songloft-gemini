@@ -57,6 +57,7 @@ type CacheService struct {
 	lruIndex           map[string]time.Time               // LRU 访问时间索引（hash -> lastAccess）
 	lruMu              sync.RWMutex                       // LRU 索引的读写锁
 	orchestrator       CacheSongFetcher                   // 下载编排器(按 song.ID),由 app.go 注入;未注入时旧 hash 路径不受影响
+	ffmpegPath         string                             // ffmpeg 可执行文件路径,用于音频转码;由 app.go 注入
 }
 
 // SetOnDownloadComplete 注册下载完成回调

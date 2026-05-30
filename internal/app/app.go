@@ -203,6 +203,16 @@ func (a *App) Init() error {
 	cacheDir := filepath.Join(filepath.Dir(a.config.DBPath), "music_cache")
 	a.cacheService = services.NewCacheService(cacheDir, a.configService)
 
+	// 注入 ffmpeg 路径(用于音频转码)
+	var ffmpegConfig struct {
+		Path string `json:"path"`
+	}
+	if err := a.configService.GetJSON("ffmpeg_path", &ffmpegConfig); err != nil {
+		slog.Warn("读取 ffmpeg 配置失败，使用默认值", "error", err)
+		ffmpegConfig.Path = "ffmpeg"
+	}
+	a.cacheService.SetFFmpegPath(ffmpegConfig.Path)
+
 	// 让 SongService.Delete/BatchDelete 联动清理 cache,避免 ID 复用时旧 cache 被新 song 误命中
 	a.songService.SetCacheService(a.cacheService)
 

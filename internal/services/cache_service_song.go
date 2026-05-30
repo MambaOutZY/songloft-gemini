@@ -29,10 +29,12 @@ type CacheSongFetcher interface {
 // 全局唯一(per process)的 song-id-indexed 状态。
 // 与原 hash-indexed inflight 共存,不冲突。
 type songCacheState struct {
-	inflightMu sync.Mutex
-	inflight   map[int64]*inflightDownload // songID → 同步等待 channel
-	lruMu      sync.RWMutex
-	lru        map[int64]time.Time // songID → 最后访问时间
+	inflightMu           sync.Mutex
+	inflight             map[int64]*inflightDownload  // songID → 同步等待 channel
+	transcodeInflightMu  sync.Mutex
+	transcodeInflight    map[string]*inflightDownload // "tc_{songID}_{format}" → 同步等待 channel
+	lruMu                sync.RWMutex
+	lru                  map[int64]time.Time // songID → 最后访问时间
 }
 
 var (
@@ -43,8 +45,9 @@ var (
 func getSongState() *songCacheState {
 	songStateOnce.Do(func() {
 		songState = &songCacheState{
-			inflight: make(map[int64]*inflightDownload),
-			lru:      make(map[int64]time.Time),
+			inflight:          make(map[int64]*inflightDownload),
+			transcodeInflight: make(map[string]*inflightDownload),
+			lru:               make(map[int64]time.Time),
 		}
 	})
 	return songState

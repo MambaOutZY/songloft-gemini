@@ -639,27 +639,39 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	targetFormat := r.URL.Query().Get("format")
+
 	switch song.Type {
 	case models.TypeLocal:
-		h.serveLocal(w, r, song)
+		h.serveLocal(w, r, song, targetFormat)
 	case models.TypeRadio:
 		h.serveRadio(w, r, song)
 	case models.TypeRemote:
-		h.serveRemote(w, r, song)
+		h.serveRemote(w, r, song, targetFormat)
 	default:
 		http.Error(w, "unsupported song type", http.StatusInternalServerError)
 	}
 }
 
-// serveLocal 本地歌曲:直接 ServeFile(支持 Range,客户端 seek 可用)
-func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *models.Song) {
+// serveLocal 本地歌曲:直接 ServeFile(支持 Range,客户端 seek 可用)。
+// targetFormat 非空且与原格式不同时,走 ffmpeg 转码后返回。
+func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string) {
 	if song.FilePath == "" {
 		http.NotFound(w, r)
 		return
 	}
-	// 本地文件可永久缓存(file_path 变化时 song 通常会重新扫描入库,id 也会变)
+	srcPath := song.FilePath
+	if services.NeedsTranscode(song.Format, targetFormat) {
+		path, err := h.cacheService.GetOrTranscode(r.Context(), srcPath, song, services.NormalizeFormat(targetFormat))
+		if err != nil {
+			slog.Warn("transcode failed", "songId", song.ID, "format", targetFormat, "error", err)
+			respondError(w, http.StatusInternalServerError, "transcode failed", err)
+			return
+		}
+		srcPath = path
+	}
 	w.Header().Set("Cache-Control", "public, max-age=31536000")
-	http.ServeFile(w, r, song.FilePath)
+	http.ServeFile(w, r, srcPath)
 }
 
 // serveRadio 电台/直播流:专用代理，不设超时、不缓存。
@@ -710,8 +722,9 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 // - 插件来源歌曲:走 CacheService.Get(下载缓存)
 // - 纯外链歌曲:走 ServeRemoteResource(直接代理)
 // 失败时:返回 502,后台异步切源(若注入了 reassigner),客户端下次播放该 song 会用新源。
-func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *models.Song) {
-	// 纯外链歌曲:直接代理转发(不缓存)
+// targetFormat 非空且与原格式不同时,对已缓存文件走 ffmpeg 转码。
+func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string) {
+	// 纯外链歌曲:直接代理转发(不缓存,不转码)
 	if !song.IsPluginSourced() && song.URL != "" {
 		ServeRemoteResource(w, r, song.URL)
 		return
@@ -726,7 +739,6 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 	cachedPath, err := h.cacheService.Get(r.Context(), song)
 	if err != nil {
 		slog.Warn("cache get failed", "songId", song.ID, "type", song.Type, "error", err)
-		// 后台异步切源(仅对插件来源歌曲有意义)
 		if h.reassigner != nil && song.IsPluginSourced() {
 			h.reassigner.AsyncReassign(song.ID)
 		}
@@ -734,7 +746,16 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 		return
 	}
 
-	// 命中或新下载完成,流式返回
+	if services.NeedsTranscode(song.Format, targetFormat) {
+		path, err := h.cacheService.GetOrTranscode(r.Context(), cachedPath, song, services.NormalizeFormat(targetFormat))
+		if err != nil {
+			slog.Warn("transcode failed", "songId", song.ID, "format", targetFormat, "error", err)
+			respondError(w, http.StatusInternalServerError, "transcode failed", err)
+			return
+		}
+		cachedPath = path
+	}
+
 	w.Header().Set("Cache-Control", "public, max-age=604800")
 	http.ServeFile(w, r, cachedPath)
 }
