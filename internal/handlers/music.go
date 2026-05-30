@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -661,14 +662,48 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 	http.ServeFile(w, r, song.FilePath)
 }
 
-// serveRadio 电台/直播流:通过代理转发(解决 CORS 问题)
+// serveRadio 电台/直播流:专用代理，不设超时、不缓存。
+// 与 ServeRemoteResource 不同:客户端断开时由 r.Context() 取消上游请求，不受 60s 硬超时限制。
 func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *models.Song) {
 	if song.URL == "" {
 		http.NotFound(w, r)
 		return
 	}
-	// 使用统一代理服务，解决 Web 端 CORS 限制
-	ServeRemoteResource(w, r, song.URL)
+
+	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, song.URL, nil)
+	if err != nil {
+		slog.Warn("radio stream request failed", "url", song.URL, "error", err)
+		http.Error(w, "resource fetch failed", http.StatusInternalServerError)
+		return
+	}
+	upstreamReq.Header.Set("User-Agent", "Songloft/1.0")
+	if accept := r.Header.Get("Accept"); accept != "" {
+		upstreamReq.Header.Set("Accept", accept)
+	}
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
+	resp, err := client.Do(upstreamReq)
+	if err != nil {
+		slog.Warn("radio stream fetch failed", "url", song.URL, "error", err)
+		http.Error(w, "resource fetch failed", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
+	w.Header().Set("Cache-Control", "no-cache, no-store")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
 }
 
 // serveRemote 网络歌曲:根据音源类型分发到缓存或代理。
