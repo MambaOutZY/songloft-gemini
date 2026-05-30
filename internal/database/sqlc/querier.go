@@ -11,6 +11,7 @@ import (
 
 type Querier interface {
 	AddSongToPlaylist(ctx context.Context, arg AddSongToPlaylistParams) error
+	AddSongToPlaylistIgnore(ctx context.Context, arg AddSongToPlaylistIgnoreParams) (int64, error)
 	CleanExpiredTokens(ctx context.Context, expiresAt time.Time) (int64, error)
 	CountPlaylistSongs(ctx context.Context, playlistID int64) (int64, error)
 	CountPlaylistsByCoverPath(ctx context.Context, coverPath string) (int64, error)

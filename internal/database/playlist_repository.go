@@ -89,6 +89,18 @@ func (r *PlaylistRepository) GetByID(ctx context.Context, id int64) (*models.Pla
 	return playlistRowToModel(row), nil
 }
 
+// FindByName 按名称精确查找歌单，找不到返回 ErrNotFound。
+func (r *PlaylistRepository) FindByName(ctx context.Context, name string) (*models.Playlist, error) {
+	id, err := r.queries.FindPlaylistByName(ctx, name)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("find playlist by name %q: %w", name, err)
+	}
+	return r.GetByID(ctx, id)
+}
+
 // Update 更新歌单。改名冲突返回 models.ErrPlaylistNameConflict，找不到返回 ErrNotFound。
 func (r *PlaylistRepository) Update(ctx context.Context, playlist *models.Playlist) error {
 	labelsJSON, err := json.Marshal(playlist.Labels)

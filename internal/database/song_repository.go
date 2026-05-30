@@ -155,6 +155,21 @@ func (r *SongRepository) CountCoverPathReferences(ctx context.Context, coverPath
 	return int(songs + playlists), nil
 }
 
+// FindByDedupKey 按 (plugin_entry_path, dedup_key) 查找歌曲 ID，找不到返回 ErrNotFound。
+func (r *SongRepository) FindByDedupKey(ctx context.Context, pluginEntryPath, dedupKey string) (int64, error) {
+	id, err := r.queries.FindSongByDedupKey(ctx, sqlc.FindSongByDedupKeyParams{
+		PluginEntryPath: pluginEntryPath,
+		DedupKey:        dedupKey,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, fmt.Errorf("find song by dedup key: %w", err)
+	}
+	return id, nil
+}
+
 // UpsertRemote 按 (plugin_entry_path, dedup_key) 去重写入远程歌曲；
 // 没有 dedup_key 或 plugin_entry_path 的纯外链歌曲直接 INSERT。
 func (r *SongRepository) UpsertRemote(ctx context.Context, song *models.Song) error {

@@ -2,10 +2,10 @@ package main
 
 import (
 	"log/slog"
-	"songloft/internal/app"
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"songloft/internal/app"
 	"syscall"
 )
 

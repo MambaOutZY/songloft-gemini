@@ -25,6 +25,25 @@ func (q *Queries) AddSongToPlaylist(ctx context.Context, arg AddSongToPlaylistPa
 	return err
 }
 
+const addSongToPlaylistIgnore = `-- name: AddSongToPlaylistIgnore :execrows
+INSERT OR IGNORE INTO playlist_songs (playlist_id, song_id, position)
+VALUES (?, ?, ?)
+`
+
+type AddSongToPlaylistIgnoreParams struct {
+	PlaylistID int64
+	SongID     int64
+	Position   int64
+}
+
+func (q *Queries) AddSongToPlaylistIgnore(ctx context.Context, arg AddSongToPlaylistIgnoreParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, addSongToPlaylistIgnore, arg.PlaylistID, arg.SongID, arg.Position)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countPlaylistSongs = `-- name: CountPlaylistSongs :one
 SELECT COUNT(*) FROM playlist_songs WHERE playlist_id = ?
 `

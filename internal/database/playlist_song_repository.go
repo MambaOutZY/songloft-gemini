@@ -97,6 +97,20 @@ func (r *PlaylistSongRepository) ListPlaylistsContainingSong(ctx context.Context
 	return ids, nil
 }
 
+// AddSongIgnore 把歌曲添加到歌单，已存在时静默跳过。
+// 返回是否实际插入（true=新增，false=已存在被忽略）。
+func (r *PlaylistSongRepository) AddSongIgnore(ctx context.Context, playlistID, songID int64, position int) (bool, error) {
+	rows, err := r.queries.AddSongToPlaylistIgnore(ctx, sqlc.AddSongToPlaylistIgnoreParams{
+		PlaylistID: playlistID,
+		SongID:     songID,
+		Position:   int64(position),
+	})
+	if err != nil {
+		return false, fmt.Errorf("add song ignore: %w", err)
+	}
+	return rows > 0, nil
+}
+
 // ReplaceSong 用 newSongID 替换 oldSongID 并保留 position。整体走事务避免长事务锁等待。
 func (r *PlaylistSongRepository) ReplaceSong(ctx context.Context, playlistID, oldSongID, newSongID int64) error {
 	return r.runInTx(ctx, func(q *sqlc.Queries) error {

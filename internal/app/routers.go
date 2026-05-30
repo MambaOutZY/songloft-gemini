@@ -108,6 +108,9 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/songs/{id}/lyrics", songHandler.UpdateSongLyrics)
 
 			// 歌单管理模块
+			backupHandler := handlers.NewBackupHandler(a.backupService)
+			r.Get("/playlists/export", backupHandler.ExportPlaylists)
+			r.Post("/playlists/import", backupHandler.ImportPlaylists)
 			r.Get("/playlists", playlistHandler.ListPlaylists)
 			r.Post("/playlists", playlistHandler.CreatePlaylist)
 			r.Put("/playlists/reorder", playlistHandler.ReorderPlaylists)

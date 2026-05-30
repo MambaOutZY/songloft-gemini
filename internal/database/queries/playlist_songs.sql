@@ -44,3 +44,7 @@ SELECT position FROM playlist_songs WHERE playlist_id = ? AND song_id = ?;
 
 -- name: UpdateSongPositionInPlaylist :execrows
 UPDATE playlist_songs SET position = ? WHERE playlist_id = ? AND song_id = ?;
+
+-- name: AddSongToPlaylistIgnore :execrows
+INSERT OR IGNORE INTO playlist_songs (playlist_id, song_id, position)
+VALUES (?, ?, ?);

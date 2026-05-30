@@ -39,6 +39,7 @@ type App struct {
 	authService        *services.AuthService
 	upgradeService     *services.UpgradeService
 	cacheService       *services.CacheService
+	backupService      *services.BackupService
 	convertService     *services.ConvertService
 	urlResolver        *services.InternalURLResolver // 共享:把 JS 插件相对路径解析为本机绝对 URL + access_token
 	lyricFetcher       *services.LyricFetcher        // 共享:解包插件歌词 JSON 拿 LRC 文本
@@ -185,6 +186,7 @@ func (a *App) Init() error {
 
 	a.playlistService = services.NewPlaylistService(db.PlaylistRepository(), db.PlaylistSongRepository(), db.SongRepository(), a.metadataExtractor)
 	a.songService = services.NewSongService(db.SongRepository(), db, a.metadataExtractor, a.scanner, a.configService, db.PlaylistRepository())
+	a.backupService = services.NewBackupService(db)
 
 	// 创建认证服务
 	authService, err := services.NewAuthService(configRepo, db.TokenRepository(), a.config.Username, a.config.Password)
