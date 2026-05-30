@@ -506,8 +506,11 @@ func ParseConfig() (*config.AppConfig, error) {
 	}
 
 	usingDefaultCredentials := false
-	if adminUsername == "" || adminPassword == "" {
+	if adminUsername == "" {
 		adminUsername = "admin"
+		usingDefaultCredentials = true
+	}
+	if adminPassword == "" {
 		adminPassword = "admin"
 		usingDefaultCredentials = true
 	}
