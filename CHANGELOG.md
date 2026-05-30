@@ -1,3 +1,11 @@
+## [v2.1.1] - 2026-05-30
+### :memo: Documentation Changes
+- [`22f154b`](https://github.com/songloft-org/songloft/commit/22f154bb8449642ab11f9ea0b5ebd42858521c4e) - update CHANGELOG for v2.1.0 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`ceaa65c`](https://github.com/songloft-org/songloft/commit/ceaa65caa7299a6c9b28b940dc5eaf28ce44f133) - release version 2.1.1 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.1.0] - 2026-05-30
 ### :sparkles: New Features
 - [`b2a19ba`](https://github.com/songloft-org/songloft/commit/b2a19bad067d1dd1a2640b791c0a009d78bfdf68) - 支持运行在sub path下面 [#68](https://github.com/songloft-org/songloft/pull/68) *(commit by [@hanxi](https://github.com/hanxi))*
@@ -910,3 +918,4 @@
 [v2.0.1]: https://github.com/songloft-org/songloft/compare/v2.0.0...v2.0.1
 [v2.0.2]: https://github.com/songloft-org/songloft/compare/v2.0.1...v2.0.2
 [v2.1.0]: https://github.com/songloft-org/songloft/compare/v2.0.2...v2.1.0
+[v2.1.1]: https://github.com/songloft-org/songloft/compare/v2.1.0...v2.1.1
