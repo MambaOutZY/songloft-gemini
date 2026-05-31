@@ -1,3 +1,14 @@
+## [v2.2.4] - 2026-05-31
+### :bug: Bug Fixes
+- [`cdaae98`](https://github.com/songloft-org/songloft/commit/cdaae98d90591dec626e64f7cc672e68da7873e4) - 修复ffmpeg转码问题 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`5e4c594`](https://github.com/songloft-org/songloft/commit/5e4c59477743504cbc945978598f6ee28db39724) - update CHANGELOG for v2.2.3 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`3e9483b`](https://github.com/songloft-org/songloft/commit/3e9483bf39e4a3d54c4c388944647f749b6119b8) - release version 2.2.4 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.2.3] - 2026-05-31
 ### :bug: Bug Fixes
 - [`cebaeb5`](https://github.com/songloft-org/songloft/commit/cebaeb5131ab3ee37a222fe5c8da88173cae0856) - 修复电台无法播放问题 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -981,3 +992,4 @@
 [v2.2.1]: https://github.com/songloft-org/songloft/compare/v2.2.0...v2.2.1
 [v2.2.2]: https://github.com/songloft-org/songloft/compare/v2.2.1...v2.2.2
 [v2.2.3]: https://github.com/songloft-org/songloft/compare/v2.2.2...v2.2.3
+[v2.2.4]: https://github.com/songloft-org/songloft/compare/v2.2.3...v2.2.4
