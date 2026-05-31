@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"songloft/internal/database"
 	"songloft/internal/models"
@@ -715,7 +716,11 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 	}
 	srcPath := song.FilePath
 	if services.NeedsTranscode(services.EffectiveSourceFormat(song, srcPath), targetFormat) {
-		path, err := h.cacheService.GetOrTranscode(r.Context(), srcPath, song, services.NormalizeFormat(targetFormat))
+		// 转码用独立 context：避免客户端断开导致 ffmpeg 被 SIGKILL，
+		// 完成后结果缓存，下次请求直接命中。
+		tcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		path, err := h.cacheService.GetOrTranscode(tcCtx, srcPath, song, services.NormalizeFormat(targetFormat))
 		if err != nil {
 			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "error", err)
 		} else {
@@ -799,7 +804,9 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 	}
 
 	if services.NeedsTranscode(services.EffectiveSourceFormat(song, cachedPath), targetFormat) {
-		path, err := h.cacheService.GetOrTranscode(r.Context(), cachedPath, song, services.NormalizeFormat(targetFormat))
+		tcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		path, err := h.cacheService.GetOrTranscode(tcCtx, cachedPath, song, services.NormalizeFormat(targetFormat))
 		if err != nil {
 			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "error", err)
 		} else {
