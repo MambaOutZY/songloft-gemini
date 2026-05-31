@@ -664,11 +664,10 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 	if services.NeedsTranscode(song.Format, targetFormat) {
 		path, err := h.cacheService.GetOrTranscode(r.Context(), srcPath, song, services.NormalizeFormat(targetFormat))
 		if err != nil {
-			slog.Warn("transcode failed", "songId", song.ID, "format", targetFormat, "error", err)
-			respondError(w, http.StatusInternalServerError, "transcode failed", err)
-			return
+			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "error", err)
+		} else {
+			srcPath = path
 		}
-		srcPath = path
 	}
 	w.Header().Set("Cache-Control", "public, max-age=31536000")
 	http.ServeFile(w, r, srcPath)
@@ -749,11 +748,10 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 	if services.NeedsTranscode(song.Format, targetFormat) {
 		path, err := h.cacheService.GetOrTranscode(r.Context(), cachedPath, song, services.NormalizeFormat(targetFormat))
 		if err != nil {
-			slog.Warn("transcode failed", "songId", song.ID, "format", targetFormat, "error", err)
-			respondError(w, http.StatusInternalServerError, "transcode failed", err)
-			return
+			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "error", err)
+		} else {
+			cachedPath = path
 		}
-		cachedPath = path
 	}
 
 	w.Header().Set("Cache-Control", "public, max-age=604800")
