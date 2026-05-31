@@ -92,7 +92,7 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 			metadata.Title = tagMeta.Title()
 			metadata.Artist = tagMeta.Artist()
 			metadata.Album = tagMeta.Album()
-			metadata.Format = string(tagMeta.Format())
+			metadata.Format = NormalizeFormat(strings.TrimPrefix(filepath.Ext(filePath), "."))
 
 			if picture := tagMeta.Picture(); picture != nil {
 				metadata.HasCover = true
@@ -232,7 +232,7 @@ func (m *MetadataExtractor) ProbeForValidation(ctx context.Context, filePath str
 	// 优先用 tag 库(快)
 	if file, err := os.Open(filePath); err == nil {
 		if tagMeta, err := tag.ReadFrom(file); err == nil {
-			info.Format = string(tagMeta.Format())
+			info.Format = NormalizeFormat(strings.TrimPrefix(filepath.Ext(filePath), "."))
 			if d := tagMeta.Duration(); d > 0 {
 				info.Duration = d.Seconds()
 			}

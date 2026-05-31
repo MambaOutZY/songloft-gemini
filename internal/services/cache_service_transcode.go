@@ -32,11 +32,16 @@ func (c *CacheService) GetOrTranscode(ctx context.Context, srcPath string, song 
 	if song == nil {
 		return "", errors.New("song is nil")
 	}
-	// song.Format 可能为空（旧数据/扫描失败），用 srcPath 扩展名兜底，
-	// 避免对同格式（如 mp3→mp3）误触发 ffmpeg 浪费 CPU。
-	if !NeedsTranscode(EffectiveSourceFormat(song, srcPath), targetFormat) {
+	srcFmt := EffectiveSourceFormat(song, srcPath)
+	if !NeedsTranscode(srcFmt, targetFormat) {
+		slog.Debug("transcode skipped: same format",
+			"songId", song.ID, "songFormat", song.Format,
+			"srcFmt", srcFmt, "targetFormat", targetFormat, "srcPath", srcPath)
 		return srcPath, nil
 	}
+	slog.Info("transcode needed",
+		"songId", song.ID, "songFormat", song.Format,
+		"srcFmt", srcFmt, "targetFormat", targetFormat, "srcPath", srcPath)
 
 	// 1. 缓存命中
 	if p, ok := c.FindTranscodedFile(song, targetFormat); ok {
@@ -189,12 +194,30 @@ func NeedsTranscode(srcFormat, targetFormat string) bool {
 
 // EffectiveSourceFormat 计算源格式，优先使用 song.Format，
 // 为空时回退到 srcPath 的文件扩展名。
+// song.Format 存的是 tag 库返回的元数据格式名（如 "ID3v2.3"、"VORBIS"、"MP4"），
+// 需要先映射为音频格式；无法确定时回退到文件扩展名。
 func EffectiveSourceFormat(song *models.Song, srcPath string) string {
 	if song != nil && song.Format != "" {
-		return song.Format
+		if af := tagFormatToAudioFormat(song.Format); af != "" {
+			return af
+		}
 	}
 	if srcPath != "" {
 		return strings.TrimPrefix(filepath.Ext(srcPath), ".")
+	}
+	return ""
+}
+
+// tagFormatToAudioFormat 将 tag 库返回的元数据格式名映射为音频格式。
+// 无法确定（如 VORBIS 可能是 OGG 也可能是 FLAC）时返回空字符串。
+func tagFormatToAudioFormat(tagFmt string) string {
+	lower := strings.ToLower(tagFmt)
+	if strings.HasPrefix(lower, "id3v") {
+		return "mp3"
+	}
+	switch lower {
+	case "mp4":
+		return "m4a"
 	}
 	return ""
 }
