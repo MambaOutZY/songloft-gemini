@@ -208,7 +208,7 @@ func (a *App) Init() error {
 		Path string `json:"path"`
 	}
 	if err := a.configService.GetJSON("ffmpeg_path", &ffmpegConfig); err != nil {
-		slog.Warn("读取 ffmpeg 配置失败，使用默认值", "error", err)
+		slog.Debug("读取 ffmpeg 配置失败，使用默认值", "error", err)
 		ffmpegConfig.Path = "ffmpeg"
 	}
 	a.cacheService.SetFFmpegPath(ffmpegConfig.Path)
