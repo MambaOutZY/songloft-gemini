@@ -13,3 +13,6 @@
 [submodule "jsplugins-src/songloft-plugin-miot"]
 	path = jsplugins-src/songloft-plugin-miot
 	url = https://github.com/songloft-org/songloft-plugin-miot.git
+[submodule "ffmpeg-builder"]
+	path = ffmpeg-builder
+	url = https://github.com/hanxi/ffmpeg-builder.git
