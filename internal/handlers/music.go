@@ -257,6 +257,7 @@ func (h *SongHandler) UpdateSong(w http.ResponseWriter, r *http.Request) {
 		Album    string `json:"album"`
 		URL      string `json:"url"`
 		CoverURL string `json:"cover_url"`
+		IsLive   *bool  `json:"is_live"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -281,6 +282,9 @@ func (h *SongHandler) UpdateSong(w http.ResponseWriter, r *http.Request) {
 	existingSong.Album = req.Album
 	existingSong.URL = req.URL
 	existingSong.CoverURL = req.CoverURL
+	if req.IsLive != nil && existingSong.Type != models.TypeRadio {
+		existingSong.IsLive = *req.IsLive
+	}
 
 	if err := h.songService.Update(ctx, existingSong); err != nil {
 		respondError(w, http.StatusInternalServerError, "更新歌曲失败", err)
@@ -387,6 +391,7 @@ func (h *SongHandler) AddRadios(w http.ResponseWriter, r *http.Request) {
 	var reqs []struct {
 		URL      string `json:"url"`
 		Title    string `json:"title"`
+		Artist   string `json:"artist"`
 		CoverURL string `json:"cover_url"`
 	}
 
@@ -409,6 +414,7 @@ func (h *SongHandler) AddRadios(w http.ResponseWriter, r *http.Request) {
 		inputs = append(inputs, services.RadioInput{
 			URL:      req.URL,
 			Title:    req.Title,
+			Artist:   req.Artist,
 			CoverURL: req.CoverURL,
 		})
 	}

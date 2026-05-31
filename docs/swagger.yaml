@@ -255,6 +255,9 @@ definitions:
       source_data:
         description: 音源元数据 JSON(给插件 music/url 接口用,opaque)
         type: string
+      source_url:
+        description: 原始音源 URL(仅 JSON 输出,radio/remote 类型返回原始流地址供编辑使用)
+        type: string
       title:
         description: 标题
         example: 夜曲

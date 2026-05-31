@@ -569,6 +569,7 @@ type RemoteSongInput struct {
 type RadioInput struct {
 	URL      string
 	Title    string
+	Artist   string
 	CoverURL string
 }
 
@@ -612,6 +613,7 @@ func (s *SongService) AddRadios(ctx context.Context, inputs []RadioInput) ([]*mo
 		songs[i] = &models.Song{
 			Type:      models.TypeRadio,
 			Title:     input.Title,
+			Artist:    input.Artist,
 			URL:       input.URL,
 			CoverURL:  input.CoverURL,
 			IsLive:    true,
