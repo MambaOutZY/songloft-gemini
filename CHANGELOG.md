@@ -1,3 +1,14 @@
+## [v2.2.1] - 2026-05-31
+### :bug: Bug Fixes
+- [`5843b56`](https://github.com/songloft-org/songloft/commit/5843b560c9dccb080b51a6bbe4481fca1b8787ea) - 解决url参数被解析合并的问题 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`9cecfe9`](https://github.com/songloft-org/songloft/commit/9cecfe958fd62a7117640c6dd20693756f1717f0) - update CHANGELOG for v2.2.0 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`987bc83`](https://github.com/songloft-org/songloft/commit/987bc83728ee572d7d5c65214b11e75847cb8213) - release version 2.2.1 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.2.0] - 2026-05-31
 ### :bug: Bug Fixes
 - [`933bc76`](https://github.com/songloft-org/songloft/commit/933bc7603735379eab1dcba042babe5db73ffcf5) - ffmpeg 执行失败返回原文件 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -943,3 +954,4 @@
 [v2.1.1]: https://github.com/songloft-org/songloft/compare/v2.1.0...v2.1.1
 [v2.1.2]: https://github.com/songloft-org/songloft/compare/v2.1.1...v2.1.2
 [v2.2.0]: https://github.com/songloft-org/songloft/compare/v2.1.2...v2.2.0
+[v2.2.1]: https://github.com/songloft-org/songloft/compare/v2.2.0...v2.2.1
