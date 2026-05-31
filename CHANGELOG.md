@@ -1,3 +1,14 @@
+## [v2.2.0] - 2026-05-31
+### :bug: Bug Fixes
+- [`933bc76`](https://github.com/songloft-org/songloft/commit/933bc7603735379eab1dcba042babe5db73ffcf5) - ffmpeg 执行失败返回原文件 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`4e664c8`](https://github.com/songloft-org/songloft/commit/4e664c8e5e34619f6dba66ad1618247a40bd47fd) - update CHANGELOG for v2.1.2 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`375416e`](https://github.com/songloft-org/songloft/commit/375416edc175756e512865c0f260bc51533e9f8f) - release version 2.2.0 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.1.2] - 2026-05-31
 ### :bug: Bug Fixes
 - [`97721e0`](https://github.com/songloft-org/songloft/commit/97721e07d7d11d2e5609867f878f6b8e0f4f4690) - 修复 ffmpeg 转码参数问题 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -931,3 +942,4 @@
 [v2.1.0]: https://github.com/songloft-org/songloft/compare/v2.0.2...v2.1.0
 [v2.1.1]: https://github.com/songloft-org/songloft/compare/v2.1.0...v2.1.1
 [v2.1.2]: https://github.com/songloft-org/songloft/compare/v2.1.1...v2.1.2
+[v2.2.0]: https://github.com/songloft-org/songloft/compare/v2.1.2...v2.2.0
