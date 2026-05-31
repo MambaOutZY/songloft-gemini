@@ -130,14 +130,14 @@ func (c *CacheService) doTranscode(ctx context.Context, srcPath string, song *mo
 
 // runFFmpeg 调用 ffmpeg 执行转码。
 func (c *CacheService) runFFmpeg(ctx context.Context, srcPath, dstPath, targetFormat string) error {
-	encoder, qualityArgs, err := ffmpegArgs(targetFormat)
+	encoder, qualityArgs, muxer, err := ffmpegArgs(targetFormat)
 	if err != nil {
 		return err
 	}
 
 	args := []string{"-i", srcPath, "-vn", "-codec:a", encoder}
 	args = append(args, qualityArgs...)
-	args = append(args, "-y", dstPath)
+	args = append(args, "-f", muxer, "-y", dstPath)
 
 	ffmpegPath := c.ffmpegPath
 	if ffmpegPath == "" {
@@ -193,20 +193,20 @@ func NormalizeFormat(f string) string {
 	return f
 }
 
-// ffmpegArgs 根据目标格式返回 ffmpeg 编码器和质量参数。
-func ffmpegArgs(targetFormat string) (encoder string, qualityArgs []string, err error) {
+// ffmpegArgs 根据目标格式返回 ffmpeg 编码器、质量参数和 muxer 格式名。
+func ffmpegArgs(targetFormat string) (encoder string, qualityArgs []string, muxer string, err error) {
 	switch NormalizeFormat(targetFormat) {
 	case "mp3":
-		return "libmp3lame", []string{"-q:a", "0"}, nil
+		return "libmp3lame", []string{"-q:a", "0"}, "mp3", nil
 	case "ogg":
-		return "libvorbis", []string{"-q:a", "6"}, nil
+		return "libvorbis", []string{"-q:a", "6"}, "ogg", nil
 	case "m4a":
-		return "aac", []string{"-b:a", "256k"}, nil
+		return "aac", []string{"-b:a", "256k"}, "ipod", nil
 	case "flac":
-		return "flac", nil, nil
+		return "flac", nil, "flac", nil
 	case "wav":
-		return "pcm_s16le", nil, nil
+		return "pcm_s16le", nil, "wav", nil
 	default:
-		return "", nil, ErrUnsupportedTranscodeFormat
+		return "", nil, "", ErrUnsupportedTranscodeFormat
 	}
 }

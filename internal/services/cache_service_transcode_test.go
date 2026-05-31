@@ -77,7 +77,7 @@ func TestFfmpegArgs(t *testing.T) {
 		{"xyz", "", true},
 	}
 	for _, tt := range tests {
-		enc, _, err := ffmpegArgs(tt.format)
+		enc, _, _, err := ffmpegArgs(tt.format)
 		if tt.wantErr {
 			if err == nil {
 				t.Errorf("ffmpegArgs(%q) should error", tt.format)
