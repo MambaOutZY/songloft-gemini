@@ -1,3 +1,16 @@
+## [v2.2.3] - 2026-05-31
+### :bug: Bug Fixes
+- [`cebaeb5`](https://github.com/songloft-org/songloft/commit/cebaeb5131ab3ee37a222fe5c8da88173cae0856) - 修复电台无法播放问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b9564f7`](https://github.com/songloft-org/songloft/commit/b9564f72cb268f902c907454a7022e2c6acfe920) - 修复ffmpeg转码问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ed70e1e`](https://github.com/songloft-org/songloft/commit/ed70e1e1270d5dca64646c68e4c767b7ffe695ae) - 上传封面问题 [#78](https://github.com/songloft-org/songloft/pull/78) *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`18b47a8`](https://github.com/songloft-org/songloft/commit/18b47a83df81538d755a75082ca327570d8e2f48) - update CHANGELOG for v2.2.2 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`41b6958`](https://github.com/songloft-org/songloft/commit/41b6958d6d86df25e7f2ba2710fb192d2a426b62) - release version 2.2.3 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.2.2] - 2026-05-31
 ### :sparkles: New Features
 - [`0b3dbb0`](https://github.com/songloft-org/songloft/commit/0b3dbb0776fbbef743fcacbb4cf4b6a1e940adee) - 优化预加载下一首 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -967,3 +980,4 @@
 [v2.2.0]: https://github.com/songloft-org/songloft/compare/v2.1.2...v2.2.0
 [v2.2.1]: https://github.com/songloft-org/songloft/compare/v2.2.0...v2.2.1
 [v2.2.2]: https://github.com/songloft-org/songloft/compare/v2.2.1...v2.2.2
+[v2.2.3]: https://github.com/songloft-org/songloft/compare/v2.2.2...v2.2.3
