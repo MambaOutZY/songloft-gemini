@@ -53,7 +53,7 @@ func NewSongHandler(
 // @Param keyword query string false "搜索关键词"
 // @Param limit query int false "每页数量" default(20)
 // @Param offset query int false "偏移量" default(0)
-// @Success 200 {object} map[string]interface{} "成功返回歌曲列表"
+// @Success 200 {object} map[string]any "成功返回歌曲列表"
 // @Failure 500 {object} map[string]string "服务器错误"
 // @Security BearerAuth
 // @Router /songs [get]
@@ -110,7 +110,7 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]any{
 		"songs":  songs,
 		"total":  total,
 		"limit":  limit,
@@ -362,7 +362,7 @@ func (h *SongHandler) AddRemoteSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
+	respondJSON(w, http.StatusCreated, map[string]any{
 		"songs": songs,
 		"count": len(songs),
 	})
@@ -418,7 +418,7 @@ func (h *SongHandler) AddRadios(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
+	respondJSON(w, http.StatusCreated, map[string]any{
 		"songs": songs,
 		"count": len(songs),
 	})
@@ -512,7 +512,7 @@ func (h *SongHandler) serveLocalCover(w http.ResponseWriter, song *models.Song) 
 // @Tags 歌曲管理
 // @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{} "清理成功"
+// @Success 200 {object} map[string]any "清理成功"
 // @Failure 500 {object} map[string]string "清理失败"
 // @Security BearerAuth
 // @Router /songs/clean [post]
@@ -525,7 +525,7 @@ func (h *SongHandler) CleanInvalidSongs(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]any{
 		"message":         "清理完成",
 		"total":           result.Total,
 		"file_not_found":  result.FileNotFound,
@@ -774,7 +774,7 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 // @Tags 歌曲管理
 // @Produce json
 // @Param id path int true "歌曲 ID"
-// @Success 200 {object} map[string]interface{} "LyricPayload"
+// @Success 200 {object} map[string]any "LyricPayload"
 // @Failure 404 {string} string "歌曲或歌词不存在"
 // @Failure 502 {string} string "歌词获取失败"
 // @Security BearerAuth
