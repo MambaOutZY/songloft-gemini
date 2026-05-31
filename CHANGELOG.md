@@ -1,3 +1,14 @@
+## [v2.2.2] - 2026-05-31
+### :sparkles: New Features
+- [`0b3dbb0`](https://github.com/songloft-org/songloft/commit/0b3dbb0776fbbef743fcacbb4cf4b6a1e940adee) - 优化预加载下一首 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`1187bc9`](https://github.com/songloft-org/songloft/commit/1187bc97baa6c10594edd11318ae10ee6d7ee051) - update CHANGELOG for v2.2.1 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`8e2c293`](https://github.com/songloft-org/songloft/commit/8e2c293ae654ba2c992ba212fb039a46a9dbfc95) - release version 2.2.2 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.2.1] - 2026-05-31
 ### :bug: Bug Fixes
 - [`5843b56`](https://github.com/songloft-org/songloft/commit/5843b560c9dccb080b51a6bbe4481fca1b8787ea) - 解决url参数被解析合并的问题 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -955,3 +966,4 @@
 [v2.1.2]: https://github.com/songloft-org/songloft/compare/v2.1.1...v2.1.2
 [v2.2.0]: https://github.com/songloft-org/songloft/compare/v2.1.2...v2.2.0
 [v2.2.1]: https://github.com/songloft-org/songloft/compare/v2.2.0...v2.2.1
+[v2.2.2]: https://github.com/songloft-org/songloft/compare/v2.2.1...v2.2.2
