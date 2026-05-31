@@ -38,6 +38,19 @@ func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.H
 			// 用于图片/音频等无法自定义 Header 的场景（如 <img> 标签、CachedNetworkImage）
 			if tokenString == "" {
 				tokenString = r.URL.Query().Get("access_token")
+				// 小爱音箱固件会将 URL 中的 & 替换为空格，导致后续参数被合并进 access_token。
+				// JWT 不含空格，按空格拆分并将被吞掉的参数还原到 query string。
+				if token, remainder, ok := strings.Cut(tokenString, " "); ok {
+					tokenString = token
+					q := r.URL.Query()
+					q.Set("access_token", tokenString)
+					for kv := range strings.SplitSeq(remainder, " ") {
+						if k, v, found := strings.Cut(kv, "="); found {
+							q.Set(k, v)
+						}
+					}
+					r.URL.RawQuery = q.Encode()
+				}
 			}
 
 			if tokenString == "" {
