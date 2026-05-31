@@ -32,7 +32,9 @@ func (c *CacheService) GetOrTranscode(ctx context.Context, srcPath string, song 
 	if song == nil {
 		return "", errors.New("song is nil")
 	}
-	if !NeedsTranscode(song.Format, targetFormat) {
+	// song.Format 可能为空（旧数据/扫描失败），用 srcPath 扩展名兜底，
+	// 避免对同格式（如 mp3→mp3）误触发 ffmpeg 浪费 CPU。
+	if !NeedsTranscode(EffectiveSourceFormat(song, srcPath), targetFormat) {
 		return srcPath, nil
 	}
 
@@ -144,6 +146,16 @@ func (c *CacheService) runFFmpeg(ctx context.Context, srcPath, dstPath, targetFo
 		ffmpegPath = "ffmpeg"
 	}
 
+	// 串行化转码，避免并发 ffmpeg 占满 CPU 影响当前播放
+	if c.transcodeSem != nil {
+		select {
+		case c.transcodeSem <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		defer func() { <-c.transcodeSem }()
+	}
+
 	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -168,7 +180,23 @@ func NeedsTranscode(srcFormat, targetFormat string) bool {
 	if targetFormat == "" {
 		return false
 	}
-	return NormalizeFormat(srcFormat) != NormalizeFormat(targetFormat)
+	normSrc := NormalizeFormat(srcFormat)
+	if normSrc == "" {
+		return false // 无法识别源格式时不转码，避免对未知/已是同格式文件做无意义转码
+	}
+	return normSrc != NormalizeFormat(targetFormat)
+}
+
+// EffectiveSourceFormat 计算源格式，优先使用 song.Format，
+// 为空时回退到 srcPath 的文件扩展名。
+func EffectiveSourceFormat(song *models.Song, srcPath string) string {
+	if song != nil && song.Format != "" {
+		return song.Format
+	}
+	if srcPath != "" {
+		return strings.TrimPrefix(filepath.Ext(srcPath), ".")
+	}
+	return ""
 }
 
 // NormalizeFormat 统一格式名称，处理别名。

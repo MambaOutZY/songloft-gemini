@@ -57,7 +57,8 @@ type CacheService struct {
 	lruIndex           map[string]time.Time               // LRU 访问时间索引（hash -> lastAccess）
 	lruMu              sync.RWMutex                       // LRU 索引的读写锁
 	orchestrator       CacheSongFetcher                   // 下载编排器(按 song.ID),由 app.go 注入;未注入时旧 hash 路径不受影响
-	ffmpegPath         string                             // ffmpeg 可执行文件路径,用于音频转码;由 app.go 注入
+	ffmpegPath         string                             // ffmpeg 可执行文件路径,用于音频转码,由 app.go 注入
+	transcodeSem       chan struct{}                      // 转码串行信号量（默认 size=1），防止并发 ffmpeg 争抢 CPU
 }
 
 // SetOnDownloadComplete 注册下载完成回调
@@ -72,6 +73,7 @@ func NewCacheService(cacheDir string, configService *ConfigService) *CacheServic
 		configService: configService,
 		inflight:      make(map[string]*inflightDownload),
 		lruIndex:      make(map[string]time.Time),
+		transcodeSem:  make(chan struct{}, 1), // 默认只允许 1 个 ffmpeg 进程同时转码
 		client: &http.Client{
 			Timeout: 120 * time.Second,
 			// 禁用自动重定向，手动处理(用于 resolveRedirects 探测每跳真实 URL)

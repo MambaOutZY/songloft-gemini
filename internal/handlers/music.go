@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -641,6 +642,14 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 
 	targetFormat := r.URL.Query().Get("format")
 
+	// 预拉取模式：异步触发缓存 + 转码预热，立即返回 202。
+	// 不能用 r.Context()，否则 202 发出后客户端断开会 Kill ffmpeg，预热失败。
+	if r.URL.Query().Get("prefetch") == "1" {
+		go h.prepareSongPlayback(context.Background(), song, targetFormat)
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
 	switch song.Type {
 	case models.TypeLocal:
 		h.serveLocal(w, r, song, targetFormat)
@@ -653,6 +662,44 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// prepareSongPlayback 后台预热一首歌曲：拉取到缓存 + 必要时转码。
+// 判断与 serveLocal/serveRemote 保持一致，失败仅警告不报错。
+func (h *SongHandler) prepareSongPlayback(ctx context.Context, song *models.Song, targetFormat string) {
+	if song == nil {
+		return
+	}
+	var srcPath string
+	switch song.Type {
+	case models.TypeLocal:
+		if song.FilePath == "" {
+			return
+		}
+		srcPath = song.FilePath
+	case models.TypeRemote:
+		// 纯外链 / 电台不走缓存，也不预热
+		if !song.IsPluginSourced() {
+			return
+		}
+		path, err := h.cacheService.Get(ctx, song)
+		if err != nil {
+			slog.Warn("prefetch cache get failed", "songId", song.ID, "error", err)
+			return
+		}
+		srcPath = path
+	default:
+		return
+	}
+
+	if !services.NeedsTranscode(services.EffectiveSourceFormat(song, srcPath), targetFormat) {
+		return // 已在缓存中或无需转码
+	}
+	if _, err := h.cacheService.GetOrTranscode(ctx, srcPath, song, services.NormalizeFormat(targetFormat)); err != nil {
+		slog.Warn("prefetch transcode failed", "songId", song.ID, "format", targetFormat, "error", err)
+	} else {
+		slog.Info("prefetch ready", "songId", song.ID, "format", targetFormat)
+	}
+}
+
 // serveLocal 本地歌曲:直接 ServeFile(支持 Range,客户端 seek 可用)。
 // targetFormat 非空且与原格式不同时,走 ffmpeg 转码后返回。
 func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string) {
@@ -661,7 +708,7 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 		return
 	}
 	srcPath := song.FilePath
-	if services.NeedsTranscode(song.Format, targetFormat) {
+	if services.NeedsTranscode(services.EffectiveSourceFormat(song, srcPath), targetFormat) {
 		path, err := h.cacheService.GetOrTranscode(r.Context(), srcPath, song, services.NormalizeFormat(targetFormat))
 		if err != nil {
 			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "error", err)
@@ -745,7 +792,7 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 		return
 	}
 
-	if services.NeedsTranscode(song.Format, targetFormat) {
+	if services.NeedsTranscode(services.EffectiveSourceFormat(song, cachedPath), targetFormat) {
 		path, err := h.cacheService.GetOrTranscode(r.Context(), cachedPath, song, services.NormalizeFormat(targetFormat))
 		if err != nil {
 			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "error", err)

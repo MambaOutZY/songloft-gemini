@@ -53,7 +53,7 @@ func TestNeedsTranscode(t *testing.T) {
 		{"ape", "flac", true},
 		{"flac", "mp3", true},
 		{"m4a", "aac", false},
-		{"", "mp3", true},
+		{"", "mp3", false}, // 未知源格式不转码，避免误判
 	}
 	for _, tt := range tests {
 		got := NeedsTranscode(tt.src, tt.target)
