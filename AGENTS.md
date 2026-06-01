@@ -129,6 +129,18 @@ cd songloft-player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
 - M4A/OGG 暂未实现 → 返回 `ErrUnsupportedWrite`，调用方**必须**降级为日志，**不要**阻塞主流程
 - 写入用临时文件 + `os.Rename`，原子化
 
+### HLS 电台代理模式（hls_proxy_enabled）
+
+- 配置项 `hls_proxy_enabled`（bool，默认 `false`）
+  - `false`：电台 `.m3u8` 直接 302 给 player，由 player 自己拉源站。零开销但受源站防盗链/CORS 限制
+  - `true`：服务端拉取并改写 m3u8、代理所有切片/key/init 段。**所有切片走本机带宽**，注意流量成本
+- 切换时机：源站 Referer/UA 防盗链导致播放失败 / Web 嵌入模式 CORS 阻塞时，开启代理
+- 端点：`/api/v1/songs/{id}/hls/playlist?u=<base64url>` 和 `/api/v1/songs/{id}/hls/segment?u=<base64url>`
+- 改写规则：经典 HLS + LL-HLS 全集（PART/PRELOAD-HINT/RENDITION-REPORT）+ `EXT-X-DATERANGE:X-ASSET-URI`（HLS Interstitials 单 URI）。`X-ASSET-LIST`（JSON 子代理）暂未实现，遇到时原样透传
+- 安全：每次端点入口做"同源校验（scheme+host+port 与 song.URL 严格相等）"作第一道防线，`services.IsHostnameAllowed` 作 SSRF 兜底。**非同源 URL 保持原样不改写**，避免成为开放代理
+- player 跨域：改写后的 URL 全部是相对路径（`playlist?u=...` / `segment?u=...`），规避 BASE_PATH 子路径部署问题
+- 上游 4xx/5xx 透传给 player；playlist 体上限 1 MB；首行必须 `#EXTM3U`
+
 ### 歌单转本地（convert_service）
 
 - 落地路径：`music_path/{清理后歌单名}/{清理后艺术家} - {清理后标题}.{ext}`，与 scanner 保持**相对路径**格式

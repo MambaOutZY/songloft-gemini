@@ -35,12 +35,14 @@ func (a *App) setupRouter() {
 
 func (a *App) setupAPIV1Router() {
 	authHandler := handlers.NewAuthHandler(a.authService)
+	hlsHandler := handlers.NewHLSHandler(a.songService)
 	songHandler := handlers.NewSongHandler(
 		a.songService,
 		a.cacheService,
 		a.configService,
 		&reassignAdapter{orch: a.sourceOrchestrator, s: a.songService},
 		a.lyricFetcher,
+		hlsHandler,
 	)
 	playlistHandler := handlers.NewPlaylistHandler(a.playlistService)
 	configHandler := handlers.NewConfigHandler(a.configService)
@@ -155,6 +157,12 @@ func (a *App) setupAPIV1Router() {
 			// 歌曲播放端点（流式返回音频，支持 local/remote/radio 三种类型）
 			r.Get("/songs/{id}/play", songHandler.GetSongPlay)
 			r.Head("/songs/{id}/play", songHandler.GetSongPlay)
+
+			// HLS 反向代理端点（hls_proxy_mode=proxy 时启用，由 serveRadio 改写后的 m3u8 内回链触发）
+			r.Get("/songs/{id}/hls/playlist", hlsHandler.HandlePlaylist)
+			r.Head("/songs/{id}/hls/playlist", hlsHandler.HandlePlaylist)
+			r.Get("/songs/{id}/hls/segment", hlsHandler.HandleSegment)
+			r.Head("/songs/{id}/hls/segment", hlsHandler.HandleSegment)
 
 			// 歌曲封面端点（本地歌曲返回封面文件，网络歌曲由 CoverURL 直接指向外部 CDN）
 			r.Get("/songs/{id}/cover", songHandler.GetSongCover)
