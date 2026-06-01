@@ -1,7 +1,9 @@
 package jsplugin
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -222,7 +224,8 @@ func (s *JSService) Init() error {
 	}
 	s.mu.RUnlock()
 
-	_, err := s.jsManager.ExecuteJS(s.envID, "onInit()", 10000)
+	// 生命周期回调不接受外部取消，传 nil（runtime 内部会退化为 Background）
+	_, err := s.jsManager.ExecuteJS(context.Background(), s.envID, "onInit()", 10000)
 	if err != nil {
 		return fmt.Errorf("onInit() failed: %w", err)
 	}
@@ -245,7 +248,7 @@ func (s *JSService) Deinit() error {
 		return nil // 已停止，无需 deinit
 	}
 
-	_, err := s.jsManager.ExecuteJS(s.envID, "onDeinit()", 10000)
+	_, err := s.jsManager.ExecuteJS(context.Background(), s.envID, "onDeinit()", 10000)
 	if err != nil {
 		slog.Warn("onDeinit() failed", "plugin", s.plugin.EntryPath, "error", err)
 		return fmt.Errorf("onDeinit() failed: %w", err)
@@ -407,11 +410,19 @@ func (s *JSService) handleHTTPRequest(msg *Message) *Message {
 		code = fmt.Sprintf(`(async function(){return JSON.stringify(await onHTTPRequest(%s));})()`, string(reqJSON))
 	}
 
-	result, err := s.jsManager.ExecuteJS(s.envID, code, 30000)
+	// 传 msg.Ctx：客户端 abort 旧切歌请求时，scheduler.Call 会 cancel 这个 ctx，
+	// ExecuteJS 的事件循环会立即退出，让 worker 处理下一条消息，避免被 30s
+	// 上限的 ExecuteJS 卡住，新切的歌排在它后面一直 pending（issue #79 的关键根因）。
+	result, err := s.jsManager.ExecuteJS(msg.Ctx, s.envID, code, 30000)
 	if err != nil {
+		// 上游已放弃，仍构造一个 5xx 响应给等待者（虽然往往无人接收）
+		statusCode := 500
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			statusCode = 499 // 仿 nginx "client closed request"
+		}
 		return &Message{
 			ID: msg.ID, Session: msg.Session,
-			Data: &HTTPResponseData{StatusCode: 500, Body: err.Error()},
+			Data: &HTTPResponseData{StatusCode: statusCode, Body: err.Error()},
 		}
 	}
 
@@ -467,7 +478,8 @@ func (s *JSService) handleInterPlugin(msg *Message) *Message {
 	// 调用本身会返回 Promise；ExecuteJS 的事件循环会等待 settle 再取结果。
 	code := fmt.Sprintf(`__handleInterPluginMessage('%s')`, text_template.JSEscapeString(string(msgJSON)))
 
-	result, err := s.jsManager.ExecuteJS(s.envID, code, 10000)
+	// 传 msg.Ctx：插件间同步调用同样应该感知调用方取消
+	result, err := s.jsManager.ExecuteJS(msg.Ctx, s.envID, code, 10000)
 	if err != nil {
 		slog.Warn("inter-plugin message error", "plugin", s.plugin.EntryPath, "error", err)
 		return &Message{
@@ -496,8 +508,8 @@ func (s *JSService) handleInterPlugin(msg *Message) *Message {
 }
 
 func (s *JSService) handleHealthCheck(msg *Message) *Message {
-	// 执行简单的 JS 引擎 eval 验证 VM 存活
-	result, err := s.jsManager.ExecuteJS(s.envID, "1+1", 5000)
+	// 健康检查不接受外部取消，传 Background
+	result, err := s.jsManager.ExecuteJS(context.Background(), s.envID, "1+1", 5000)
 	if err != nil {
 		return &Message{
 			ID:      msg.ID,

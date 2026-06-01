@@ -139,6 +139,21 @@ func (s *ServiceScheduler) runWorker(ctx context.Context, entry *serviceEntry) {
 
 // processMessage 处理单条消息
 func (s *ServiceScheduler) processMessage(entry *serviceEntry, msg *Message) {
+	// 客户端在排队期间已经放弃（如用户快速切歌触发 abort）的请求，直接跳过，
+	// 避免 worker 被串行化的 ExecuteJS 卡住，新切的歌排在它后面一直 pending。
+	// 已取消的消息往往 RespChan 也无人接收（Call 已 return），无需回填 resp。
+	if msg.Ctx != nil && msg.Ctx.Err() != nil {
+		if msg.RespChan != nil {
+			// 兜底回个 nil，防止某些等待者卡死；Call 端已被 callCtx 唤醒，
+			// 不会真正消费这里的值。
+			select {
+			case msg.RespChan <- nil:
+			default:
+			}
+		}
+		return
+	}
+
 	resp := entry.handler.HandleMessage(msg)
 	if msg.RespChan != nil {
 		select {

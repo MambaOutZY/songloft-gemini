@@ -294,6 +294,12 @@ func (m *JSEnvManager) CreateEnvWithBytecode(envID, bootstrapCode string, byteco
 
 // ExecuteJS 在指定环境中执行 JS 代码，等待所有由其触发的 Promise 链 settled 后返回。
 //
+// ctx 用于异步等待阶段的提前取消（如客户端 abort 旧请求）：
+//   - 慢路径 select 中 ctx.Done() 会立即返回 ctx.Err()，让上层 worker 释放
+//     被放弃的请求所占的位置，给新切歌的请求让路。
+//   - 同步 eval 阶段持锁不响应 ctx；vm.SetEvalTimeout 作为 JS 内死循环兜底。
+//   - 传 nil 时退化为仅依赖 wall-clock + shutdownCh（内部 health/lifecycle 用）。
+//
 // 真异步事件循环：
 //
 //  1. 持锁 eval(code)，得到 val。
@@ -303,13 +309,13 @@ func (m *JSEnvManager) CreateEnvWithBytecode(envID, bootstrapCode string, byteco
 //     回填到 globalThis.__execjs_done/value/error。然后进入事件循环：
 //     pumpAsyncResults → ExecutePendingJobs → processExpiredTimers → 检查
 //     done flag。未完成则释放 env.mu，select { asyncSignal | timer-tick |
-//     wall-clock | shutdown }，被唤醒后重新加锁继续。
+//     wall-clock | shutdown | ctx.Done }，被唤醒后重新加锁继续。
 //
 // 设计保证：
 //   - 真异步 await 期间 env.mu 被释放，HealthProbe / 定时器 / 同插件其他请求可抢锁。
 //   - 调用方仍是同步语义（拿到最终值或错误），不需要改 service.go 的 handleHTTPRequest 契约。
 //   - 超时由 wall-clock 控制；vm.SetEvalTimeout 作为 JS 内死循环兜底。
-func (m *JSEnvManager) ExecuteJS(envID, code string, timeoutMs int64) (*ExecuteResult, error) {
+func (m *JSEnvManager) ExecuteJS(ctx context.Context, envID, code string, timeoutMs int64) (*ExecuteResult, error) {
 	env, err := m.getEnv(envID)
 	if err != nil {
 		return nil, err
@@ -320,6 +326,11 @@ func (m *JSEnvManager) ExecuteJS(envID, code string, timeoutMs int64) (*ExecuteR
 		timeout = time.Duration(timeoutMs) * time.Millisecond
 	}
 	deadline := time.Now().Add(timeout)
+
+	// nil ctx 视为不可取消，简化内部调用方
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	env.mu.Lock()
 	vm := env.vm
@@ -400,6 +411,19 @@ func (m *JSEnvManager) ExecuteJS(envID, code string, timeoutMs int64) (*ExecuteR
 			events := drainEnvEvents(env)
 			env.mu.Unlock()
 			return &ExecuteResult{Events: events}, fmt.Errorf("jsenv manager shutting down")
+		case <-ctx.Done():
+			// 调用方取消（如客户端 abort 旧切歌请求）：清理 await probe，
+			// 让 worker 立即处理下一条消息，避免无谓占用单 worker 配额。
+			// 同时 vm 内 Promise 仍可能在后续 ProcessTimers 时被推进，
+			// drain 一次事件后即返回；残留状态由下一次 ExecuteJS 清理。
+			env.mu.Lock()
+			if env.vm != nil {
+				cleanupAwaitProbe(vm)
+			}
+			events := drainEnvEvents(env)
+			env.mu.Unlock()
+			slog.Info("ExecuteJS: ctx canceled", "envID", envID, "err", ctx.Err())
+			return &ExecuteResult{Events: events}, ctx.Err()
 		case <-env.asyncSignal:
 			// 收到一个或多个新结果 → 重新加锁推进
 		case <-time.After(tickTimeout):
@@ -571,10 +595,16 @@ func unsetGlobalValue(vm *quickjs.VM, name string) {
 }
 
 // ExecuteJSAndWaitEvents 执行 JS 代码并等待指定名称的事件到达
-func (m *JSEnvManager) ExecuteJSAndWaitEvents(envID, code string, timeoutMs int64, waitEventNames []string) (*ExecuteResult, error) {
+//
+// ctx 用于轮询等待阶段的提前取消；传 nil 视为 Background。
+func (m *JSEnvManager) ExecuteJSAndWaitEvents(ctx context.Context, envID, code string, timeoutMs int64, waitEventNames []string) (*ExecuteResult, error) {
 	env, err := m.getEnv(envID)
 	if err != nil {
 		return nil, err
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	env.mu.Lock()
@@ -636,12 +666,15 @@ func (m *JSEnvManager) ExecuteJSAndWaitEvents(envID, code string, timeoutMs int6
 	slog.Info("ExecuteJSAndWaitEvents: 开始等待事件", "envID", envID, "waitEventNames", waitEventNames, "timeout", waitTimeout)
 
 	for time.Now().Before(deadline) {
-		// 关闭信号优先：若 manager 已开始 Close，立即返回，让上层（runBatchLoader 等）
-		// 释放主 env 锁，避免 jsManager.Close 死等。
+		// 关闭/取消信号优先：让上层（runBatchLoader 等）释放主 env 锁，
+		// 避免 jsManager.Close 死等，也让客户端 abort 旧请求时尽快放行。
 		select {
 		case <-m.shutdownCh:
 			slog.Info("ExecuteJSAndWaitEvents: 收到关闭信号，提前返回", "envID", envID)
 			return execResult, fmt.Errorf("jsenv manager shutting down")
+		case <-ctx.Done():
+			slog.Info("ExecuteJSAndWaitEvents: ctx canceled", "envID", envID, "err", ctx.Err())
+			return execResult, ctx.Err()
 		default:
 		}
 
@@ -674,6 +707,9 @@ func (m *JSEnvManager) ExecuteJSAndWaitEvents(envID, code string, timeoutMs int6
 		case <-m.shutdownCh:
 			slog.Info("ExecuteJSAndWaitEvents: 收到关闭信号，提前返回", "envID", envID)
 			return execResult, fmt.Errorf("jsenv manager shutting down")
+		case <-ctx.Done():
+			slog.Info("ExecuteJSAndWaitEvents: ctx canceled", "envID", envID, "err", ctx.Err())
+			return execResult, ctx.Err()
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
@@ -915,10 +951,11 @@ func (m *JSEnvManager) ExecuteJSParallel(calls []ParallelCall, maxConcurrent int
 			go func(idx int, c ParallelCall) {
 				var execResult *ExecuteResult
 				var execErr error
+				// 并行执行场景（搜索/批量元数据）目前没有外部 ctx 取消语义，传 Background。
 				if len(c.WaitEventNames) > 0 {
-					execResult, execErr = m.ExecuteJSAndWaitEvents(c.EnvID, c.Code, c.TimeoutMs, c.WaitEventNames)
+					execResult, execErr = m.ExecuteJSAndWaitEvents(context.Background(), c.EnvID, c.Code, c.TimeoutMs, c.WaitEventNames)
 				} else {
-					execResult, execErr = m.ExecuteJS(c.EnvID, c.Code, c.TimeoutMs)
+					execResult, execErr = m.ExecuteJS(context.Background(), c.EnvID, c.Code, c.TimeoutMs)
 				}
 				resultCh <- ParallelResult{
 					Index:  idx,

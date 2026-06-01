@@ -1,6 +1,7 @@
 package jsruntime
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -31,7 +32,7 @@ func TestProcessTimers_ReturnsTrue_WhenTimerFires(t *testing.T) {
 	}
 
 	// Verify the timer actually executed
-	result, err := manager.ExecuteJS(envID, "fired", 1000)
+	result, err := manager.ExecuteJS(context.Background(), envID, "fired", 1000)
 	if err != nil {
 		t.Fatalf("Failed to check fired variable: %v", err)
 	}
@@ -94,7 +95,7 @@ func TestGetNextTimerDeadline_SingleTimer(t *testing.T) {
 	defer manager.DestroyEnv(envID)
 
 	before := time.Now()
-	if _, err := manager.ExecuteJS(envID, "setTimeout(function(){}, 60000);", 1000); err != nil {
+	if _, err := manager.ExecuteJS(context.Background(), envID, "setTimeout(function(){}, 60000);", 1000); err != nil {
 		t.Fatalf("setTimeout failed: %v", err)
 	}
 
@@ -130,7 +131,7 @@ func TestGetNextTimerDeadline_PicksEarliest(t *testing.T) {
 		setTimeout(function(){}, 10000);
 		setTimeout(function(){}, 120000);
 	`
-	if _, err := manager.ExecuteJS(envID, code, 1000); err != nil {
+	if _, err := manager.ExecuteJS(context.Background(), envID, code, 1000); err != nil {
 		t.Fatalf("setTimeout chain failed: %v", err)
 	}
 
@@ -159,7 +160,7 @@ func TestGetNextTimerDeadline_IncludesInterval(t *testing.T) {
 	}
 	defer manager.DestroyEnv(envID)
 
-	if _, err := manager.ExecuteJS(envID, "setInterval(function(){}, 30000);", 1000); err != nil {
+	if _, err := manager.ExecuteJS(context.Background(), envID, "setInterval(function(){}, 30000);", 1000); err != nil {
 		t.Fatalf("setInterval failed: %v", err)
 	}
 
@@ -190,5 +191,81 @@ func TestProcessTimers_ReturnsFalse_WhenTimerNotYetExpired(t *testing.T) {
 
 	if didFire {
 		t.Error("Expected ProcessTimers to return false when timer hasn't expired yet")
+	}
+}
+
+// TestExecuteJS_CtxCancel 验证客户端取消 ctx 时 ExecuteJS 立即返回（issue #79 的核心）。
+// 构造一个永不 resolve 的 Promise（依赖 setTimeout 但 ts 远大于测试时长），
+// 然后 cancel ctx，断言 ExecuteJS 在远小于 timeoutMs 的时间内返回 context.Canceled。
+func TestExecuteJS_CtxCancel(t *testing.T) {
+	manager := NewJSEnvManager()
+	defer manager.SignalShutdown()
+
+	envID := "test-ctx-cancel"
+	if err := manager.CreateEnv(envID, polyfillJS, 1); err != nil {
+		t.Fatalf("CreateEnv: %v", err)
+	}
+	defer manager.DestroyEnv(envID)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// 200ms 后取消
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	// 60s 永不 resolve（实际不会等这么久）
+	_, err := manager.ExecuteJS(ctx, envID,
+		`new Promise(function(resolve){ setTimeout(resolve, 60000); })`,
+		60000)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error from canceled ctx, got nil")
+	}
+	if err != context.Canceled {
+		t.Errorf("expected context.Canceled, got: %v", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("ExecuteJS took %v after ctx cancel; expected sub-second", elapsed)
+	}
+
+	// 验证 env 仍可用：下一次 ExecuteJS 不应因前一次取消导致 deadlock 或异常
+	res, err2 := manager.ExecuteJS(context.Background(), envID, "1+1", 1000)
+	if err2 != nil {
+		t.Fatalf("post-cancel ExecuteJS failed: %v", err2)
+	}
+	if res.Result != "2" {
+		t.Errorf("post-cancel eval expected 2, got %q", res.Result)
+	}
+}
+
+// TestExecuteJS_CtxAlreadyCanceled 即使 ctx 进入时已取消，也应快速返回 context.Canceled。
+func TestExecuteJS_CtxAlreadyCanceled(t *testing.T) {
+	manager := NewJSEnvManager()
+	defer manager.SignalShutdown()
+
+	envID := "test-ctx-pre-cancel"
+	if err := manager.CreateEnv(envID, polyfillJS, 1); err != nil {
+		t.Fatalf("CreateEnv: %v", err)
+	}
+	defer manager.DestroyEnv(envID)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	_, err := manager.ExecuteJS(ctx, envID,
+		`new Promise(function(resolve){ setTimeout(resolve, 60000); })`,
+		60000)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error from pre-canceled ctx, got nil")
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("ExecuteJS took %v with pre-canceled ctx; expected near-instant", elapsed)
 	}
 }

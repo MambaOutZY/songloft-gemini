@@ -156,6 +156,68 @@ func TestSchedulerCallTimeout(t *testing.T) {
 	}
 }
 
+// TestSchedulerWorker_SkipsCanceledMsg 验证 worker 拉到已取消的消息时跳过 handler，
+// 这样被用户放弃的请求不会继续占用 worker（issue #79 关键修复）。
+// 构造：先投一个慢消息（占住 worker），再投一个 ctx 已取消的消息，再投一个正常消息；
+// 期望 handler 收到 1 + 0 + 1 = 2 条（中间那条被跳过），且最后正常消息能立刻被处理。
+func TestSchedulerWorker_SkipsCanceledMsg(t *testing.T) {
+	sched := NewServiceScheduler(1)
+	defer sched.Close()
+
+	handler := &mockHandler{
+		delay:    100 * time.Millisecond,
+		response: &Message{Data: "ok"},
+	}
+	if err := sched.RegisterService("svc", handler, 16); err != nil {
+		t.Fatalf("RegisterService: %v", err)
+	}
+
+	// 投递三条：
+	// (1) 慢消息，占住 worker
+	if err := sched.Send(&Message{Type: MsgInterPlugin, Target: "svc", Data: "first"}); err != nil {
+		t.Fatalf("Send first: %v", err)
+	}
+
+	// (2) 已取消消息
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := sched.Send(&Message{
+		Type: MsgInterPlugin, Target: "svc", Data: "canceled", Ctx: canceledCtx,
+	}); err != nil {
+		t.Fatalf("Send canceled: %v", err)
+	}
+
+	// (3) 正常消息
+	if err := sched.Send(&Message{Type: MsgInterPlugin, Target: "svc", Data: "third"}); err != nil {
+		t.Fatalf("Send third: %v", err)
+	}
+
+	// 等到第 3 条被处理（即 worker 已经走过被取消的那一条）
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("timeout: handler.count=%d (expected 2 after skip)", handler.count())
+		default:
+		}
+		if handler.count() >= 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// 给 worker 一点时间避免漏数
+	time.Sleep(50 * time.Millisecond)
+
+	msgs := handler.messages()
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 handled messages (canceled skipped), got %d: %+v", len(msgs), msgs)
+	}
+	if msgs[0].Data != "first" || msgs[1].Data != "third" {
+		t.Errorf("unexpected handled data sequence: %v, %v", msgs[0].Data, msgs[1].Data)
+	}
+}
+
 // TestSchedulerSendToNonexistent 向不存在的服务发消息，验证返回错误
 func TestSchedulerSendToNonexistent(t *testing.T) {
 	sched := NewServiceScheduler(1)

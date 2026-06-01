@@ -217,25 +217,46 @@ func (c *CacheService) Get(ctx context.Context, song *models.Song) (string, erro
 	}
 
 	// 2. inflight 去重(同 song.ID 的并发请求只下载一次)
+	// 注意：若首个请求被 ctx.Canceled（用户切歌触发 abort），不能把这个错误传染给
+	// 后到的等待者——他们的 ctx 是新的、未取消，必须重新尝试下载。否则"切走又切回"
+	// 同一首歌时会立刻 502（issue #79 的二次原因）。
 	state := getSongState()
-	state.inflightMu.Lock()
-	if dl, ok := state.inflight[song.ID]; ok {
+	for {
+		state.inflightMu.Lock()
+		dl, ok := state.inflight[song.ID]
+		if !ok {
+			// 没有 inflight，自己来下载
+			dl = &inflightDownload{done: make(chan struct{})}
+			state.inflight[song.ID] = dl
+			state.inflightMu.Unlock()
+			break
+		}
 		state.inflightMu.Unlock()
+
+		// 等待已存在的 inflight 完成
 		<-dl.done
 		if dl.err != nil {
+			if errors.Is(dl.err, context.Canceled) || errors.Is(dl.err, context.DeadlineExceeded) {
+				// 首请求被自己的 ctx 取消，不算"真错误"，本等待者重新尝试占位下载
+				slog.Debug("cache inflight: prior request canceled, retrying as new downloader",
+					"songId", song.ID, "err", dl.err)
+				continue
+			}
 			return "", dl.err
 		}
+		// 首请求成功，去 cache 取
 		if p, ok := c.FindCachedFileBySong(song); ok {
 			return p, nil
 		}
 		return "", fmt.Errorf("cache file not found after wait")
 	}
-	dl := &inflightDownload{done: make(chan struct{})}
-	state.inflight[song.ID] = dl
-	state.inflightMu.Unlock()
+	dl := state.inflight[song.ID]
 	defer func() {
 		state.inflightMu.Lock()
-		delete(state.inflight, song.ID)
+		// 仅在 map 里的还是自己时删除，防止其它代码路径替换后误删
+		if state.inflight[song.ID] == dl {
+			delete(state.inflight, song.ID)
+		}
 		state.inflightMu.Unlock()
 		close(dl.done)
 	}()

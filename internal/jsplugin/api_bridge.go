@@ -635,7 +635,8 @@ func (h *BridgeHandler) handleJSEnv(action, data string) (string, error) {
 		if err != nil {
 			return marshalJSONOrErr(toJSONResult(nil, err.Error()))
 		}
-		res, err := mgr.ExecuteJS(fullID, req.Code, req.TimeoutMs)
+		// 插件主动调用 jsenv.execute（如 lxmusic 多 worker 协作），不接受外部取消
+		res, err := mgr.ExecuteJS(context.Background(), fullID, req.Code, req.TimeoutMs)
 		errMsg := ""
 		if err != nil {
 			errMsg = err.Error()
@@ -651,7 +652,7 @@ func (h *BridgeHandler) handleJSEnv(action, data string) (string, error) {
 		if err != nil {
 			return marshalJSONOrErr(toJSONResult(nil, err.Error()))
 		}
-		res, err := mgr.ExecuteJSAndWaitEvents(fullID, req.Code, req.TimeoutMs, req.WaitEvents)
+		res, err := mgr.ExecuteJSAndWaitEvents(context.Background(), fullID, req.Code, req.TimeoutMs, req.WaitEvents)
 		errMsg := ""
 		if err != nil {
 			errMsg = err.Error()
