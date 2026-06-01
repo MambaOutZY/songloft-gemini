@@ -7,9 +7,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"songloft/internal/database"
@@ -733,9 +735,16 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 
 // serveRadio 电台/直播流:专用代理，不设超时、不缓存。
 // 与 ServeRemoteResource 不同:客户端断开时由 r.Context() 取消上游请求，不受 60s 硬超时限制。
+// HLS (m3u8) 走 302 重定向给前端 player 自己解析:m3u8 内含相对路径 .ts 切片,
+// 服务端透传会导致客户端按本机 URL 错误解析切片路径。
 func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *models.Song) {
 	if song.URL == "" {
 		http.NotFound(w, r)
+		return
+	}
+
+	if isHLSURL(song.URL) {
+		http.Redirect(w, r, song.URL, http.StatusFound)
 		return
 	}
 
@@ -773,6 +782,16 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 	w.Header().Set("Cache-Control", "no-cache, no-store")
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+// isHLSURL 判断 URL 是否指向 HLS 播放列表(.m3u8/.m3u),忽略大小写与查询串。
+func isHLSURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(u.Path))
+	return ext == ".m3u8" || ext == ".m3u"
 }
 
 // serveRemote 网络歌曲:根据音源类型分发到缓存或代理。
