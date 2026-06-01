@@ -1,3 +1,19 @@
+## [v2.3.0] - 2026-06-01
+### :sparkles: New Features
+- [`dad2d9c`](https://github.com/songloft-org/songloft/commit/dad2d9cbd100d93bfcb8dce17c408480e32ec562) - 电台支持走后端代理 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`2d10351`](https://github.com/songloft-org/songloft/commit/2d103513dc6c808e24f300a3c6440935a246ed26) - 快速切多次歌曲时抖动优化 songloft-org/songloft[#79](https://github.com/songloft-org/songloft/pull/79) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`8bedce2`](https://github.com/songloft-org/songloft/commit/8bedce2edb92248f046dd479858b9758e7b5e429) - 添加歌曲支持目录筛选和类型筛选 songloft-org/songloft[#57](https://github.com/songloft-org/songloft/pull/57) *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`42dac46`](https://github.com/songloft-org/songloft/commit/42dac4686c1b4fdd09a56db31e4add94b4c4ca76) - 修复m3u8电台无法播放问题 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`f0df02e`](https://github.com/songloft-org/songloft/commit/f0df02ee2d1fca28b9246cba94eb9075b09170ab) - update CHANGELOG for v2.2.5 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`fac56c3`](https://github.com/songloft-org/songloft/commit/fac56c3abac8593b4a4c6a5046ac2e41ad0f0d41) - release version 2.3.0 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.2.5] - 2026-06-01
 ### :memo: Documentation Changes
 - [`bb299cf`](https://github.com/songloft-org/songloft/commit/bb299cfa04725f097121c2e6d0fef366ceb86c05) - update CHANGELOG for v2.2.4 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
@@ -1002,3 +1018,4 @@
 [v2.2.3]: https://github.com/songloft-org/songloft/compare/v2.2.2...v2.2.3
 [v2.2.4]: https://github.com/songloft-org/songloft/compare/v2.2.3...v2.2.4
 [v2.2.5]: https://github.com/songloft-org/songloft/compare/v2.2.4...v2.2.5
+[v2.3.0]: https://github.com/songloft-org/songloft/compare/v2.2.5...v2.3.0
