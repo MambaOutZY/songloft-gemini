@@ -45,6 +45,7 @@ type Querier interface {
 	ListJSPlugins(ctx context.Context) ([]JsPlugin, error)
 	ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsRow, error)
 	ListPlaylistsContainingSong(ctx context.Context, songID int64) ([]int64, error)
+	MaxPositionInPlaylist(ctx context.Context, playlistID int64) (int64, error)
 	RemoveSongFromPlaylist(ctx context.Context, arg RemoveSongFromPlaylistParams) (int64, error)
 	RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64, error)
 	SetConfig(ctx context.Context, arg SetConfigParams) error

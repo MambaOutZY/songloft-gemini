@@ -202,6 +202,93 @@ func TestListSongs(t *testing.T) {
 	}
 }
 
+// TestListSongsByPathPrefix 验证 PathPrefix 前缀过滤 + LIKE 通配符转义。
+func TestListSongsByPathPrefix(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	songs := []*models.Song{
+		{Type: models.TypeLocal, Title: "Pop1", FilePath: "music/Pop/1.mp3"},
+		{Type: models.TypeLocal, Title: "Pop2", FilePath: "music/Pop/Jay/2.mp3"},
+		{Type: models.TypeLocal, Title: "Rock", FilePath: "music/Rock/3.mp3"},
+		// 通配符字面量场景：路径里实际含 % 和 _
+		{Type: models.TypeLocal, Title: "Lit%", FilePath: "music/100%/x.mp3"},
+		{Type: models.TypeLocal, Title: "LitU", FilePath: "music/a_b/y.mp3"},
+		// 用于验证 _ 不会误匹配的同名兄弟（_ 在未转义的 LIKE 里匹配任意单字符）
+		{Type: models.TypeLocal, Title: "LitUDecoy", FilePath: "music/aXb/z.mp3"},
+	}
+	if err := db.SongRepository().BatchCreate(ctx, songs); err != nil {
+		t.Fatalf("BatchCreate: %v", err)
+	}
+
+	cases := []struct {
+		prefix string
+		want   int
+	}{
+		{"music/Pop", 2},
+		{"music/Pop/Jay", 1},
+		{"music/Rock", 1},
+		{"music/", 6},
+		{"music/none", 0},
+		{"music/100%", 1}, // 字面量 %，不应被当成通配符
+		{"music/a_b", 1},  // 字面量 _，不应匹配 'aXb'
+	}
+	for _, c := range cases {
+		list, err := db.SongRepository().List(ctx, &SongFilter{PathPrefix: c.prefix})
+		if err != nil {
+			t.Fatalf("List(prefix=%q): %v", c.prefix, err)
+		}
+		if len(list) != c.want {
+			t.Errorf("List(prefix=%q) = %d, want %d", c.prefix, len(list), c.want)
+		}
+	}
+}
+
+// TestListSongIDs 验证 ListIDs 共享 List 的过滤条件，仅返回 id 列表。
+func TestListSongIDs(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	songs := []*models.Song{
+		{Type: models.TypeLocal, Title: "A", FilePath: "music/Pop/a.mp3"},
+		{Type: models.TypeLocal, Title: "B", FilePath: "music/Pop/b.mp3"},
+		{Type: models.TypeLocal, Title: "C", FilePath: "music/Rock/c.mp3"},
+		{Type: models.TypeRemote, Title: "D", URL: "https://example.com/d.mp3"},
+	}
+	if err := db.SongRepository().BatchCreate(ctx, songs); err != nil {
+		t.Fatalf("BatchCreate: %v", err)
+	}
+
+	// 1) 无过滤：返回全部 4 条
+	ids, err := db.SongRepository().ListIDs(ctx, &SongFilter{})
+	if err != nil {
+		t.Fatalf("ListIDs: %v", err)
+	}
+	if len(ids) != 4 {
+		t.Errorf("len = %d, want 4", len(ids))
+	}
+
+	// 2) 按 PathPrefix 过滤：只剩 Pop 下两首
+	ids, err = db.SongRepository().ListIDs(ctx, &SongFilter{PathPrefix: "music/Pop"})
+	if err != nil {
+		t.Fatalf("ListIDs PathPrefix: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Errorf("len with PathPrefix = %d, want 2", len(ids))
+	}
+
+	// 3) 类型 + 关键词组合
+	ids, err = db.SongRepository().ListIDs(ctx, &SongFilter{Type: models.TypeLocal, Keyword: "A"})
+	if err != nil {
+		t.Fatalf("ListIDs Type+Keyword: %v", err)
+	}
+	if len(ids) != 1 {
+		t.Errorf("len Type+Keyword = %d, want 1", len(ids))
+	}
+}
+
 // TestCreateAndGetPlaylist 测试创建和获取歌单
 func TestCreateAndGetPlaylist(t *testing.T) {
 	db := setupTestDB(t)

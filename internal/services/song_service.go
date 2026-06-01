@@ -20,6 +20,7 @@ type SongRepository interface {
 	Update(ctx context.Context, song *models.Song) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, filter *database.SongFilter) ([]*models.Song, error)
+	ListIDs(ctx context.Context, filter *database.SongFilter) ([]int64, error)
 	Count(ctx context.Context, filter *database.SongFilter) (int64, error)
 	BatchDelete(ctx context.Context, ids []int64) (int, error)
 	BatchCreate(ctx context.Context, songs []*models.Song) error
@@ -28,6 +29,7 @@ type SongRepository interface {
 	UpdateDuration(ctx context.Context, id int64, duration float64) error
 	UpdateSource(ctx context.Context, id int64, pluginEntryPath, sourceData string) error
 	ListLocalPaths(ctx context.Context) (map[string]int64, error)
+	ListTypesByIDs(ctx context.Context, ids []int64) (map[int64]string, error)
 	CountCoverPathReferences(ctx context.Context, coverPath string) (int, error)
 }
 
@@ -231,6 +233,16 @@ func (s *SongService) Count(ctx context.Context, filter *database.SongFilter) (i
 		return 0, fmt.Errorf("failed to count songs: %w", err)
 	}
 	return count, nil
+}
+
+// ListIDs 仅返回匹配 filter 的歌曲 ID 列表，无分页。
+// 用于前端「全选当前筛选范围」一次性拿到所有匹配 id，避免拉完整 song 对象。
+func (s *SongService) ListIDs(ctx context.Context, filter *database.SongFilter) ([]int64, error) {
+	ids, err := s.songs.ListIDs(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list song ids: %w", err)
+	}
+	return ids, nil
 }
 
 // ScanAndImportAsync 异步扫描并导入本地音乐文件

@@ -228,6 +228,17 @@ func (q *Queries) ListPlaylistsContainingSong(ctx context.Context, songID int64)
 	return items, nil
 }
 
+const maxPositionInPlaylist = `-- name: MaxPositionInPlaylist :one
+SELECT CAST(COALESCE(MAX(position), 0) AS INTEGER) FROM playlist_songs WHERE playlist_id = ?
+`
+
+func (q *Queries) MaxPositionInPlaylist(ctx context.Context, playlistID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, maxPositionInPlaylist, playlistID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const removeSongFromPlaylist = `-- name: RemoveSongFromPlaylist :execrows
 DELETE FROM playlist_songs WHERE playlist_id = ? AND song_id = ?
 `

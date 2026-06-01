@@ -100,6 +100,7 @@ func (a *App) setupAPIV1Router() {
 
 			// 歌曲管理模块
 			r.Get("/songs", songHandler.ListSongs)
+			r.Get("/songs/ids", songHandler.ListSongIDs)
 			r.Post("/songs/remote", songHandler.AddRemoteSongs)
 			r.Post("/songs/radio", songHandler.AddRadios)
 			r.Post("/songs/clean", songHandler.CleanInvalidSongs)

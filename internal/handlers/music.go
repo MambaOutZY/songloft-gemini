@@ -58,6 +58,7 @@ func NewSongHandler(
 // @Produce json
 // @Param type query string false "歌曲类型" Enums(local, remote, radio)
 // @Param keyword query string false "搜索关键词"
+// @Param path_prefix query string false "按 file_path 前缀过滤（如 music/Pop）"
 // @Param limit query int false "每页数量" default(20)
 // @Param offset query int false "偏移量" default(0)
 // @Success 200 {object} map[string]any "成功返回歌曲列表"
@@ -70,6 +71,7 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 	// 解析查询参数
 	songType := r.URL.Query().Get("type")
 	keyword := r.URL.Query().Get("keyword")
+	pathPrefix := r.URL.Query().Get("path_prefix")
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
 
@@ -95,12 +97,13 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 
 	// 构建过滤条件
 	filter := &database.SongFilter{
-		Type:    songType,
-		Keyword: keyword,
-		Limit:   limit,
-		Offset:  offset,
-		OrderBy: "added_at",
-		Order:   "DESC",
+		Type:       songType,
+		Keyword:    keyword,
+		PathPrefix: pathPrefix,
+		Limit:      limit,
+		Offset:     offset,
+		OrderBy:    "added_at",
+		Order:      "DESC",
 	}
 
 	// 获取歌曲列表
@@ -122,6 +125,42 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 		"total":  total,
 		"limit":  limit,
 		"offset": offset,
+	})
+}
+
+// ListSongIDs 返回匹配 filter 的歌曲 ID 列表（不分页、不带 song 详情）
+// @Summary 获取匹配歌曲的 ID 列表
+// @Description 与 /songs 共享过滤条件，仅返回 ID。用于「全选当前筛选范围」场景。
+// @Tags 歌曲管理
+// @Accept json
+// @Produce json
+// @Param type query string false "歌曲类型"
+// @Param keyword query string false "搜索关键词"
+// @Param path_prefix query string false "按 file_path 前缀过滤"
+// @Success 200 {object} map[string]any "成功返回 ID 列表"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Security BearerAuth
+// @Router /songs/ids [get]
+func (h *SongHandler) ListSongIDs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	filter := &database.SongFilter{
+		Type:       r.URL.Query().Get("type"),
+		Keyword:    r.URL.Query().Get("keyword"),
+		PathPrefix: r.URL.Query().Get("path_prefix"),
+		OrderBy:    "added_at",
+		Order:      "DESC",
+	}
+
+	ids, err := h.songService.ListIDs(ctx, filter)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取歌曲ID列表失败", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"ids":   ids,
+		"total": len(ids),
 	})
 }
 

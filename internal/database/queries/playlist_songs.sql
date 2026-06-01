@@ -48,3 +48,6 @@ UPDATE playlist_songs SET position = ? WHERE playlist_id = ? AND song_id = ?;
 -- name: AddSongToPlaylistIgnore :execrows
 INSERT OR IGNORE INTO playlist_songs (playlist_id, song_id, position)
 VALUES (?, ?, ?);
+
+-- name: MaxPositionInPlaylist :one
+SELECT CAST(COALESCE(MAX(position), 0) AS INTEGER) FROM playlist_songs WHERE playlist_id = ?;

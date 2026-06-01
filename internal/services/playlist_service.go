@@ -30,6 +30,8 @@ type PlaylistSongRepository interface {
 	GetSongsPaginated(ctx context.Context, playlistID int64, limit, offset int) ([]*models.Song, error)
 	CountSongs(ctx context.Context, playlistID int64) (int, error)
 	BatchUpdatePositions(ctx context.Context, playlistID int64, songIDs []int64) error
+	MaxPosition(ctx context.Context, playlistID int64) (int, error)
+	AddSongsBatch(ctx context.Context, playlistID int64, startPos int, songIDs []int64) (added int, skipped int, err error)
 }
 
 // PlaylistService 歌单服务
@@ -210,16 +212,47 @@ func (s *PlaylistService) AddSong(ctx context.Context, playlistID, songID int64)
 	return nil
 }
 
-// AddSongs 批量添加歌曲到歌单，跳过已存在的歌曲
+// AddSongs 批量添加歌曲到歌单：单事务批量插入，position 一次性算定，
+// 类型不兼容或不存在的歌曲计入 skipped。已存在的歌曲由 INSERT OR IGNORE 自然跳过。
 func (s *PlaylistService) AddSongs(ctx context.Context, playlistID int64, songIDs []int64) (added int, skipped int, err error) {
-	for _, songID := range songIDs {
-		if addErr := s.AddSong(ctx, playlistID, songID); addErr != nil {
+	if len(songIDs) == 0 {
+		return 0, 0, nil
+	}
+
+	playlist, err := s.playlists.GetByID(ctx, playlistID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get playlist: %w", err)
+	}
+
+	// 一次性查所有候选歌曲的 type，过滤掉不兼容或不存在的（避免 O(N) 单首查询）。
+	types, err := s.songs.ListTypesByIDs(ctx, songIDs)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to list song types: %w", err)
+	}
+	eligible := make([]int64, 0, len(songIDs))
+	for _, id := range songIDs {
+		typ, ok := types[id]
+		if !ok || !playlist.CanAddSong(typ) {
 			skipped++
 			continue
 		}
-		added++
+		eligible = append(eligible, id)
 	}
-	return added, skipped, nil
+
+	if len(eligible) == 0 {
+		return 0, skipped, nil
+	}
+
+	startPos, err := s.playlistSongs.MaxPosition(ctx, playlistID)
+	if err != nil {
+		return 0, skipped, fmt.Errorf("failed to get max position: %w", err)
+	}
+
+	addedN, skippedN, err := s.playlistSongs.AddSongsBatch(ctx, playlistID, startPos, eligible)
+	if err != nil {
+		return addedN, skipped + skippedN, fmt.Errorf("failed to add songs to playlist: %w", err)
+	}
+	return addedN, skipped + skippedN, nil
 }
 
 // RemoveSong 从歌单移除歌曲

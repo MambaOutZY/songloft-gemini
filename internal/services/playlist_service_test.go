@@ -400,6 +400,83 @@ func TestPlaylistServiceUpdateInvalidData(t *testing.T) {
 	}
 }
 
+func TestPlaylistServiceAddSongsBatch(t *testing.T) {
+	env := newPlaylistTestEnv(t)
+	service := env.newService()
+	ctx := context.Background()
+
+	playlist := &models.Playlist{
+		Type: models.PlaylistTypeNormal,
+		Name: "批量歌单",
+	}
+	if err := service.Create(ctx, playlist); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	// 准备 5 首本地歌 + 1 首电台歌 + 1 个不存在的 ID。
+	localIDs := make([]int64, 0, 5)
+	for i := 0; i < 5; i++ {
+		s := &models.Song{Type: models.TypeLocal, Title: "歌", FilePath: "/m/" + string(rune('a'+i)) + ".mp3"}
+		if err := env.songs.Create(ctx, s); err != nil {
+			t.Fatalf("create song: %v", err)
+		}
+		localIDs = append(localIDs, s.ID)
+	}
+	radio := &models.Song{Type: models.TypeRadio, Title: "电台", URL: "https://e.com/r.m3u8"}
+	if err := env.songs.Create(ctx, radio); err != nil {
+		t.Fatalf("create radio: %v", err)
+	}
+
+	all := append([]int64{}, localIDs...)
+	all = append(all, radio.ID, 99999)
+	added, skipped, err := service.AddSongs(ctx, playlist.ID, all)
+	if err != nil {
+		t.Fatalf("AddSongs() error = %v", err)
+	}
+	if added != 5 {
+		t.Errorf("added = %d, want 5", added)
+	}
+	if skipped != 2 {
+		t.Errorf("skipped = %d, want 2 (radio + missing)", skipped)
+	}
+
+	// 二次添加同一批应全部 skipped（已存在）。
+	added2, skipped2, err := service.AddSongs(ctx, playlist.ID, localIDs)
+	if err != nil {
+		t.Fatalf("AddSongs() second call error = %v", err)
+	}
+	if added2 != 0 {
+		t.Errorf("added2 = %d, want 0", added2)
+	}
+	if skipped2 != 5 {
+		t.Errorf("skipped2 = %d, want 5", skipped2)
+	}
+
+	// 验证 position 连续递增（从 1 起，无空缺）。
+	songs, err := service.GetSongs(ctx, playlist.ID, 100, 0)
+	if err != nil {
+		t.Fatalf("GetSongs() error = %v", err)
+	}
+	if len(songs) != 5 {
+		t.Errorf("playlist size = %d, want 5", len(songs))
+	}
+}
+
+func TestPlaylistServiceAddSongsBatchEmpty(t *testing.T) {
+	env := newPlaylistTestEnv(t)
+	service := env.newService()
+	ctx := context.Background()
+
+	playlist := &models.Playlist{Type: models.PlaylistTypeNormal, Name: "空"}
+	if err := service.Create(ctx, playlist); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	added, skipped, err := service.AddSongs(ctx, playlist.ID, nil)
+	if err != nil || added != 0 || skipped != 0 {
+		t.Errorf("AddSongs(nil) = (%d, %d, %v), want (0, 0, nil)", added, skipped, err)
+	}
+}
+
 func TestPlaylistServiceAddSongPlaylistNotFound(t *testing.T) {
 	env := newPlaylistTestEnv(t)
 	service := env.newService()

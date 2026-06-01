@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -114,6 +115,37 @@ func (r *SongRepository) UpdateSource(ctx context.Context, id int64, pluginEntry
 		return fmt.Errorf("update song source %d: %w", id, err)
 	}
 	return nil
+}
+
+// ListTypesByIDs 批量查询给定 song id 的 type 字段，返回 id → type 映射。
+// 用于歌单批量加歌前的类型兼容性预检查（避免逐首 SELECT）。
+// 不存在的 id 不会出现在返回 map 中。
+func (r *SongRepository) ListTypesByIDs(ctx context.Context, ids []int64) (map[int64]string, error) {
+	if len(ids) == 0 {
+		return map[int64]string{}, nil
+	}
+	query, args, err := sq.Select("id", "type").From("songs").Where(sq.Eq{"id": ids}).ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build list song types sql: %w", err)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list song types: %w", err)
+	}
+	defer rows.Close()
+	result := make(map[int64]string, len(ids))
+	for rows.Next() {
+		var id int64
+		var typ string
+		if err := rows.Scan(&id, &typ); err != nil {
+			return nil, fmt.Errorf("scan song type: %w", err)
+		}
+		result[id] = typ
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate song types: %w", err)
+	}
+	return result, nil
 }
 
 // ListLocalPaths 返回所有本地歌曲的 file_path → id 映射，用于扫描去重。
@@ -252,6 +284,40 @@ func (r *SongRepository) List(ctx context.Context, filter *SongFilter) ([]*model
 	return songs, nil
 }
 
+// ListIDs 与 List 共享过滤条件，仅返回匹配的歌曲 ID 列表（按 added_at DESC 排序，无分页）。
+// 用于「全选当前筛选范围」场景：避免拉取完整 song 对象的带宽与渲染成本。
+func (r *SongRepository) ListIDs(ctx context.Context, filter *SongFilter) ([]int64, error) {
+	if filter == nil {
+		filter = &SongFilter{}
+	}
+	sb := sq.Select("id").From("songs")
+	sb = applySongFilter(sb, filter)
+	sb = applyOrder(sb, filter.OrderBy, filter.Order, "added_at DESC", songOrderWhitelist, "")
+
+	query, args, err := sb.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build list song ids sql: %w", err)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list song ids: %w", err)
+	}
+	defer rows.Close()
+
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan song id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate song ids: %w", err)
+	}
+	return ids, nil
+}
+
 // Count 与 List 共享过滤条件，返回匹配行数。
 func (r *SongRepository) Count(ctx context.Context, filter *SongFilter) (int64, error) {
 	if filter == nil {
@@ -362,7 +428,17 @@ func applySongFilter(sb sq.SelectBuilder, filter *SongFilter) sq.SelectBuilder {
 			sq.Like{"album": kw},
 		})
 	}
+	if filter.PathPrefix != "" {
+		sb = sb.Where(sq.Expr(`file_path LIKE ? ESCAPE '\'`, escapeLikeLiteral(filter.PathPrefix)+"%"))
+	}
 	return sb
+}
+
+// escapeLikeLiteral 转义 LIKE 表达式中的通配符 % _ \，用于把字符串当字面量匹配。
+// 配合 SQL 中的 ESCAPE '\\' 使用。
+func escapeLikeLiteral(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
 }
 
 func scanSongRow(scanner interface {

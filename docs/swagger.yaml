@@ -2386,6 +2386,10 @@ paths:
         in: query
         name: keyword
         type: string
+      - description: 按 file_path 前缀过滤（如 music/Pop）
+        in: query
+        name: path_prefix
+        type: string
       - default: 20
         description: 每页数量
         in: query
@@ -2766,6 +2770,43 @@ paths:
       security:
       - BearerAuth: []
       summary: 清理无效的本地歌曲
+      tags:
+      - 歌曲管理
+  /songs/ids:
+    get:
+      consumes:
+      - application/json
+      description: 与 /songs 共享过滤条件，仅返回 ID。用于「全选当前筛选范围」场景。
+      parameters:
+      - description: 歌曲类型
+        in: query
+        name: type
+        type: string
+      - description: 搜索关键词
+        in: query
+        name: keyword
+        type: string
+      - description: 按 file_path 前缀过滤
+        in: query
+        name: path_prefix
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功返回 ID 列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取匹配歌曲的 ID 列表
       tags:
       - 歌曲管理
   /songs/radio:

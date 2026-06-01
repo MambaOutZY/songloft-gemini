@@ -17,12 +17,13 @@ type ConfigFilter struct {
 
 // SongFilter 歌曲过滤条件
 type SongFilter struct {
-	Type    string
-	Keyword string
-	Limit   int
-	Offset  int
-	OrderBy string
-	Order   string
+	Type       string
+	Keyword    string
+	PathPrefix string
+	Limit      int
+	Offset     int
+	OrderBy    string
+	Order      string
 }
 
 // PlaylistFilter 歌单过滤条件

@@ -97,6 +97,47 @@ func (r *PlaylistSongRepository) ListPlaylistsContainingSong(ctx context.Context
 	return ids, nil
 }
 
+// MaxPosition 返回歌单当前最大 position；歌单为空时返回 0。
+// 用于批量追加歌曲前一次性计算起始位置，避免逐首拉全表。
+func (r *PlaylistSongRepository) MaxPosition(ctx context.Context, playlistID int64) (int, error) {
+	n, err := r.queries.MaxPositionInPlaylist(ctx, playlistID)
+	if err != nil {
+		return 0, fmt.Errorf("max position in playlist %d: %w", playlistID, err)
+	}
+	return int(n), nil
+}
+
+// AddSongsBatch 在单一事务里把多首歌曲连续追加到歌单末尾，已存在的静默跳过。
+// position 从 startPos+1 开始累加；只有实际插入成功的行才前进 position。
+// 返回 (added, skipped, err)。
+func (r *PlaylistSongRepository) AddSongsBatch(ctx context.Context, playlistID int64, startPos int, songIDs []int64) (added int, skipped int, err error) {
+	if len(songIDs) == 0 {
+		return 0, 0, nil
+	}
+	err = r.runInTx(ctx, func(q *sqlc.Queries) error {
+		pos := startPos
+		for _, songID := range songIDs {
+			pos++
+			rows, ierr := q.AddSongToPlaylistIgnore(ctx, sqlc.AddSongToPlaylistIgnoreParams{
+				PlaylistID: playlistID,
+				SongID:     songID,
+				Position:   int64(pos),
+			})
+			if ierr != nil {
+				return fmt.Errorf("insert song %d into playlist %d: %w", songID, playlistID, ierr)
+			}
+			if rows > 0 {
+				added++
+			} else {
+				pos--
+				skipped++
+			}
+		}
+		return nil
+	})
+	return added, skipped, err
+}
+
 // AddSongIgnore 把歌曲添加到歌单，已存在时静默跳过。
 // 返回是否实际插入（true=新增，false=已存在被忽略）。
 func (r *PlaylistSongRepository) AddSongIgnore(ctx context.Context, playlistID, songID int64, position int) (bool, error) {
