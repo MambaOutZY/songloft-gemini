@@ -45,14 +45,17 @@ func (a *App) setupAPIV1Router() {
 	)
 	playlistHandler := handlers.NewPlaylistHandler(a.playlistService)
 	configHandler := handlers.NewConfigHandler(a.configService)
-	scanHandler := handlers.NewScanHandler(a.songService, a.scanner)
+	scanHandler := handlers.NewScanHandler(a.songService, a.scanner, a.configService)
 
-	// 注册配置变更回调：当 music_path 配置变更时，重建 Scanner 并清理排除目录中的歌曲
+	// music_path 写后回调：重建 Scanner 并清理排除目录中的歌曲。
+	// 两条入口都触发同一副作用，保持 admin /configs PUT 与业务 /settings/music-path PUT 行为对齐。
+	musicPathChanged := func() { a.onMusicPathConfigChanged(scanHandler) }
+	scanHandler.SetOnMusicPathChanged(musicPathChanged)
 	configHandler.SetOnConfigChanged(func(key string) {
 		if key != "music_path" {
 			return
 		}
-		a.onMusicPathConfigChanged(scanHandler)
+		musicPathChanged()
 	})
 	versionHandler := handlers.NewVersionHandler()
 	healthHandler := handlers.NewHealthHandler()
@@ -138,6 +141,10 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/settings/auto-convert", convertHandler.UpdateAutoConvertSetting)
 			r.Get("/settings/hls-proxy", hlsHandler.GetProxySetting)
 			r.Put("/settings/hls-proxy", hlsHandler.UpdateProxySetting)
+			r.Get("/settings/music-path", scanHandler.GetMusicPathSetting)
+			r.Put("/settings/music-path", scanHandler.UpdateMusicPathSetting)
+			r.Get("/settings/scan-auto-create-include-subdirs", scanHandler.GetAutoCreateIncludeSubdirsSetting)
+			r.Put("/settings/scan-auto-create-include-subdirs", scanHandler.UpdateAutoCreateIncludeSubdirsSetting)
 
 			// 配置管理模块
 			r.Get("/configs", configHandler.ListConfigs)

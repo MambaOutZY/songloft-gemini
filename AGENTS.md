@@ -77,6 +77,48 @@ cd songloft-player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
 
 ---
 
+## 配置接口规范（铁律）
+
+项目里有两类配置接口，**用户可见的功能开关一律走业务端点**，通用 KV 仅作 admin 入口。
+
+### `/api/v1/settings/<name>` — 孤立配置端点（前端业务功能默认走这里）
+
+- 路径风格：`/settings/<kebab-case-name>`（如 `/settings/hls-proxy`、`/settings/music-path`、`/settings/auto-convert`）
+- 数据形态：**强类型** JSON（如 `{enabled: bool}` 或聚合对象），不是 `{value: string}`
+- 默认值：handler 内部承担（配置缺失时 GET 返回业务默认，PUT 时直接写入即可，**前端无需先 POST 创建**）
+- 副作用：在 PUT 内部直接触发（如 `music_path` PUT 完异步 `onMusicPathChanged` 重建 Scanner）
+- 归属：放进对应业务模块的 handler（如 hls-proxy 在 `HLSHandler`，music-path 在 `ScanHandler`，auto-convert 在 `ConvertHandler`），handler 同时持有 `*services.ConfigService` 完成读写
+- 命名套路：`Is<Name>Enabled() / Set<Name>Enabled(bool)` 业务方法 + `Get<Name>Setting / Update<Name>Setting` HTTP handler + `/settings/<name>` 路由
+
+### `/api/v1/<module>/*` — 业务模块聚合端点（含配置）
+
+某些业务模块自带"动作端点+配置端点"组合（典型例子 `/cache-manage/{stats,clean,config}`），此时配置端点**保留在模块前缀下**，不强行拆到 `/settings/`。
+
+- 适用场景：配置与该模块的其他动作端点强相关（如 cache 的 `config` 跟 `stats/clean` 共用同一个 `CacheService`）
+- 选择依据：业界主流（AWS、GitHub、Discord）都是业务模块聚合；GitLab 那种"全局集中、模块分散"的混合模式同样接受
+- 已有的例子：`/api/v1/cache-manage/config`（GET/PUT）
+- **判定准则**：
+  - **孤立**配置（不属于任何业务模块、或跨模块共享）→ `/settings/<name>`
+  - **模块内**配置（与该模块动作端点强相关）→ `/<module>/config` 或 `/<module>/<sub-name>`
+
+### `/api/v1/configs/{key}` — 通用 KV（admin 编辑器专用）
+
+- 仅供前端 `config_manager.dart` 这种**通用配置编辑器**使用，让管理员手编任意 key/value 调试
+- **新加业务功能不要直调** `/configs/{key}`：通用 PUT 在 key 不存在时返回 404，且没有强类型、没有副作用、没有默认值
+- 业务化封装后，通用接口仍可改同一 key（保留双入口），但副作用必须同时挂在 `configHandler.SetOnConfigChanged` 回调里（参考 `routers.go` 里 `musicPathChanged`），保证两条入口语义一致
+
+### 客户端约定
+
+- `SettingsApi`（`songloft-player/lib/features/settings/data/settings_api.dart`）封装所有 `/settings/*` 调用，业务功能 Provider 一律走它
+- `ConfigApi` 只在 `config_manager.dart` 与「列出所有配置」这类 admin UI 里使用
+
+### 历史决策记录
+
+- 该规范在 2026-06 引入，背景：`hls_proxy_enabled` 默认未预置导致 PUT `/configs/{key}` 返回 404，发现项目里 `/configs` + `/settings/auto-convert` + `/cache-manage/config` 三种风格并存
+- 选定方向：业务端点是用户可见入口的**唯一来源**，通用 KV 退化为 admin 后门
+
+---
+
 ## Git 提交约定
 
 - 提交信息**禁止**添加 `Co-Authored-By` 尾部标记
@@ -129,13 +171,14 @@ cd songloft-player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
 - M4A/OGG 暂未实现 → 返回 `ErrUnsupportedWrite`，调用方**必须**降级为日志，**不要**阻塞主流程
 - 写入用临时文件 + `os.Rename`，原子化
 
-### HLS 电台代理模式（hls_proxy_enabled）
+### HLS 电台代理模式（/settings/hls-proxy）
 
-- 配置项 `hls_proxy_enabled`（bool，默认 `false`）
+- 业务开关端点：`GET/PUT /api/v1/settings/hls-proxy` 体 `{enabled: bool}`，默认 `false`
   - `false`：电台 `.m3u8` 直接 302 给 player，由 player 自己拉源站。零开销但受源站防盗链/CORS 限制
   - `true`：服务端拉取并改写 m3u8、代理所有切片/key/init 段。**所有切片走本机带宽**，注意流量成本
 - 切换时机：源站 Referer/UA 防盗链导致播放失败 / Web 嵌入模式 CORS 阻塞时，开启代理
-- 端点：`/api/v1/songs/{id}/hls/playlist?u=<base64url>` 和 `/api/v1/songs/{id}/hls/segment?u=<base64url>`
+- 反代端点：`/api/v1/songs/{id}/hls/playlist?u=<base64url>` 和 `/api/v1/songs/{id}/hls/segment?u=<base64url>`
+- HLS 电台 song.url 强制带 `.m3u8` 后缀（`/api/v1/songs/{id}/play.m3u8`）：ExoPlayer/AVPlayer 按 URL 后缀选 MediaSource，无后缀会落到 ProgressiveMediaSource 导致直播无法播
 - 改写规则：经典 HLS + LL-HLS 全集（PART/PRELOAD-HINT/RENDITION-REPORT）+ `EXT-X-DATERANGE:X-ASSET-URI`（HLS Interstitials 单 URI）。`X-ASSET-LIST`（JSON 子代理）暂未实现，遇到时原样透传
 - 安全：每次端点入口做"同源校验（scheme+host+port 与 song.URL 严格相等）"作第一道防线，`services.IsHostnameAllowed` 作 SSRF 兜底。**非同源 URL 保持原样不改写**，避免成为开放代理
 - player 跨域：改写后的 URL 全部是相对路径（`playlist?u=...` / `segment?u=...`），规避 BASE_PATH 子路径部署问题

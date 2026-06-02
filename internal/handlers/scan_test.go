@@ -13,7 +13,7 @@ import (
 func TestNewScanHandler(t *testing.T) {
 	repo := newTestSongRepo(t)
 	songService := services.NewSongService(repo, nil, nil, nil, nil, nil)
-	handler := NewScanHandler(songService, nil)
+	handler := NewScanHandler(songService, nil, nil)
 
 	if handler == nil {
 		t.Error("NewScanHandler() returned nil")
@@ -28,7 +28,7 @@ func TestNewScanHandler(t *testing.T) {
 func TestScanHandlerStructure(t *testing.T) {
 	repo := newTestSongRepo(t)
 	songService := services.NewSongService(repo, nil, nil, nil, nil, nil)
-	handler := NewScanHandler(songService, nil)
+	handler := NewScanHandler(songService, nil, nil)
 
 	// 验证处理器结构正确
 	if handler.songService != songService {
@@ -54,7 +54,7 @@ func TestScanAndImportSuccess(t *testing.T) {
 	})
 
 	songService := services.NewSongService(repo, nil, extractor, scanner, nil, nil)
-	handler := NewScanHandler(songService, scanner)
+	handler := NewScanHandler(songService, scanner, nil)
 
 	req := httptest.NewRequest("POST", "/api/v1/scan", nil)
 	rr := httptest.NewRecorder()
@@ -92,7 +92,7 @@ func TestScanAndImportError(t *testing.T) {
 	})
 
 	songService := services.NewSongService(repo, nil, extractor, scanner, nil, nil)
-	handler := NewScanHandler(songService, scanner)
+	handler := NewScanHandler(songService, scanner, nil)
 
 	req := httptest.NewRequest("POST", "/api/v1/scan", nil)
 	rr := httptest.NewRecorder()
