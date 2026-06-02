@@ -4,7 +4,14 @@ on:
   push:
     tags:
       - 'v*'      # 自动发正式版（songloft/songloft:X.Y.Z / :latest / :X.Y.Z-full / :full + 写 CHANGELOG）
-  workflow_dispatch: # 手动发开发版（songloft/songloft:dev / :dev-full + dev 的 prerelease）
+    branches:
+      - main      # push 到 main 自动打测试包（songloft/songloft:dev / :dev-full + dev 的 prerelease）
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+  workflow_dispatch: # 手动触发同样走 dev 路径
 
 env:
   GO_VERSION: '1.26'
