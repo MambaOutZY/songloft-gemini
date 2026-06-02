@@ -153,8 +153,11 @@ func (s *Song) LyricURLPath() string {
 	if s.ID == 0 {
 		return ""
 	}
-	// Lyric 字段(本地落库的 JSON payload)或 LyricRemoteURL(待拉取的插件 URL)任一非空,就返回歌词端点
-	if s.Lyric != "" || s.LyricRemoteURL != "" {
+	// Lyric 字段(本地落库的 JSON payload)非空,或 lyric_source 仍是 url 且 LyricRemoteURL 非空,
+	// 才视作有歌词。后者保持 LyricRemoteURL 与 GetSongLyric 实际分发(按 lyric_source)语义一致 ——
+	// 远程歌转 local 时 lyric_remote_url 会被保留作档案,但 lyric_source 已经不再是 "url",
+	// 此时不应再误报"有歌词"导致前端发出注定 404 的请求。
+	if s.Lyric != "" || (s.LyricSource == LyricSourceURL && s.LyricRemoteURL != "") {
 		return fmt.Sprintf("/api/v1/songs/%d/lyric", s.ID)
 	}
 	return ""

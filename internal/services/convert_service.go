@@ -72,11 +72,12 @@ type ConvertService struct {
 	rngMu        sync.Mutex
 	musicPathFn  func() string // 获取最新 music_path 配置(响应配置变更)
 
-	// convertOneInflight 跨手动/自动模式的细粒度去重:同一(playlistID, songID)永远只允许一个 convertOne 在跑。
-	// 防止"自动模式 IsRunning(pid)=false 检查 与 手动模式 Start(pid) 几乎同时发生"导致的 race:
-	// 双方都通过 resolveTargetPath 拿到同一 dstPath、都 copyFile 落盘,后到方事务因 ReplaceSong
-	// ErrNotFound 回滚后 os.Remove(dstPath) 把先到方刚成功的文件删掉,造成 DB 引用悬空。
-	// key = "<playlistID>:<songID>"。
+	// convertOneInflight 跨手动/自动模式的细粒度去重:同一 songID 全局只允许一个 convertOne 在跑。
+	// 原地 UPDATE 模式下,多个歌单共享同一 song row,继续按 (pid,sid) 维度并发会导致
+	// 两个 copyFile 落到不同 dstPath,但最终只有一个 UPDATE 写入 file_path,另一份成 orphan
+	// 文件被 scanner 误扫成新 song。收紧到 <sid> 维度后,第二个 caller 拿不到锁直接 skip;
+	// 真正完成 UPDATE 后第二个 caller 进 convertOne 也会在 type != remote 检查处 skip。
+	// key = "<songID>"。
 	convertOneInflight sync.Map
 
 	// 内部 HTTP 调用解析相对路径用
@@ -281,9 +282,10 @@ func (c *ConvertService) convertOne(ctx context.Context, playlistID int64, playl
 		return false, fmt.Errorf("song has neither url nor plugin source")
 	}
 
-	// 跨手动/自动模式细粒度去重:同 (playlistID, songID) 只允许一个 convertOne 跑。
-	// 后到方直接退出,避免 dstPath 共享 + 事务回滚清盘破坏先到方的成果。
-	dedupKey := fmt.Sprintf("%d:%d", playlistID, song.ID)
+	// 跨手动/自动模式细粒度去重:同一 songID 全局只允许一个 convertOne 跑。
+	// 原地 UPDATE 模式下不能让两个 caller 并发为同一首歌 copyFile 到不同目录,
+	// 否则只有一份会被写进 song.file_path,另一份成 orphan 被 scanner 误扫。
+	dedupKey := fmt.Sprintf("%d", song.ID)
 	if _, loaded := c.convertOneInflight.LoadOrStore(dedupKey, struct{}{}); loaded {
 		return false, errSkipConcurrent
 	}
@@ -407,77 +409,72 @@ func (c *ConvertService) convertOne(ctx context.Context, playlistID int64, playl
 		}
 	}
 
-	// 6. 构造新的 local song(基于原 remote song 复制元数据)
-	newSong := &models.Song{
-		Type:        models.TypeLocal,
-		Title:       song.Title,
-		Artist:      song.Artist,
-		Album:       song.Album,
-		Duration:    song.Duration,
-		FilePath:    dstPath,
-		URL:         "",
-		CoverPath:   coverPath,
-		CoverURL:    song.CoverURL,
-		Lyric:       lyricStored,
-		LyricSource: lyricSource,
-		FileSize:    written,
-		Format:      strings.TrimPrefix(ext, "."),
-		BitRate:     song.BitRate,
-		SampleRate:  song.SampleRate,
-		IsLive:      false,
-		// 新本地 song 不再带 plugin_entry_path / source_data,纯本地化
-	}
-
-	// 6. 事务:CreateSong + ReplaceSongInPlaylist
-	// 必须复用同一个事务,避免内层另开事务导致 SQLITE_BUSY
-	if err := (*c.db).RunInTx(ctx, func(ctx context.Context, uow *database.UnitOfWork) error {
-		if err := uow.Songs.Create(ctx, newSong); err != nil {
-			return fmt.Errorf("create local song: %w", err)
-		}
-		if err := uow.PlaylistSongs.ReplaceSong(ctx, playlistID, song.ID, newSong.ID); err != nil {
-			return fmt.Errorf("replace song in playlist: %w", err)
-		}
-		return nil
-	}); err != nil {
+	// 6. 在事务里重读 song(保证看到最新 type),原地 UPDATE 翻成 local
+	//    保留 url / lyric_remote_url / plugin_entry_path / source_data / dedup_key,
+	//    让下次添加同首远程歌时仍能通过联合 dedup 命中本行(UpsertRemote 复用 id)。
+	//    所有歌单引用同一条 song row,无需 ReplaceSongInPlaylist。
+	updatedSong, err := c.applyConvertInPlace(ctx, song.ID, dstPath, coverPath, ext, written, lyricStored, lyricSource)
+	if err != nil {
 		_ = os.Remove(dstPath)
+		if errors.Is(err, errSkipAlreadyLocal) {
+			return triggeredDownload, errSkipAlreadyLocal
+		}
 		return triggeredDownload, err
 	}
 
-	slog.Info("convert remote song to local",
+	slog.Info("convert remote song to local in place",
 		"playlistId", playlistID,
-		"oldSongId", song.ID,
-		"newSongId", newSong.ID,
+		"songId", song.ID,
 		"dstPath", dstPath)
 
 	// 写入元数据 tag 到本地文件(失败不影响主流程,只记 warning)
 	// MP3 / FLAC 已支持;M4A / OGG 返回 ErrUnsupportedWrite,会被静默忽略
-	// 传 newSong:它的 Lyric 已经是解析后的文本(原 URL 来源也已转 cached)
-	c.writeFileTags(dstPath, newSong)
-
-	// 孤儿清理:若原 remote song 已不再被任何歌单引用,删除它
-	// 注意直接调用 DB.DeleteSong(而非 SongService.Delete),避免 cover_path 文件被清理
-	// —— 新 local song 共享同一份 cover_path
-	songsRepo := (*c.db).SongRepository()
-	if cnt, err := songsRepo.CountPlaylistsContaining(ctx, song.ID); err == nil && cnt == 0 {
-		if err := songsRepo.Delete(ctx, song.ID); err != nil {
-			slog.Warn("delete orphan remote song failed",
-				"songId", song.ID,
-				"error", err)
-		} else {
-			slog.Info("orphan remote song deleted",
-				"songId", song.ID,
-				"title", song.Title)
-			// 同步清掉该 songID 名下的所有 cache 残留(可能含历史多个 key)。
-			// 不清的话,如果未来 DB 重置导致 ID 复用,旧 cache 会被新 song 误命中
-			// —— 这正是本次 bug 的根因。
-			if err := c.cacheService.EvictSong(song.ID); err != nil {
-				slog.Warn("evict orphan remote song cache failed",
-					"songId", song.ID, "error", err)
-			}
-		}
-	}
+	c.writeFileTags(dstPath, updatedSong)
 
 	return triggeredDownload, nil
+}
+
+// applyConvertInPlace 在事务里把指定 song 原地翻成 local。
+// 重读 song 防 race;如果 type 已不是 remote(已被并发转换或外部修改)返回 errSkipAlreadyLocal。
+// 保留 url / lyric_remote_url / plugin_entry_path / source_data / dedup_key,
+// 仅写入 type / file_path / cover_path / lyric / lyric_source / file_size / format / is_live。
+func (c *ConvertService) applyConvertInPlace(
+	ctx context.Context,
+	songID int64,
+	filePath string,
+	coverPath string,
+	ext string,
+	fileSize int64,
+	lyric string,
+	lyricSource string,
+) (*models.Song, error) {
+	var updated *models.Song
+	err := (*c.db).RunInTx(ctx, func(ctx context.Context, uow *database.UnitOfWork) error {
+		fresh, err := uow.Songs.GetByID(ctx, songID)
+		if err != nil {
+			return fmt.Errorf("reload song: %w", err)
+		}
+		if fresh.Type != models.TypeRemote {
+			return errSkipAlreadyLocal
+		}
+		fresh.Type = models.TypeLocal
+		fresh.FilePath = filePath
+		fresh.CoverPath = coverPath
+		fresh.Lyric = lyric
+		fresh.LyricSource = lyricSource
+		fresh.FileSize = fileSize
+		fresh.Format = strings.TrimPrefix(ext, ".")
+		fresh.IsLive = false
+		if err := uow.Songs.Update(ctx, fresh); err != nil {
+			return fmt.Errorf("update song to local: %w", err)
+		}
+		updated = fresh
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
 }
 
 // OnCacheDownloaded 缓存下载完成回调(自动模式入口)。
@@ -509,8 +506,9 @@ func (c *ConvertService) OnCacheDownloaded(songID int64) {
 			slog.Warn("auto convert: list playlists failed", "songId", song.ID, "error", err)
 			return
 		}
+		// 原地 UPDATE 模式下,所有歌单共享同一 song row,只需要跑一次转换即可。
+		// 选第一个未在手动转换的 normal 歌单作为 file_path 归宿目录。
 		for _, pid := range playlistIDs {
-			// 手动转换正在跑该歌单时,跳过自动避免冲突
 			if c.progressMgr.IsRunning(pid) {
 				continue
 			}
@@ -518,10 +516,9 @@ func (c *ConvertService) OnCacheDownloaded(songID int64) {
 			if err != nil {
 				continue
 			}
-			// 重新读取 song,可能已被其他歌单的转换替换
 			fresh, err := (*c.db).SongRepository().GetByID(ctx, song.ID)
-			if err != nil || fresh.Type != models.TypeRemote {
-				continue
+			if err != nil || fresh == nil || fresh.Type != models.TypeRemote {
+				return
 			}
 			if _, err := c.convertOne(ctx, pid, playlist.Name, fresh); err != nil &&
 				!errors.Is(err, errSkipAlreadyLocal) &&
@@ -531,6 +528,7 @@ func (c *ConvertService) OnCacheDownloaded(songID int64) {
 					"songId", song.ID,
 					"error", err)
 			}
+			return
 		}
 	}()
 }

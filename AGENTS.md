@@ -240,7 +240,10 @@ func (h *XxxHandler) Method(w http.ResponseWriter, r *http.Request) { ... }
 - 手动批量：cache miss 触发新下载后串行 `sleep 3s + 0-2s jitter` 防风控；cache 命中不限速
 - `LyricSource == "url"` 时自动 GET 歌词 URL（期望 `{"code":0,"data":{"lyric":"..."}}`），回填后改 `lyric_source = "cached"`
 - 转换后 `tag.WriteTag` 写入 title/artist/album/year/lyrics/cover
-- 一致性：`CreateSong + ReplaceSongInPlaylist` 必须**同一 Tx**；原 remote song 仅在 `CountPlaylistsContainingSong == 0` 时清理
+- **id 不变（原地 UPDATE）**：转换走 `applyConvertInPlace`，事务里重读 song + Update，`song.id` 跨"远程→本地"保持不变；前端持有的 song id（播放队列 / 收藏 / 歌词页等）无需感知
+- 多歌单同首歌共享同一 local row：第一个完成转换的歌单决定 `file_path` 归宿目录；其他歌单的 `convertOne` 看到 `Type != remote` 直接 skip。`convertOneInflight` 用 `<songID>` 维度去重，防止两个 caller 同时落两份 orphan 文件
+- 转后**保留** `url / lyric_remote_url / plugin_entry_path / source_data / dedup_key`：让 `UpsertRemote` 再次添加同首远程歌时,通过 `(plugin_entry_path, dedup_key)` 联合命中本行,仅复用 id 不覆盖任何字段（用户感知："系统识别出本地已有此歌,直接加进新歌单"）
+- `LyricURLPath` 的"有歌词"判断收紧到 `lyric != "" || (lyric_source == "url" && lyric_remote_url != "")`：保留 `lyric_remote_url` 作档案后，必须按 `lyric_source` 才认它为有效来源，否则会误报"有歌词"让前端发出注定 404 的请求
 - 互斥：同歌单同时只允许一个转换任务，后到者让位
 
 ### 文件搬移：跨设备 rename 陷阱

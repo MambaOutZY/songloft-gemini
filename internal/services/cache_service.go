@@ -47,9 +47,9 @@ type CacheService struct {
 	downloadClient *http.Client // 用于纯外链 GET（cache_service_song.downloadExternalToTemp）
 	lruIndex       map[string]time.Time
 	lruMu          sync.RWMutex
-	orchestrator   CacheSongFetcher // 下载编排器(按 song.ID),由 app.go 注入
-	ffmpegPath     string           // ffmpeg 可执行文件路径,由 app.go 注入
-	transcodeSem   chan struct{}    // 转码串行信号量（默认 size=1），防止并发 ffmpeg 争抢 CPU
+	orchestrator   CacheSongFetcher   // 下载编排器(按 song.ID),由 app.go 注入
+	ffmpegPath     string             // ffmpeg 可执行文件路径,由 app.go 注入
+	transcodeSem   chan struct{}      // 转码串行信号量（默认 size=1），防止并发 ffmpeg 争抢 CPU
 	onDownloaded   func(songID int64) // 缓存下载完成回调,由 app.go 注入(用于触发自动转本地)
 }
 

@@ -204,6 +204,10 @@ func (r *SongRepository) FindByDedupKey(ctx context.Context, pluginEntryPath, de
 
 // UpsertRemote 按 (plugin_entry_path, dedup_key) 去重写入远程歌曲；
 // 没有 dedup_key 或 plugin_entry_path 的纯外链歌曲直接 INSERT。
+// 命中已存在的行时：
+//   - 若 existing 已是 local（远程歌之前已被 convert_service 转为本地，但保留了 dedup 字段）：
+//     仅复用 id + 回写 timestamps，不动任何字段，避免远程入参污染本地化元数据
+//   - 若 existing 仍是 remote：走 UpdateRemoteSongMutable 路径刷新可变字段
 func (r *SongRepository) UpsertRemote(ctx context.Context, song *models.Song) error {
 	if song.PluginEntryPath == "" || song.DedupKey == "" {
 		return r.Create(ctx, song)
@@ -220,7 +224,19 @@ func (r *SongRepository) UpsertRemote(ctx context.Context, song *models.Song) er
 		return fmt.Errorf("find song by dedup_key: %w", err)
 	}
 
-	// 已存在：source_data / cover_url / 文本元数据始终覆盖；duration / lyric / lyric_remote_url 仅在新值非空时更新。
+	// 已 local：仅复用 id，不覆盖任何字段
+	existing, err := r.GetByID(ctx, existingID)
+	if err != nil {
+		return fmt.Errorf("load existing song %d: %w", existingID, err)
+	}
+	if existing.Type == models.TypeLocal {
+		song.ID = existingID
+		song.AddedAt = existing.AddedAt
+		song.UpdatedAt = existing.UpdatedAt
+		return nil
+	}
+
+	// 仍是 remote：source_data / cover_url / 文本元数据始终覆盖；duration / lyric / lyric_remote_url 仅在新值非空时更新。
 	if err := r.queries.UpdateRemoteSongMutable(ctx, sqlc.UpdateRemoteSongMutableParams{
 		Title:          song.Title,
 		Artist:         song.Artist,
