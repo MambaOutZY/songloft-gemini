@@ -7,10 +7,33 @@ definitions:
         example: true
         type: boolean
     type: object
+  handlers.MusicPathSetting:
+    properties:
+      exclude_dirs:
+        items:
+          type: string
+        type: array
+      exclude_paths:
+        items:
+          type: string
+        type: array
+      path:
+        type: string
+    type: object
   handlers.ScanRequest:
     properties:
       reimport:
         type: boolean
+    type: object
+  handlers.hlsProxySettingRequest:
+    properties:
+      enabled:
+        type: boolean
+    type: object
+  handlers.logLevelSettingRequest:
+    properties:
+      level:
+        type: string
     type: object
   handlers.pluginHealthResponse:
     properties:
@@ -18,6 +41,11 @@ definitions:
         items:
           $ref: '#/definitions/source.PluginHealthSnapshot'
         type: array
+    type: object
+  handlers.scanAutoCreateSubdirsRequest:
+    properties:
+      enabled:
+        type: boolean
     type: object
   models.BatchDeletePlaylistsRequest:
     properties:
@@ -96,6 +124,19 @@ definitions:
         description: 错误信息
         example: 操作失败
         type: string
+    type: object
+  models.ImportResult:
+    properties:
+      playlists_created:
+        type: integer
+      playlists_merged:
+        type: integer
+      songs_created:
+        type: integer
+      songs_matched:
+        type: integer
+      songs_skipped:
+        type: integer
     type: object
   models.LoginRequest:
     properties:
@@ -1137,6 +1178,261 @@ paths:
       summary: 检查应用健康状态
       tags:
       - 系统管理
+  /jsplugin/{entryPath}:
+    get:
+      description: JS 插件入口 HTML。{entryPath} 由运行时按已安装插件决定，注入 <base> 标签和 auth-bridge
+        脚本后返回 static/index.html。无需认证。
+      parameters:
+      - description: 插件入口标识（运行时动态）
+        in: path
+        name: entryPath
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: 插件 index.html（已注入 <base> 与 auth-bridge）
+          schema:
+            type: string
+        "404":
+          description: 插件未安装或缺 static/index.html
+          schema:
+            type: string
+      summary: 插件根页面（动态路由）
+      tags:
+      - JS 插件
+  /jsplugin/{entryPath}/{path}:
+    delete:
+      consumes:
+      - application/json
+      description: 接受任意 HTTP 方法，分发到插件 static 兜底或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI
+        仅作占位。需要 BearerAuth。
+      parameters:
+      - description: 插件入口标识（运行时动态）
+        in: path
+        name: entryPath
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 插件自定义响应
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 插件未启用
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 插件不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 插件不可用或运行异常（健康检查会自愈）
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: JS 运行时调用超时
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: 插件 API 转发 catch-all（动态路由）
+      tags:
+      - JS 插件
+    get:
+      consumes:
+      - application/json
+      description: 接受任意 HTTP 方法，分发到插件 static 兜底或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI
+        仅作占位。需要 BearerAuth。
+      parameters:
+      - description: 插件入口标识（运行时动态）
+        in: path
+        name: entryPath
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 插件自定义响应
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 插件未启用
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 插件不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 插件不可用或运行异常（健康检查会自愈）
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: JS 运行时调用超时
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: 插件 API 转发 catch-all（动态路由）
+      tags:
+      - JS 插件
+    post:
+      consumes:
+      - application/json
+      description: 接受任意 HTTP 方法，分发到插件 static 兜底或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI
+        仅作占位。需要 BearerAuth。
+      parameters:
+      - description: 插件入口标识（运行时动态）
+        in: path
+        name: entryPath
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 插件自定义响应
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 插件未启用
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 插件不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 插件不可用或运行异常（健康检查会自愈）
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: JS 运行时调用超时
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: 插件 API 转发 catch-all（动态路由）
+      tags:
+      - JS 插件
+    put:
+      consumes:
+      - application/json
+      description: 接受任意 HTTP 方法，分发到插件 static 兜底或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI
+        仅作占位。需要 BearerAuth。
+      parameters:
+      - description: 插件入口标识（运行时动态）
+        in: path
+        name: entryPath
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 插件自定义响应
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 插件未启用
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 插件不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 插件不可用或运行异常（健康检查会自愈）
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "504":
+          description: JS 运行时调用超时
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: 插件 API 转发 catch-all（动态路由）
+      tags:
+      - JS 插件
+  /jsplugin/{entryPath}/static:
+    get:
+      description: 服务 static/index.html，是 handlePluginStatic 的「带 /static 后缀」变体。无需认证。
+      parameters:
+      - description: 插件入口标识（运行时动态）
+        in: path
+        name: entryPath
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: 插件 index.html
+          schema:
+            type: string
+        "404":
+          description: 插件未安装或缺 static/index.html
+          schema:
+            type: string
+      summary: 插件 static 目录根（动态路由）
+      tags:
+      - JS 插件
+  /jsplugin/{entryPath}/static/{path}:
+    get:
+      description: 从插件磁盘目录返回 CSS/JS/图片等静态资源；未命中且非 index.html 时 SPA fallback 到 index.html。无需认证。
+      parameters:
+      - description: 插件入口标识（运行时动态）
+        in: path
+        name: entryPath
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: 静态资源文件内容
+          schema:
+            type: file
+        "404":
+          description: 文件不存在且无 index.html fallback
+          schema:
+            type: string
+      summary: 插件静态资源文件（动态路由）
+      tags:
+      - JS 插件
   /jsplugins:
     get:
       consumes:
@@ -2073,6 +2369,62 @@ paths:
       summary: 批量删除歌单
       tags:
       - 歌单管理
+  /playlists/export:
+    get:
+      description: 导出所有歌单（含曲目关联）为 JSON 文件，响应头携带 Content-Disposition 直接触发浏览器下载
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 歌单备份 JSON 文件
+          schema:
+            type: file
+        "500":
+          description: 导出失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 导出歌单备份
+      tags:
+      - 数据备份
+  /playlists/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 从 multipart/form-data 上传的 JSON 备份文件还原歌单。已存在的歌单按名称合并，曲目按内容匹配去重。
+      parameters:
+      - description: 歌单备份 JSON 文件
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 导入结果（新建/合并歌单数、新建/匹配曲目数）
+          schema:
+            $ref: '#/definitions/models.ImportResult'
+        "400":
+          description: 请求格式错误或文件无效
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 导入失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 导入歌单备份
+      tags:
+      - 数据备份
   /playlists/reorder:
     put:
       consumes:
@@ -2368,6 +2720,217 @@ paths:
       summary: 更新自动转换开关
       tags:
       - 歌单转换
+  /settings/hls-proxy:
+    get:
+      description: 获取“HLS 电台流通过本机反代回客户端”开关的当前状态
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 返回 enabled 字段表示开关状态
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 HLS 代理开关
+      tags:
+      - 电台与 HLS
+    put:
+      consumes:
+      - application/json
+      description: 开启/关闭 HLS 反代。开启时电台切片字节全部经本机转发（解决源站 Referer/CORS 拦截），关闭时仅 302 给
+        player。
+      parameters:
+      - description: 开关请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.hlsProxySettingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 返回 enabled 字段表示更新后的开关状态
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: 请求格式错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 保存配置失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新 HLS 代理开关
+      tags:
+      - 电台与 HLS
+  /settings/log-level:
+    get:
+      description: 返回当前 slog 全局日志等级
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 返回 level 字段：debug/info/warn/error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取日志等级
+      tags:
+      - 设置
+    put:
+      consumes:
+      - application/json
+      description: 切换 slog 全局日志等级并持久化。新等级即时生效，重启后从 DB 恢复。
+      parameters:
+      - description: 等级请求（debug/info/warn/error）
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.logLevelSettingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 返回更新后的 level
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 请求格式错误或等级非法
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 保存配置失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新日志等级
+      tags:
+      - 设置
+  /settings/music-path:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.MusicPathSetting'
+      security:
+      - BearerAuth: []
+      summary: 获取音乐路径与扫描排除配置
+      tags:
+      - 扫描管理
+    put:
+      consumes:
+      - application/json
+      description: 写入 music_path 配置并触发 Scanner 重建 + 清理排除目录中的歌曲（与 admin /configs PUT
+        的副作用一致）。
+      parameters:
+      - description: 配置内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.MusicPathSetting'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.MusicPathSetting'
+        "400":
+          description: 请求格式错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 保存配置失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新音乐路径与扫描排除配置
+      tags:
+      - 扫描管理
+  /settings/scan-auto-create-include-subdirs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 返回 enabled 字段
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取「扫描后自动创建歌单是否包含子目录」开关
+      tags:
+      - 扫描管理
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 开关请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.scanAutoCreateSubdirsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 返回 enabled 字段
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: 请求格式错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 保存配置失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新「扫描后自动创建歌单是否包含子目录」开关
+      tags:
+      - 扫描管理
   /songs:
     get:
       consumes:
@@ -2586,6 +3149,108 @@ paths:
       summary: 获取歌曲封面图片
       tags:
       - 歌曲管理
+  /songs/{id}/hls/playlist:
+    get:
+      description: HLS 反代开启时，由 ServeProxy 改写后的 m3u8 内回链触发。拉取上游 m3u8 → 同源校验 → 改写 URI
+        → 回写给 player。
+      parameters:
+      - description: 歌曲 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 上游 m3u8 URL（base64url 编码）
+        in: query
+        name: u
+        required: true
+        type: string
+      produces:
+      - application/vnd.apple.mpegurl
+      responses:
+        "200":
+          description: 改写后的 m3u8 文本
+          schema:
+            type: string
+        "400":
+          description: song_id 或 u 参数无效
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 非同源 URL 拒绝代理（SSRF 防护）
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 歌曲不存在
+          schema:
+            type: string
+        "502":
+          description: 上游不可用
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 反代 HLS 子层 m3u8
+      tags:
+      - 电台与 HLS
+  /songs/{id}/hls/segment:
+    get:
+      description: 由 HandlePlaylist 改写后的相对路径触发，反代音频切片、加密 key、init 段等二进制资源。透传 Range
+        请求。
+      parameters:
+      - description: 歌曲 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 上游切片 URL（base64url 编码）
+        in: query
+        name: u
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: 切片二进制内容
+          schema:
+            type: file
+        "206":
+          description: Range 请求的部分内容
+          schema:
+            type: file
+        "400":
+          description: song_id 或 u 参数无效
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 非同源 URL 拒绝代理
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 歌曲不存在
+          schema:
+            type: string
+        "502":
+          description: 上游不可用
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 反代 HLS 切片 / key / init 段
+      tags:
+      - 电台与 HLS
   /songs/{id}/lyric:
     get:
       description: 根据 song.ID 返回 LyricPayload JSON，含 lyric/tlyric/rlyric/lxlyric。
@@ -2680,6 +3345,39 @@ paths:
       tags:
       - 歌曲管理
   /songs/{id}/play:
+    get:
+      description: 按 song.ID 流式返回音频。内部根据 song.type 分发到本地文件 / 缓存下载 / 直链下载 / 电台 302。
+      parameters:
+      - description: 歌曲 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: 音频文件
+          schema:
+            type: file
+        "302":
+          description: 电台流重定向
+          schema:
+            type: string
+        "404":
+          description: 歌曲不存在
+          schema:
+            type: string
+        "502":
+          description: 音源不可用
+          schema:
+            type: string
+      security:
+      - BearerAuth: []
+      summary: 流式播放歌曲
+      tags:
+      - 歌曲管理
+  /songs/{id}/play.m3u8:
     get:
       description: 按 song.ID 流式返回音频。内部根据 song.type 分发到本地文件 / 缓存下载 / 直链下载 / 电台 302。
       parameters:

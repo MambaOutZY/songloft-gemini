@@ -148,4 +148,3 @@ func TestScanSettings_BadJSON(t *testing.T) {
 		}
 	}
 }
-

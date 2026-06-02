@@ -673,6 +673,7 @@ func (h *SongHandler) UpdateSongLyrics(w http.ResponseWriter, r *http.Request) {
 // @Failure 502 {string} string "音源不可用"
 // @Security BearerAuth
 // @Router /songs/{id}/play [get]
+// @Router /songs/{id}/play.m3u8 [get]
 func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	songID, err := strconv.ParseInt(idStr, 10, 64)

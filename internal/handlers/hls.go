@@ -438,6 +438,19 @@ func (h *HLSHandler) ServeProxy(w http.ResponseWriter, r *http.Request, song *mo
 //
 // 子层入口的当前请求 URL 已位于 /api/v1/songs/{id}/hls/playlist，相对路径无需前缀，
 // 解析后自动落到同目录 /api/v1/songs/{id}/hls/{playlist,segment}。
+// @Summary 反代 HLS 子层 m3u8
+// @Description HLS 反代开启时，由 ServeProxy 改写后的 m3u8 内回链触发。拉取上游 m3u8 → 同源校验 → 改写 URI → 回写给 player。
+// @Tags 电台与 HLS
+// @Produce application/vnd.apple.mpegurl
+// @Param id path int true "歌曲 ID"
+// @Param u query string true "上游 m3u8 URL（base64url 编码）"
+// @Success 200 {string} string "改写后的 m3u8 文本"
+// @Failure 400 {object} map[string]string "song_id 或 u 参数无效"
+// @Failure 403 {object} map[string]string "非同源 URL 拒绝代理（SSRF 防护）"
+// @Failure 404 {string} string "歌曲不存在"
+// @Failure 502 {object} map[string]string "上游不可用"
+// @Security BearerAuth
+// @Router /songs/{id}/hls/playlist [get]
 func (h *HLSHandler) HandlePlaylist(w http.ResponseWriter, r *http.Request) {
 	song, upstreamURL, ok := h.resolveEndpoint(w, r)
 	if !ok {
@@ -447,6 +460,20 @@ func (h *HLSHandler) HandlePlaylist(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleSegment 处理 GET/HEAD /api/v1/songs/{id}/hls/segment?u=<base64url>
+// @Summary 反代 HLS 切片 / key / init 段
+// @Description 由 HandlePlaylist 改写后的相对路径触发，反代音频切片、加密 key、init 段等二进制资源。透传 Range 请求。
+// @Tags 电台与 HLS
+// @Produce application/octet-stream
+// @Param id path int true "歌曲 ID"
+// @Param u query string true "上游切片 URL（base64url 编码）"
+// @Success 200 {file} binary "切片二进制内容"
+// @Success 206 {file} binary "Range 请求的部分内容"
+// @Failure 400 {object} map[string]string "song_id 或 u 参数无效"
+// @Failure 403 {object} map[string]string "非同源 URL 拒绝代理"
+// @Failure 404 {string} string "歌曲不存在"
+// @Failure 502 {object} map[string]string "上游不可用"
+// @Security BearerAuth
+// @Router /songs/{id}/hls/segment [get]
 func (h *HLSHandler) HandleSegment(w http.ResponseWriter, r *http.Request) {
 	song, upstreamURL, ok := h.resolveEndpoint(w, r)
 	if !ok {

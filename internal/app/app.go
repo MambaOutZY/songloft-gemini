@@ -51,6 +51,7 @@ type App struct {
 	sourceOrchestrator *source.SourceOrchestrator
 	webDist            embed.FS
 	tracelyClient      *tracely.Client
+	logLevelVar        *slog.LevelVar // 全局 slog 等级动态切换；由 /settings/log-level 即时 Set
 }
 
 // NewApp 创建新的应用程序实例
@@ -78,8 +79,10 @@ func (a *App) Close() error {
 }
 
 func (a *App) Init() error {
-	// 初始化slog
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	// 初始化 slog：用 LevelVar 让 /settings/log-level 可在运行时切换等级。
+	// 默认 LevelInfo（与旧的 nil HandlerOptions 行为一致）；DB 中持久化的等级在 configService 就绪后再 apply。
+	a.logLevelVar = new(slog.LevelVar)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: a.logLevelVar}))
 	slog.SetDefault(logger)
 
 	// 确保数据库目录存在
@@ -105,6 +108,16 @@ func (a *App) Init() error {
 	// 创建配置服务
 	configRepo := db.ConfigRepository()
 	a.configService = services.NewConfigService(configRepo)
+
+	// 应用持久化的日志等级（缺失时保持默认 LevelInfo）
+	if levelStr := a.configService.GetString("log_level", "info"); levelStr != "" {
+		if lvl, ok := handlers.ParseLogLevel(levelStr); ok {
+			a.logLevelVar.Set(lvl)
+			slog.Info("日志等级已应用", "level", levelStr)
+		} else {
+			slog.Warn("日志等级配置无效，使用默认 info", "value", levelStr)
+		}
+	}
 
 	// 初始化JWT密钥
 	if err := a.initJWTSecret(configRepo); err != nil {

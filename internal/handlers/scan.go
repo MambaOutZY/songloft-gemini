@@ -189,7 +189,7 @@ func (h *ScanHandler) ListDirNames(w http.ResponseWriter, r *http.Request) {
 //   - 详见 AGENTS.md「配置接口规范」章节。
 
 const (
-	musicPathConfigKey            = "music_path"
+	musicPathConfigKey             = "music_path"
 	scanAutoCreateSubdirsConfigKey = "scan_auto_create_include_subdirs"
 )
 

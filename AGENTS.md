@@ -77,6 +77,52 @@ cd songloft-player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
 
 ---
 
+## API 文档规范（铁律）
+
+**所有在 `internal/app/routers.go`（含 `RegisterStaticRoutes` / `RegisterAPIRoutes` 等子注册函数）里注册的 handler 方法，必须有 swag 注释**。后端 API 文档由 [swaggo/swag](https://github.com/swaggo/swag) 从注释生成，是前端开发与外部集成的唯一来源。
+
+### 必填字段（每个 handler 至少有这 7 项）
+
+```go
+// @Summary <一行中文摘要>
+// @Description <详细描述，可多行；说清楚副作用 / 默认值 / 错误码触发条件>
+// @Tags <业务分组，中文>
+// @Produce json
+// @Success 200 {object} <返回类型> "<说明>"
+// @Security BearerAuth
+// @Router /<path> [<method>]
+func (h *XxxHandler) Method(w http.ResponseWriter, r *http.Request) { ... }
+```
+
+- 有请求体的接口额外加 `@Accept json` 和 `@Param request body <type> true "<说明>"`
+- 错误路径明显的接口加 `@Failure 400/404/500 {object} map[string]string "..."`
+- 路径参数 / 查询参数用 `@Param <name> path/query <type> true/false "<说明>"`
+- **公开端点**（无需 token，如健康检查）省略 `@Security BearerAuth`
+- **业务 tag 命名**：复用现有 tag（「歌曲管理」「歌单管理」「电台与 HLS」「扫描管理」「配置管理」「缓存管理」「JS 插件」「数据备份」「设置」「升级」「认证」），不要随手造新 tag
+
+### 多别名 / catch-all 路由
+
+- 一个 handler 注册了多条 alias 路径（如 `/songs/{id}/play` 与 `/songs/{id}/play.m3u8`）→ 每条 alias 单写一行 `@Router`
+- HEAD 是 GET 的子集，**不单独列**；OpenAPI 不强制
+- `r.HandleFunc(...)` 这种接受 ANY HTTP 方法的 catch-all → 列出所有实际可能的方法（`[get] [post] [put] [delete]`），每个一行 `@Router`
+- 动态路径（`{entryPath}` 由运行时按已安装插件决定的）→ 在 `@Description` 里注明「动态路由，{xxx} 由运行时决定，OpenAPI 仅作占位」
+
+### 改完必跑
+
+修改 / 新增 handler 注释后必须跑 `make swagger`：会重新生成 `docs/swagger.json`、`docs/swagger.yaml`、`docs/docs.go`，**这些产物必须入库**。否则 `/swagger/index.html` 与代码不同步，前端按旧文档对接会踩坑。
+
+### 验证
+
+- `make swagger` 输出里搜索新加的 `@Router` 路径，确认 `Generating <Type>` 包含你新写的请求/响应类型
+- `grep '<your-new-path>' docs/swagger.json` 应有命中
+- 启动 `make run`，访问 `http://localhost:58091/swagger/index.html` 在 UI 里点开新端点目测
+
+### 没有豁免
+
+「凡 routers 注册即必注释」是绝对规则。哪怕是动态路由 catch-all、静态资源 handler、反代端点，也要写 swag——`@Description` 里把"它是什么、为什么 OpenAPI schema 不精确"说清楚即可。
+
+---
+
 ## 配置接口规范（铁律）
 
 项目里有两类配置接口，**用户可见的功能开关一律走业务端点**，通用 KV 仅作 admin 入口。

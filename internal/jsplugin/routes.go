@@ -65,6 +65,14 @@ func (m *Manager) RegisterAPIRoutes(r chi.Router) {
 //
 // 注意：静态文件服务不依赖插件 JS 运行时是否就绪，只需要数据目录存在即可。
 // 这确保了插件初始化期间（onInit 尚未完成）前端页面仍可正常加载。
+// @Summary 插件根页面（动态路由）
+// @Description JS 插件入口 HTML。{entryPath} 由运行时按已安装插件决定，注入 <base> 标签和 auth-bridge 脚本后返回 static/index.html。无需认证。
+// @Tags JS 插件
+// @Produce html
+// @Param entryPath path string true "插件入口标识（运行时动态）"
+// @Success 200 {string} string "插件 index.html（已注入 <base> 与 auth-bridge）"
+// @Failure 404 {string} string "插件未安装或缺 static/index.html"
+// @Router /jsplugin/{entryPath} [get]
 func (m *Manager) handlePluginStatic(w http.ResponseWriter, r *http.Request) {
 	entryPath := chi.URLParam(r, "entryPath")
 	staticRoot := filepath.Join(m.pluginsDataDir, entryPath, "static")
@@ -86,6 +94,14 @@ func (m *Manager) handlePluginStatic(w http.ResponseWriter, r *http.Request) {
 
 // handlePluginStaticSubdir 处理 GET /api/v1/jsplugin/{entryPath}/static 请求
 // 服务 static/index.html（静态目录根）
+// @Summary 插件 static 目录根（动态路由）
+// @Description 服务 static/index.html，是 handlePluginStatic 的「带 /static 后缀」变体。无需认证。
+// @Tags JS 插件
+// @Produce html
+// @Param entryPath path string true "插件入口标识（运行时动态）"
+// @Success 200 {string} string "插件 index.html"
+// @Failure 404 {string} string "插件未安装或缺 static/index.html"
+// @Router /jsplugin/{entryPath}/static [get]
 func (m *Manager) handlePluginStaticSubdir(w http.ResponseWriter, r *http.Request) {
 	entryPath := chi.URLParam(r, "entryPath")
 	m.servePluginStaticFile(w, r, entryPath, "static")
@@ -93,6 +109,14 @@ func (m *Manager) handlePluginStaticSubdir(w http.ResponseWriter, r *http.Reques
 
 // handlePluginStaticSubdirFiles 处理 GET /api/v1/jsplugin/{entryPath}/static/* 请求
 // 从磁盘提供静态资源文件，支持 SPA fallback
+// @Summary 插件静态资源文件（动态路由）
+// @Description 从插件磁盘目录返回 CSS/JS/图片等静态资源；未命中且非 index.html 时 SPA fallback 到 index.html。无需认证。
+// @Tags JS 插件
+// @Produce octet-stream
+// @Param entryPath path string true "插件入口标识（运行时动态）"
+// @Success 200 {file} binary "静态资源文件内容"
+// @Failure 404 {string} string "文件不存在且无 index.html fallback"
+// @Router /jsplugin/{entryPath}/static/{path} [get]
 func (m *Manager) handlePluginStaticSubdirFiles(w http.ResponseWriter, r *http.Request) {
 	entryPath := chi.URLParam(r, "entryPath")
 	subPath := "static/" + chi.URLParam(r, "*")
@@ -105,6 +129,23 @@ func (m *Manager) handlePluginStaticSubdirFiles(w http.ResponseWriter, r *http.R
 //   - 子路径为空（即 /api/v1/jsplugin/{entryPath}/） → 直接服务 static/index.html
 //   - 子路径以 "static/" 开头或等于 "static" → 静态文件直通（POST/PUT 等非 GET 方法的兜底）
 //   - 其他子路径 → 转发到 JS 运行时处理（API 路由）
+//
+// @Summary 插件 API 转发 catch-all（动态路由）
+// @Description 接受任意 HTTP 方法，分发到插件 static 兜底或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI 仅作占位。需要 BearerAuth。
+// @Tags JS 插件
+// @Accept json
+// @Produce json
+// @Param entryPath path string true "插件入口标识（运行时动态）"
+// @Success 200 {object} map[string]interface{} "插件自定义响应"
+// @Failure 403 {object} map[string]string "插件未启用"
+// @Failure 404 {object} map[string]string "插件不存在"
+// @Failure 503 {object} map[string]string "插件不可用或运行异常（健康检查会自愈）"
+// @Failure 504 {string} string "JS 运行时调用超时"
+// @Security BearerAuth
+// @Router /jsplugin/{entryPath}/{path} [get]
+// @Router /jsplugin/{entryPath}/{path} [post]
+// @Router /jsplugin/{entryPath}/{path} [put]
+// @Router /jsplugin/{entryPath}/{path} [delete]
 func (m *Manager) handlePluginAPIRequest(w http.ResponseWriter, r *http.Request) {
 	entryPath := chi.URLParam(r, "entryPath")
 	subPath := chi.URLParam(r, "*")

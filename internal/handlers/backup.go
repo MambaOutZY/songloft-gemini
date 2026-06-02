@@ -22,6 +22,14 @@ func NewBackupHandler(backupService *services.BackupService) *BackupHandler {
 }
 
 // ExportPlaylists 导出所有歌单数据为 JSON 文件
+// @Summary 导出歌单备份
+// @Description 导出所有歌单（含曲目关联）为 JSON 文件，响应头携带 Content-Disposition 直接触发浏览器下载
+// @Tags 数据备份
+// @Produce json
+// @Success 200 {file} binary "歌单备份 JSON 文件"
+// @Failure 500 {object} map[string]string "导出失败"
+// @Security BearerAuth
+// @Router /playlists/export [get]
 func (h *BackupHandler) ExportPlaylists(w http.ResponseWriter, r *http.Request) {
 	data, err := h.backupService.Export(r.Context())
 	if err != nil {
@@ -41,6 +49,17 @@ func (h *BackupHandler) ExportPlaylists(w http.ResponseWriter, r *http.Request) 
 }
 
 // ImportPlaylists 从 JSON 文件导入歌单数据
+// @Summary 导入歌单备份
+// @Description 从 multipart/form-data 上传的 JSON 备份文件还原歌单。已存在的歌单按名称合并，曲目按内容匹配去重。
+// @Tags 数据备份
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "歌单备份 JSON 文件"
+// @Success 200 {object} models.ImportResult "导入结果（新建/合并歌单数、新建/匹配曲目数）"
+// @Failure 400 {object} map[string]string "请求格式错误或文件无效"
+// @Failure 500 {object} map[string]string "导入失败"
+// @Security BearerAuth
+// @Router /playlists/import [post]
 func (h *BackupHandler) ImportPlaylists(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		respondError(w, http.StatusBadRequest, "请求数据过大或格式错误", err)

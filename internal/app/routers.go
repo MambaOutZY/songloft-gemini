@@ -71,6 +71,9 @@ func (a *App) setupAPIV1Router() {
 	// 创建转换处理器（网络歌曲→本地歌曲）
 	convertHandler := handlers.NewConvertHandler(a.convertService)
 
+	// 创建日志等级处理器（持有 App 的 LevelVar，PUT 时即时切换运行时等级）
+	logHandler := handlers.NewLogHandler(a.configService, a.logLevelVar)
+
 	// 创建 JS 插件管理处理器
 	jsPluginHandler := handlers.NewJSPluginHandler(
 		a.jsPluginManager.Packager(),
@@ -145,6 +148,8 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/settings/music-path", scanHandler.UpdateMusicPathSetting)
 			r.Get("/settings/scan-auto-create-include-subdirs", scanHandler.GetAutoCreateIncludeSubdirsSetting)
 			r.Put("/settings/scan-auto-create-include-subdirs", scanHandler.UpdateAutoCreateIncludeSubdirsSetting)
+			r.Get("/settings/log-level", logHandler.GetLevelSetting)
+			r.Put("/settings/log-level", logHandler.UpdateLevelSetting)
 
 			// 配置管理模块
 			r.Get("/configs", configHandler.ListConfigs)
