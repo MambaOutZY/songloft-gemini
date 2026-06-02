@@ -154,6 +154,55 @@ func TestSongIsRadio(t *testing.T) {
 	}
 }
 
+// TestSongPlaybackURL_HLSRadioGetsM3U8Suffix 验证 HLS 电台 PlaybackURL 带 .m3u8 后缀。
+// 没有这个后缀，ExoPlayer/AVPlayer 会选 ProgressiveMediaSource 而非 HlsMediaSource，
+// 导致 player 用错协议解析 m3u8 文本，电台无法播放（不开 HLS 代理时也会出现该问题）。
+func TestSongPlaybackURL_HLSRadioGetsM3U8Suffix(t *testing.T) {
+	cases := []struct {
+		name string
+		song Song
+		want string
+	}{
+		{
+			name: "HLS radio (.m3u8)",
+			song: Song{ID: 42, Type: TypeRadio, URL: "https://cdn.example/live/x.m3u8"},
+			want: "/api/v1/songs/42/play.m3u8",
+		},
+		{
+			name: "HLS radio (.m3u)",
+			song: Song{ID: 42, Type: TypeRadio, URL: "https://cdn.example/live/x.m3u"},
+			want: "/api/v1/songs/42/play.m3u8",
+		},
+		{
+			name: "HLS radio with query string",
+			song: Song{ID: 7, Type: TypeRadio, URL: "https://cdn.example/live/x.m3u8?token=abc"},
+			want: "/api/v1/songs/7/play.m3u8",
+		},
+		{
+			name: "non-HLS radio (icecast mp3 stream)",
+			song: Song{ID: 5, Type: TypeRadio, URL: "https://stream.example/live.mp3"},
+			want: "/api/v1/songs/5/play",
+		},
+		{
+			name: "local song",
+			song: Song{ID: 1, Type: TypeLocal, FilePath: "/music/a.mp3"},
+			want: "/api/v1/songs/1/play",
+		},
+		{
+			name: "remote song",
+			song: Song{ID: 2, Type: TypeRemote, URL: "https://x/y.mp3"},
+			want: "/api/v1/songs/2/play",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.song.PlaybackURL(); got != c.want {
+				t.Errorf("PlaybackURL() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // TestPlaylistValidate 测试 Playlist 验证逻辑
 func TestPlaylistValidate(t *testing.T) {
 	tests := []struct {

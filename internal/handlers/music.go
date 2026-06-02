@@ -23,30 +23,27 @@ import (
 
 // SongHandler 歌曲处理器
 type SongHandler struct {
-	songService   *services.SongService
-	cacheService  *services.CacheService
-	configService *services.ConfigService
-	reassigner    AsyncReassigner
-	lyricFetcher  *services.LyricFetcher // 解包插件 JSON 拿 LRC 文本(歌词 url 分支用)
-	hlsHandler    *HLSHandler            // hls_proxy_mode=proxy 时 serveRadio 委托给它
+	songService  *services.SongService
+	cacheService *services.CacheService
+	reassigner   AsyncReassigner
+	lyricFetcher *services.LyricFetcher // 解包插件 JSON 拿 LRC 文本(歌词 url 分支用)
+	hlsHandler   *HLSHandler            // 电台 HLS 流的反代委托（开关在 HLSHandler 内）
 }
 
 // NewSongHandler 创建歌曲处理器
 func NewSongHandler(
 	songService *services.SongService,
 	cacheService *services.CacheService,
-	configService *services.ConfigService,
 	reassigner AsyncReassigner,
 	lyricFetcher *services.LyricFetcher,
 	hlsHandler *HLSHandler,
 ) *SongHandler {
 	return &SongHandler{
-		songService:   songService,
-		cacheService:  cacheService,
-		configService: configService,
-		reassigner:    reassigner,
-		lyricFetcher:  lyricFetcher,
-		hlsHandler:    hlsHandler,
+		songService:  songService,
+		cacheService: cacheService,
+		reassigner:   reassigner,
+		lyricFetcher: lyricFetcher,
+		hlsHandler:   hlsHandler,
 	}
 }
 
@@ -786,8 +783,8 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 	}
 
 	if isHLSURL(song.URL) {
-		// hls_proxy_enabled=true 时走 HLSHandler 反代改写；默认 false 保持 302 给上游
-		if h.configService.GetBool("hls_proxy_enabled", false) && h.hlsHandler != nil {
+		// HLS 反代开关由 HLSHandler 业务封装管理（/settings/hls-proxy），默认 false 走 302
+		if h.hlsHandler != nil && h.hlsHandler.IsEnabled() {
 			h.hlsHandler.ServeProxy(w, r, song)
 			return
 		}

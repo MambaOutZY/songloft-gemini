@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"path"
+	"strings"
 	"time"
 )
 
@@ -96,12 +99,35 @@ func (s *Song) IsPluginSourced() bool {
 	return s.PluginEntryPath != "" && s.SourceData != ""
 }
 
+// IsHLSStream 判断歌曲源头是否为 HLS 播放列表（.m3u8/.m3u）。
+// 仅电台类型且源 URL 后缀匹配时返回 true。
+func (s *Song) IsHLSStream() bool {
+	if s.Type != TypeRadio || s.URL == "" {
+		return false
+	}
+	u, err := url.Parse(s.URL)
+	if err != nil {
+		return false
+	}
+	ext := strings.ToLower(path.Ext(u.Path))
+	return ext == ".m3u8" || ext == ".m3u"
+}
+
 // PlaybackURL 返回客户端用的统一播放 URL(所有 type 都用同一形态)。
 // 客户端只需要 setUrl(song.url),不需要判断 type。
 // handler 内部按 type 分发到本地 ServeFile / Orchestrator / 直链下载 / 电台 302。
+//
+// HLS 电台特殊处理:URL 末尾追加 .m3u8 后缀。
+// 原因:ExoPlayer (Android) / AVPlayer (iOS) / 部分桌面 player 在 setMediaSource 阶段
+// 根据 URL 后缀决定 MediaSourceType。无后缀的 .../play 会被推断为 ProgressiveMediaSource
+// (普通 MP3/AAC),即使后端 302 跳到 .m3u8 或直接返回 m3u8 文本,player 也不会切换到
+// HlsMediaSource,导致按 Progressive 协议解析 m3u8 文本失败 → 整首电台无法播放。
 func (s *Song) PlaybackURL() string {
 	if s.ID == 0 {
 		return ""
+	}
+	if s.IsHLSStream() {
+		return fmt.Sprintf("/api/v1/songs/%d/play.m3u8", s.ID)
 	}
 	return fmt.Sprintf("/api/v1/songs/%d/play", s.ID)
 }

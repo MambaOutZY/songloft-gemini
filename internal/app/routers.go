@@ -35,11 +35,10 @@ func (a *App) setupRouter() {
 
 func (a *App) setupAPIV1Router() {
 	authHandler := handlers.NewAuthHandler(a.authService)
-	hlsHandler := handlers.NewHLSHandler(a.songService)
+	hlsHandler := handlers.NewHLSHandler(a.songService, a.configService)
 	songHandler := handlers.NewSongHandler(
 		a.songService,
 		a.cacheService,
-		a.configService,
 		&reassignAdapter{orch: a.sourceOrchestrator, s: a.songService},
 		a.lyricFetcher,
 		hlsHandler,
@@ -137,6 +136,8 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/playlists/{id}/convert-progress/cancel", convertHandler.CancelConvert)
 			r.Get("/settings/auto-convert", convertHandler.GetAutoConvertSetting)
 			r.Put("/settings/auto-convert", convertHandler.UpdateAutoConvertSetting)
+			r.Get("/settings/hls-proxy", hlsHandler.GetProxySetting)
+			r.Put("/settings/hls-proxy", hlsHandler.UpdateProxySetting)
 
 			// 配置管理模块
 			r.Get("/configs", configHandler.ListConfigs)
@@ -158,6 +159,10 @@ func (a *App) setupAPIV1Router() {
 			// 歌曲播放端点（流式返回音频，支持 local/remote/radio 三种类型）
 			r.Get("/songs/{id}/play", songHandler.GetSongPlay)
 			r.Head("/songs/{id}/play", songHandler.GetSongPlay)
+			// HLS 电台专用别名:URL 必须以 .m3u8 结尾，否则 ExoPlayer/AVPlayer 不识别为 HLS。
+			// 仅作字面后缀变体存在,handler 内部按 song.Type 走同一分发逻辑。
+			r.Get("/songs/{id}/play.m3u8", songHandler.GetSongPlay)
+			r.Head("/songs/{id}/play.m3u8", songHandler.GetSongPlay)
 
 			// HLS 反向代理端点（hls_proxy_mode=proxy 时启用，由 serveRadio 改写后的 m3u8 内回链触发）
 			r.Get("/songs/{id}/hls/playlist", hlsHandler.HandlePlaylist)

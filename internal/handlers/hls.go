@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -323,20 +324,30 @@ func rewriteM3U8(content []byte, base *url.URL, rewrite func(absURL string, isPl
 // HLSHandler: 反向代理 m3u8 + 切片
 // ============================================================
 
-// HLSHandler 处理 /api/v1/songs/{id}/hls/{playlist,segment} 端点。
-// 当 hls_proxy_mode=proxy 时由 serveRadio 直调 ServeProxy；
+// hlsProxyConfigKey 是 HLS 反代开关在 configs 表中的 key。
+// 业务封装（IsEnabled / SetEnabled / GetProxySetting / UpdateProxySetting）是唯一访问入口，
+// 通用 /api/v1/configs/{key} 不预置此 key，避免双入口造成不一致。
+const hlsProxyConfigKey = "hls_proxy_enabled"
+
+// HLSHandler 处理 /api/v1/songs/{id}/hls/{playlist,segment} 端点，并暴露 /settings/hls-proxy
+// 业务化开关 API。
+//
+// 当 hls 代理开启时由 serveRadio 直调 ServeProxy；
 // player 拉到的 m3u8 内 URL 全部指向本机端点，后续切片/key/init 由 player 自行回访。
 type HLSHandler struct {
-	songService *services.SongService
-	client      *http.Client
-	allowHost   func(host string) bool // 默认 services.IsHostnameAllowed；测试可替换
+	songService   *services.SongService
+	configService *services.ConfigService
+	client        *http.Client
+	allowHost     func(host string) bool // 默认 services.IsHostnameAllowed；测试可替换
 }
 
 // NewHLSHandler 构造 HLSHandler。
 // client 无 Timeout：直播切片可能持续数十秒至数分钟，timeout 会被客户端断连+r.Context() 取消接管。
-func NewHLSHandler(songService *services.SongService) *HLSHandler {
+// configService 可为 nil（测试场景下不走 IsEnabled 判定时），此时 IsEnabled 返回 false。
+func NewHLSHandler(songService *services.SongService, configService *services.ConfigService) *HLSHandler {
 	return &HLSHandler{
-		songService: songService,
+		songService:   songService,
+		configService: configService,
 		client: &http.Client{
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= 10 {
@@ -349,19 +360,90 @@ func NewHLSHandler(songService *services.SongService) *HLSHandler {
 	}
 }
 
+// IsEnabled 返回 HLS 反代开关当前状态。默认 false（关闭）：
+// 反代会把所有切片字节走本机带宽，需用户在源站防盗链/CORS 阻塞时再手动开启。
+func (h *HLSHandler) IsEnabled() bool {
+	if h.configService == nil {
+		return false
+	}
+	return h.configService.GetBool(hlsProxyConfigKey, false)
+}
+
+// SetEnabled 持久化 HLS 反代开关。值以 "true"/"false" 字符串存储，
+// 与 ConfigService.GetBool 的 strconv.ParseBool 解析对齐。
+func (h *HLSHandler) SetEnabled(enabled bool) error {
+	if h.configService == nil {
+		return fmt.Errorf("configService 未注入，无法持久化 hls 代理开关")
+	}
+	value := "false"
+	if enabled {
+		value = "true"
+	}
+	return h.configService.Set(hlsProxyConfigKey, value)
+}
+
+// hlsProxySettingRequest /settings/hls-proxy PUT 请求体。
+type hlsProxySettingRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// GetProxySetting 处理 GET /api/v1/settings/hls-proxy
+// @Summary 获取 HLS 代理开关
+// @Description 获取“HLS 电台流通过本机反代回客户端”开关的当前状态
+// @Tags 电台与 HLS
+// @Produce json
+// @Success 200 {object} map[string]bool "返回 enabled 字段表示开关状态"
+// @Security BearerAuth
+// @Router /settings/hls-proxy [get]
+func (h *HLSHandler) GetProxySetting(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, map[string]bool{"enabled": h.IsEnabled()})
+}
+
+// UpdateProxySetting 处理 PUT /api/v1/settings/hls-proxy
+// @Summary 更新 HLS 代理开关
+// @Description 开启/关闭 HLS 反代。开启时电台切片字节全部经本机转发（解决源站 Referer/CORS 拦截），关闭时仅 302 给 player。
+// @Tags 电台与 HLS
+// @Accept json
+// @Produce json
+// @Param request body hlsProxySettingRequest true "开关请求"
+// @Success 200 {object} map[string]bool "返回 enabled 字段表示更新后的开关状态"
+// @Failure 400 {object} map[string]string "请求格式错误"
+// @Failure 500 {object} map[string]string "保存配置失败"
+// @Security BearerAuth
+// @Router /settings/hls-proxy [put]
+func (h *HLSHandler) UpdateProxySetting(w http.ResponseWriter, r *http.Request) {
+	var req hlsProxySettingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	if err := h.SetEnabled(req.Enabled); err != nil {
+		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]bool{"enabled": req.Enabled})
+}
+
 // ServeProxy 是 serveRadio 在 hls_proxy_mode=proxy 时的入口：直接代理 song.URL 作为顶层 m3u8。
 // 后续子 m3u8 / 切片由 player 通过 HandlePlaylist / HandleSegment 端点回访。
+//
+// 顶层入口的当前请求 URL 是 /api/v1/songs/{id}/play，player 解析 m3u8 内的相对 URL 时
+// 会按 RFC 3986 替换最后一段 path，因此改写后的相对路径必须带 "hls/" 前缀，
+// 否则解析结果是 /api/v1/songs/{id}/playlist 而非 /api/v1/songs/{id}/hls/playlist。
 func (h *HLSHandler) ServeProxy(w http.ResponseWriter, r *http.Request, song *models.Song) {
-	h.servePlaylist(w, r, song, song.URL)
+	h.servePlaylist(w, r, song, song.URL, "hls/")
 }
 
 // HandlePlaylist 处理 GET/HEAD /api/v1/songs/{id}/hls/playlist?u=<base64url>
+//
+// 子层入口的当前请求 URL 已位于 /api/v1/songs/{id}/hls/playlist，相对路径无需前缀，
+// 解析后自动落到同目录 /api/v1/songs/{id}/hls/{playlist,segment}。
 func (h *HLSHandler) HandlePlaylist(w http.ResponseWriter, r *http.Request) {
 	song, upstreamURL, ok := h.resolveEndpoint(w, r)
 	if !ok {
 		return
 	}
-	h.servePlaylist(w, r, song, upstreamURL)
+	h.servePlaylist(w, r, song, upstreamURL, "")
 }
 
 // HandleSegment 处理 GET/HEAD /api/v1/songs/{id}/hls/segment?u=<base64url>
@@ -403,7 +485,8 @@ func (h *HLSHandler) resolveEndpoint(w http.ResponseWriter, r *http.Request) (*m
 
 // servePlaylist 拉上游 m3u8 → 同源校验 → 改写 URI → 回写。
 // upstreamURL 来自 ServeProxy(=song.URL) 或 HandlePlaylist 的 ?u=...
-func (h *HLSHandler) servePlaylist(w http.ResponseWriter, r *http.Request, song *models.Song, upstreamURL string) {
+// pathPrefix 由调用方按当前请求 URL 决定（详见 ServeProxy / HandlePlaylist 的注释）。
+func (h *HLSHandler) servePlaylist(w http.ResponseWriter, r *http.Request, song *models.Song, upstreamURL, pathPrefix string) {
 	songOrigin, upURL, err := h.checkOrigin(song, upstreamURL)
 	if err != nil {
 		respondError(w, http.StatusForbidden, err.Error(), nil)
@@ -452,7 +535,11 @@ func (h *HLSHandler) servePlaylist(w http.ResponseWriter, r *http.Request, song 
 	_ = upURL
 	base := resp.Request.URL
 
-	rewritten, err := rewriteM3U8(body, base, h.makeRewriter(song.ID))
+	// access_token 透传：player（just_audio / libmpv）跟随 m3u8 内部 URL 时不会
+	// 复用原请求的 Authorization header，相对 URL 解析也会丢失 base 的 query。
+	// 必须把当前请求里的 access_token 注入到每条改写出的子 URL，否则鉴权中间件直接 401。
+	accessToken := r.URL.Query().Get("access_token")
+	rewritten, err := rewriteM3U8(body, base, h.makeRewriter(song.ID, pathPrefix, accessToken))
 	if err != nil {
 		slog.Warn("hls playlist rewrite failed", "url", upstreamURL, "error", err)
 		http.Error(w, "playlist rewrite failed", http.StatusBadGateway)
@@ -535,17 +622,28 @@ func (h *HLSHandler) checkOrigin(song *models.Song, upstreamURL string) (songOri
 }
 
 // makeRewriter 返回闭包：把绝对上游 URL 改写为本机相对路径。
-// 用相对路径（"playlist?u=..." / "segment?u=..."）规避 BASE_PATH 拼接问题——
-// player 用当前请求 URL 作为 base 解析相对 URL，正确落到 /api/v1/songs/{id}/hls/{...}。
-func (h *HLSHandler) makeRewriter(songID int64) func(absURL string, isPlaylist bool) string {
-	_ = songID // 当前实现用相对路径，songID 通过 URL 路径已经携带；保留参数以备日后切绝对路径
+// 用相对路径（而非绝对路径）规避 BASE_PATH 子路径部署拼接问题——
+// player 用当前请求 URL 作为 base 解析相对 URL，BASE_PATH 由浏览器/客户端自然继承。
+//
+// pathPrefix:
+//   - "hls/" 用于顶层 ServeProxy（当前请求 .../play，必须前缀才能跳到 .../hls/）
+//   - ""     用于子层 HandlePlaylist（当前请求已在 .../hls/playlist，同目录解析即可）
+//
+// accessToken 透传：相对 URL 解析不继承 base 的 query，必须显式追加到每条改写后的 URL，
+// 否则鉴权中间件拒绝 player 跟随回来的子 playlist / segment 请求。
+func (h *HLSHandler) makeRewriter(songID int64, pathPrefix, accessToken string) func(absURL string, isPlaylist bool) string {
+	_ = songID // songID 通过 URL 路径已经携带；保留参数以备日后切绝对路径
 	return func(absURL string, isPlaylist bool) string {
 		encoded := base64.RawURLEncoding.EncodeToString([]byte(absURL))
-		target := "segment"
+		target := pathPrefix + "segment"
 		if isPlaylist {
-			target = "playlist"
+			target = pathPrefix + "playlist"
 		}
-		return target + "?u=" + encoded
+		out := target + "?u=" + encoded
+		if accessToken != "" {
+			out += "&access_token=" + url.QueryEscape(accessToken)
+		}
+		return out
 	}
 }
 

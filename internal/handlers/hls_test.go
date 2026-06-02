@@ -482,7 +482,8 @@ func newTestHLSStack(t *testing.T, songURL string) (songID int64, handler *HLSHa
 		Title: "test radio",
 		URL:   songURL,
 	})
-	h := NewHLSHandler(songService)
+	// configService 传 nil：本测试栈不走 IsEnabled 判定，直接调 ServeProxy/HandlePlaylist/HandleSegment
+	h := NewHLSHandler(songService, nil)
 	// 测试时上游用 httptest.Server（127.0.0.1，正常会被 IsHostnameAllowed 拦掉）；
 	// 注入 always-allow 让同源校验做主防线
 	h.allowHost = func(string) bool { return true }
@@ -517,13 +518,14 @@ func TestHLSIntegration_ServeProxyRewritesMasterPlaylist(t *testing.T) {
 	}
 
 	body := rr.Body.String()
-	// master 内的 720p/index.m3u8 被改写为相对路径 "playlist?u=..."
-	if !strings.Contains(body, "playlist?u=") {
-		t.Errorf("master playlist not rewritten to playlist endpoint:\n%s", body)
+	// master 内的 720p/index.m3u8 被改写为相对路径 "hls/playlist?u=..."
+	// 顶层 servePlaylist 必须带 "hls/" 前缀，否则 player 按 RFC 3986 解析后
+	// 落到 /api/v1/songs/{id}/playlist 而非 /api/v1/songs/{id}/hls/playlist
+	if !strings.Contains(body, "hls/playlist?u=") {
+		t.Errorf("master playlist not rewritten to hls/playlist endpoint:\n%s", body)
 	}
-	// 应该只有 1 个 playlist 改写（720p/index.m3u8）
-	if strings.Count(body, "playlist?u=") != 1 {
-		t.Errorf("unexpected playlist rewrite count:\n%s", body)
+	if strings.Count(body, "hls/playlist?u=") != 1 {
+		t.Errorf("unexpected hls/playlist rewrite count:\n%s", body)
 	}
 }
 
@@ -532,41 +534,54 @@ func TestHLSIntegration_PlayerFollowsRewrittenChain(t *testing.T) {
 	songURL := upstream.URL + "/live/master.m3u8"
 	songID, handler, router := newTestHLSStack(t, songURL)
 
-	// === Step 1: master playlist 改写 ===
+	// === Step 1: master playlist 改写（顶层 base URL = /api/v1/songs/{id}/play）===
 	song := &models.Song{ID: songID, URL: songURL, Type: models.TypeRadio}
+	topBaseURL := mustURL(t, "http://srv/api/v1/songs/"+strconv.FormatInt(songID, 10)+"/play")
 	rr1 := httptest.NewRecorder()
-	handler.ServeProxy(rr1, httptest.NewRequest("GET", "/x", nil), song)
+	handler.ServeProxy(rr1, httptest.NewRequest("GET", topBaseURL.String(), nil), song)
 	if rr1.Code != 200 {
 		t.Fatalf("master: %d %s", rr1.Code, rr1.Body.String())
 	}
 
-	// 从改写后的 master 中提取 media playlist 的代理 URL
-	mediaProxyRef := extractFirstURLByTag(t, rr1.Body.String(), "playlist?u=")
+	// 从改写后的 master 中提取 media playlist 的相对 URL（带 "hls/" 前缀）
+	mediaProxyRef := extractFirstURLByTag(t, rr1.Body.String(), "hls/playlist?u=")
 	if mediaProxyRef == "" {
 		t.Fatal("could not find rewritten media playlist URL in master")
 	}
 
-	// === Step 2: 模拟 player 跟随改写后的 media playlist URL ===
-	mediaPath := "/api/v1/songs/" + strconv.FormatInt(songID, 10) + "/hls/" + mediaProxyRef
+	// === Step 2: 模拟 player 用顶层 base URL 解析相对路径（真实 RFC 3986 行为）===
+	// 期望解析为 /api/v1/songs/{id}/hls/playlist?u=...
+	mediaAbs := topBaseURL.ResolveReference(mustURL(t, mediaProxyRef))
+	wantMediaPath := "/api/v1/songs/" + strconv.FormatInt(songID, 10) + "/hls/playlist"
+	if mediaAbs.Path != wantMediaPath {
+		t.Fatalf("media path resolved wrong: got %q want %q", mediaAbs.Path, wantMediaPath)
+	}
 	rr2 := httptest.NewRecorder()
-	router.ServeHTTP(rr2, httptest.NewRequest("GET", mediaPath, nil))
+	router.ServeHTTP(rr2, httptest.NewRequest("GET", mediaAbs.RequestURI(), nil))
 	if rr2.Code != 200 {
 		t.Fatalf("media: %d %s", rr2.Code, rr2.Body.String())
 	}
 	mediaBody := rr2.Body.String()
-	// init.mp4 + seg-0.m4s + seg-1.m4s 都该改写为 segment 端点
+	// 子层 m3u8 应改写为同目录相对路径 segment?u=...（不带 "hls/" 前缀）
 	if c := strings.Count(mediaBody, "segment?u="); c != 3 {
 		t.Errorf("media should contain 3 segment refs, got %d:\n%s", c, mediaBody)
 	}
+	if strings.Contains(mediaBody, "hls/segment?u=") {
+		t.Errorf("media playlist should not contain hls/ prefix (子层同目录解析):\n%s", mediaBody)
+	}
 
-	// === Step 3: 模拟 player 拉切片 ===
+	// === Step 3: 模拟 player 在 media playlist URL 上解析 segment 相对路径 ===
 	segRef := extractFirstURLByTag(t, mediaBody, "segment?u=")
 	if segRef == "" {
 		t.Fatal("could not find rewritten segment URL in media playlist")
 	}
-	segPath := "/api/v1/songs/" + strconv.FormatInt(songID, 10) + "/hls/" + segRef
+	segAbs := mediaAbs.ResolveReference(mustURL(t, segRef))
+	wantSegPath := "/api/v1/songs/" + strconv.FormatInt(songID, 10) + "/hls/segment"
+	if segAbs.Path != wantSegPath {
+		t.Fatalf("segment path resolved wrong: got %q want %q", segAbs.Path, wantSegPath)
+	}
 	rr3 := httptest.NewRecorder()
-	router.ServeHTTP(rr3, httptest.NewRequest("GET", segPath, nil))
+	router.ServeHTTP(rr3, httptest.NewRequest("GET", segAbs.RequestURI(), nil))
 	if rr3.Code != 200 {
 		t.Fatalf("segment: %d %s", rr3.Code, rr3.Body.String())
 	}
@@ -577,6 +592,42 @@ func TestHLSIntegration_PlayerFollowsRewrittenChain(t *testing.T) {
 	expected := "INITDATA"
 	if got := rr3.Body.String(); got != expected {
 		t.Errorf("segment body: got %q want %q", got, expected)
+	}
+}
+
+// TestHLSIntegration_AccessTokenPropagated 验证原始请求里的 access_token
+// 被注入到所有改写后的子 URL 中（顶层 + 子层都要透传）。
+func TestHLSIntegration_AccessTokenPropagated(t *testing.T) {
+	upstream := newMockUpstream(t)
+	songURL := upstream.URL + "/live/master.m3u8"
+	songID, handler, router := newTestHLSStack(t, songURL)
+
+	// === Step 1: 带 access_token 调顶层入口 ===
+	song := &models.Song{ID: songID, URL: songURL, Type: models.TypeRadio}
+	topURL := "http://srv/api/v1/songs/" + strconv.FormatInt(songID, 10) + "/play?access_token=TOKEN-AAA&format=mp3"
+	rr1 := httptest.NewRecorder()
+	handler.ServeProxy(rr1, httptest.NewRequest("GET", topURL, nil), song)
+	if rr1.Code != 200 {
+		t.Fatalf("master: %d %s", rr1.Code, rr1.Body.String())
+	}
+	if !strings.Contains(rr1.Body.String(), "access_token=TOKEN-AAA") {
+		t.Errorf("master m3u8 must propagate access_token:\n%s", rr1.Body.String())
+	}
+
+	// === Step 2: 子层入口收到 access_token 后也要继续透传 ===
+	mediaRef := extractFirstURLByTag(t, rr1.Body.String(), "hls/playlist?u=")
+	mediaAbs := mustURL(t, topURL).ResolveReference(mustURL(t, mediaRef))
+	// player 跟随相对路径时 base 的 query 不继承，access_token 是从改写出的 URL 自带的
+	if mediaAbs.Query().Get("access_token") != "TOKEN-AAA" {
+		t.Fatalf("media URL must carry access_token, got: %s", mediaAbs.String())
+	}
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, httptest.NewRequest("GET", mediaAbs.RequestURI(), nil))
+	if rr2.Code != 200 {
+		t.Fatalf("media: %d %s", rr2.Code, rr2.Body.String())
+	}
+	if !strings.Contains(rr2.Body.String(), "access_token=TOKEN-AAA") {
+		t.Errorf("media m3u8 must propagate access_token to segment URLs:\n%s", rr2.Body.String())
 	}
 }
 
