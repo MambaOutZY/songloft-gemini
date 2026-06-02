@@ -223,8 +223,8 @@ func (a *App) setupBaseRouter() {
 		"font/woff2",
 	))
 
-	// 基础中间件
-	a.router.Use(chi_middleware.Logger)
+	// 基础中间件：access log 走 slog，受 /settings/log-level 控制
+	a.router.Use(chi_middleware.RequestLogger(slogLogFormatter{}))
 
 	// Tracely panic 捕获中间件（在 Recoverer 之前，确保 panic 能被上报）
 	a.router.Use(func(next http.Handler) http.Handler {
