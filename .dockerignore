@@ -36,6 +36,10 @@ Dockerfile
 
 # Documentation
 docs
+# 保留 Swagger 生成的 Go 包（VERSION=dev 时 router_dev.go 需要 import songloft/docs）
+!docs/docs.go
+!docs/swagger.json
+!docs/swagger.yaml
 *.md
 CHANGELOG.md
 LICENSE
