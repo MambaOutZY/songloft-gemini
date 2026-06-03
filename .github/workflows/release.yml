@@ -108,6 +108,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Install brotli
+        run: sudo apt-get install -y -qq brotli
+
       - name: Flutter pub get
         run: |
           cd songloft-player

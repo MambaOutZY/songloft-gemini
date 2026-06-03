@@ -226,7 +226,6 @@ func (a *App) setupBaseRouter() {
 		"application/json",
 		"application/wasm",
 		"image/svg+xml",
-		"font/woff2",
 		"font/otf",
 	))
 

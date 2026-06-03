@@ -46,32 +46,53 @@ func (a *App) registerWebStatic() {
 		)
 	}
 
+	// 加载构建时生成的 .br/.gz 预压缩文件
+	pfs := newPrecompressedFS(distFS)
+	// index.html 经过 base-path 注入时内容已变，需运行时重新压缩（仅此一个文件）
+	if a.config.BasePath != "" {
+		pfs.addCustomEntry("index.html", indexBytes, ".html")
+	}
+
 	fileServer := http.FileServer(http.FS(distFS))
 	a.router.Mount("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		urlPath := strings.TrimPrefix(r.URL.Path, "/")
-		// 根路径或文件不存在 → 走 SPA 回退，返回 index.html
-		if urlPath != "" {
-			if _, err := fs.Stat(distFS, urlPath); err != nil {
-				// 静态资源（带扩展名，如 .js/.json/.css/.png/.map 等）找不到时直接 404，
-				// 不回退 index.html，避免前端把 HTML 当 JS/JSON 解析报错
-				if strings.Contains(path.Base(urlPath), ".") {
-					http.NotFound(w, r)
-					return
-				}
-				// SPA 回退：返回已注入 base path 的 index.html
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				w.Header().Set("Cache-Control", "no-cache")
-				w.Write(indexBytes)
-				return
-			}
-		} else {
-			// 根路径直接返回 index.html
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		if urlPath == "" {
 			w.Header().Set("Cache-Control", "no-cache")
-			w.Write(indexBytes)
+			if !pfs.serve(w, r, "index.html") {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Write(indexBytes)
+			}
 			return
 		}
-		w.Header().Set("Cache-Control", "public, max-age=604800")
+
+		if _, err := fs.Stat(distFS, urlPath); err != nil {
+			// 静态资源（带扩展名）找不到时直接 404，避免前端把 HTML 当 JS/JSON 解析
+			if strings.Contains(path.Base(urlPath), ".") {
+				http.NotFound(w, r)
+				return
+			}
+			// SPA 回退：返回 index.html
+			w.Header().Set("Cache-Control", "no-cache")
+			if !pfs.serve(w, r, "index.html") {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Write(indexBytes)
+			}
+			return
+		}
+
+		// 分路径缓存策略：canvaskit/fonts 基本不随版本变化，设更长缓存
+		switch {
+		case strings.HasPrefix(urlPath, "canvaskit/") || strings.HasPrefix(urlPath, "fonts/"):
+			w.Header().Set("Cache-Control", "public, max-age=2592000")
+		default:
+			w.Header().Set("Cache-Control", "public, max-age=604800")
+		}
+
+		// 优先从预压缩缓存返回，未命中（如 woff2 字体）fallback 到 http.FileServer
+		if pfs.serve(w, r, urlPath) {
+			return
+		}
 		fileServer.ServeHTTP(w, r)
 	}))
 }
