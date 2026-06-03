@@ -15,6 +15,16 @@ import (
 
 const pluginRegistriesConfigKey = "plugin_registries"
 
+var defaultPluginRegistries = pluginRegistriesSetting{
+	Registries: []jsplugin.RegistryConfig{
+		{
+			URL:     "https://raw.githubusercontent.com/songloft-org/songloft-plugin-registry/main/registry.json",
+			Name:    "Songloft 官方插件",
+			Enabled: true,
+		},
+	},
+}
+
 // --- Settings: GET/PUT /api/v1/settings/plugin-registries ---
 
 // pluginRegistriesSetting 订阅源列表配置。
@@ -32,7 +42,10 @@ type pluginRegistriesSetting struct {
 // @Router /settings/plugin-registries [get]
 func (h *JSPluginHandler) GetRegistriesSetting(w http.ResponseWriter, r *http.Request) {
 	var cfg pluginRegistriesSetting
-	_ = h.configService.GetJSON(pluginRegistriesConfigKey, &cfg)
+	if err := h.configService.GetJSON(pluginRegistriesConfigKey, &cfg); err != nil {
+		respondJSON(w, http.StatusOK, defaultPluginRegistries)
+		return
+	}
 	if cfg.Registries == nil {
 		cfg.Registries = []jsplugin.RegistryConfig{}
 	}
