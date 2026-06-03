@@ -126,6 +126,71 @@ func extractStaticFromZip(zipData []byte, targetDir string) error {
 	return nil
 }
 
+// extractBinFromZip 从 ZIP 中解压 bin/ 目录到指定路径，文件权限设为 0755（可执行）
+func extractBinFromZip(zipData []byte, targetDir string) error {
+	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	if err != nil {
+		return fmt.Errorf("open zip: %w", err)
+	}
+
+	const binPrefix = "bin/"
+	hasBin := false
+
+	for _, f := range reader.File {
+		if !strings.HasPrefix(f.Name, binPrefix) {
+			continue
+		}
+		hasBin = true
+
+		relPath := strings.TrimPrefix(f.Name, binPrefix)
+		if relPath == "" {
+			continue
+		}
+		destPath := filepath.Join(targetDir, relPath)
+
+		if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(targetDir)) {
+			continue
+		}
+
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(destPath, 0o755); err != nil {
+				return fmt.Errorf("mkdir %q: %w", destPath, err)
+			}
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+			return fmt.Errorf("mkdir parent for %q: %w", destPath, err)
+		}
+
+		rc, err := f.Open()
+		if err != nil {
+			return fmt.Errorf("open %q in zip: %w", f.Name, err)
+		}
+
+		outFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+		if err != nil {
+			rc.Close()
+			return fmt.Errorf("create %q: %w", destPath, err)
+		}
+
+		if _, err := io.Copy(outFile, rc); err != nil {
+			outFile.Close()
+			rc.Close()
+			return fmt.Errorf("extract %q: %w", f.Name, err)
+		}
+
+		outFile.Close()
+		rc.Close()
+	}
+
+	if !hasBin {
+		return nil
+	}
+
+	return nil
+}
+
 // loadBytecodeCache 尝试加载缓存的字节码
 // 检查流程：
 // 1. 读取 .sha256 文件获取记录的 source hash

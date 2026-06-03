@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"songloft/internal/database"
@@ -137,6 +138,44 @@ songloft.jsenv = {
         return s ? JSON.parse(s) : [];
     }
 };
+
+// === songloft.command（async）===
+songloft.command = {
+    exec: async function(program, args, options) {
+        var s = await __callBridge('command.exec', JSON.stringify({
+            program: program, args: args || [], timeout: (options && options.timeout) || 0,
+            stdin: (options && options.stdin) || '', env: (options && options.env) || {}
+        }));
+        return s ? JSON.parse(s) : {exitCode: -1, stdout: '', stderr: ''};
+    },
+    start: async function(name, program, args, options) {
+        var s = await __callBridge('command.start', JSON.stringify({
+            name: name, program: program, args: args || [], env: (options && options.env) || {}
+        }));
+        return s ? JSON.parse(s) : {};
+    },
+    stop: async function(name) {
+        await __callBridge('command.stop', JSON.stringify({name: name}));
+    },
+    isRunning: async function(name) {
+        var s = await __callBridge('command.isRunning', JSON.stringify({name: name}));
+        return s === 'true';
+    },
+    download: async function(url, filename) {
+        await __callBridge('command.download', JSON.stringify({url: url, filename: filename}));
+    },
+    deleteBin: async function(filename) {
+        await __callBridge('command.deleteBin', filename);
+    },
+    listBin: async function() {
+        var s = await __callBridge('command.listBin', '');
+        return s ? JSON.parse(s) : [];
+    },
+    exists: async function(filename) {
+        var s = await __callBridge('command.exists', filename);
+        return s === 'true';
+    }
+};
 `
 
 // GetBootstrapCode 返回插件引导 JS 代码（含通信 API）
@@ -152,6 +191,7 @@ type BridgeHandler struct {
 	db          database.DB // 数据库访问（用于 songs/playlists 查询）
 	pluginToken string      // 插件专用的永久 JWT Token
 	port        string      // 服务器监听端口（用于构造宿主 URL）
+	processes   sync.Map    // map[name]*managedProcess — 后台进程跟踪
 }
 
 // NewBridgeHandler 创建桥接处理器
@@ -195,6 +235,8 @@ func (h *BridgeHandler) HandleBridgeCall(action, data string) (string, error) {
 		return h.handleComm(action, data)
 	case strings.HasPrefix(action, "jsenv."):
 		return h.handleJSEnv(action, data)
+	case strings.HasPrefix(action, "command."):
+		return h.handleCommand(action, data)
 	default:
 		return "", fmt.Errorf("unknown action: %s", action)
 	}
@@ -233,6 +275,11 @@ func extractPermFromAction(action string) string {
 	// 子 JS 环境权限（songloft.jsenv.*）
 	if strings.HasPrefix(action, "jsenv.") {
 		return PermJSEnv
+	}
+
+	// 命令执行权限（songloft.command.*）
+	if strings.HasPrefix(action, "command.") {
+		return PermCommand
 	}
 
 	// 未明确分类的 action：返回原样，仅对应的通配符声明者能通过。

@@ -197,6 +197,12 @@ func (s *JSService) Load(pluginsDir, dataDir string) error {
 		slog.Warn("extract static files failed (non-fatal)", "plugin", s.plugin.EntryPath, "error", err)
 	}
 
+	// [10.1] 解压 bin/ 到 dataDir（如需执行外部命令）
+	binDir := filepath.Join(dataDir, s.plugin.EntryPath, "bin")
+	if err := extractBinFromZip(zipData, binDir); err != nil {
+		slog.Warn("extract bin files failed (non-fatal)", "plugin", s.plugin.EntryPath, "error", err)
+	}
+
 	// [11] 源码加载成功后，异步编译并缓存字节码
 	if !isBytecode {
 		go func() {
@@ -275,8 +281,10 @@ func (s *JSService) Stop() error {
 	// 调用 deinit（忽略错误，确保后续清理继续）
 	_ = s.Deinit()
 
-	// 清理桥接处理器资源（如果将来有需要清理的）
-	// bridgeHandler 当前无需额外清理
+	// 清理桥接处理器资源（终止后台进程等）
+	if s.bridgeHandler != nil {
+		s.bridgeHandler.Cleanup()
+	}
 
 	// 销毁 JS 环境（包含本插件创建的所有子 env，例如 songloft.jsenv.create 的）
 	// DestroyPluginEnvs 按 pluginID 批量回收，root env 也在其中。
