@@ -1243,6 +1243,50 @@ const docTemplate = `{
                 }
             }
         },
+        "/jsplugins/update-all": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "检查并更新所有具有远程更新源的 JS 插件。跳过无 update_url 的插件和已是最新版的插件，逐个下载并安装更新，失败不中断其他插件的更新流程。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "JS插件管理"
+                ],
+                "summary": "批量更新所有 JS 插件",
+                "parameters": [
+                    {
+                        "description": "请求参数",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "批量更新结果",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.jsPluginBatchUpdateResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jsplugins/upload": {
             "post": {
                 "security": [
@@ -4950,6 +4994,61 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handlers.jsPluginBatchUpdateResponse": {
+            "type": "object",
+            "properties": {
+                "failed": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.jsPluginBatchUpdateResult"
+                    }
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "updated": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handlers.jsPluginBatchUpdateResult": {
+            "type": "object",
+            "properties": {
+                "current_version": {
+                    "type": "string"
+                },
+                "entry_path": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "has_update": {
+                    "type": "boolean"
+                },
+                "new_version": {
+                    "type": "string"
+                },
+                "plugin_id": {
+                    "type": "integer"
+                },
+                "plugin_name": {
+                    "type": "string"
+                },
+                "success": {
                     "type": "boolean"
                 }
             }

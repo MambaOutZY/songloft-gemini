@@ -55,6 +55,7 @@ func (h *JSPluginHandler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/jsplugins", func(r chi.Router) {
 		r.Get("/", h.handleList)
 		r.Post("/upload", h.handleUpload)
+		r.Post("/update-all", h.handleBatchUpdate)
 		r.Get("/{id}", h.handleGet)
 		r.Put("/{id}", h.handleUpdate)
 		r.Delete("/{id}", h.handleDelete)
@@ -510,6 +511,116 @@ func (h *JSPluginHandler) handleDownloadUpdate(w http.ResponseWriter, r *http.Re
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"plugin": plugin,
+	})
+}
+
+// jsPluginBatchUpdateResult 单个插件批量更新结果
+type jsPluginBatchUpdateResult struct {
+	PluginID       int64  `json:"plugin_id"`
+	PluginName     string `json:"plugin_name"`
+	EntryPath      string `json:"entry_path"`
+	Success        bool   `json:"success"`
+	HasUpdate      bool   `json:"has_update"`
+	CurrentVersion string `json:"current_version,omitempty"`
+	NewVersion     string `json:"new_version,omitempty"`
+	Error          string `json:"error,omitempty"`
+}
+
+// jsPluginBatchUpdateResponse 批量更新响应
+type jsPluginBatchUpdateResponse struct {
+	Total   int                         `json:"total"`
+	Updated int                         `json:"updated"`
+	Failed  int                         `json:"failed"`
+	Skipped int                         `json:"skipped"`
+	Results []jsPluginBatchUpdateResult `json:"results"`
+	Message string                      `json:"message"`
+}
+
+// handleBatchUpdate 批量更新所有 JS 插件
+// @Summary 批量更新所有 JS 插件
+// @Description 检查并更新所有具有远程更新源的 JS 插件。跳过无 update_url 的插件和已是最新版的插件，逐个下载并安装更新，失败不中断其他插件的更新流程。
+// @Tags JS插件管理
+// @Accept json
+// @Produce json
+// @Param body body object false "请求参数" example({"github_proxy":""})
+// @Success 200 {object} jsPluginBatchUpdateResponse "批量更新结果"
+// @Failure 500 {object} models.ErrorResponse "服务器错误"
+// @Security BearerAuth
+// @Router /jsplugins/update-all [post]
+func (h *JSPluginHandler) handleBatchUpdate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		GithubProxy string `json:"github_proxy"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	plugins, err := h.repo.GetAll(r.Context())
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取插件列表失败", err)
+		return
+	}
+
+	var results []jsPluginBatchUpdateResult
+	updated, failed, skipped := 0, 0, 0
+
+	for _, plugin := range plugins {
+		result := jsPluginBatchUpdateResult{
+			PluginID:       plugin.ID,
+			PluginName:     plugin.Name,
+			EntryPath:      plugin.EntryPath,
+			CurrentVersion: plugin.Version,
+		}
+
+		if plugin.UpdateURL == "" {
+			skipped++
+			results = append(results, result)
+			continue
+		}
+
+		updateInfo, err := h.packageMgr.CheckUpdate(plugin.ID, req.GithubProxy)
+		if err != nil {
+			result.Error = fmt.Sprintf("检查更新失败: %v", err)
+			failed++
+			results = append(results, result)
+			continue
+		}
+
+		if !updateInfo.HasUpdate {
+			skipped++
+			results = append(results, result)
+			continue
+		}
+
+		result.HasUpdate = true
+
+		updatedPlugin, err := h.packageMgr.DownloadUpdate(plugin.ID, req.GithubProxy)
+		if err != nil {
+			result.Error = fmt.Sprintf("下载更新失败: %v", err)
+			failed++
+			results = append(results, result)
+			continue
+		}
+
+		if updatedPlugin.Status == jsplugin.JSPluginStatusActive && h.manager != nil {
+			if reloadErr := h.manager.ReloadPlugin(r.Context(), updatedPlugin.EntryPath); reloadErr != nil {
+				slog.Warn("reload plugin after batch update failed", "entryPath", updatedPlugin.EntryPath, "error", reloadErr)
+			}
+		}
+
+		result.Success = true
+		result.NewVersion = updatedPlugin.Version
+		updated++
+		results = append(results, result)
+	}
+
+	respondJSON(w, http.StatusOK, jsPluginBatchUpdateResponse{
+		Total:   len(plugins),
+		Updated: updated,
+		Failed:  failed,
+		Skipped: skipped,
+		Results: results,
+		Message: fmt.Sprintf("批量更新完成：%d 已更新，%d 失败，%d 无需更新", updated, failed, skipped),
 	})
 }
 
