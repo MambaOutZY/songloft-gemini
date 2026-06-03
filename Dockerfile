@@ -32,13 +32,13 @@ COPY . .
 
 # 使用缓存挂载加速编译（Go 编译缓存会被保留）
 # 同时挂载 GOMODCACHE 和 GOCACHE
-# 根据 LITE_BUILD 参数选择构建精简版或完整版（默认完整版）
+# Makefile 根据 VERSION=dev 自动启用 dev 编译标签（含 Swagger + pprof）
 ARG LITE_BUILD=false
 ARG VERSION
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     set -x && \
-    echo "VERSION ARG = [${VERSION}]" && \
+    echo "VERSION=[${VERSION}] LITE_BUILD=[${LITE_BUILD}]" && \
     if [ "$LITE_BUILD" = "true" ]; then \
         make build-prod-lite GIT_COMMIT="${GIT_COMMIT}" BUILD_TIME="${BUILD_TIME}" BUILD_TYPE=lite ${VERSION:+VERSION=${VERSION}}; \
     else \

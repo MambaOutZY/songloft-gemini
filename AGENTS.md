@@ -176,10 +176,25 @@ func (h *XxxHandler) Method(w http.ResponseWriter, r *http.Request) { ... }
 ## 构建与部署
 
 - 构建标签：`dev`（含 Swagger + pprof） / `lite`（精简版，不嵌前端） / 无标签（完整版，嵌 Flutter Web）
+- `VERSION=dev` 时 Makefile 自动启用 `-tags dev`（无需手动传 `EXTRA_TAGS=dev`）
+- 两个正交维度：**VERSION**（`dev` / `X.Y.Z`）控制是否为开发版；**BUILD_TYPE**（`lite` / 空即 `full`）控制是否嵌入前端。**禁止** `BUILD_TYPE=dev` 等混合值
 - 嵌入路径是 `songloft-player-build/web-embedded`（**不是** `songloft-player/build/web-embedded`）
 - SPA 回退：`internal/app/embed.go` 处理，文件不存在时返回 `index.html`
 - 部署模式由 `--dart-define=DEPLOY_MODE=embedded|standalone` 切换，`AppConfig.isEmbedded` 是编译时常量，tree-shaking 会移除独立模式下的 API 地址 UI
 - 子路径部署：启动时通过 `-base-path /xxx` 或 `BASE_PATH=/xxx` 配置；后端用 `http.StripPrefix` 在最外层剥离前缀，`embed.go` 运行时将 `<base href="/">` 替换为 `<base href="/xxx/">`；前端嵌入模式从 `Uri.base.path` 自动检测子路径
+
+### Docker 热替换规则（`scripts/docker-entrypoint.sh`）
+
+Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行的 `/app/data/songloft`。容器启动时 entrypoint 决定是否用底包覆盖 data 目录：
+
+**核心原则：底包代表用户意图，只有「同 BUILD_TYPE + 都是 release + data 版本更高」才保留 data 的二进制。**
+
+| 场景 | 行为 | 原因 |
+|------|------|------|
+| 任一方 VERSION=dev | 替换 | dev 是滚动构建，始终用底包最新 |
+| BUILD_TYPE 不同（full↔lite） | 替换 | 用户换了镜像变体 |
+| 同类型 + 底包版本 > data 版本 | 替换 | 版本升级 |
+| 同类型 + data 版本 >= 底包 | 不替换 | data 可能通过 API 在线升级过 |
 
 ---
 

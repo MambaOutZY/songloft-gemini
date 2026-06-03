@@ -196,11 +196,10 @@ jobs:
           SUFFIX="${{ matrix.suffix }}"
           EXT="${{ matrix.ext }}"
 
-          # 构建完整版（默认，不需要额外 tags）
+          # VERSION=dev 时 Makefile 自动加 -tags dev（Swagger + pprof）
           make build-cross GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
             GOARM=${{ matrix.goarm }} OUTPUT="songloft-${SUFFIX}${EXT}"
 
-          # 构建 lite 版本（BUILD_TYPE=lite 让 songloft -version 输出 lite 标识）
           make build-cross GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
             GOARM=${{ matrix.goarm }} OUTPUT="songloft-${SUFFIX}-lite${EXT}" \
             EXTRA_TAGS=lite BUILD_TYPE=lite
@@ -284,6 +283,7 @@ jobs:
           BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
           echo "GIT_COMMIT=${GIT_COMMIT}" >> $GITHUB_OUTPUT
           echo "BUILD_TIME=${BUILD_TIME}" >> $GITHUB_OUTPUT
+
 
           # 计算 Docker 标签（默认 = 完整版，-lite = 精简版）
           if [[ "${IS_PRERELEASE}" == "false" ]]; then
@@ -499,18 +499,14 @@ jobs:
           echo "=== Release files ==="
           ls -lh release-files/
 
-      # 仅 stable（tag 触发）跑：fromTag 必须是真实 git tag，main 这种滚动版本会让
-      # action 的 git rev-list 报错 → 整个 release 失败。所以 prerelease 直接跳过，
-      # release notes 由下面 Create GitHub Release 的 fallback 生成。
       - name: Generate Changelog from Conventional Commits
-        if: needs.prepare.outputs.is_prerelease == 'false'
         id: changelog
         uses: requarks/changelog-action@v1
         with:
           token: ${{ github.token }}
-          fromTag: ${{ needs.prepare.outputs.version }}
+          fromTag: ${{ startsWith(github.ref, 'refs/tags/') && needs.prepare.outputs.version || github.sha }}
           toTag: ${{ needs.prepare.outputs.previous_tag }}
-          writeToFile: true
+          writeToFile: ${{ needs.prepare.outputs.is_prerelease == 'false' }}
           changelogFilePath: CHANGELOG.md
           useGitmojis: true
           includeInvalidCommits: false

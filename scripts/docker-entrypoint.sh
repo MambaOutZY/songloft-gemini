@@ -108,21 +108,33 @@ else
     echo "Docker 镜像版本：$SOURCE_VERSION ($SOURCE_BUILD_TYPE)"
     echo "数据目录版本：$TARGET_VERSION ($TARGET_BUILD_TYPE)"
 
-    # 判断是否需要更新：版本更新 或 构建类型不一致
+    # 判断是否需要更新
+    # 原则：底包代表用户意图，只有「同类型 + 都是 release + data 版本更高」才保留 data 目录的二进制
     NEED_UPDATE=false
     UPDATE_REASON=""
     SKIP_REASON=""
 
-    if compare_versions "$SOURCE_VERSION" "$TARGET_VERSION"; then
+    if [ "$SOURCE_VERSION" = "dev" ] || [ "$TARGET_VERSION" = "dev" ]; then
+        # 涉及 dev 版本：始终用底包（dev 是滚动构建，或版本类型切换）
         NEED_UPDATE=true
-        UPDATE_REASON="检测到新版本"
-    elif [ "$SOURCE_BUILD_TYPE" != "$TARGET_BUILD_TYPE" ]; then
-        if compare_versions "$TARGET_VERSION" "$SOURCE_VERSION"; then
-            SKIP_REASON="构建类型不一致（$TARGET_BUILD_TYPE vs $SOURCE_BUILD_TYPE），但数据目录版本 $TARGET_VERSION 高于底包版本 $SOURCE_VERSION，保留数据目录版本"
+        if [ "$SOURCE_VERSION" = "dev" ] && [ "$TARGET_VERSION" = "dev" ]; then
+            UPDATE_REASON="dev 滚动构建，使用最新底包"
+        elif [ "$SOURCE_VERSION" = "dev" ]; then
+            UPDATE_REASON="切换到 dev 版本"
         else
-            NEED_UPDATE=true
-            UPDATE_REASON="检测到构建类型变更（$TARGET_BUILD_TYPE → $SOURCE_BUILD_TYPE）"
+            UPDATE_REASON="从 dev 切换到正式版本 ${SOURCE_VERSION}"
         fi
+    elif [ "$SOURCE_BUILD_TYPE" != "$TARGET_BUILD_TYPE" ]; then
+        # 类型不同（full↔lite）：用户换了镜像变体，用底包
+        NEED_UPDATE=true
+        UPDATE_REASON="构建类型切换（${TARGET_BUILD_TYPE} → ${SOURCE_BUILD_TYPE}）"
+    elif compare_versions "$SOURCE_VERSION" "$TARGET_VERSION"; then
+        # 同类型 + 都是 release + 底包更新：升级
+        NEED_UPDATE=true
+        UPDATE_REASON="检测到新版本（${TARGET_VERSION} → ${SOURCE_VERSION}）"
+    else
+        # 同类型 + 都是 release + data 版本 >= 底包：保留
+        SKIP_REASON="数据目录版本（${TARGET_VERSION}）不低于底包版本（${SOURCE_VERSION}），无需替换"
     fi
 
     if [ "$NEED_UPDATE" = true ]; then
@@ -142,7 +154,7 @@ else
     elif [ -n "$SKIP_REASON" ]; then
         echo "⚠ $SKIP_REASON"
     else
-        echo "✓ 数据目录版本更新或相同且构建类型一致，无需升级"
+        echo "✓ 版本相同，无需更新"
     fi
 fi
 
