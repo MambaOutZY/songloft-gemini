@@ -19,6 +19,8 @@ func (a *App) registerWebStatic() {
 	mime.AddExtensionType(".css", "text/css; charset=utf-8")
 	mime.AddExtensionType(".svg", "image/svg+xml")
 	mime.AddExtensionType(".woff2", "font/woff2")
+	mime.AddExtensionType(".wasm", "application/wasm")
+	mime.AddExtensionType(".otf", "font/otf")
 
 	distFS, err := fs.Sub(a.webDist, webEmbedRoot)
 	if err != nil {
@@ -69,6 +71,7 @@ func (a *App) registerWebStatic() {
 			w.Write(indexBytes)
 			return
 		}
+		w.Header().Set("Cache-Control", "public, max-age=604800")
 		fileServer.ServeHTTP(w, r)
 	}))
 }

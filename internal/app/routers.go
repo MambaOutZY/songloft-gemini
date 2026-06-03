@@ -221,8 +221,10 @@ func (a *App) setupBaseRouter() {
 		"text/javascript",
 		"application/javascript",
 		"application/json",
+		"application/wasm",
 		"image/svg+xml",
 		"font/woff2",
+		"font/otf",
 	))
 
 	// 基础中间件：access log 走 slog，受 /settings/log-level 控制
