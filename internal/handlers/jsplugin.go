@@ -10,6 +10,7 @@ import (
 
 	"songloft/internal/jsplugin"
 	"songloft/internal/models"
+	"songloft/internal/services"
 	"songloft/internal/services/source"
 
 	"github.com/go-chi/chi/v5"
@@ -38,15 +39,17 @@ type JSPluginHandler struct {
 	repo          jsplugin.Repository
 	manager       *jsplugin.Manager
 	sourceMetrics *source.SourceMetrics
+	configService *services.ConfigService
 }
 
 // NewJSPluginHandler 创建 JS 插件管理处理器
-func NewJSPluginHandler(packageMgr *jsplugin.PackageManager, repo jsplugin.Repository, manager *jsplugin.Manager, sourceMetrics *source.SourceMetrics) *JSPluginHandler {
+func NewJSPluginHandler(packageMgr *jsplugin.PackageManager, repo jsplugin.Repository, manager *jsplugin.Manager, sourceMetrics *source.SourceMetrics, configService *services.ConfigService) *JSPluginHandler {
 	return &JSPluginHandler{
 		packageMgr:    packageMgr,
 		repo:          repo,
 		manager:       manager,
 		sourceMetrics: sourceMetrics,
+		configService: configService,
 	}
 }
 
@@ -56,6 +59,8 @@ func (h *JSPluginHandler) RegisterRoutes(r chi.Router) {
 		r.Get("/", h.handleList)
 		r.Post("/upload", h.handleUpload)
 		r.Post("/update-all", h.handleBatchUpdate)
+		r.Post("/registry/refresh", h.handleRegistryRefresh)
+		r.Post("/registry/install", h.handleRegistryInstall)
 		r.Get("/{id}", h.handleGet)
 		r.Put("/{id}", h.handleUpdate)
 		r.Delete("/{id}", h.handleDelete)

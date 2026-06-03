@@ -1243,6 +1243,114 @@ const docTemplate = `{
                 }
             }
         },
+        "/jsplugins/registry/install": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "JS插件管理"
+                ],
+                "summary": "从注册表安装插件",
+                "parameters": [
+                    {
+                        "description": "安装请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.registryInstallRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "安装结果（更新已有插件）",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.jsPluginUploadResponse"
+                        }
+                    },
+                    "201": {
+                        "description": "安装结果（新插件）",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.jsPluginUploadResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "下载或安装失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jsplugins/registry/refresh": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "拉取指定订阅源 URL（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "JS插件管理"
+                ],
+                "summary": "刷新插件注册表",
+                "parameters": [
+                    {
+                        "description": "刷新请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.registryRefreshRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "插件列表",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.registryRefreshResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "拉取注册表失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jsplugins/update-all": {
             "post": {
                 "security": [
@@ -3506,6 +3614,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/settings/plugin-registries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取用户保存的所有插件注册表订阅源 URL。未配置时返回空列表。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "JS插件管理"
+                ],
+                "summary": "获取插件订阅源列表",
+                "responses": {
+                    "200": {
+                        "description": "订阅源列表",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginRegistriesSetting"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存用户配置的插件注册表订阅源 URL 列表。每个源包含 URL、名称和是否启用。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "JS插件管理"
+                ],
+                "summary": "保存插件订阅源列表",
+                "parameters": [
+                    {
+                        "description": "订阅源列表",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginRegistriesSetting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "保存后的订阅源列表",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginRegistriesSetting"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "保存配置失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/settings/scan-auto-create-include-subdirs": {
             "get": {
                 "security": [
@@ -5053,6 +5235,46 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.jsPluginUploadResponse": {
+            "type": "object",
+            "properties": {
+                "failed": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.jsPluginUploadResult"
+                    }
+                },
+                "success": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handlers.jsPluginUploadResult": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "plugin": {
+                    "$ref": "#/definitions/jsplugin.JSPlugin"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
         "handlers.logLevelSettingRequest": {
             "type": "object",
             "properties": {
@@ -5072,11 +5294,205 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.pluginRegistriesSetting": {
+            "type": "object",
+            "properties": {
+                "registries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/jsplugin.RegistryConfig"
+                    }
+                }
+            }
+        },
+        "handlers.registryInstallRequest": {
+            "type": "object",
+            "properties": {
+                "download_url": {
+                    "type": "string"
+                },
+                "github_proxy": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.registryPluginEntry": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "entry_path": {
+                    "type": "string"
+                },
+                "has_update": {
+                    "type": "boolean"
+                },
+                "homepage": {
+                    "type": "string"
+                },
+                "icon": {
+                    "type": "string"
+                },
+                "installed": {
+                    "type": "boolean"
+                },
+                "installed_version": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.registryRefreshRequest": {
+            "type": "object",
+            "properties": {
+                "github_proxy": {
+                    "type": "string"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "registry_url": {
+                    "type": "string"
+                },
+                "search": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.registryRefreshResponse": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "plugins": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.registryPluginEntry"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "handlers.scanAutoCreateSubdirsRequest": {
             "type": "object",
             "properties": {
                 "enabled": {
                     "type": "boolean"
+                }
+            }
+        },
+        "jsplugin.JSPlugin": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "entry_hash": {
+                    "description": "main.js/main.jsc 内容 SHA256",
+                    "type": "string"
+                },
+                "entry_path": {
+                    "description": "路由前缀（如 \"myplugin\"）",
+                    "type": "string"
+                },
+                "file_mod_time": {
+                    "type": "string"
+                },
+                "file_path": {
+                    "description": "ZIP 文件相对路径",
+                    "type": "string"
+                },
+                "homepage": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "license": {
+                    "type": "string"
+                },
+                "main": {
+                    "description": "入口文件路径（如 \"main.js\"）",
+                    "type": "string"
+                },
+                "min_host_version": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "permissions": {
+                    "description": "权限列表",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "status": {
+                    "$ref": "#/definitions/models.JSPluginStatus"
+                },
+                "update_url": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                },
+                "zip_hash": {
+                    "description": "ZIP 文件 SHA256",
+                    "type": "string"
+                }
+            }
+        },
+        "jsplugin.RegistryConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
                 }
             }
         },
@@ -5208,6 +5624,29 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
+        },
+        "models.JSPluginStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "inactive",
+                "error"
+            ],
+            "x-enum-comments": {
+                "JSPluginStatusActive": "激活状态",
+                "JSPluginStatusError": "错误状态",
+                "JSPluginStatusInactive": "未激活状态"
+            },
+            "x-enum-descriptions": [
+                "激活状态",
+                "未激活状态",
+                "错误状态"
+            ],
+            "x-enum-varnames": [
+                "JSPluginStatusActive",
+                "JSPluginStatusInactive",
+                "JSPluginStatusError"
+            ]
         },
         "models.LoginRequest": {
             "type": "object",

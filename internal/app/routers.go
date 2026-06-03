@@ -81,6 +81,7 @@ func (a *App) setupAPIV1Router() {
 		a.db.JSPluginRepository(),
 		a.jsPluginManager,
 		a.sourceMetrics,
+		a.configService,
 	)
 
 	a.router.Route("/api/v1", func(r chi.Router) {
@@ -152,6 +153,8 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/settings/scan-auto-create-include-subdirs", scanHandler.UpdateAutoCreateIncludeSubdirsSetting)
 			r.Get("/settings/log-level", logHandler.GetLevelSetting)
 			r.Put("/settings/log-level", logHandler.UpdateLevelSetting)
+			r.Get("/settings/plugin-registries", jsPluginHandler.GetRegistriesSetting)
+			r.Put("/settings/plugin-registries", jsPluginHandler.UpdateRegistriesSetting)
 
 			// 配置管理模块
 			r.Get("/configs", configHandler.ListConfigs)
