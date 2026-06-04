@@ -1,3 +1,26 @@
+## [v2.5.0] - 2026-06-04
+### :sparkles: New Features
+- [`8cd86bb`](https://github.com/songloft-org/songloft/commit/8cd86bb8657fabcc435004dc1185fb1ae8748a39) - 支持一键更新所有插件 songloft-org/songloft[#61](https://github.com/songloft-org/songloft/pull/61) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`bda6f9c`](https://github.com/songloft-org/songloft/commit/bda6f9c25a3a3df6a8c656d1860bad2c84eb469a) - 新增插件下载和执行命令 [#90](https://github.com/songloft-org/songloft/pull/90) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`22a7270`](https://github.com/songloft-org/songloft/commit/22a7270d7f4068cb9f6bf7c37ef37f1a2eb05d39) - 新增插件源 songloft-org/songloft[#89](https://github.com/songloft-org/songloft/pull/89) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`635787a`](https://github.com/songloft-org/songloft/commit/635787a57653d9936f33f4905f8fdfe9daf69ba5) - 新增官方插件源地址 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`4f01f2c`](https://github.com/songloft-org/songloft/commit/4f01f2cf38f8580927bcc59d1e661bc90165e039) - 优化版本升级逻辑 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`7bd92c5`](https://github.com/songloft-org/songloft/commit/7bd92c5eed70baca9d2c961280bfb87d5194d9fb) - 继续优化首次加载页面速度 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`1596210`](https://github.com/songloft-org/songloft/commit/159621015f49197b3b0972009f846a5712661f6a) - 优化首次加载 songloft-org/songloft[#91](https://github.com/songloft-org/songloft/pull/91) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`2d85024`](https://github.com/songloft-org/songloft/commit/2d85024909b1c30bf4981790df7169c7a9dac559) - **http**: 修复 URL userinfo 丢失及 JS URL polyfill 相对路径解析缺陷 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`f268fe3`](https://github.com/songloft-org/songloft/commit/f268fe3d49141216ba7397447519a31f430ccfa6) - **proxy**: add basic auth handling and update User-Agent for remote resources *(PR [#93](https://github.com/songloft-org/songloft/pull/93) by [@Dev-Wiki](https://github.com/Dev-Wiki))*
+- [`38174a4`](https://github.com/songloft-org/songloft/commit/38174a4d8468b859968b258572ba9a7ddcc741e5) - 修复打包镜像报错 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`5e971b3`](https://github.com/songloft-org/songloft/commit/5e971b3586f56b07357fc3721a935a3fbf1705af) - **scan**: 检测并跳过垃圾 tag，回退使用文件名作为标题 *(PR [#94](https://github.com/songloft-org/songloft/pull/94) by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`c3cde9f`](https://github.com/songloft-org/songloft/commit/c3cde9f51f4f352abf65337075a9a10d0e2e2b3e) - update CHANGELOG for v2.4.0 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`9ad00ad`](https://github.com/songloft-org/songloft/commit/9ad00adbf0226163624f76944740ce4cdd6e72ef) - release version 2.5.0 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.4.0] - 2026-06-02
 ### :sparkles: New Features
 - [`4f80073`](https://github.com/songloft-org/songloft/commit/4f80073d09ee93e0923593b28c2f4179d5dfdcfc) - 规范设置接口 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1042,3 +1065,4 @@
 [v2.2.5]: https://github.com/songloft-org/songloft/compare/v2.2.4...v2.2.5
 [v2.3.0]: https://github.com/songloft-org/songloft/compare/v2.2.5...v2.3.0
 [v2.4.0]: https://github.com/songloft-org/songloft/compare/v2.3.0...v2.4.0
+[v2.5.0]: https://github.com/songloft-org/songloft/compare/v2.4.0...v2.5.0
