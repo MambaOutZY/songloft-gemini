@@ -22,3 +22,6 @@
 [submodule "jsplugins-src/songloft-plugin-tag"]
 	path = jsplugins-src/songloft-plugin-tag
 	url = https://github.com/songloft-org/songloft-plugin-tag.git
+[submodule "jsplugins-src/songloft-plugin-cloudflared"]
+	path = jsplugins-src/songloft-plugin-cloudflared
+	url = https://github.com/songloft-org/songloft-plugin-cloudflared.git
