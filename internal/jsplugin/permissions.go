@@ -19,6 +19,7 @@ const (
 	PermInterPlugin    = "inter-plugin"    // 插件间通信
 	PermCommand        = "command"         // 执行命令
 	PermJSEnv          = "jsenv"           // 创建/执行子 JS 环境（songloft.jsenv.*）
+	PermFS             = "fs"              // 插件数据目录内文件读写
 )
 
 // AllPermissions 所有合法权限列表（声明层白名单）。
@@ -30,7 +31,7 @@ var AllPermissions = []string{
 	PermSongsRead, PermSongsWrite,
 	PermPlaylistsRead, PermPlaylistsWrite,
 	PermInterPlugin, PermCommand,
-	PermJSEnv,
+	PermJSEnv, PermFS,
 	// 通配符糖
 	"songs.*",
 	"playlists.*",

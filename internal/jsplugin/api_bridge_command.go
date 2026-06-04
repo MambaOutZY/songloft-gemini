@@ -1,7 +1,9 @@
 package jsplugin
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -228,14 +230,21 @@ func (h *BridgeHandler) commandIsRunning(data string) (string, error) {
 
 func (h *BridgeHandler) commandDownload(data string) (string, error) {
 	var req struct {
-		URL      string `json:"url"`
-		Filename string `json:"filename"`
+		URL           string `json:"url"`
+		Filename      string `json:"filename"`
+		Extract       string `json:"extract"`       // "tgz" | ""
+		ExtractTarget string `json:"extractTarget"` // optional: only keep this file
 	}
 	if err := json.Unmarshal([]byte(data), &req); err != nil {
 		return "", fmt.Errorf("commandDownload: parse request: %w", err)
 	}
 	if err := validateBinFilename(req.Filename); err != nil {
 		return "", fmt.Errorf("commandDownload: %w", err)
+	}
+	if req.ExtractTarget != "" {
+		if err := validateBinFilename(req.ExtractTarget); err != nil {
+			return "", fmt.Errorf("commandDownload: invalid extractTarget: %w", err)
+		}
 	}
 
 	resp, err := http.Get(req.URL)
@@ -258,20 +267,86 @@ func (h *BridgeHandler) commandDownload(data string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("commandDownload: create file: %w", err)
 	}
-	defer f.Close()
 
 	limited := io.LimitReader(resp.Body, maxDownloadSize+1)
 	n, err := io.Copy(f, limited)
 	if err != nil {
+		f.Close()
 		os.Remove(destPath)
 		return "", fmt.Errorf("commandDownload: write: %w", err)
 	}
+	f.Close()
 	if n > maxDownloadSize {
 		os.Remove(destPath)
 		return "", fmt.Errorf("commandDownload: file exceeds %dMB limit", maxDownloadSize>>20)
 	}
 
+	if req.Extract == "tgz" {
+		if err := h.extractTgz(destPath, binDir, req.ExtractTarget); err != nil {
+			os.Remove(destPath)
+			return "", fmt.Errorf("commandDownload: extract tgz: %w", err)
+		}
+		os.Remove(destPath)
+	}
+
 	return "", nil
+}
+
+func (h *BridgeHandler) extractTgz(tgzPath, destDir, targetName string) error {
+	f, err := os.Open(tgzPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("gzip open: %w", err)
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	extracted := 0
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("tar read: %w", err)
+		}
+
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+
+		baseName := filepath.Base(hdr.Name)
+		if targetName != "" && baseName != targetName {
+			continue
+		}
+
+		outPath := filepath.Join(destDir, baseName)
+		out, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+		if err != nil {
+			return fmt.Errorf("create %s: %w", baseName, err)
+		}
+		if _, err := io.Copy(out, io.LimitReader(tr, maxDownloadSize)); err != nil {
+			out.Close()
+			os.Remove(outPath)
+			return fmt.Errorf("write %s: %w", baseName, err)
+		}
+		out.Close()
+		extracted++
+
+		if targetName != "" {
+			break
+		}
+	}
+
+	if targetName != "" && extracted == 0 {
+		return fmt.Errorf("target %q not found in archive", targetName)
+	}
+	return nil
 }
 
 func (h *BridgeHandler) commandDeleteBin(data string) (string, error) {

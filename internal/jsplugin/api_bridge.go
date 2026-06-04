@@ -161,8 +161,13 @@ songloft.command = {
         var s = await __callBridge('command.isRunning', JSON.stringify({name: name}));
         return s === 'true';
     },
-    download: async function(url, filename) {
-        await __callBridge('command.download', JSON.stringify({url: url, filename: filename}));
+    download: async function(url, filename, options) {
+        var payload = {url: url, filename: filename};
+        if (options) {
+            if (options.extract) payload.extract = options.extract;
+            if (options.extractTarget) payload.extractTarget = options.extractTarget;
+        }
+        await __callBridge('command.download', JSON.stringify(payload));
     },
     deleteBin: async function(filename) {
         await __callBridge('command.deleteBin', filename);
@@ -174,6 +179,42 @@ songloft.command = {
     exists: async function(filename) {
         var s = await __callBridge('command.exists', filename);
         return s === 'true';
+    }
+};
+songloft.fs = {
+    readFile: async function(path, options) {
+        var enc = (options && options.encoding) || 'utf8';
+        return await __callBridge('fs.readFile', JSON.stringify({path: path, encoding: enc}));
+    },
+    writeFile: async function(path, data, options) {
+        var enc = (options && options.encoding) || 'utf8';
+        await __callBridge('fs.writeFile', JSON.stringify({path: path, data: data, encoding: enc}));
+    },
+    appendFile: async function(path, data, options) {
+        var enc = (options && options.encoding) || 'utf8';
+        await __callBridge('fs.appendFile', JSON.stringify({path: path, data: data, encoding: enc}));
+    },
+    readdir: async function(path) {
+        var s = await __callBridge('fs.readdir', JSON.stringify({path: path}));
+        return s ? JSON.parse(s) : [];
+    },
+    unlink: async function(path) {
+        await __callBridge('fs.unlink', JSON.stringify({path: path}));
+    },
+    exists: async function(path) {
+        var s = await __callBridge('fs.exists', JSON.stringify({path: path}));
+        return s === 'true';
+    },
+    mkdir: async function(path, options) {
+        var recursive = (options && options.recursive) || false;
+        await __callBridge('fs.mkdir', JSON.stringify({path: path, recursive: recursive}));
+    },
+    stat: async function(path) {
+        var s = await __callBridge('fs.stat', JSON.stringify({path: path}));
+        return JSON.parse(s);
+    },
+    rename: async function(oldPath, newPath) {
+        await __callBridge('fs.rename', JSON.stringify({oldPath: oldPath, newPath: newPath}));
     }
 };
 `
@@ -237,6 +278,8 @@ func (h *BridgeHandler) HandleBridgeCall(action, data string) (string, error) {
 		return h.handleJSEnv(action, data)
 	case strings.HasPrefix(action, "command."):
 		return h.handleCommand(action, data)
+	case strings.HasPrefix(action, "fs."):
+		return h.handleFS(action, data)
 	default:
 		return "", fmt.Errorf("unknown action: %s", action)
 	}
@@ -280,6 +323,11 @@ func extractPermFromAction(action string) string {
 	// 命令执行权限（songloft.command.*）
 	if strings.HasPrefix(action, "command.") {
 		return PermCommand
+	}
+
+	// 文件系统权限（songloft.fs.*）
+	if strings.HasPrefix(action, "fs.") {
+		return PermFS
 	}
 
 	// 未明确分类的 action：返回原样，仅对应的通配符声明者能通过。
