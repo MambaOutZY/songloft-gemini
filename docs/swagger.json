@@ -17,6 +17,132 @@
     "host": "localhost:58091",
     "basePath": "/api/v1",
     "paths": {
+        "/api/v1/songs/organize": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "批量移动/重命名本地歌曲文件到指定目录结构。target_path 为相对于 music_path 的路径（含目录和文件名），扩展名必须与原文件一致。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "批量整理歌曲文件",
+                "parameters": [
+                    {
+                        "description": "整理项目列表",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.OrganizeItem"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "整理结果",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.OrganizeResult"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/songs/{id}/tags": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "将元数据写入数据库和本地音频文件标签（仅本地歌曲）。cover_data(base64) 优先于 cover_url。非空字段覆盖，空值保留原值。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "写入歌曲标签",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌曲ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "标签数据",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.WriteSongTagsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "写入结果",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "file_write": {
+                                    "type": "string"
+                                },
+                                "song": {
+                                    "$ref": "#/definitions/models.Song"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "歌曲不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "用户登录获取访问令牌",
@@ -5240,6 +5366,35 @@
                 }
             }
         },
+        "handlers.WriteSongTagsRequest": {
+            "type": "object",
+            "properties": {
+                "album": {
+                    "type": "string"
+                },
+                "artist": {
+                    "type": "string"
+                },
+                "cover_data": {
+                    "type": "string"
+                },
+                "cover_url": {
+                    "type": "string"
+                },
+                "genre": {
+                    "type": "string"
+                },
+                "lyrics": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
         "handlers.hlsProxySettingRequest": {
             "type": "object",
             "properties": {
@@ -5902,6 +6057,11 @@
                     "type": "string",
                     "example": "mp3"
                 },
+                "genre": {
+                    "description": "流派",
+                    "type": "string",
+                    "example": "Pop"
+                },
                 "id": {
                     "description": "歌曲ID",
                     "type": "integer",
@@ -5958,6 +6118,11 @@
                     "description": "网络地址",
                     "type": "string",
                     "example": "https://example.com/song.mp3"
+                },
+                "year": {
+                    "description": "发行年份",
+                    "type": "integer",
+                    "example": 2005
                 }
             }
         },
@@ -6191,6 +6356,34 @@
                 "ConvertStatusCancelling",
                 "ConvertStatusCancelled"
             ]
+        },
+        "services.OrganizeItem": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "target_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.OrganizeResult": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "file_path": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
         },
         "services.RefreshResponse": {
             "type": "object",

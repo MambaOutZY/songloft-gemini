@@ -96,4 +96,6 @@ type Song struct {
 	AddedAt         time.Time
 	UpdatedAt       time.Time
 	LyricRemoteUrl  string
+	Year            int64
+	Genre           string
 }

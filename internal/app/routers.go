@@ -44,6 +44,7 @@ func (a *App) setupAPIV1Router() {
 		hlsHandler,
 		a.playActivity,
 	)
+	songHandler.SetGetMusicPath(a.scanner.GetMusicPath)
 	playlistHandler := handlers.NewPlaylistHandler(a.playlistService)
 	configHandler := handlers.NewConfigHandler(a.configService)
 	scanHandler := handlers.NewScanHandler(a.songService, a.scanner, a.configService)
@@ -116,6 +117,8 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/songs/{id}", songHandler.UpdateSong)
 			r.Delete("/songs/{id}", songHandler.DeleteSong)
 			r.Put("/songs/{id}/lyrics", songHandler.UpdateSongLyrics)
+			r.Put("/songs/{id}/tags", songHandler.WriteTags)
+			r.Post("/songs/organize", songHandler.OrganizeSongs)
 			r.Post("/songs/{id}/activate", songHandler.ActivateSong)
 
 			// 歌单管理模块

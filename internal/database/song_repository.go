@@ -236,7 +236,7 @@ func (r *SongRepository) UpsertRemote(ctx context.Context, song *models.Song) er
 		return nil
 	}
 
-	// 仍是 remote：source_data / cover_url / 文本元数据始终覆盖；duration / lyric / lyric_remote_url 仅在新值非空时更新。
+	// 仍是 remote：source_data / cover_url / 文本元数据始终覆盖；duration / lyric / lyric_remote_url / year / genre 仅在新值非空时更新。
 	if err := r.queries.UpdateRemoteSongMutable(ctx, sqlc.UpdateRemoteSongMutableParams{
 		Title:          song.Title,
 		Artist:         song.Artist,
@@ -251,6 +251,10 @@ func (r *SongRepository) UpsertRemote(ctx context.Context, song *models.Song) er
 		LyricSource:    song.LyricSource,
 		Column12:       song.LyricRemoteURL,
 		LyricRemoteUrl: song.LyricRemoteURL,
+		Column14:       int64(song.Year),
+		Year:           int64(song.Year),
+		Column16:       song.Genre,
+		Genre:          song.Genre,
 		ID:             existingID,
 	}); err != nil {
 		return fmt.Errorf("update remote song %q: %w", song.Title, err)
@@ -429,6 +433,7 @@ func songSelectBuilder() sq.SelectBuilder {
 		"COALESCE(source_data, '')",
 		"COALESCE(dedup_key, '')",
 		"added_at", "updated_at",
+		"year", "genre",
 	).From("songs")
 }
 
@@ -468,6 +473,7 @@ func scanSongRow(scanner interface {
 		&s.Format, &s.BitRate, &s.SampleRate, &s.IsLive,
 		&s.PluginEntryPath, &s.SourceData, &s.DedupKey,
 		&s.AddedAt, &s.UpdatedAt,
+		&s.Year, &s.Genre,
 	); err != nil {
 		return nil, fmt.Errorf("scan song: %w", err)
 	}
@@ -481,6 +487,8 @@ func songRowToModel(row sqlc.Song) *models.Song {
 		Title:           row.Title,
 		Artist:          row.Artist,
 		Album:           row.Album,
+		Year:            int(row.Year),
+		Genre:           row.Genre,
 		Duration:        row.Duration,
 		FilePath:        row.FilePath,
 		URL:             row.Url,
@@ -524,6 +532,8 @@ func songCreateParams(s *models.Song) sqlc.CreateSongParams {
 		PluginEntryPath: s.PluginEntryPath,
 		SourceData:      s.SourceData,
 		DedupKey:        s.DedupKey,
+		Year:            int64(s.Year),
+		Genre:           s.Genre,
 	}
 }
 
@@ -549,6 +559,8 @@ func songUpdateParams(s *models.Song) sqlc.UpdateSongParams {
 		PluginEntryPath: s.PluginEntryPath,
 		SourceData:      s.SourceData,
 		DedupKey:        s.DedupKey,
+		Year:            int64(s.Year),
+		Genre:           s.Genre,
 		ID:              s.ID,
 	}
 }

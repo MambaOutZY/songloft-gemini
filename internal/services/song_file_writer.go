@@ -56,10 +56,12 @@ func WriteSongTags(filePath string, song *models.Song) FileWriteStatus {
 		Lyrics:      mainLyric,
 	}
 
-	// 解析 added_at 年份作为发行年（保守兜底；网络歌曲的 Song 模型没有专门的 year 字段）
-	if !song.AddedAt.IsZero() {
+	if song.Year > 0 {
+		opts.Year = song.Year
+	} else if !song.AddedAt.IsZero() {
 		opts.Year = song.AddedAt.Year()
 	}
+	opts.Genre = song.Genre
 
 	// 防御性处理：lyric_source=url 不应该被回写到文件
 	if song.LyricSource == models.LyricSourceURL {

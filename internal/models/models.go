@@ -72,6 +72,8 @@ type Song struct {
 	Title           string  `json:"title" example:"夜曲"`                                // 标题
 	Artist          string  `json:"artist" example:"周杰伦"`                              // 艺术家/歌手
 	Album           string  `json:"album" example:"十一月的萧邦"`                            // 专辑名称
+	Year            int     `json:"year" example:"2005"`                               // 发行年份
+	Genre           string  `json:"genre" example:"Pop"`                               // 流派
 	Duration        float64 `json:"duration" example:"253.5"`                          // 播放时长（秒）
 	FilePath        string  `json:"file_path" example:"/music/周杰伦/夜曲.mp3"`             // 本地文件路径
 	URL             string  `json:"url" example:"https://example.com/song.mp3"`        // 网络地址

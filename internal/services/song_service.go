@@ -3,7 +3,9 @@ package services
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"songloft/internal/database"
+	"songloft/internal/httputil"
 	"songloft/internal/models"
 )
 
@@ -811,4 +814,151 @@ func (s *SongService) UpdateSongDuration(ctx context.Context, id int64, duration
 // 用于 SourceResolver 切换音源后回写。
 func (s *SongService) UpdateSongSource(ctx context.Context, id int64, pluginEntryPath, sourceData string) error {
 	return s.songs.UpdateSource(ctx, id, pluginEntryPath, sourceData)
+}
+
+// SaveCoverFromData 从原始字节保存封面到本地，返回 coverPath。
+func (s *SongService) SaveCoverFromData(data []byte, ext string) (string, error) {
+	if s.metadataExtractor == nil {
+		return "", fmt.Errorf("metadata extractor not configured")
+	}
+	if len(data) == 0 {
+		return "", fmt.Errorf("empty cover data")
+	}
+	if ext == "" {
+		ext = "jpg"
+	}
+	return s.metadataExtractor.SaveCoverData(data, ext)
+}
+
+// DownloadCover 从 URL 下载封面并保存到本地，返回 coverPath。
+func (s *SongService) DownloadCover(ctx context.Context, coverURL string) (string, error) {
+	if s.metadataExtractor == nil {
+		return "", fmt.Errorf("metadata extractor not configured")
+	}
+
+	client := httputil.NewClient(30 * time.Second)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, coverURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Accept", "image/*")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("http get: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("http status %d", resp.StatusCode)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		return "", fmt.Errorf("non-image Content-Type: %s", contentType)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
+	if err != nil {
+		return "", fmt.Errorf("read body: %w", err)
+	}
+	if len(data) == 0 {
+		return "", fmt.Errorf("empty cover body")
+	}
+
+	ext := extFromContentType(contentType)
+	return s.metadataExtractor.SaveCoverData(data, ext)
+}
+
+func extFromContentType(contentType string) string {
+	ct := strings.ToLower(contentType)
+	if idx := strings.Index(ct, ";"); idx >= 0 {
+		ct = strings.TrimSpace(ct[:idx])
+	}
+	switch ct {
+	case "image/png":
+		return "png"
+	case "image/gif":
+		return "gif"
+	case "image/webp":
+		return "webp"
+	case "image/bmp":
+		return "bmp"
+	default:
+		return "jpg"
+	}
+}
+
+// OrganizeItem 批量整理的单项输入。
+type OrganizeItem struct {
+	ID         int64  `json:"id"`
+	TargetPath string `json:"target_path"`
+}
+
+// OrganizeResult 批量整理的单项结果。
+type OrganizeResult struct {
+	ID       int64  `json:"id"`
+	Status   string `json:"status"`
+	FilePath string `json:"file_path,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+// OrganizeSongs 批量移动/重命名本地歌曲文件。
+func (s *SongService) OrganizeSongs(ctx context.Context, musicPath string, items []OrganizeItem) []OrganizeResult {
+	results := make([]OrganizeResult, 0, len(items))
+	for _, item := range items {
+		r := s.organizeOne(ctx, musicPath, item)
+		results = append(results, r)
+	}
+	return results
+}
+
+func (s *SongService) organizeOne(ctx context.Context, musicPath string, item OrganizeItem) OrganizeResult {
+	song, err := s.songs.GetByID(ctx, item.ID)
+	if err != nil {
+		return OrganizeResult{ID: item.ID, Status: "error", Error: "song not found"}
+	}
+	if song.Type != models.TypeLocal {
+		return OrganizeResult{ID: item.ID, Status: "error", Error: "not a local song"}
+	}
+	if song.FilePath == "" {
+		return OrganizeResult{ID: item.ID, Status: "error", Error: "song has no file path"}
+	}
+
+	targetPath := filepath.Clean(item.TargetPath)
+	if strings.HasPrefix(targetPath, "..") {
+		return OrganizeResult{ID: item.ID, Status: "error", Error: "path traversal not allowed"}
+	}
+
+	absSource := filepath.Join(musicPath, song.FilePath)
+	absTarget := filepath.Join(musicPath, targetPath)
+
+	if !strings.HasPrefix(absTarget, musicPath+string(filepath.Separator)) && absTarget != musicPath {
+		return OrganizeResult{ID: item.ID, Status: "error", Error: "target path outside music directory"}
+	}
+
+	if filepath.Ext(absSource) != filepath.Ext(absTarget) {
+		return OrganizeResult{ID: item.ID, Status: "error", Error: "file extension mismatch"}
+	}
+
+	if absSource == absTarget {
+		return OrganizeResult{ID: item.ID, Status: "ok", FilePath: targetPath}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(absTarget), 0755); err != nil {
+		return OrganizeResult{ID: item.ID, Status: "error", Error: fmt.Sprintf("create directory: %v", err)}
+	}
+
+	if err := moveFile(absSource, absTarget); err != nil {
+		return OrganizeResult{ID: item.ID, Status: "error", Error: fmt.Sprintf("move file: %v", err)}
+	}
+
+	song.FilePath = targetPath
+	if err := s.songs.Update(ctx, song); err != nil {
+		_ = moveFile(absTarget, absSource)
+		return OrganizeResult{ID: item.ID, Status: "error", Error: fmt.Sprintf("update database: %v", err)}
+	}
+
+	_ = os.Remove(filepath.Dir(absSource))
+
+	return OrganizeResult{ID: item.ID, Status: "ok", FilePath: targetPath}
 }

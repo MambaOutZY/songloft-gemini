@@ -25,6 +25,25 @@ definitions:
       reimport:
         type: boolean
     type: object
+  handlers.WriteSongTagsRequest:
+    properties:
+      album:
+        type: string
+      artist:
+        type: string
+      cover_data:
+        type: string
+      cover_url:
+        type: string
+      genre:
+        type: string
+      lyrics:
+        type: string
+      title:
+        type: string
+      year:
+        type: integer
+    type: object
   handlers.hlsProxySettingRequest:
     properties:
       enabled:
@@ -488,6 +507,10 @@ definitions:
         description: 音频格式
         example: mp3
         type: string
+      genre:
+        description: 流派
+        example: Pop
+        type: string
       id:
         description: 歌曲ID
         example: 1
@@ -533,6 +556,10 @@ definitions:
         description: 网络地址
         example: https://example.com/song.mp3
         type: string
+      year:
+        description: 发行年份
+        example: 2005
+        type: integer
     type: object
   models.SuccessResponse:
     properties:
@@ -708,6 +735,24 @@ definitions:
     - ConvertStatusFailed
     - ConvertStatusCancelling
     - ConvertStatusCancelled
+  services.OrganizeItem:
+    properties:
+      id:
+        type: integer
+      target_path:
+        type: string
+    type: object
+  services.OrganizeResult:
+    properties:
+      error:
+        type: string
+      file_path:
+        type: string
+      id:
+        type: integer
+      status:
+        type: string
+    type: object
   services.RefreshResponse:
     properties:
       access_token:
@@ -882,6 +927,86 @@ info:
   title: Songloft API
   version: 2.5.0
 paths:
+  /api/v1/songs/{id}/tags:
+    put:
+      consumes:
+      - application/json
+      description: 将元数据写入数据库和本地音频文件标签（仅本地歌曲）。cover_data(base64) 优先于 cover_url。非空字段覆盖，空值保留原值。
+      parameters:
+      - description: 歌曲ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 标签数据
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.WriteSongTagsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 写入结果
+          schema:
+            properties:
+              file_write:
+                type: string
+              song:
+                $ref: '#/definitions/models.Song'
+            type: object
+        "400":
+          description: 请求错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 歌曲不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 写入歌曲标签
+      tags:
+      - 歌曲管理
+  /api/v1/songs/organize:
+    post:
+      consumes:
+      - application/json
+      description: 批量移动/重命名本地歌曲文件到指定目录结构。target_path 为相对于 music_path 的路径（含目录和文件名），扩展名必须与原文件一致。
+      parameters:
+      - description: 整理项目列表
+        in: body
+        name: request
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/services.OrganizeItem'
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 整理结果
+          schema:
+            items:
+              $ref: '#/definitions/services.OrganizeResult'
+            type: array
+        "400":
+          description: 请求错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 批量整理歌曲文件
+      tags:
+      - 歌曲管理
   /auth/login:
     post:
       consumes:

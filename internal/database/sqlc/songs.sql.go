@@ -48,8 +48,9 @@ INSERT INTO songs (
     type, title, artist, album, duration, file_path, url,
     cover_path, cover_url, lyric, lyric_source, lyric_remote_url,
     file_size, format, bit_rate, sample_rate, is_live,
-    plugin_entry_path, source_data, dedup_key
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    plugin_entry_path, source_data, dedup_key,
+    year, genre
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateSongParams struct {
@@ -73,6 +74,8 @@ type CreateSongParams struct {
 	PluginEntryPath string
 	SourceData      string
 	DedupKey        string
+	Year            int64
+	Genre           string
 }
 
 func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (int64, error) {
@@ -97,6 +100,8 @@ func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (int64, 
 		arg.PluginEntryPath,
 		arg.SourceData,
 		arg.DedupKey,
+		arg.Year,
+		arg.Genre,
 	)
 	if err != nil {
 		return 0, err
@@ -137,7 +142,8 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     cover_path, cover_url, lyric, lyric_source, file_size,
     format, bit_rate, sample_rate, is_live,
     plugin_entry_path, source_data, dedup_key,
-    added_at, updated_at, lyric_remote_url
+    added_at, updated_at, lyric_remote_url,
+    year, genre
 FROM songs WHERE id = ?
 `
 
@@ -168,6 +174,8 @@ func (q *Queries) GetSongByID(ctx context.Context, id int64) (Song, error) {
 		&i.AddedAt,
 		&i.UpdatedAt,
 		&i.LyricRemoteUrl,
+		&i.Year,
+		&i.Genre,
 	)
 	return i, err
 }
@@ -230,7 +238,9 @@ UPDATE songs SET
     duration = CASE WHEN ? > 0 THEN ? ELSE duration END,
     lyric = CASE WHEN ? != '' THEN ? ELSE lyric END,
     lyric_source = CASE WHEN ? != '' THEN ? ELSE lyric_source END,
-    lyric_remote_url = CASE WHEN ? != '' THEN ? ELSE lyric_remote_url END
+    lyric_remote_url = CASE WHEN ? != '' THEN ? ELSE lyric_remote_url END,
+    year = CASE WHEN ? > 0 THEN ? ELSE year END,
+    genre = CASE WHEN ? != '' THEN ? ELSE genre END
 WHERE id = ?
 `
 
@@ -248,6 +258,10 @@ type UpdateRemoteSongMutableParams struct {
 	LyricSource    string
 	Column12       interface{}
 	LyricRemoteUrl string
+	Column14       interface{}
+	Year           int64
+	Column16       interface{}
+	Genre          string
 	ID             int64
 }
 
@@ -266,6 +280,10 @@ func (q *Queries) UpdateRemoteSongMutable(ctx context.Context, arg UpdateRemoteS
 		arg.LyricSource,
 		arg.Column12,
 		arg.LyricRemoteUrl,
+		arg.Column14,
+		arg.Year,
+		arg.Column16,
+		arg.Genre,
 		arg.ID,
 	)
 	return err
@@ -277,7 +295,8 @@ UPDATE songs SET
     file_path = ?, url = ?, cover_path = ?, cover_url = ?,
     lyric = ?, lyric_source = ?, lyric_remote_url = ?,
     file_size = ?, format = ?, bit_rate = ?, sample_rate = ?, is_live = ?,
-    plugin_entry_path = ?, source_data = ?, dedup_key = ?
+    plugin_entry_path = ?, source_data = ?, dedup_key = ?,
+    year = ?, genre = ?
 WHERE id = ?
 `
 
@@ -302,6 +321,8 @@ type UpdateSongParams struct {
 	PluginEntryPath string
 	SourceData      string
 	DedupKey        string
+	Year            int64
+	Genre           string
 	ID              int64
 }
 
@@ -327,6 +348,8 @@ func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (int64, 
 		arg.PluginEntryPath,
 		arg.SourceData,
 		arg.DedupKey,
+		arg.Year,
+		arg.Genre,
 		arg.ID,
 	)
 	if err != nil {

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,6 +32,7 @@ type SongHandler struct {
 	lyricFetcher *services.LyricFetcher // 解包插件 JSON 拿 LRC 文本(歌词 url 分支用)
 	hlsHandler   *HLSHandler            // 电台 HLS 流的反代委托（开关在 HLSHandler 内）
 	playActivity *playactivity.Registry // 跟踪进行中的 play/prefetch/transcode/reassign 工作，用户切歌时一次性 cancel
+	getMusicPath func() string          // 获取 music_path（由 scanner.GetMusicPath 注入）
 }
 
 // NewSongHandler 创建歌曲处理器
@@ -50,6 +52,11 @@ func NewSongHandler(
 		hlsHandler:   hlsHandler,
 		playActivity: playActivity,
 	}
+}
+
+// SetGetMusicPath 注入 music_path 获取函数。
+func (h *SongHandler) SetGetMusicPath(fn func() string) {
+	h.getMusicPath = fn
 }
 
 // ListSongs 获取歌曲列表
@@ -1026,4 +1033,160 @@ func (h *SongHandler) GetSongLyric(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Cache-Control", "public, max-age=31536000")
 	respondJSON(w, http.StatusOK, payload)
+}
+
+// WriteSongTagsRequest 写入歌曲标签的请求体。
+type WriteSongTagsRequest struct {
+	Title     string `json:"title"`
+	Artist    string `json:"artist"`
+	Album     string `json:"album"`
+	Year      int    `json:"year"`
+	Genre     string `json:"genre"`
+	Lyrics    string `json:"lyrics"`
+	CoverData string `json:"cover_data"`
+	CoverURL  string `json:"cover_url"`
+}
+
+// WriteTags 写入歌曲标签
+// @Summary 写入歌曲标签
+// @Description 将元数据写入数据库和本地音频文件标签（仅本地歌曲）。cover_data(base64) 优先于 cover_url。非空字段覆盖，空值保留原值。
+// @Tags 歌曲管理
+// @Accept json
+// @Produce json
+// @Param id path int true "歌曲ID"
+// @Param request body WriteSongTagsRequest true "标签数据"
+// @Success 200 {object} object{song=models.Song,file_write=string} "写入结果"
+// @Failure 400 {object} map[string]string "请求错误"
+// @Failure 404 {object} map[string]string "歌曲不存在"
+// @Security BearerAuth
+// @Router /api/v1/songs/{id}/tags [put]
+func (h *SongHandler) WriteTags(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "无效的歌曲ID", err)
+		return
+	}
+
+	song, err := h.songService.GetByID(ctx, id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "歌曲不存在", err)
+		return
+	}
+
+	if song.Type != models.TypeLocal {
+		respondError(w, http.StatusBadRequest, "仅支持本地歌曲", nil)
+		return
+	}
+
+	var req WriteSongTagsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
+		return
+	}
+
+	if req.Title != "" {
+		song.Title = req.Title
+	}
+	if req.Artist != "" {
+		song.Artist = req.Artist
+	}
+	if req.Album != "" {
+		song.Album = req.Album
+	}
+	if req.Year > 0 {
+		song.Year = req.Year
+	}
+	if req.Genre != "" {
+		song.Genre = req.Genre
+	}
+	if req.Lyrics != "" {
+		song.Lyric = models.LyricPayloadFromLRC(req.Lyrics).MarshalString()
+		song.LyricSource = models.LyricSourceManual
+	}
+
+	if req.CoverData != "" {
+		data, err := base64.StdEncoding.DecodeString(req.CoverData)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "无效的 cover_data base64", err)
+			return
+		}
+		ext := "jpg"
+		if len(data) > 8 {
+			ext = detectImageExt(data)
+		}
+		if coverPath, err := h.songService.SaveCoverFromData(data, ext); err != nil {
+			slog.Warn("save cover from data failed", "error", err)
+		} else {
+			song.CoverPath = coverPath
+		}
+	} else if req.CoverURL != "" {
+		if coverPath, err := h.songService.DownloadCover(ctx, req.CoverURL); err != nil {
+			slog.Warn("download cover failed", "url", req.CoverURL, "error", err)
+		} else {
+			song.CoverPath = coverPath
+			song.CoverURL = req.CoverURL
+		}
+	}
+
+	if err := h.songService.Update(ctx, song); err != nil {
+		respondError(w, http.StatusInternalServerError, "更新歌曲失败", err)
+		return
+	}
+
+	fileWrite := services.WriteSongTags(song.FilePath, song)
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"song":       song,
+		"file_write": string(fileWrite),
+	})
+}
+
+func detectImageExt(data []byte) string {
+	if len(data) >= 8 && data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G' {
+		return "png"
+	}
+	if len(data) >= 4 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F' {
+		return "webp"
+	}
+	if len(data) >= 3 && data[0] == 'G' && data[1] == 'I' && data[2] == 'F' {
+		return "gif"
+	}
+	return "jpg"
+}
+
+// OrganizeSongs 批量整理歌曲文件
+// @Summary 批量整理歌曲文件
+// @Description 批量移动/重命名本地歌曲文件到指定目录结构。target_path 为相对于 music_path 的路径（含目录和文件名），扩展名必须与原文件一致。
+// @Tags 歌曲管理
+// @Accept json
+// @Produce json
+// @Param request body []services.OrganizeItem true "整理项目列表"
+// @Success 200 {array} services.OrganizeResult "整理结果"
+// @Failure 400 {object} map[string]string "请求错误"
+// @Security BearerAuth
+// @Router /api/v1/songs/organize [post]
+func (h *SongHandler) OrganizeSongs(w http.ResponseWriter, r *http.Request) {
+	if h.getMusicPath == nil {
+		respondError(w, http.StatusInternalServerError, "music path not configured", nil)
+		return
+	}
+	musicPath := h.getMusicPath()
+	if musicPath == "" {
+		respondError(w, http.StatusBadRequest, "music_path 未设置", nil)
+		return
+	}
+
+	var items []services.OrganizeItem
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
+		return
+	}
+	if len(items) == 0 {
+		respondError(w, http.StatusBadRequest, "列表不能为空", nil)
+		return
+	}
+
+	results := h.songService.OrganizeSongs(r.Context(), musicPath, items)
+	respondJSON(w, http.StatusOK, results)
 }
