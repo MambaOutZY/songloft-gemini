@@ -16,3 +16,9 @@
 [submodule "ffmpeg-builder"]
 	path = ffmpeg-builder
 	url = https://github.com/hanxi/ffmpeg-builder.git
+[submodule "jsplugins-src/songloft-plugin-subsonic"]
+	path = jsplugins-src/songloft-plugin-subsonic
+	url = https://github.com/songloft-org/songloft-plugin-subsonic.git
+[submodule "jsplugins-src/songloft-plugin-tag"]
+	path = jsplugins-src/songloft-plugin-tag
+	url = https://github.com/songloft-org/songloft-plugin-tag.git

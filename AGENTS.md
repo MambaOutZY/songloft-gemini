@@ -211,7 +211,7 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 ## JS 插件
 
 - 源码 `jsplugins-src/<name>/`，构建产物在各插件仓库的 GitHub Releases
-- 新建插件：`pnpm create songloft-plugin <name>`（详见 `plugin-toolchain/README.md`）
+- 新建插件：`npx create-songloft-plugin@latest`（交互式脚手架，详见 `plugin-toolchain/README.md`）
 - 沙盒：QuickJS，通过 `internal/jsruntime` 提供的 `host` 桥接调用宿主能力（`http.fetch`、`storage`、`logger`）
 - 路由：`/api/v1/jsplugin/{entry_path}/...`
 - 权限：manifest 中 `permissions: ["network", "storage", "fs:music", ...]`，运行时由 `internal/jsplugin` 校验

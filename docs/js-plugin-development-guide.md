@@ -50,13 +50,20 @@ Manager（管理器）
 ### Step 1: 用脚手架创建项目
 
 ```bash
-pnpm create songloft-plugin my-plugin
-# 或 npm create songloft-plugin my-plugin
-cd my-plugin
-pnpm install
+npx create-songloft-plugin@latest
+# 或 pnpm create songloft-plugin
+cd <你的插件目录>
+npm install   # 或 pnpm install / yarn install
 ```
 
-脚手架会交互式询问插件 `name` / `entryPath` / `description` / `author` / `permissions`，并生成如下结构：
+脚手架会交互式引导你完成以下配置：
+
+1. **基本信息** — 目录名、插件显示名称、entryPath、简介、作者
+2. **权限选择**（多选） — `storage`、`songs.read`、`songs.write`、`playlists.read`、`playlists.write`、`inter-plugin`、`command`、`jsenv`
+3. **附加功能模板**（多选，可跳过） — 静态页面 (`static/`)、可执行文件管理 (`bin/`)
+4. **包管理器** — npm / pnpm / yarn
+
+生成的项目结构（选择全部附加功能时）：
 
 ```
 my-plugin/
@@ -65,9 +72,12 @@ my-plugin/
 ├── tsconfig.json
 ├── src/
 │   └── main.ts        # TypeScript 源码入口
-└── static/            # 静态资源
-    └── index.html
+├── static/            # [附加功能] 静态资源（HTML/CSS/JS 模板和 API 封装库）
+│   └── index.html
+└── bin/               # [附加功能] 可执行文件管理（打包/下载/运行外部程序）
 ```
+
+模板采用叠加层设计：始终包含基础模板，选中的附加功能会额外合并对应文件。
 
 ### Step 2: 编写业务逻辑
 
@@ -522,7 +532,8 @@ function getMusicUrl(songId) {
 | `playlists.write` | 创建/修改/删除歌单及其歌曲 |
 | `playlists.*` | 歌单读写通配符（一把梭糖） |
 | `inter-plugin` | 插件间通信 |
-| `command` | 执行宿主提供的指令 |
+| `command` | 执行外部命令/管理可执行文件 |
+| `jsenv` | 创建/执行子 JS 沙箱环境 |
 
 > 注意：网络请求 (`fetch`)、定时器 (`setTimeout/setInterval`)、日志等能力**无需权限声明**，是默认宿主能力。
 
