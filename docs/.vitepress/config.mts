@@ -22,7 +22,14 @@ export default async () => {
       nav: [
         { text: '快速开始', link: '/quick-start' },
         { text: '客户端', link: '/issues/8' },
-        { text: '插件', link: '/issues/4' },
+        {
+          text: '插件',
+          items: [
+            { text: '插件列表', link: '/issues/4' },
+            { text: '插件开发指南', link: '/js-plugin-development-guide' },
+            { text: '插件源制作指南', link: '/plugin_registry' },
+          ],
+        },
         { text: 'FAQ', link: '/faq' },
         { text: '更新日志', link: '/changelog' },
         {
