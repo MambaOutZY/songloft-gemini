@@ -1,3 +1,20 @@
+## [v2.5.1] - 2026-06-04
+### :sparkles: New Features
+- [`cba096f`](https://github.com/songloft-org/songloft/commit/cba096f483b7d19295479d41f257bca99fa459bf) - 支持全局HTTP代理 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a0fd898`](https://github.com/songloft-org/songloft/commit/a0fd8983f5920d4f9ee5b64b8e131d0113f03f35) - 新增标签内容写入接口和歌曲文件整理接口 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`eabba1d`](https://github.com/songloft-org/songloft/commit/eabba1d6289e34f5a42de8e04efdf4821411b7a6) - 插件新增 fs 接口 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`1c48c37`](https://github.com/songloft-org/songloft/commit/1c48c37645c2aac9c14f28310e99fb6dde126e73) - 部分歌曲标签信息识别不出来 [#95](https://github.com/songloft-org/songloft/pull/95) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`adc0019`](https://github.com/songloft-org/songloft/commit/adc0019410521dcef30b71a51524115acfe806c2) - 修复编码问题 songloft-org/songloft[#104](https://github.com/songloft-org/songloft/pull/104) *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`58a4ffd`](https://github.com/songloft-org/songloft/commit/58a4ffdd1b39283bc3cc69bf26bce0fa0eea6021) - update CHANGELOG for v2.5.0 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`41c1528`](https://github.com/songloft-org/songloft/commit/41c15281364d842c20ba0c196580f7e5048080e6) - release version 2.5.1 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [Unreleased]
 ### :sparkles: New Features
 - 插件商店支持自定义代理输入（与插件更新/系统升级对话框一致的 RadioGroup + 自定义输入框）
@@ -1071,3 +1088,4 @@
 [v2.3.0]: https://github.com/songloft-org/songloft/compare/v2.2.5...v2.3.0
 [v2.4.0]: https://github.com/songloft-org/songloft/compare/v2.3.0...v2.4.0
 [v2.5.0]: https://github.com/songloft-org/songloft/compare/v2.4.0...v2.5.0
+[v2.5.1]: https://github.com/songloft-org/songloft/compare/v2.5.0...v2.5.1
