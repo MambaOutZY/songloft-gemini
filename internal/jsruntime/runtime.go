@@ -26,6 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gorilla/websocket"
+
 	"songloft/internal/httputil"
 
 	"modernc.org/quickjs"
@@ -78,6 +80,14 @@ type asyncResult struct {
 	Data string
 }
 
+// wsConn 封装一条 Go 侧管理的 WebSocket 连接
+type wsConn struct {
+	id     string
+	conn   *websocket.Conn
+	mu     sync.Mutex // 保护写操作（ReadMessage 由独立 goroutine 串行调用，不需锁）
+	closed atomic.Bool
+}
+
 // JSEnv 代表一个 JS 运行时环境
 type JSEnv struct {
 	vm             *quickjs.VM
@@ -100,6 +110,10 @@ type JSEnv struct {
 	// asyncInflight 记录当前正在飞行的异步任务数；ExecuteJS 事件循环根据
 	// 此计数判断是否仍需等待新结果。
 	asyncInflight atomic.Int32
+	// wsConns 管理该 env 下的所有 WebSocket 连接（connId → *wsConn）
+	wsConns sync.Map
+	// wsConnSeq WebSocket 连接 ID 递增序号
+	wsConnSeq atomic.Uint64
 }
 
 // JSEventResult 封装收集到的 JS 事件
@@ -730,6 +744,18 @@ func (m *JSEnvManager) DestroyEnv(envID string) error {
 		return fmt.Errorf("env %s not found", envID)
 	}
 
+	// 关闭该 env 下的所有 WebSocket 连接
+	env.wsConns.Range(func(key, value any) bool {
+		wsc := value.(*wsConn)
+		if wsc.closed.CompareAndSwap(false, true) {
+			wsc.mu.Lock()
+			_ = wsc.conn.Close()
+			wsc.mu.Unlock()
+		}
+		env.wsConns.Delete(key)
+		return true
+	})
+
 	// 关闭 VM
 	env.mu.Lock()
 	if err := env.vm.Close(); err != nil {
@@ -824,6 +850,25 @@ func tryLockWithTimeout(mu *sync.Mutex, timeout time.Duration) bool {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// HasActiveWebSockets 检查指定环境是否有活跃的 WebSocket 连接。
+// 由 HealthChecker.checkIdle 调用，防止有活跃连接的插件被休眠。
+func (m *JSEnvManager) HasActiveWebSockets(envID string) bool {
+	env, err := m.getEnv(envID)
+	if err != nil {
+		return false
+	}
+	hasActive := false
+	env.wsConns.Range(func(_, value any) bool {
+		wsc := value.(*wsConn)
+		if !wsc.closed.Load() {
+			hasActive = true
+			return false // 找到一个就够了
+		}
+		return true
+	})
+	return hasActive
 }
 
 // SetBridgeCallback 为指定环境设置桥接回调（__go_bridge 的处理函数）
@@ -1428,6 +1473,188 @@ func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 	// __go_raw_inflate(dataHex) — raw DEFLATE 解压（无 zlib 头，用于 ZIP 文件解析）
 	if err := vm.RegisterFunc("__go_raw_inflate", goRawInflate, false); err != nil {
 		return fmt.Errorf("register __go_raw_inflate: %w", err)
+	}
+
+	// --- WebSocket 桥接函数 ---
+
+	// __go_ws_connect_async(url, headersJSON) -> id string
+	// 异步连接 WebSocket，返回 asyncResult ID。成功时 data 为 connId，
+	// 随后读循环自动推送 ws_msg / ws_close / ws_err 事件。
+	if err := vm.RegisterFunc("__go_ws_connect_async", func(url, headersJSON string) string {
+		seq := env.asyncSeq.Add(1)
+		id := fmt.Sprintf("ws_connect:%d", seq)
+		env.asyncInflight.Add(1)
+
+		go func() {
+			defer env.asyncInflight.Add(-1)
+
+			header := http.Header{}
+			if headersJSON != "" && headersJSON != "{}" {
+				var h map[string]string
+				if err := json.Unmarshal([]byte(headersJSON), &h); err == nil {
+					for k, v := range h {
+						header.Set(k, v)
+					}
+				}
+			}
+
+			dialer := websocket.Dialer{
+				HandshakeTimeout: 15 * time.Second,
+			}
+			conn, _, err := dialer.Dial(url, header)
+			if err != nil {
+				env.asyncResults <- asyncResult{ID: id, Type: "ws_connect", OK: false, Data: err.Error()}
+				select {
+				case env.asyncSignal <- struct{}{}:
+				default:
+				}
+				return
+			}
+
+			connSeq := env.wsConnSeq.Add(1)
+			connId := fmt.Sprintf("ws_%d", connSeq)
+			wsc := &wsConn{id: connId, conn: conn}
+			env.wsConns.Store(connId, wsc)
+
+			env.asyncResults <- asyncResult{ID: id, Type: "ws_connect", OK: true, Data: connId}
+			select {
+			case env.asyncSignal <- struct{}{}:
+			default:
+			}
+
+			// 读循环：接收消息并推送到 asyncResults
+			go func() {
+				for {
+					messageType, data, err := conn.ReadMessage()
+					if err != nil {
+						if wsc.closed.Load() {
+							// 主动关闭，推送 ws_close
+							closeData, _ := json.Marshal(map[string]any{
+								"connId": connId, "code": 1000, "reason": "",
+							})
+							env.asyncResults <- asyncResult{
+								ID: connId, Type: "ws_close", OK: true, Data: string(closeData),
+							}
+						} else {
+							closeErr := websocket.IsCloseError(err,
+								websocket.CloseNormalClosure,
+								websocket.CloseGoingAway,
+							)
+							if closeErr {
+								closeData, _ := json.Marshal(map[string]any{
+									"connId": connId, "code": 1001, "reason": err.Error(),
+								})
+								env.asyncResults <- asyncResult{
+									ID: connId, Type: "ws_close", OK: true, Data: string(closeData),
+								}
+							} else {
+								env.asyncResults <- asyncResult{
+									ID: connId, Type: "ws_err", OK: true, Data: err.Error(),
+								}
+							}
+						}
+						wsc.closed.Store(true)
+						env.wsConns.Delete(connId)
+						select {
+						case env.asyncSignal <- struct{}{}:
+						default:
+						}
+						return
+					}
+
+					isBinary := messageType == websocket.BinaryMessage
+					dataHex := hex.EncodeToString(data)
+					msgJSON, _ := json.Marshal(map[string]any{
+						"connId":   connId,
+						"dataHex":  dataHex,
+						"isBinary": isBinary,
+					})
+					select {
+					case env.asyncResults <- asyncResult{
+						ID: connId, Type: "ws_msg", OK: true, Data: string(msgJSON),
+					}:
+					default:
+						slog.Warn("asyncResults channel full, drop ws_msg",
+							"envID", env.envID, "connId", connId)
+					}
+					select {
+					case env.asyncSignal <- struct{}{}:
+					default:
+					}
+				}
+			}()
+		}()
+		return id
+	}, false); err != nil {
+		return fmt.Errorf("register __go_ws_connect_async: %w", err)
+	}
+
+	// __go_ws_send(connId, dataHex, isBinary) -> errMsg
+	if err := vm.RegisterFunc("__go_ws_send", func(connId, dataHex string, isBinary bool) string {
+		val, ok := env.wsConns.Load(connId)
+		if !ok {
+			return "connection not found: " + connId
+		}
+		wsc := val.(*wsConn)
+		if wsc.closed.Load() {
+			return "connection already closed"
+		}
+
+		data, err := hex.DecodeString(dataHex)
+		if err != nil {
+			return "hex decode error: " + err.Error()
+		}
+
+		msgType := websocket.TextMessage
+		if isBinary {
+			msgType = websocket.BinaryMessage
+		}
+
+		wsc.mu.Lock()
+		err = wsc.conn.WriteMessage(msgType, data)
+		wsc.mu.Unlock()
+		if err != nil {
+			return "write error: " + err.Error()
+		}
+		return ""
+	}, false); err != nil {
+		return fmt.Errorf("register __go_ws_send: %w", err)
+	}
+
+	// __go_ws_close(connId, code, reason) -> errMsg
+	if err := vm.RegisterFunc("__go_ws_close", func(connId string, code int, reason string) string {
+		val, ok := env.wsConns.Load(connId)
+		if !ok {
+			return ""
+		}
+		wsc := val.(*wsConn)
+		if !wsc.closed.CompareAndSwap(false, true) {
+			return ""
+		}
+
+		closeMsg := websocket.FormatCloseMessage(code, reason)
+		wsc.mu.Lock()
+		_ = wsc.conn.WriteMessage(websocket.CloseMessage, closeMsg)
+		_ = wsc.conn.Close()
+		wsc.mu.Unlock()
+		return ""
+	}, false); err != nil {
+		return fmt.Errorf("register __go_ws_close: %w", err)
+	}
+
+	// __go_ws_state(connId) -> readyState int (0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)
+	if err := vm.RegisterFunc("__go_ws_state", func(connId string) int {
+		val, ok := env.wsConns.Load(connId)
+		if !ok {
+			return 3 // CLOSED
+		}
+		wsc := val.(*wsConn)
+		if wsc.closed.Load() {
+			return 3
+		}
+		return 1 // OPEN
+	}, false); err != nil {
+		return fmt.Errorf("register __go_ws_state: %w", err)
 	}
 
 	// __go_bridge(action, data) -> id string

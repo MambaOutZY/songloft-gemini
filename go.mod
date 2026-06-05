@@ -8,6 +8,7 @@ require (
 	github.com/go-chi/chi/v5 v5.2.4
 	github.com/go-chi/cors v1.2.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/hanxi/tag v0.0.0-20240417053706-3d75831295e8
 	github.com/hanxi/tracely/sdk/go/tracely v1.0.19
 	github.com/pressly/goose/v3 v3.27.1

@@ -38,7 +38,8 @@ globalThis.console = {
         '__go_buffer_from', '__go_buffer_to_string', '__go_crypto_md5', '__go_crypto_sha256',
         '__go_crypto_random_bytes', '__go_crypto_aes_encrypt', '__go_crypto_rsa_encrypt',
         '__go_zlib_inflate', '__go_zlib_deflate', '__go_raw_inflate',
-        '__go_pop_async_result'];
+        '__go_pop_async_result',
+        '__go_ws_connect_async', '__go_ws_send', '__go_ws_close', '__go_ws_state'];
     for (var i = 0; i < bridgeNames.length; i++) {
         if (typeof globalThis[bridgeNames[i]] === 'function') {
             _nativeFuncs.add(globalThis[bridgeNames[i]]);
@@ -76,6 +77,51 @@ globalThis.console = {
 var __asyncCallbacks = new Map();
 
 globalThis.__resolveAsync = function(id, ok, payload, type) {
+    // WebSocket 推送事件（ws_msg / ws_close / ws_err）不走 __asyncCallbacks，
+    // 直接分发给 __wsRegistry 中对应的 WebSocket 实例。
+    if (type === 'ws_msg') {
+        try {
+            var msg = JSON.parse(payload);
+            var ws = __wsRegistry ? __wsRegistry.get(msg.connId) : null;
+            if (ws) {
+                var data;
+                if (msg.isBinary) {
+                    var h = msg.dataHex;
+                    var len = h.length / 2;
+                    data = new Uint8Array(len);
+                    for (var i = 0; i < len; i++) data[i] = parseInt(h.substr(i*2, 2), 16);
+                } else {
+                    data = __go_buffer_to_string(msg.dataHex, 'utf8');
+                }
+                ws._emit('message', { data: data });
+            }
+        } catch(e) { console.error('ws_msg dispatch error:', e); }
+        return;
+    }
+    if (type === 'ws_close') {
+        try {
+            var info = JSON.parse(payload);
+            var ws = __wsRegistry ? __wsRegistry.get(info.connId) : null;
+            if (ws) {
+                ws.readyState = 3;
+                __wsRegistry.delete(info.connId);
+                ws._emit('close', { code: info.code || 1000, reason: info.reason || '' });
+            }
+        } catch(e) { console.error('ws_close dispatch error:', e); }
+        return;
+    }
+    if (type === 'ws_err') {
+        // ws_err 的 id 是 connId
+        var ws = __wsRegistry ? __wsRegistry.get(id) : null;
+        if (ws) {
+            ws.readyState = 3;
+            __wsRegistry.delete(id);
+            ws._emit('error', { message: payload || 'WebSocket error' });
+            ws._emit('close', { code: 1006, reason: payload || '' });
+        }
+        return;
+    }
+
     var cb = __asyncCallbacks.get(id);
     if (!cb) return;
     __asyncCallbacks.delete(id);
@@ -101,7 +147,7 @@ globalThis.__resolveAsync = function(id, ok, payload, type) {
         cb.resolve(response);
         return;
     }
-    // 其他类型（bridge）：透传字符串 payload，调用方自行 JSON.parse。
+    // 其他类型（bridge / ws_connect）：透传字符串 payload，调用方自行处理。
     cb.resolve(payload);
 };
 
@@ -390,6 +436,88 @@ globalThis.TextDecoder.prototype.decode = function(buf) {
     return __go_buffer_to_string(hex, 'utf8');
 };
 
+// WebSocket polyfill
+var __wsRegistry = new Map();
+globalThis.WebSocket = function(url, options) {
+    this.readyState = 0; // CONNECTING
+    this.url = url;
+    this.onopen = null;
+    this.onmessage = null;
+    this.onclose = null;
+    this.onerror = null;
+    this._connId = null;
+    this._listeners = {open:[], message:[], close:[], error:[]};
+    var self = this;
+    var headers = (options && options.headers) ? JSON.stringify(options.headers) : '{}';
+    var id = __go_ws_connect_async(String(url), headers);
+    __asyncCallbacks.set(id, {
+        resolve: function(connId) {
+            self._connId = connId;
+            __wsRegistry.set(connId, self);
+            self.readyState = 1;
+            self._emit('open', {});
+        },
+        reject: function(err) {
+            self.readyState = 3;
+            self._emit('error', {message: err.message || String(err)});
+        }
+    });
+};
+WebSocket.CONNECTING = 0;
+WebSocket.OPEN = 1;
+WebSocket.CLOSING = 2;
+WebSocket.CLOSED = 3;
+WebSocket.prototype.send = function(data) {
+    if (this.readyState !== 1) throw new Error('WebSocket is not open');
+    var dataHex;
+    var isBinary = false;
+    if (typeof data === 'string') {
+        dataHex = __go_buffer_from(data, 'utf8');
+    } else if (data instanceof Uint8Array) {
+        var h = '';
+        for (var i = 0; i < data.length; i++) h += ('0' + data[i].toString(16)).slice(-2);
+        dataHex = h;
+        isBinary = true;
+    } else if (data instanceof ArrayBuffer) {
+        var bytes = new Uint8Array(data);
+        var h = '';
+        for (var i = 0; i < bytes.length; i++) h += ('0' + bytes[i].toString(16)).slice(-2);
+        dataHex = h;
+        isBinary = true;
+    } else if (data && typeof data._hex === 'string') {
+        dataHex = data._hex;
+        isBinary = true;
+    } else {
+        dataHex = __go_buffer_from(String(data), 'utf8');
+    }
+    var err = __go_ws_send(this._connId, dataHex, isBinary);
+    if (err) throw new Error(err);
+};
+WebSocket.prototype.close = function(code, reason) {
+    if (this.readyState >= 2) return;
+    this.readyState = 2;
+    __go_ws_close(this._connId, code || 1000, reason || '');
+};
+WebSocket.prototype.addEventListener = function(type, fn) {
+    if (this._listeners[type]) this._listeners[type].push(fn);
+};
+WebSocket.prototype.removeEventListener = function(type, fn) {
+    if (!this._listeners[type]) return;
+    this._listeners[type] = this._listeners[type].filter(function(f) { return f !== fn; });
+};
+WebSocket.prototype._emit = function(type, event) {
+    event.type = type;
+    event.target = this;
+    var handler = this['on' + type];
+    if (typeof handler === 'function') {
+        try { handler.call(this, event); } catch(e) { console.error('WebSocket on' + type + ' error:', e); }
+    }
+    var listeners = this._listeners[type] || [];
+    for (var i = 0; i < listeners.length; i++) {
+        try { listeners[i].call(this, event); } catch(e) { console.error('WebSocket listener error:', e); }
+    }
+};
+
 // URL / URLSearchParams polyfill
 globalThis.URLSearchParams = function(init) {
     this._params = [];
@@ -425,12 +553,12 @@ globalThis.URLSearchParams.prototype.toString = function() {
 globalThis.URL = function(url, base) {
     if (base) {
         if (url.charAt(0)==='/') url = base.replace(/\/[^\/]*$/, '') + url;
-        else if (!/^https?:\/\//.test(url)) url = base + '/' + url;
+        else if (!/^(https?|wss?):\/\//.test(url)) url = base + '/' + url;
     }
-    if (!/^https?:\/\//.test(url)) {
+    if (!/^(https?|wss?):\/\//.test(url)) {
         throw new TypeError("Invalid URL: '" + url + "'");
     }
-    var m = url.match(/^(https?:)\/\/([^\/\?#]+)(\/[^?#]*)?(\?[^#]*)?(#.*)?$/);
+    var m = url.match(/^(https?:|wss?:)\/\/([^\/\?#]+)(\/[^?#]*)?(\?[^#]*)?(#.*)?$/);
     this.href = url;
     this.protocol = m ? m[1] : '';
     this.host = m ? m[2] : '';

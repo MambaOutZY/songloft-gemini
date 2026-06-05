@@ -2,8 +2,14 @@ package jsruntime
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestProcessTimers_ReturnsTrue_WhenTimerFires(t *testing.T) {
@@ -361,6 +367,377 @@ func TestURLPolyfill_RelativeWithoutBase_ThrowsTypeError(t *testing.T) {
 	res2, _ := manager.ExecuteJS(context.Background(), envID, "errorName", 1000)
 	if res2.Result != "TypeError" {
 		t.Errorf("expected TypeError, got %s", res2.Result)
+	}
+}
+
+// --- WebSocket Polyfill 测试 ---
+
+// echoWSHandler 是一个简单的 WebSocket echo server handler
+var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+
+func echoWSHandler(w http.ResponseWriter, r *http.Request) {
+	c, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer c.Close()
+	for {
+		mt, message, err := c.ReadMessage()
+		if err != nil {
+			break
+		}
+		if err := c.WriteMessage(mt, message); err != nil {
+			break
+		}
+	}
+}
+
+func startEchoWSServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(echoWSHandler))
+	return server
+}
+
+func wsURL(server *httptest.Server) string {
+	return "ws" + strings.TrimPrefix(server.URL, "http")
+}
+
+func TestWebSocket_ConnectAndSendText(t *testing.T) {
+	server := startEchoWSServer(t)
+	defer server.Close()
+
+	manager := NewJSEnvManager()
+	defer manager.SignalShutdown()
+
+	envID := "test-ws-text"
+	if err := manager.CreateEnv(envID, polyfillJS, 1); err != nil {
+		t.Fatalf("CreateEnv: %v", err)
+	}
+	defer manager.DestroyEnv(envID)
+
+	code := fmt.Sprintf(`
+		var wsResult = '';
+		var wsOpened = false;
+		var wsClosed = false;
+		(function() {
+			var ws = new WebSocket('%s');
+			ws.onopen = function() {
+				wsOpened = true;
+				ws.send('hello world');
+			};
+			ws.onmessage = function(e) {
+				wsResult = e.data;
+				ws.close();
+			};
+			ws.onclose = function() {
+				wsClosed = true;
+			};
+		})();
+	`, wsURL(server))
+
+	_, err := manager.ExecuteJS(context.Background(), envID, code, 5000)
+	if err != nil {
+		t.Fatalf("ExecuteJS: %v", err)
+	}
+
+	// 等待异步回调完成
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		res, _ := manager.ExecuteJS(context.Background(), envID, "wsResult", 1000)
+		if res != nil && res.Result == "hello world" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	res, _ := manager.ExecuteJS(context.Background(), envID, "wsResult", 1000)
+	if res == nil || res.Result != "hello world" {
+		t.Errorf("expected echo 'hello world', got %q", res.Result)
+	}
+
+	res, _ = manager.ExecuteJS(context.Background(), envID, "wsOpened", 1000)
+	if res == nil || res.Result != "true" {
+		t.Errorf("expected wsOpened=true, got %q", res.Result)
+	}
+}
+
+func TestWebSocket_BinaryEcho(t *testing.T) {
+	server := startEchoWSServer(t)
+	defer server.Close()
+
+	manager := NewJSEnvManager()
+	defer manager.SignalShutdown()
+
+	envID := "test-ws-binary"
+	if err := manager.CreateEnv(envID, polyfillJS, 1); err != nil {
+		t.Fatalf("CreateEnv: %v", err)
+	}
+	defer manager.DestroyEnv(envID)
+
+	code := fmt.Sprintf(`
+		var binaryResult = '';
+		var binaryIsBinary = false;
+		(function() {
+			var ws = new WebSocket('%s');
+			ws.onopen = function() {
+				var data = new Uint8Array([0x01, 0x02, 0x03, 0xff]);
+				ws.send(data);
+			};
+			ws.onmessage = function(e) {
+				if (e.data instanceof Uint8Array) {
+					binaryIsBinary = true;
+					var hex = '';
+					for (var i = 0; i < e.data.length; i++) hex += ('0' + e.data[i].toString(16)).slice(-2);
+					binaryResult = hex;
+				}
+				ws.close();
+			};
+		})();
+	`, wsURL(server))
+
+	_, err := manager.ExecuteJS(context.Background(), envID, code, 5000)
+	if err != nil {
+		t.Fatalf("ExecuteJS: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		res, _ := manager.ExecuteJS(context.Background(), envID, "binaryResult", 1000)
+		if res != nil && res.Result != "" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	res, _ := manager.ExecuteJS(context.Background(), envID, "binaryResult", 1000)
+	if res == nil || res.Result != "010203ff" {
+		t.Errorf("expected binary echo '010203ff', got %q", res.Result)
+	}
+
+	res, _ = manager.ExecuteJS(context.Background(), envID, "binaryIsBinary", 1000)
+	if res == nil || res.Result != "true" {
+		t.Errorf("expected binaryIsBinary=true, got %q", res.Result)
+	}
+}
+
+func TestWebSocket_CloseEvent(t *testing.T) {
+	server := startEchoWSServer(t)
+	defer server.Close()
+
+	manager := NewJSEnvManager()
+	defer manager.SignalShutdown()
+
+	envID := "test-ws-close"
+	if err := manager.CreateEnv(envID, polyfillJS, 1); err != nil {
+		t.Fatalf("CreateEnv: %v", err)
+	}
+	defer manager.DestroyEnv(envID)
+
+	code := fmt.Sprintf(`
+		var closeCode = 0;
+		(function() {
+			var ws = new WebSocket('%s');
+			ws.onopen = function() {
+				ws.close(1000, 'done');
+			};
+			ws.onclose = function(e) {
+				closeCode = e.code;
+			};
+		})();
+	`, wsURL(server))
+
+	_, err := manager.ExecuteJS(context.Background(), envID, code, 5000)
+	if err != nil {
+		t.Fatalf("ExecuteJS: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		res, _ := manager.ExecuteJS(context.Background(), envID, "closeCode", 1000)
+		if res != nil && res.Result != "0" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	res, _ := manager.ExecuteJS(context.Background(), envID, "closeCode", 1000)
+	if res == nil || res.Result != "1000" {
+		t.Errorf("expected close code 1000, got %q", res.Result)
+	}
+}
+
+func TestWebSocket_ConnectError(t *testing.T) {
+	manager := NewJSEnvManager()
+	defer manager.SignalShutdown()
+
+	envID := "test-ws-error"
+	if err := manager.CreateEnv(envID, polyfillJS, 1); err != nil {
+		t.Fatalf("CreateEnv: %v", err)
+	}
+	defer manager.DestroyEnv(envID)
+
+	// 连接到一个不存在的地址
+	code := `
+		var wsErrorMsg = '';
+		(function() {
+			var ws = new WebSocket('ws://127.0.0.1:1');
+			ws.onerror = function(e) {
+				wsErrorMsg = e.message || 'error';
+			};
+		})();
+	`
+
+	_, err := manager.ExecuteJS(context.Background(), envID, code, 5000)
+	if err != nil {
+		t.Fatalf("ExecuteJS: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		res, _ := manager.ExecuteJS(context.Background(), envID, "wsErrorMsg", 1000)
+		if res != nil && res.Result != "" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	res, _ := manager.ExecuteJS(context.Background(), envID, "wsErrorMsg", 1000)
+	if res == nil || res.Result == "" {
+		t.Error("expected error message on connect failure, got empty")
+	}
+}
+
+func TestWebSocket_HasActiveWebSockets(t *testing.T) {
+	server := startEchoWSServer(t)
+	defer server.Close()
+
+	manager := NewJSEnvManager()
+	defer manager.SignalShutdown()
+
+	envID := "test-ws-has-active"
+	if err := manager.CreateEnv(envID, polyfillJS, 1); err != nil {
+		t.Fatalf("CreateEnv: %v", err)
+	}
+	defer manager.DestroyEnv(envID)
+
+	// 连接前应该没有活跃连接
+	if manager.HasActiveWebSockets(envID) {
+		t.Error("expected no active WebSockets before connecting")
+	}
+
+	code := fmt.Sprintf(`
+		var testWs = new WebSocket('%s');
+		var testWsReady = false;
+		testWs.onopen = function() { testWsReady = true; };
+	`, wsURL(server))
+
+	_, err := manager.ExecuteJS(context.Background(), envID, code, 5000)
+	if err != nil {
+		t.Fatalf("ExecuteJS: %v", err)
+	}
+
+	// 等待连接建立
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		res, _ := manager.ExecuteJS(context.Background(), envID, "testWsReady", 1000)
+		if res != nil && res.Result == "true" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// 连接后应该有活跃连接
+	if !manager.HasActiveWebSockets(envID) {
+		t.Error("expected active WebSockets after connecting")
+	}
+
+	// 关闭连接
+	_, _ = manager.ExecuteJS(context.Background(), envID, "testWs.close()", 1000)
+
+	// 等待关闭
+	time.Sleep(200 * time.Millisecond)
+	// 让事件循环处理关闭事件
+	manager.ProcessTimers(envID)
+	time.Sleep(100 * time.Millisecond)
+
+	if manager.HasActiveWebSockets(envID) {
+		t.Error("expected no active WebSockets after closing")
+	}
+}
+
+func TestWebSocket_DestroyEnvClosesConnections(t *testing.T) {
+	server := startEchoWSServer(t)
+	defer server.Close()
+
+	manager := NewJSEnvManager()
+	defer manager.SignalShutdown()
+
+	envID := "test-ws-destroy"
+	if err := manager.CreateEnv(envID, polyfillJS, 1); err != nil {
+		t.Fatalf("CreateEnv: %v", err)
+	}
+
+	code := fmt.Sprintf(`
+		var ws = new WebSocket('%s');
+		var wsReady = false;
+		ws.onopen = function() { wsReady = true; };
+	`, wsURL(server))
+
+	_, err := manager.ExecuteJS(context.Background(), envID, code, 5000)
+	if err != nil {
+		t.Fatalf("ExecuteJS: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		res, _ := manager.ExecuteJS(context.Background(), envID, "wsReady", 1000)
+		if res != nil && res.Result == "true" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if !manager.HasActiveWebSockets(envID) {
+		t.Fatal("expected active WebSocket before destroy")
+	}
+
+	// DestroyEnv 应该关闭所有 WebSocket 连接
+	if err := manager.DestroyEnv(envID); err != nil {
+		t.Fatalf("DestroyEnv: %v", err)
+	}
+
+	// 验证不再有活跃连接（getEnv 会 error，HasActiveWebSockets 返回 false）
+	if manager.HasActiveWebSockets(envID) {
+		t.Error("expected no active WebSockets after DestroyEnv")
+	}
+}
+
+func TestURLPolyfill_WebSocketURL(t *testing.T) {
+	manager := NewJSEnvManager()
+	defer manager.SignalShutdown()
+
+	envID := "test-url-ws"
+	code := polyfillJS + `
+		var u1 = new URL('ws://example.com:8080/path?q=1');
+		var u2 = new URL('wss://secure.example.com/ws');
+		var r1 = JSON.stringify({protocol: u1.protocol, host: u1.host, pathname: u1.pathname});
+		var r2 = JSON.stringify({protocol: u2.protocol, hostname: u2.hostname, pathname: u2.pathname});
+	`
+	if err := manager.CreateEnv(envID, code, 1); err != nil {
+		t.Fatalf("CreateEnv: %v", err)
+	}
+	defer manager.DestroyEnv(envID)
+
+	res1, _ := manager.ExecuteJS(context.Background(), envID, "r1", 1000)
+	expected1 := `{"protocol":"ws:","host":"example.com:8080","pathname":"/path"}`
+	if res1.Result != expected1 {
+		t.Errorf("ws URL: got %s\nwant %s", res1.Result, expected1)
+	}
+
+	res2, _ := manager.ExecuteJS(context.Background(), envID, "r2", 1000)
+	expected2 := `{"protocol":"wss:","hostname":"secure.example.com","pathname":"/ws"}`
+	if res2.Result != expected2 {
+		t.Errorf("wss URL: got %s\nwant %s", res2.Result, expected2)
 	}
 }
 

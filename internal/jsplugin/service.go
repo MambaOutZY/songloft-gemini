@@ -382,6 +382,20 @@ func (s *JSService) EnvID() string {
 	return s.envID
 }
 
+// HasRunningProcesses 检查插件是否有运行中的后台子进程。
+// 由 HealthChecker.checkIdle 调用，防止有活跃子进程的插件被休眠。
+func (s *JSService) HasRunningProcesses() bool {
+	if s.bridgeHandler == nil {
+		return false
+	}
+	hasProc := false
+	s.bridgeHandler.processes.Range(func(_, _ any) bool {
+		hasProc = true
+		return false
+	})
+	return hasProc
+}
+
 // --- 内部消息处理方法 ---
 
 func (s *JSService) handleHTTPRequest(msg *Message) *Message {
