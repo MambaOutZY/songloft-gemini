@@ -1,3 +1,24 @@
+## [v2.6.0] - 2026-06-05
+### :sparkles: New Features
+- [`7bfe806`](https://github.com/songloft-org/songloft/commit/7bfe80604fa49b67202b5ddecd002cf9566dadca) - 扫描歌曲支持用文件名作为标题 songloft-org/songloft[#100](https://github.com/songloft-org/songloft/pull/100) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b140863`](https://github.com/songloft-org/songloft/commit/b140863aacde2a8ee6c8cada68b1a30ff0f6a7b0) - 实现自定义tab songloft-org/songloft[#103](https://github.com/songloft-org/songloft/pull/103) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e9419a8`](https://github.com/songloft-org/songloft/commit/e9419a8d757c100f963a0005a80bb94780217bc4) - 插件新增 websocket 接口 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d433bd2`](https://github.com/songloft-org/songloft/commit/d433bd2145e878f6311fa8c6c2c2de434761f5e7) - 插件适配嵌入到主程序 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`4cf8a77`](https://github.com/songloft-org/songloft/commit/4cf8a771b9da95fc5ea11a012460bbda62402156) - 修复插件无法运行的问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`2db9ac8`](https://github.com/songloft-org/songloft/commit/2db9ac8de8d9b9d7cd7700a4bd4d9282a5124eff) - 统一插件打包脚本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`236ec5b`](https://github.com/songloft-org/songloft/commit/236ec5b4cf69f519d7b631fb9fc8950ae16eafee) - **convert**: 接入全局 HTTP 代理，修复代理环境下歌曲/封面下载失败 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`d387aaa`](https://github.com/songloft-org/songloft/commit/d387aaa2ce53d31292e04b325dd3167fb6dedaf6) - update CHANGELOG for v2.5.1 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`93d8f56`](https://github.com/songloft-org/songloft/commit/93d8f5657d5aa4d014e97d17c3492261ba4614cb) - 更新插件子模块及构建脚本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ae2b657`](https://github.com/songloft-org/songloft/commit/ae2b6577b4cad1012a4089283c6149a75795352f) - 更新插件子模块引用 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`5e52336`](https://github.com/songloft-org/songloft/commit/5e523363c03e14332e57ffb5eea29900187c899a) - release version 2.6.0 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.5.1] - 2026-06-04
 ### :sparkles: New Features
 - [`cba096f`](https://github.com/songloft-org/songloft/commit/cba096f483b7d19295479d41f257bca99fa459bf) - 支持全局HTTP代理 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1089,3 +1110,4 @@
 [v2.4.0]: https://github.com/songloft-org/songloft/compare/v2.3.0...v2.4.0
 [v2.5.0]: https://github.com/songloft-org/songloft/compare/v2.4.0...v2.5.0
 [v2.5.1]: https://github.com/songloft-org/songloft/compare/v2.5.0...v2.5.1
+[v2.6.0]: https://github.com/songloft-org/songloft/compare/v2.5.1...v2.6.0
