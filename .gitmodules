@@ -25,3 +25,9 @@
 [submodule "jsplugins-src/songloft-plugin-cloudflared"]
 	path = jsplugins-src/songloft-plugin-cloudflared
 	url = https://github.com/songloft-org/songloft-plugin-cloudflared.git
+[submodule "jsplugins-src/songloft-plugin-dav"]
+	path = jsplugins-src/songloft-plugin-dav
+	url = https://github.com/songloft-org/songloft-plugin-dav.git
+[submodule "jsplugins-src/songloft-plugin-hostc"]
+	path = jsplugins-src/songloft-plugin-hostc
+	url = https://github.com/songloft-org/songloft-plugin-hostc.git
