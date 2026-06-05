@@ -13,7 +13,8 @@
 set -e
 
 # 插件列表
-PLUGINS=("miot")
+#PLUGINS=("miot" "cloudflared" "hostc" "tag" "dav" "subsonic")
+PLUGINS=("miot" "cloudflared" "hostc" "tag")
 
 # 颜色输出
 GREEN='\033[0;32m'
