@@ -285,11 +285,17 @@ func (a *App) Init() error {
 	)
 
 	// 初始化 JS 插件管理器（必须在 setupRouter 之前，因为路由注册需要访问 jsPluginManager）
-	jsPluginsDir := filepath.Join(filepath.Dir(a.config.DBPath), "jsplugins")
+	jsPluginsDir, err := filepath.Abs(filepath.Join(filepath.Dir(a.config.DBPath), "jsplugins"))
+	if err != nil {
+		return fmt.Errorf("解析 JS 插件目录绝对路径失败: %w", err)
+	}
 	if err := os.MkdirAll(jsPluginsDir, 0755); err != nil {
 		return fmt.Errorf("创建 JS 插件目录失败: %w", err)
 	}
-	jsPluginsDataDir := filepath.Join(filepath.Dir(a.config.DBPath), "jsplugins_data")
+	jsPluginsDataDir, err := filepath.Abs(filepath.Join(filepath.Dir(a.config.DBPath), "jsplugins_data"))
+	if err != nil {
+		return fmt.Errorf("解析 JS 插件数据目录绝对路径失败: %w", err)
+	}
 	if err := os.MkdirAll(jsPluginsDataDir, 0755); err != nil {
 		return fmt.Errorf("创建 JS 插件数据目录失败: %w", err)
 	}
