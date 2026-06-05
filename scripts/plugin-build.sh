@@ -23,6 +23,7 @@ if [ $# -eq 0 ]; then
     # 无参数：构建所有插件
     for plugin_dir in "$PLUGINS_DIR"/songloft-plugin-*/; do
         [ -d "$plugin_dir" ] || continue
+        [[ "$(basename "$plugin_dir")" == "songloft-plugin-registry" ]] && continue
         build_plugin "$plugin_dir"
     done
 else
