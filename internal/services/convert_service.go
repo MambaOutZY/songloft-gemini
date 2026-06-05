@@ -102,10 +102,7 @@ func NewConvertService(
 	urlResolver *InternalURLResolver,
 	lyricFetcher *LyricFetcher,
 ) *ConvertService {
-	httpClient := &http.Client{
-		Timeout: 120 * time.Second,
-		// 自动跟随重定向(默认 10 跳),用于完整走完 JS 插件→cache endpoint→真实 CDN 的链路
-	}
+	httpClient := httputil.NewClient(120 * time.Second)
 	return &ConvertService{
 		db:                &db,
 		songService:       songService,
