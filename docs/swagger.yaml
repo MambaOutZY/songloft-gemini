@@ -135,6 +135,15 @@ definitions:
           $ref: '#/definitions/jsplugin.RegistryConfig'
         type: array
     type: object
+  handlers.pluginTabEntry:
+    properties:
+      entry_path:
+        type: string
+      name:
+        type: string
+      plugin_id:
+        type: integer
+    type: object
   handlers.registryInstallRequest:
     properties:
       download_url:
@@ -210,6 +219,17 @@ definitions:
         - filename
         example: tag
         type: string
+    type: object
+  handlers.tabConfigSetting:
+    properties:
+      plugin_tabs:
+        items:
+          $ref: '#/definitions/handlers.pluginTabEntry'
+        type: array
+      show_library:
+        type: boolean
+      show_playlists:
+        type: boolean
     type: object
   jsplugin.JSPlugin:
     properties:
@@ -3517,6 +3537,54 @@ paths:
       summary: 更新扫描标题来源配置
       tags:
       - 扫描管理
+  /settings/tab-config:
+    get:
+      description: 获取用户自定义的底部导航栏 Tab 配置。首页和设置固定显示，歌曲库和歌单可关闭，最多可添加 2 个插件 Tab，总计不超过
+        5 个。未配置时返回默认值（4 个 Tab：首页、歌曲库、歌单、设置）。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tab 配置
+          schema:
+            $ref: '#/definitions/handlers.tabConfigSetting'
+      security:
+      - BearerAuth: []
+      summary: 获取底部导航栏 Tab 配置
+      tags:
+      - 设置
+    put:
+      consumes:
+      - application/json
+      description: 保存用户自定义的底部导航栏 Tab 配置。首页和设置固定显示（不在配置中），可选项为歌曲库、歌单和插件 Tab，可选项总数不超过
+        3 个（总计 5 个 Tab）。每个插件 Tab 的 entry_path 和 name 不能为空，且不能重复。
+      parameters:
+      - description: Tab 配置
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.tabConfigSetting'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 保存后的 Tab 配置
+          schema:
+            $ref: '#/definitions/handlers.tabConfigSetting'
+        "400":
+          description: 请求格式错误或校验失败
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: 保存配置失败
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 保存底部导航栏 Tab 配置
+      tags:
+      - 设置
   /songs:
     get:
       consumes:
