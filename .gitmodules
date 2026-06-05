@@ -31,3 +31,6 @@
 [submodule "jsplugins-src/songloft-plugin-hostc"]
 	path = jsplugins-src/songloft-plugin-hostc
 	url = https://github.com/songloft-org/songloft-plugin-hostc.git
+[submodule "jsplugins-src/songloft-plugin-registry"]
+	path = jsplugins-src/songloft-plugin-registry
+	url = https://github.com/songloft-org/songloft-plugin-registry.git
