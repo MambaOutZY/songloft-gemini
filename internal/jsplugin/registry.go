@@ -87,6 +87,9 @@ func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string,
 	plugins := make(map[string]RegistryEntry)
 	for _, entry := range resolved {
 		if entry.EntryPath == "" || entry.DownloadURL == "" {
+			if entry.EntryPath != "" {
+				warnings = append(warnings, fmt.Sprintf("plugin %q: no download_url, skipped", entry.EntryPath))
+			}
 			continue
 		}
 		existing, exists := plugins[entry.EntryPath]
@@ -213,7 +216,9 @@ func (s *RegistryService) resolvePluginJSON(ctx context.Context, url string, git
 	// plugin.json 中 download_url 通常为空，通过 updateUrl 指向的 manifest.json 获取
 	if entry.DownloadURL == "" && entry.UpdateURL != "" {
 		updateRequestURL := applyProxy(entry.UpdateURL, githubProxy)
-		if updateBody, err := s.fetchBody(ctx, updateRequestURL); err == nil {
+		if updateBody, err := s.fetchBody(ctx, updateRequestURL); err != nil {
+			slog.Debug("chain fetch updateUrl failed", "entryPath", entry.EntryPath, "updateUrl", entry.UpdateURL, "error", err)
+		} else {
 			var updateManifest PluginManifest
 			if err := json.Unmarshal(updateBody, &updateManifest); err == nil && updateManifest.DownloadURL != "" {
 				entry.DownloadURL = updateManifest.DownloadURL

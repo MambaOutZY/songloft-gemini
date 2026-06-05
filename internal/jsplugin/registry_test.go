@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -411,6 +412,92 @@ func TestFetchAndMerge_ChainFetchManifest(t *testing.T) {
 	}
 	if plugins[0].DownloadURL != "https://example.com/chain-plugin.zip" {
 		t.Errorf("expected download_url from manifest.json, got %q", plugins[0].DownloadURL)
+	}
+}
+
+func TestFetchAndMerge_NoDownloadURL_Warning(t *testing.T) {
+	mux := http.NewServeMux()
+	// plugin.json 既没有 download_url 也没有 updateUrl
+	mux.HandleFunc("/plugin.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{
+			"name": "No Download Plugin",
+			"entryPath": "no-download",
+			"version": "1.0.0",
+			"description": "Plugin without download_url or updateUrl",
+			"author": "Test"
+		}`))
+	})
+	pluginSrv := httptest.NewServer(mux)
+	defer pluginSrv.Close()
+
+	registry := RegistryJSON{
+		Plugins: []string{pluginSrv.URL + "/plugin.json"},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(registry)
+	}))
+	defer srv.Close()
+
+	svc := NewRegistryService()
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "")
+	if err != nil {
+		t.Fatalf("FetchAndMerge error: %v", err)
+	}
+	if len(plugins) != 0 {
+		t.Errorf("expected 0 plugins (no download_url), got %d", len(plugins))
+	}
+	if len(warnings) == 0 {
+		t.Error("expected warning about missing download_url")
+	}
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "no-download") && strings.Contains(w, "download_url") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning mentioning 'no-download' and 'download_url', got %v", warnings)
+	}
+}
+
+func TestFetchAndMerge_ChainFetchFailure_Warning(t *testing.T) {
+	mux := http.NewServeMux()
+	// plugin.json 有 updateUrl 但 manifest.json 返回 404
+	mux.HandleFunc("/plugin.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{
+			"name": "Chain Fail Plugin",
+			"entryPath": "chain-fail",
+			"version": "1.0.0",
+			"description": "Plugin with broken updateUrl",
+			"author": "Test",
+			"updateUrl": "` + "http://" + r.Host + `/manifest.json"
+		}`))
+	})
+	mux.HandleFunc("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	pluginSrv := httptest.NewServer(mux)
+	defer pluginSrv.Close()
+
+	registry := RegistryJSON{
+		Plugins: []string{pluginSrv.URL + "/plugin.json"},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(registry)
+	}))
+	defer srv.Close()
+
+	svc := NewRegistryService()
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "")
+	if err != nil {
+		t.Fatalf("FetchAndMerge error: %v", err)
+	}
+	if len(plugins) != 0 {
+		t.Errorf("expected 0 plugins (chain fetch failed), got %d", len(plugins))
+	}
+	if len(warnings) == 0 {
+		t.Error("expected warning about missing download_url after chain fetch failure")
 	}
 }
 
