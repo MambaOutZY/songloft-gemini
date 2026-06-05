@@ -191,6 +191,7 @@ func (h *ScanHandler) ListDirNames(w http.ResponseWriter, r *http.Request) {
 const (
 	musicPathConfigKey             = "music_path"
 	scanAutoCreateSubdirsConfigKey = "scan_auto_create_include_subdirs"
+	scanTitleSourceConfigKey       = "scan_title_source"
 )
 
 // MusicPathSetting /settings/music-path 的请求与响应体。
@@ -320,4 +321,61 @@ func (h *ScanHandler) UpdateAutoCreateIncludeSubdirsSetting(w http.ResponseWrite
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]bool{"enabled": req.Enabled})
+}
+
+// scanTitleSourceRequest /settings/scan-title-source PUT 请求体
+type scanTitleSourceRequest struct {
+	TitleSource string `json:"title_source" example:"tag" enums:"tag,filename"`
+}
+
+// GetScanTitleSourceSetting GET /api/v1/settings/scan-title-source
+// @Summary 获取扫描标题来源配置
+// @Description tag：优先使用音频标签中的标题（默认）；filename：始终使用文件名（不含扩展名）作为标题。切换后需以「重新导入」模式扫描才能生效。
+// @Tags 扫描管理
+// @Produce json
+// @Success 200 {object} scanTitleSourceRequest "返回 title_source 字段"
+// @Security BearerAuth
+// @Router /settings/scan-title-source [get]
+func (h *ScanHandler) GetScanTitleSourceSetting(w http.ResponseWriter, r *http.Request) {
+	titleSource := "tag"
+	if h.configService != nil {
+		titleSource = h.configService.GetString(scanTitleSourceConfigKey, "tag")
+	}
+	respondJSON(w, http.StatusOK, scanTitleSourceRequest{TitleSource: titleSource})
+}
+
+// UpdateScanTitleSourceSetting PUT /api/v1/settings/scan-title-source
+// @Summary 更新扫描标题来源配置
+// @Description tag：优先使用音频标签中的标题；filename：始终使用文件名（不含扩展名）作为标题。切换后需以「重新导入」模式扫描才能生效。
+// @Tags 扫描管理
+// @Accept json
+// @Produce json
+// @Param request body scanTitleSourceRequest true "标题来源配置"
+// @Success 200 {object} scanTitleSourceRequest "返回 title_source 字段"
+// @Failure 400 {object} map[string]string "请求格式错误或参数无效"
+// @Failure 500 {object} map[string]string "保存配置失败"
+// @Security BearerAuth
+// @Router /settings/scan-title-source [put]
+func (h *ScanHandler) UpdateScanTitleSourceSetting(w http.ResponseWriter, r *http.Request) {
+	if h.configService == nil {
+		respondError(w, http.StatusInternalServerError, "configService 未注入", nil)
+		return
+	}
+	var req scanTitleSourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	if req.TitleSource != "tag" && req.TitleSource != "filename" {
+		respondError(w, http.StatusBadRequest, "title_source 必须为 tag 或 filename", nil)
+		return
+	}
+	if err := h.configService.Set(scanTitleSourceConfigKey, req.TitleSource); err != nil {
+		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
+		return
+	}
+	if h.onMusicPathChanged != nil {
+		go h.onMusicPathChanged()
+	}
+	respondJSON(w, http.StatusOK, scanTitleSourceRequest{TitleSource: req.TitleSource})
 }

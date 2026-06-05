@@ -20,6 +20,7 @@ import (
 type MetadataConfig struct {
 	FFProbePath      string // ffprobe 可执行文件路径
 	CoverStoragePath string // 封面存储根目录
+	TitleSource      string // "tag"(默认): tag 优先; "filename": 始终用文件名
 }
 
 // MetadataExtractor 元数据提取器
@@ -71,6 +72,11 @@ func NewMetadataExtractor(config *MetadataConfig) *MetadataExtractor {
 	return &MetadataExtractor{
 		config: config,
 	}
+}
+
+// SetTitleSource 更新标题来源配置（配置变更时调用）
+func (m *MetadataExtractor) SetTitleSource(titleSource string) {
+	m.config.TitleSource = titleSource
 }
 
 // Extract 提取音频文件的元数据
@@ -174,7 +180,11 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 	}
 
 	// ffprobe 回退可能补齐了 title，需要在标签提取完成后再进行智能合并
-	metadata.Title = mergeTitle(fileName, metadata.Title)
+	if m.config.TitleSource == "filename" {
+		metadata.Title = fileName
+	} else {
+		metadata.Title = mergeTitle(fileName, metadata.Title)
+	}
 	slog.Info("mergeTitle title", "fileName", fileName, "title", metadata.Title, "duration", metadata.Duration)
 
 	// 提取歌词（优先从 .lrc 文件覆盖内嵌歌词）

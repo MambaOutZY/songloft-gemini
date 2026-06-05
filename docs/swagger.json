@@ -3966,6 +3966,86 @@
                 }
             }
         },
+        "/settings/scan-title-source": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "tag：优先使用音频标签中的标题（默认）；filename：始终使用文件名（不含扩展名）作为标题。切换后需以「重新导入」模式扫描才能生效。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "扫描管理"
+                ],
+                "summary": "获取扫描标题来源配置",
+                "responses": {
+                    "200": {
+                        "description": "返回 title_source 字段",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.scanTitleSourceRequest"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "tag：优先使用音频标签中的标题；filename：始终使用文件名（不含扩展名）作为标题。切换后需以「重新导入」模式扫描才能生效。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "扫描管理"
+                ],
+                "summary": "更新扫描标题来源配置",
+                "parameters": [
+                    {
+                        "description": "标题来源配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.scanTitleSourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回 title_source 字段",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.scanTitleSourceRequest"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误或参数无效",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "保存配置失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/songs": {
             "get": {
                 "security": [
@@ -5636,6 +5716,19 @@
             "properties": {
                 "enabled": {
                     "type": "boolean"
+                }
+            }
+        },
+        "handlers.scanTitleSourceRequest": {
+            "type": "object",
+            "properties": {
+                "title_source": {
+                    "type": "string",
+                    "enum": [
+                        "tag",
+                        "filename"
+                    ],
+                    "example": "tag"
                 }
             }
         },

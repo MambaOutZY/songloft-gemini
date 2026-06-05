@@ -163,6 +163,9 @@ func (a *App) Init() error {
 		scanConfigData.SupportedFormats = []string{"mp3", "flac", "wav", "ape", "ogg", "m4a", "wma"}
 	}
 
+	// 读取标题来源配置
+	titleSource := a.configService.GetString("scan_title_source", "tag")
+
 	// 从数据库读取 ffprobe 路径配置
 	var ffprobeConfig struct {
 		Path string `json:"path"`
@@ -209,6 +212,7 @@ func (a *App) Init() error {
 	metadataConfig := &services.MetadataConfig{
 		FFProbePath:      ffprobeConfig.Path,
 		CoverStoragePath: coverStoragePath,
+		TitleSource:      titleSource,
 	}
 	slog.Info("封面存储路径", "path", metadataConfig.CoverStoragePath)
 	a.metadataExtractor = services.NewMetadataExtractor(metadataConfig)
@@ -422,6 +426,9 @@ func (a *App) onMusicPathConfigChanged(scanHandler *handlers.ScanHandler) {
 
 	// 更新 SongService 中的 Scanner 引用
 	a.songService.SetScanner(a.scanner)
+
+	// 更新 MetadataExtractor 的 TitleSource 配置
+	a.metadataExtractor.SetTitleSource(a.configService.GetString("scan_title_source", "tag"))
 
 	slog.Info("配置变更回调：Scanner 已重建",
 		"musicPath", musicPathConfig.Path,
