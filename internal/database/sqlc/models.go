@@ -73,29 +73,31 @@ type PlaylistSong struct {
 }
 
 type Song struct {
-	ID              int64
-	Type            string
-	Title           string
-	Artist          string
-	Album           string
-	Duration        float64
-	FilePath        string
-	Url             string
-	CoverPath       string
-	CoverUrl        string
-	Lyric           string
-	LyricSource     string
-	FileSize        int64
-	Format          string
-	BitRate         int64
-	SampleRate      int64
-	IsLive          int64
-	PluginEntryPath string
-	SourceData      string
-	DedupKey        string
-	AddedAt         time.Time
-	UpdatedAt       time.Time
-	LyricRemoteUrl  string
-	Year            int64
-	Genre           string
+	ID                  int64
+	Type                string
+	Title               string
+	Artist              string
+	Album               string
+	Duration            float64
+	FilePath            string
+	Url                 string
+	CoverPath           string
+	CoverUrl            string
+	Lyric               string
+	LyricSource         string
+	FileSize            int64
+	Format              string
+	BitRate             int64
+	SampleRate          int64
+	IsLive              int64
+	PluginEntryPath     string
+	SourceData          string
+	DedupKey            string
+	AddedAt             time.Time
+	UpdatedAt           time.Time
+	LyricRemoteUrl      string
+	Year                int64
+	Genre               string
+	Fingerprint         string
+	FingerprintDuration float64
 }

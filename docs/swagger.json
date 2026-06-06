@@ -3378,6 +3378,101 @@
                 }
             }
         },
+        "/scan/fingerprints": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "异步为所有缺失指纹的本地歌曲计算音频指纹，需要服务端安装 fpcalc",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "扫描管理"
+                ],
+                "summary": "触发批量指纹计算",
+                "responses": {
+                    "200": {
+                        "description": "任务已启动",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "fpcalc 不可用",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "计算任务已在进行中",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/scan/fingerprints/progress": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "查询当前指纹计算任务的进度",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "扫描管理"
+                ],
+                "summary": "获取指纹计算进度",
+                "responses": {
+                    "200": {
+                        "description": "计算进度",
+                        "schema": {
+                            "$ref": "#/definitions/services.FingerprintProgress"
+                        }
+                    }
+                }
+            }
+        },
+        "/scan/fingerprints/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回 fpcalc 可用性以及本地歌曲指纹计算统计",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "扫描管理"
+                ],
+                "summary": "获取指纹计算状态",
+                "responses": {
+                    "200": {
+                        "description": "指纹状态",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/scan/progress": {
             "get": {
                 "security": [
@@ -4299,6 +4394,32 @@
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/songs/duplicates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "通过音频指纹查询本地歌曲中内容相同的重复组",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "获取重复歌曲组",
+                "responses": {
+                    "200": {
+                        "description": "重复歌曲组列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -6566,6 +6687,24 @@
                 "ConvertStatusCancelling",
                 "ConvertStatusCancelled"
             ]
+        },
+        "services.FingerprintProgress": {
+            "type": "object",
+            "properties": {
+                "computed": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "status": {
+                    "description": "idle, running, done",
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
         },
         "services.OrganizeItem": {
             "type": "object",

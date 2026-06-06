@@ -515,6 +515,7 @@ jobs:
 
       - name: Generate Changelog from Conventional Commits
         id: changelog
+        continue-on-error: true
         uses: requarks/changelog-action@v1
         with:
           token: ${{ github.token }}

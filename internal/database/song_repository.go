@@ -434,6 +434,7 @@ func songSelectBuilder() sq.SelectBuilder {
 		"COALESCE(dedup_key, '')",
 		"added_at", "updated_at",
 		"year", "genre",
+		"fingerprint", "fingerprint_duration",
 	).From("songs")
 }
 
@@ -474,6 +475,7 @@ func scanSongRow(scanner interface {
 		&s.PluginEntryPath, &s.SourceData, &s.DedupKey,
 		&s.AddedAt, &s.UpdatedAt,
 		&s.Year, &s.Genre,
+		&s.Fingerprint, &s.FingerprintDuration,
 	); err != nil {
 		return nil, fmt.Errorf("scan song: %w", err)
 	}
@@ -502,11 +504,13 @@ func songRowToModel(row sqlc.Song) *models.Song {
 		BitRate:         int(row.BitRate),
 		SampleRate:      int(row.SampleRate),
 		IsLive:          row.IsLive != 0,
-		PluginEntryPath: row.PluginEntryPath,
-		SourceData:      row.SourceData,
-		DedupKey:        row.DedupKey,
-		AddedAt:         row.AddedAt,
-		UpdatedAt:       row.UpdatedAt,
+		PluginEntryPath:     row.PluginEntryPath,
+		SourceData:          row.SourceData,
+		DedupKey:            row.DedupKey,
+		Fingerprint:         row.Fingerprint,
+		FingerprintDuration: row.FingerprintDuration,
+		AddedAt:             row.AddedAt,
+		UpdatedAt:           row.UpdatedAt,
 	}
 }
 
@@ -529,11 +533,13 @@ func songCreateParams(s *models.Song) sqlc.CreateSongParams {
 		BitRate:         int64(s.BitRate),
 		SampleRate:      int64(s.SampleRate),
 		IsLive:          boolToInt64(s.IsLive),
-		PluginEntryPath: s.PluginEntryPath,
-		SourceData:      s.SourceData,
-		DedupKey:        s.DedupKey,
-		Year:            int64(s.Year),
-		Genre:           s.Genre,
+		PluginEntryPath:     s.PluginEntryPath,
+		SourceData:          s.SourceData,
+		DedupKey:            s.DedupKey,
+		Year:                int64(s.Year),
+		Genre:               s.Genre,
+		Fingerprint:         s.Fingerprint,
+		FingerprintDuration: s.FingerprintDuration,
 	}
 }
 
@@ -558,11 +564,97 @@ func songUpdateParams(s *models.Song) sqlc.UpdateSongParams {
 		IsLive:          boolToInt64(s.IsLive),
 		PluginEntryPath: s.PluginEntryPath,
 		SourceData:      s.SourceData,
-		DedupKey:        s.DedupKey,
-		Year:            int64(s.Year),
-		Genre:           s.Genre,
-		ID:              s.ID,
+		DedupKey:            s.DedupKey,
+		Year:                int64(s.Year),
+		Genre:               s.Genre,
+		Fingerprint:         s.Fingerprint,
+		FingerprintDuration: s.FingerprintDuration,
+		ID:                  s.ID,
 	}
+}
+
+// UpdateFingerprint 更新歌曲的音频指纹。
+func (r *SongRepository) UpdateFingerprint(ctx context.Context, id int64, fingerprint string, duration float64) error {
+	return r.queries.UpdateSongFingerprint(ctx, sqlc.UpdateSongFingerprintParams{
+		Fingerprint:         fingerprint,
+		FingerprintDuration: duration,
+		ID:                  id,
+	})
+}
+
+// SongIDPath 是 (id, file_path) 的轻量对。
+type SongIDPath struct {
+	ID       int64
+	FilePath string
+}
+
+// ListLocalWithoutFingerprint 返回所有尚无指纹的本地歌曲 (id, file_path)。
+func (r *SongRepository) ListLocalWithoutFingerprint(ctx context.Context) ([]SongIDPath, error) {
+	rows, err := r.queries.ListLocalWithoutFingerprint(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list local without fingerprint: %w", err)
+	}
+	result := make([]SongIDPath, len(rows))
+	for i, row := range rows {
+		result[i] = SongIDPath{ID: row.ID, FilePath: row.FilePath}
+	}
+	return result, nil
+}
+
+// CountLocalFingerprints 返回本地歌曲总数和已计算指纹数。
+func (r *SongRepository) CountLocalFingerprints(ctx context.Context) (total, computed int64, err error) {
+	row, err := r.queries.CountLocalFingerprints(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("count local fingerprints: %w", err)
+	}
+	return row.Total, row.Computed, nil
+}
+
+// DuplicateGroup 表示一组指纹相同的歌曲。
+type DuplicateGroup struct {
+	Fingerprint string
+	Songs       []*models.Song
+}
+
+// ListDuplicateGroups 查询所有指纹重复的本地歌曲组。
+func (r *SongRepository) ListDuplicateGroups(ctx context.Context) ([]DuplicateGroup, error) {
+	fps, err := r.queries.ListDuplicateFingerprints(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list duplicate fingerprints: %w", err)
+	}
+	if len(fps) == 0 {
+		return nil, nil
+	}
+
+	groups := make([]DuplicateGroup, 0, len(fps))
+	for _, fp := range fps {
+		rows, err := r.queries.ListSongsByFingerprint(ctx, fp.Fingerprint)
+		if err != nil {
+			return nil, fmt.Errorf("list songs by fingerprint: %w", err)
+		}
+		songs := make([]*models.Song, len(rows))
+		for i, row := range rows {
+			songs[i] = &models.Song{
+				ID:                  row.ID,
+				Type:                row.Type,
+				Title:               row.Title,
+				Artist:              row.Artist,
+				Album:               row.Album,
+				Duration:            row.Duration,
+				FilePath:            row.FilePath,
+				Format:              row.Format,
+				BitRate:             int(row.BitRate),
+				SampleRate:          int(row.SampleRate),
+				FileSize:            row.FileSize,
+				FingerprintDuration: row.FingerprintDuration,
+				CoverPath:           row.CoverPath,
+				CoverURL:            row.CoverUrl,
+				AddedAt:             row.AddedAt,
+			}
+		}
+		groups = append(groups, DuplicateGroup{Fingerprint: fp.Fingerprint, Songs: songs})
+	}
+	return groups, nil
 }
 
 func boolToInt64(b bool) int64 {

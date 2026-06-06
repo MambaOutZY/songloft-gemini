@@ -1190,3 +1190,76 @@ func (h *SongHandler) OrganizeSongs(w http.ResponseWriter, r *http.Request) {
 	results := h.songService.OrganizeSongs(r.Context(), musicPath, items)
 	respondJSON(w, http.StatusOK, results)
 }
+
+// duplicateSongResponse 重复歌曲的 JSON 响应结构。
+type duplicateSongResponse struct {
+	ID       int64   `json:"id"`
+	Title    string  `json:"title"`
+	Artist   string  `json:"artist"`
+	Album    string  `json:"album"`
+	Duration float64 `json:"duration"`
+	FilePath string  `json:"file_path"`
+	Format   string  `json:"format"`
+	BitRate  int     `json:"bit_rate"`
+	FileSize int64   `json:"file_size"`
+	CoverURL string  `json:"cover_url"`
+	AddedAt  string  `json:"added_at"`
+}
+
+// duplicateGroupResponse 重复组的 JSON 响应结构。
+type duplicateGroupResponse struct {
+	Fingerprint string                  `json:"fingerprint"`
+	Songs       []duplicateSongResponse `json:"songs"`
+}
+
+// GetDuplicates 获取重复歌曲组
+// @Summary 获取重复歌曲组
+// @Description 通过音频指纹查询本地歌曲中内容相同的重复组
+// @Tags 歌曲管理
+// @Produce json
+// @Success 200 {object} map[string]interface{} "重复歌曲组列表"
+// @Security BearerAuth
+// @Router /songs/duplicates [get]
+func (h *SongHandler) GetDuplicates(w http.ResponseWriter, r *http.Request) {
+	groups, err := h.songService.GetDuplicateGroups(r.Context())
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "查询重复歌曲失败", err)
+		return
+	}
+
+	result := make([]duplicateGroupResponse, 0, len(groups))
+	totalDuplicates := 0
+	for _, g := range groups {
+		songs := make([]duplicateSongResponse, len(g.Songs))
+		for i, s := range g.Songs {
+			coverURL := ""
+			if s.CoverPath != "" || s.CoverURL != "" {
+				coverURL = fmt.Sprintf("/api/v1/songs/%d/cover", s.ID)
+			}
+			songs[i] = duplicateSongResponse{
+				ID:       s.ID,
+				Title:    s.Title,
+				Artist:   s.Artist,
+				Album:    s.Album,
+				Duration: s.Duration,
+				FilePath: s.FilePath,
+				Format:   s.Format,
+				BitRate:  s.BitRate,
+				FileSize: s.FileSize,
+				CoverURL: coverURL,
+				AddedAt:  s.AddedAt.Format("2006-01-02T15:04:05Z"),
+			}
+		}
+		totalDuplicates += len(songs)
+		result = append(result, duplicateGroupResponse{
+			Fingerprint: g.Fingerprint,
+			Songs:       songs,
+		})
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"groups":           result,
+		"total_groups":     len(result),
+		"total_duplicates": totalDuplicates,
+	})
+}

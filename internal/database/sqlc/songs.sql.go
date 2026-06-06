@@ -10,6 +10,25 @@ import (
 	"time"
 )
 
+const countLocalFingerprints = `-- name: CountLocalFingerprints :one
+SELECT
+    COUNT(*) AS total,
+    CAST(COALESCE(SUM(CASE WHEN fingerprint != '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS computed
+FROM songs WHERE type = 'local'
+`
+
+type CountLocalFingerprintsRow struct {
+	Total    int64
+	Computed int64
+}
+
+func (q *Queries) CountLocalFingerprints(ctx context.Context) (CountLocalFingerprintsRow, error) {
+	row := q.db.QueryRowContext(ctx, countLocalFingerprints)
+	var i CountLocalFingerprintsRow
+	err := row.Scan(&i.Total, &i.Computed)
+	return i, err
+}
+
 const countPlaylistsByCoverPath = `-- name: CountPlaylistsByCoverPath :one
 SELECT COUNT(*) FROM playlists WHERE cover_path = ?
 `
@@ -49,33 +68,36 @@ INSERT INTO songs (
     cover_path, cover_url, lyric, lyric_source, lyric_remote_url,
     file_size, format, bit_rate, sample_rate, is_live,
     plugin_entry_path, source_data, dedup_key,
-    year, genre
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    year, genre,
+    fingerprint, fingerprint_duration
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateSongParams struct {
-	Type            string
-	Title           string
-	Artist          string
-	Album           string
-	Duration        float64
-	FilePath        string
-	Url             string
-	CoverPath       string
-	CoverUrl        string
-	Lyric           string
-	LyricSource     string
-	LyricRemoteUrl  string
-	FileSize        int64
-	Format          string
-	BitRate         int64
-	SampleRate      int64
-	IsLive          int64
-	PluginEntryPath string
-	SourceData      string
-	DedupKey        string
-	Year            int64
-	Genre           string
+	Type                string
+	Title               string
+	Artist              string
+	Album               string
+	Duration            float64
+	FilePath            string
+	Url                 string
+	CoverPath           string
+	CoverUrl            string
+	Lyric               string
+	LyricSource         string
+	LyricRemoteUrl      string
+	FileSize            int64
+	Format              string
+	BitRate             int64
+	SampleRate          int64
+	IsLive              int64
+	PluginEntryPath     string
+	SourceData          string
+	DedupKey            string
+	Year                int64
+	Genre               string
+	Fingerprint         string
+	FingerprintDuration float64
 }
 
 func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (int64, error) {
@@ -102,6 +124,8 @@ func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (int64, 
 		arg.DedupKey,
 		arg.Year,
 		arg.Genre,
+		arg.Fingerprint,
+		arg.FingerprintDuration,
 	)
 	if err != nil {
 		return 0, err
@@ -143,7 +167,8 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     format, bit_rate, sample_rate, is_live,
     plugin_entry_path, source_data, dedup_key,
     added_at, updated_at, lyric_remote_url,
-    year, genre
+    year, genre,
+    fingerprint, fingerprint_duration
 FROM songs WHERE id = ?
 `
 
@@ -176,6 +201,8 @@ func (q *Queries) GetSongByID(ctx context.Context, id int64) (Song, error) {
 		&i.LyricRemoteUrl,
 		&i.Year,
 		&i.Genre,
+		&i.Fingerprint,
+		&i.FingerprintDuration,
 	)
 	return i, err
 }
@@ -194,6 +221,42 @@ func (q *Queries) GetSongTimestamps(ctx context.Context, id int64) (GetSongTimes
 	var i GetSongTimestampsRow
 	err := row.Scan(&i.AddedAt, &i.UpdatedAt)
 	return i, err
+}
+
+const listDuplicateFingerprints = `-- name: ListDuplicateFingerprints :many
+SELECT fingerprint, COUNT(*) AS cnt
+FROM songs
+WHERE fingerprint != '' AND type = 'local'
+GROUP BY fingerprint
+HAVING COUNT(*) > 1
+`
+
+type ListDuplicateFingerprintsRow struct {
+	Fingerprint string
+	Cnt         int64
+}
+
+func (q *Queries) ListDuplicateFingerprints(ctx context.Context) ([]ListDuplicateFingerprintsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDuplicateFingerprints)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDuplicateFingerprintsRow{}
+	for rows.Next() {
+		var i ListDuplicateFingerprintsRow
+		if err := rows.Scan(&i.Fingerprint, &i.Cnt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listLocalSongPaths = `-- name: ListLocalSongPaths :many
@@ -215,6 +278,103 @@ func (q *Queries) ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsR
 	for rows.Next() {
 		var i ListLocalSongPathsRow
 		if err := rows.Scan(&i.ID, &i.FilePath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLocalWithoutFingerprint = `-- name: ListLocalWithoutFingerprint :many
+SELECT id, file_path FROM songs WHERE type = 'local' AND fingerprint = ''
+`
+
+type ListLocalWithoutFingerprintRow struct {
+	ID       int64
+	FilePath string
+}
+
+func (q *Queries) ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalWithoutFingerprintRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLocalWithoutFingerprint)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLocalWithoutFingerprintRow{}
+	for rows.Next() {
+		var i ListLocalWithoutFingerprintRow
+		if err := rows.Scan(&i.ID, &i.FilePath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSongsByFingerprint = `-- name: ListSongsByFingerprint :many
+SELECT id, type, title, artist, album, duration, file_path,
+    format, bit_rate, sample_rate, file_size, fingerprint_duration,
+    cover_path, cover_url, added_at
+FROM songs
+WHERE fingerprint = ?
+`
+
+type ListSongsByFingerprintRow struct {
+	ID                  int64
+	Type                string
+	Title               string
+	Artist              string
+	Album               string
+	Duration            float64
+	FilePath            string
+	Format              string
+	BitRate             int64
+	SampleRate          int64
+	FileSize            int64
+	FingerprintDuration float64
+	CoverPath           string
+	CoverUrl            string
+	AddedAt             time.Time
+}
+
+func (q *Queries) ListSongsByFingerprint(ctx context.Context, fingerprint string) ([]ListSongsByFingerprintRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSongsByFingerprint, fingerprint)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSongsByFingerprintRow{}
+	for rows.Next() {
+		var i ListSongsByFingerprintRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.Artist,
+			&i.Album,
+			&i.Duration,
+			&i.FilePath,
+			&i.Format,
+			&i.BitRate,
+			&i.SampleRate,
+			&i.FileSize,
+			&i.FingerprintDuration,
+			&i.CoverPath,
+			&i.CoverUrl,
+			&i.AddedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -296,34 +456,37 @@ UPDATE songs SET
     lyric = ?, lyric_source = ?, lyric_remote_url = ?,
     file_size = ?, format = ?, bit_rate = ?, sample_rate = ?, is_live = ?,
     plugin_entry_path = ?, source_data = ?, dedup_key = ?,
-    year = ?, genre = ?
+    year = ?, genre = ?,
+    fingerprint = ?, fingerprint_duration = ?
 WHERE id = ?
 `
 
 type UpdateSongParams struct {
-	Type            string
-	Title           string
-	Artist          string
-	Album           string
-	Duration        float64
-	FilePath        string
-	Url             string
-	CoverPath       string
-	CoverUrl        string
-	Lyric           string
-	LyricSource     string
-	LyricRemoteUrl  string
-	FileSize        int64
-	Format          string
-	BitRate         int64
-	SampleRate      int64
-	IsLive          int64
-	PluginEntryPath string
-	SourceData      string
-	DedupKey        string
-	Year            int64
-	Genre           string
-	ID              int64
+	Type                string
+	Title               string
+	Artist              string
+	Album               string
+	Duration            float64
+	FilePath            string
+	Url                 string
+	CoverPath           string
+	CoverUrl            string
+	Lyric               string
+	LyricSource         string
+	LyricRemoteUrl      string
+	FileSize            int64
+	Format              string
+	BitRate             int64
+	SampleRate          int64
+	IsLive              int64
+	PluginEntryPath     string
+	SourceData          string
+	DedupKey            string
+	Year                int64
+	Genre               string
+	Fingerprint         string
+	FingerprintDuration float64
+	ID                  int64
 }
 
 func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (int64, error) {
@@ -350,6 +513,8 @@ func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (int64, 
 		arg.DedupKey,
 		arg.Year,
 		arg.Genre,
+		arg.Fingerprint,
+		arg.FingerprintDuration,
 		arg.ID,
 	)
 	if err != nil {
@@ -370,6 +535,21 @@ type UpdateSongDurationParams struct {
 
 func (q *Queries) UpdateSongDuration(ctx context.Context, arg UpdateSongDurationParams) error {
 	_, err := q.db.ExecContext(ctx, updateSongDuration, arg.Duration, arg.ID)
+	return err
+}
+
+const updateSongFingerprint = `-- name: UpdateSongFingerprint :exec
+UPDATE songs SET fingerprint = ?, fingerprint_duration = ? WHERE id = ?
+`
+
+type UpdateSongFingerprintParams struct {
+	Fingerprint         string
+	FingerprintDuration float64
+	ID                  int64
+}
+
+func (q *Queries) UpdateSongFingerprint(ctx context.Context, arg UpdateSongFingerprintParams) error {
+	_, err := q.db.ExecContext(ctx, updateSongFingerprint, arg.Fingerprint, arg.FingerprintDuration, arg.ID)
 	return err
 }
 

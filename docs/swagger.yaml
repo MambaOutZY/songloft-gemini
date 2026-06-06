@@ -764,6 +764,18 @@ definitions:
     - ConvertStatusFailed
     - ConvertStatusCancelling
     - ConvertStatusCancelled
+  services.FingerprintProgress:
+    properties:
+      computed:
+        type: integer
+      failed:
+        type: integer
+      status:
+        description: idle, running, done
+        type: string
+      total:
+        type: integer
+    type: object
   services.OrganizeItem:
     properties:
       id:
@@ -3119,6 +3131,65 @@ paths:
       summary: 获取子目录列表
       tags:
       - 扫描管理
+  /scan/fingerprints:
+    post:
+      description: 异步为所有缺失指纹的本地歌曲计算音频指纹，需要服务端安装 fpcalc
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务已启动
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: fpcalc 不可用
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 计算任务已在进行中
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 触发批量指纹计算
+      tags:
+      - 扫描管理
+  /scan/fingerprints/progress:
+    get:
+      description: 查询当前指纹计算任务的进度
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 计算进度
+          schema:
+            $ref: '#/definitions/services.FingerprintProgress'
+      security:
+      - BearerAuth: []
+      summary: 获取指纹计算进度
+      tags:
+      - 扫描管理
+  /scan/fingerprints/status:
+    get:
+      description: 返回 fpcalc 可用性以及本地歌曲指纹计算统计
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 指纹状态
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取指纹计算状态
+      tags:
+      - 扫描管理
   /scan/progress:
     get:
       consumes:
@@ -4159,6 +4230,22 @@ paths:
       security:
       - BearerAuth: []
       summary: 清理无效的本地歌曲
+      tags:
+      - 歌曲管理
+  /songs/duplicates:
+    get:
+      description: 通过音频指纹查询本地歌曲中内容相同的重复组
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 重复歌曲组列表
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取重复歌曲组
       tags:
       - 歌曲管理
   /songs/ids:

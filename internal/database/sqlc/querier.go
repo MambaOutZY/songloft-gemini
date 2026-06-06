@@ -13,6 +13,7 @@ type Querier interface {
 	AddSongToPlaylist(ctx context.Context, arg AddSongToPlaylistParams) error
 	AddSongToPlaylistIgnore(ctx context.Context, arg AddSongToPlaylistIgnoreParams) (int64, error)
 	CleanExpiredTokens(ctx context.Context, expiresAt time.Time) (int64, error)
+	CountLocalFingerprints(ctx context.Context) (CountLocalFingerprintsRow, error)
 	CountPlaylistSongs(ctx context.Context, playlistID int64) (int64, error)
 	CountPlaylistsByCoverPath(ctx context.Context, coverPath string) (int64, error)
 	CountPlaylistsContainingSong(ctx context.Context, songID int64) (int64, error)
@@ -42,9 +43,12 @@ type Querier interface {
 	InsertAutoCreatedPlaylist(ctx context.Context, arg InsertAutoCreatedPlaylistParams) (int64, error)
 	IsTokenRevoked(ctx context.Context, arg IsTokenRevokedParams) (bool, error)
 	ListAllPlaylistNames(ctx context.Context) ([]string, error)
+	ListDuplicateFingerprints(ctx context.Context) ([]ListDuplicateFingerprintsRow, error)
 	ListJSPlugins(ctx context.Context) ([]JsPlugin, error)
 	ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsRow, error)
+	ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalWithoutFingerprintRow, error)
 	ListPlaylistsContainingSong(ctx context.Context, songID int64) ([]int64, error)
+	ListSongsByFingerprint(ctx context.Context, fingerprint string) ([]ListSongsByFingerprintRow, error)
 	MaxPositionInPlaylist(ctx context.Context, playlistID int64) (int64, error)
 	RemoveSongFromPlaylist(ctx context.Context, arg RemoveSongFromPlaylistParams) (int64, error)
 	RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64, error)
@@ -58,6 +62,7 @@ type Querier interface {
 	UpdateRemoteSongMutable(ctx context.Context, arg UpdateRemoteSongMutableParams) error
 	UpdateSong(ctx context.Context, arg UpdateSongParams) (int64, error)
 	UpdateSongDuration(ctx context.Context, arg UpdateSongDurationParams) error
+	UpdateSongFingerprint(ctx context.Context, arg UpdateSongFingerprintParams) error
 	UpdateSongLyrics(ctx context.Context, arg UpdateSongLyricsParams) (int64, error)
 	UpdateSongPositionInPlaylist(ctx context.Context, arg UpdateSongPositionInPlaylistParams) (int64, error)
 	UpdateSongSource(ctx context.Context, arg UpdateSongSourceParams) error

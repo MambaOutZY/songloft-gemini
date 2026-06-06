@@ -18,6 +18,7 @@ type ScanHandler struct {
 	songService        *services.SongService
 	scanner            *services.Scanner
 	configService      *services.ConfigService
+	fingerprintService *services.FingerprintService
 	onMusicPathChanged func() // PUT /settings/music-path 完成后触发，重建 Scanner 等副作用
 }
 
@@ -28,6 +29,11 @@ func NewScanHandler(songService *services.SongService, scanner *services.Scanner
 		scanner:       scanner,
 		configService: configService,
 	}
+}
+
+// SetFingerprintService 注入指纹服务。
+func (h *ScanHandler) SetFingerprintService(fs *services.FingerprintService) {
+	h.fingerprintService = fs
 }
 
 // SetScanner 更新扫描器引用（配置变更时调用）
@@ -378,4 +384,77 @@ func (h *ScanHandler) UpdateScanTitleSourceSetting(w http.ResponseWriter, r *htt
 		go h.onMusicPathChanged()
 	}
 	respondJSON(w, http.StatusOK, scanTitleSourceRequest{TitleSource: req.TitleSource})
+}
+
+// GetFingerprintStatus 获取指纹计算状态
+// @Summary 获取指纹计算状态
+// @Description 返回 fpcalc 可用性以及本地歌曲指纹计算统计
+// @Tags 扫描管理
+// @Produce json
+// @Success 200 {object} map[string]interface{} "指纹状态"
+// @Security BearerAuth
+// @Router /scan/fingerprints/status [get]
+func (h *ScanHandler) GetFingerprintStatus(w http.ResponseWriter, r *http.Request) {
+	available := services.IsFpcalcAvailable()
+	var total, computed int64
+	if h.fingerprintService != nil {
+		var err error
+		total, computed, err = h.songService.CountLocalFingerprints(r.Context())
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "查询指纹统计失败", err)
+			return
+		}
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"fpcalc_available": available,
+		"total":            total,
+		"computed":         computed,
+		"missing":          total - computed,
+	})
+}
+
+// StartFingerprintCompute 触发批量指纹计算
+// @Summary 触发批量指纹计算
+// @Description 异步为所有缺失指纹的本地歌曲计算音频指纹，需要服务端安装 fpcalc
+// @Tags 扫描管理
+// @Produce json
+// @Success 200 {object} map[string]interface{} "任务已启动"
+// @Failure 400 {object} map[string]string "fpcalc 不可用"
+// @Failure 409 {object} map[string]string "计算任务已在进行中"
+// @Security BearerAuth
+// @Router /scan/fingerprints [post]
+func (h *ScanHandler) StartFingerprintCompute(w http.ResponseWriter, r *http.Request) {
+	if !services.IsFpcalcAvailable() {
+		respondError(w, http.StatusBadRequest, "fpcalc 未安装，无法计算音频指纹", nil)
+		return
+	}
+	if h.fingerprintService == nil {
+		respondError(w, http.StatusInternalServerError, "fingerprint service not initialized", nil)
+		return
+	}
+	total, err := h.fingerprintService.ComputeMissing()
+	if err != nil {
+		respondError(w, http.StatusConflict, err.Error(), nil)
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "started",
+		"total":  total,
+	})
+}
+
+// GetFingerprintProgress 获取指纹计算进度
+// @Summary 获取指纹计算进度
+// @Description 查询当前指纹计算任务的进度
+// @Tags 扫描管理
+// @Produce json
+// @Success 200 {object} services.FingerprintProgress "计算进度"
+// @Security BearerAuth
+// @Router /scan/fingerprints/progress [get]
+func (h *ScanHandler) GetFingerprintProgress(w http.ResponseWriter, r *http.Request) {
+	if h.fingerprintService == nil {
+		respondJSON(w, http.StatusOK, services.FingerprintProgress{Status: "idle"})
+		return
+	}
+	respondJSON(w, http.StatusOK, h.fingerprintService.GetProgress())
 }

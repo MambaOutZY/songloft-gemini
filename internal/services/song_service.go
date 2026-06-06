@@ -35,6 +35,10 @@ type SongRepository interface {
 	ListLocalPaths(ctx context.Context) (map[string]int64, error)
 	ListTypesByIDs(ctx context.Context, ids []int64) (map[int64]string, error)
 	CountCoverPathReferences(ctx context.Context, coverPath string) (int, error)
+	UpdateFingerprint(ctx context.Context, id int64, fingerprint string, duration float64) error
+	ListLocalWithoutFingerprint(ctx context.Context) ([]database.SongIDPath, error)
+	CountLocalFingerprints(ctx context.Context) (total, computed int64, err error)
+	ListDuplicateGroups(ctx context.Context) ([]database.DuplicateGroup, error)
 }
 
 // Transactor 提供 UnitOfWork 事务执行入口，
@@ -99,6 +103,16 @@ func (s *SongService) GetScanProgress() ScanProgress {
 // CancelScan 取消扫描
 func (s *SongService) CancelScan() bool {
 	return s.scanProgressManager.Cancel()
+}
+
+// CountLocalFingerprints 返回本地歌曲总数和已计算指纹数。
+func (s *SongService) CountLocalFingerprints(ctx context.Context) (total, computed int64, err error) {
+	return s.songs.CountLocalFingerprints(ctx)
+}
+
+// GetDuplicateGroups 查询所有指纹重复的本地歌曲组。
+func (s *SongService) GetDuplicateGroups(ctx context.Context) ([]database.DuplicateGroup, error) {
+	return s.songs.ListDuplicateGroups(ctx)
 }
 
 // GetByID 根据 ID 获取歌曲

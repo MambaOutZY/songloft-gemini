@@ -90,8 +90,10 @@ type Song struct {
 	IsLive          bool    `json:"is_live" example:"false"`                           // 是否为直播流
 	PluginEntryPath string  `json:"plugin_entry_path,omitempty" example:"my-source"`   // 音源插件 entryPath(网络歌曲)
 	SourceData      string  `json:"source_data,omitempty"`                             // 音源元数据 JSON(给插件 music/url 接口用,opaque)
-	DedupKey        string  `json:"dedup_key,omitempty"`                               // 去重 key(由插件定义,典型形态 "<platform>:<platform_id>");与 PluginEntryPath 组成 UNIQUE
-	SourceURL       string  `json:"source_url,omitempty"`                              // 原始音源 URL(仅 JSON 输出,radio/remote 类型返回原始流地址供编辑使用)
+	DedupKey            string  `json:"dedup_key,omitempty"`                               // 去重 key(由插件定义,典型形态 "<platform>:<platform_id>");与 PluginEntryPath 组成 UNIQUE
+	SourceURL           string  `json:"source_url,omitempty"`                              // 原始音源 URL(仅 JSON 输出,radio/remote 类型返回原始流地址供编辑使用)
+	Fingerprint         string  `json:"-"`                                                 // 音频指纹(Chromaprint,内部使用)
+	FingerprintDuration float64 `json:"-"`                                                 // 指纹对应音频时长
 
 	AddedAt   time.Time `json:"added_at" example:"2024-01-01T12:00:00Z"`   // 添加时间
 	UpdatedAt time.Time `json:"updated_at" example:"2024-01-01T12:00:00Z"` // 最后更新时间

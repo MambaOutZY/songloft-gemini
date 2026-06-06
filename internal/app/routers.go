@@ -8,6 +8,7 @@ import (
 
 	"songloft/internal/handlers"
 	app_middleware "songloft/internal/middleware"
+	"songloft/internal/services"
 
 	"github.com/hanxi/tracely/sdk/go/tracely"
 
@@ -48,6 +49,7 @@ func (a *App) setupAPIV1Router() {
 	playlistHandler := handlers.NewPlaylistHandler(a.playlistService)
 	configHandler := handlers.NewConfigHandler(a.configService)
 	scanHandler := handlers.NewScanHandler(a.songService, a.scanner, a.configService)
+	scanHandler.SetFingerprintService(services.NewFingerprintService(a.db.SongRepository()))
 
 	// music_path 写后回调：重建 Scanner 并清理排除目录中的歌曲。
 	// 两条入口都触发同一副作用，保持 admin /configs PUT 与业务 /settings/music-path PUT 行为对齐。
@@ -113,6 +115,7 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/songs/radio", songHandler.AddRadios)
 			r.Post("/songs/clean", songHandler.CleanInvalidSongs)
 			r.Post("/songs/batch-delete", songHandler.BatchDeleteSongs)
+			r.Get("/songs/duplicates", songHandler.GetDuplicates)
 			r.Get("/songs/{id}", songHandler.GetSong)
 			r.Put("/songs/{id}", songHandler.UpdateSong)
 			r.Delete("/songs/{id}", songHandler.DeleteSong)
@@ -178,6 +181,9 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/scan/cancel", scanHandler.CancelScan)
 			r.Get("/scan/directories", scanHandler.ListDirectories)
 			r.Get("/scan/dir-names", scanHandler.ListDirNames)
+			r.Get("/scan/fingerprints/status", scanHandler.GetFingerprintStatus)
+			r.Post("/scan/fingerprints", scanHandler.StartFingerprintCompute)
+			r.Get("/scan/fingerprints/progress", scanHandler.GetFingerprintProgress)
 
 			// 资源代理模块（解决外部 CDN 的 CORS 问题）
 			r.Get("/proxy", proxyHandler.Proxy)

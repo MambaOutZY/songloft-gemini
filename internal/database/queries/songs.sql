@@ -4,7 +4,8 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     format, bit_rate, sample_rate, is_live,
     plugin_entry_path, source_data, dedup_key,
     added_at, updated_at, lyric_remote_url,
-    year, genre
+    year, genre,
+    fingerprint, fingerprint_duration
 FROM songs WHERE id = ?;
 
 -- name: CreateSong :execlastid
@@ -13,8 +14,9 @@ INSERT INTO songs (
     cover_path, cover_url, lyric, lyric_source, lyric_remote_url,
     file_size, format, bit_rate, sample_rate, is_live,
     plugin_entry_path, source_data, dedup_key,
-    year, genre
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    year, genre,
+    fingerprint, fingerprint_duration
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateSong :execrows
 UPDATE songs SET
@@ -23,7 +25,8 @@ UPDATE songs SET
     lyric = ?, lyric_source = ?, lyric_remote_url = ?,
     file_size = ?, format = ?, bit_rate = ?, sample_rate = ?, is_live = ?,
     plugin_entry_path = ?, source_data = ?, dedup_key = ?,
-    year = ?, genre = ?
+    year = ?, genre = ?,
+    fingerprint = ?, fingerprint_duration = ?
 WHERE id = ?;
 
 -- name: DeleteSong :execrows
@@ -72,3 +75,29 @@ WHERE id = ?;
 
 -- name: GetSongTimestamps :one
 SELECT added_at, updated_at FROM songs WHERE id = ?;
+
+-- name: UpdateSongFingerprint :exec
+UPDATE songs SET fingerprint = ?, fingerprint_duration = ? WHERE id = ?;
+
+-- name: ListLocalWithoutFingerprint :many
+SELECT id, file_path FROM songs WHERE type = 'local' AND fingerprint = '';
+
+-- name: CountLocalFingerprints :one
+SELECT
+    COUNT(*) AS total,
+    CAST(COALESCE(SUM(CASE WHEN fingerprint != '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS computed
+FROM songs WHERE type = 'local';
+
+-- name: ListDuplicateFingerprints :many
+SELECT fingerprint, COUNT(*) AS cnt
+FROM songs
+WHERE fingerprint != '' AND type = 'local'
+GROUP BY fingerprint
+HAVING COUNT(*) > 1;
+
+-- name: ListSongsByFingerprint :many
+SELECT id, type, title, artist, album, duration, file_path,
+    format, bit_rate, sample_rate, file_size, fingerprint_duration,
+    cover_path, cover_url, added_at
+FROM songs
+WHERE fingerprint = ?;
