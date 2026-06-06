@@ -5,9 +5,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"debug/elf"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -125,6 +128,11 @@ func (h *BridgeHandler) commandExec(data string) (string, error) {
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
+		} else if errors.Is(err, fs.ErrNotExist) {
+			if hint := checkELFInterpreter(resolved); hint != "" {
+				return "", fmt.Errorf("commandExec: run: %w (%s)", err, hint)
+			}
+			return "", fmt.Errorf("commandExec: run: %w", err)
 		} else {
 			return "", fmt.Errorf("commandExec: run: %w", err)
 		}
@@ -175,6 +183,11 @@ func (h *BridgeHandler) commandStart(data string) (string, error) {
 
 	if err := cmd.Start(); err != nil {
 		cancel()
+		if errors.Is(err, fs.ErrNotExist) {
+			if hint := checkELFInterpreter(resolved); hint != "" {
+				return "", fmt.Errorf("commandStart: start: %w (%s)", err, hint)
+			}
+		}
 		return "", fmt.Errorf("commandStart: start: %w", err)
 	}
 
@@ -275,6 +288,7 @@ func (h *BridgeHandler) commandDownload(data string) (string, error) {
 		os.Remove(destPath)
 		return "", fmt.Errorf("commandDownload: write: %w", err)
 	}
+	_ = f.Sync()
 	f.Close()
 	if n > maxDownloadSize {
 		os.Remove(destPath)
@@ -335,6 +349,7 @@ func (h *BridgeHandler) extractTgz(tgzPath, destDir, targetName string) error {
 			os.Remove(outPath)
 			return fmt.Errorf("write %s: %w", baseName, err)
 		}
+		_ = out.Sync()
 		out.Close()
 		extracted++
 
@@ -480,4 +495,31 @@ func (b *limitedBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+// checkELFInterpreter 检查 ELF 二进制的动态链接器是否存在。
+// execve 返回 ENOENT 但文件自身存在时，通常是 PT_INTERP 指定的解释器缺失
+// （如 glibc 编译的二进制在 Alpine/musl 上运行）。
+func checkELFInterpreter(path string) string {
+	f, err := elf.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	for _, prog := range f.Progs {
+		if prog.Type != elf.PT_INTERP {
+			continue
+		}
+		interp := make([]byte, prog.Filesz)
+		if _, err := prog.ReadAt(interp, 0); err != nil {
+			return ""
+		}
+		interpPath := strings.TrimRight(string(interp), "\x00")
+		if _, err := os.Stat(interpPath); err != nil {
+			return fmt.Sprintf("ELF interpreter %q not found — the binary may require glibc but this system uses musl; consider using a statically linked build", interpPath)
+		}
+		return ""
+	}
+	return ""
 }
