@@ -3,6 +3,7 @@ package jsplugin
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -89,7 +90,11 @@ func (m *Manager) InvokeHTTP(
 			"entryPath", entryPath, "method", method, "path", path, "bodyLen", len(bodyStr))
 		status = http.StatusBadGateway
 		if bodyStr == "" {
-			bodyStr = "plugin returned StatusCode=0 (likely onHTTPRequest resolved to undefined)"
+			errBody, _ := json.Marshal(map[string]string{
+				"error":  "plugin protocol error",
+				"detail": "plugin returned StatusCode=0 (likely onHTTPRequest resolved to undefined)",
+			})
+			bodyStr = string(errBody)
 		}
 	}
 	return status, respData.Headers, []byte(bodyStr), nil

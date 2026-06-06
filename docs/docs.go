@@ -1115,7 +1115,10 @@ const docTemplate = `{
                     "504": {
                         "description": "JS 运行时调用超时",
                         "schema": {
-                            "type": "string"
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -1184,7 +1187,10 @@ const docTemplate = `{
                     "504": {
                         "description": "JS 运行时调用超时",
                         "schema": {
-                            "type": "string"
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -1253,7 +1259,10 @@ const docTemplate = `{
                     "504": {
                         "description": "JS 运行时调用超时",
                         "schema": {
-                            "type": "string"
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -1322,7 +1331,10 @@ const docTemplate = `{
                     "504": {
                         "description": "JS 运行时调用超时",
                         "schema": {
-                            "type": "string"
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }

@@ -398,22 +398,28 @@ func (s *JSService) HasRunningProcesses() bool {
 
 // --- 内部消息处理方法 ---
 
+func errorHTTPResponse(msg *Message, statusCode int, errMsg, detail string) *Message {
+	body, _ := json.Marshal(map[string]string{"error": errMsg, "detail": detail})
+	return &Message{
+		ID: msg.ID, Session: msg.Session,
+		Data: &HTTPResponseData{
+			StatusCode: statusCode,
+			Headers:    map[string]string{"Content-Type": "application/json; charset=utf-8"},
+			Body:       string(body),
+		},
+	}
+}
+
 func (s *JSService) handleHTTPRequest(msg *Message) *Message {
 	reqData, ok := msg.Data.(*HTTPRequestData)
 	if !ok {
-		return &Message{
-			ID: msg.ID, Session: msg.Session,
-			Data: &HTTPResponseData{StatusCode: 400, Body: "invalid request data"},
-		}
+		return errorHTTPResponse(msg, 400, "invalid request data", "bad_request")
 	}
 
 	// 将请求序列化为 JSON 传入 JS
 	reqJSON, err := json.Marshal(reqData)
 	if err != nil {
-		return &Message{
-			ID: msg.ID, Session: msg.Session,
-			Data: &HTTPResponseData{StatusCode: 500, Body: "marshal request: " + err.Error()},
-		}
+		return errorHTTPResponse(msg, 500, "internal error", "marshal request: "+err.Error())
 	}
 
 	// 如果 body 使用了 base64 编码，在调用 onHTTPRequest 前用 atob 解码回二进制字符串。
@@ -437,15 +443,11 @@ func (s *JSService) handleHTTPRequest(msg *Message) *Message {
 	// 上限的 ExecuteJS 卡住，新切的歌排在它后面一直 pending（issue #79 的关键根因）。
 	result, err := s.jsManager.ExecuteJS(msg.Ctx, s.envID, code, 30000)
 	if err != nil {
-		// 上游已放弃，仍构造一个 5xx 响应给等待者（虽然往往无人接收）
 		statusCode := 500
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			statusCode = 499 // 仿 nginx "client closed request"
+			statusCode = 499
 		}
-		return &Message{
-			ID: msg.ID, Session: msg.Session,
-			Data: &HTTPResponseData{StatusCode: statusCode, Body: err.Error()},
-		}
+		return errorHTTPResponse(msg, statusCode, "plugin execution failed", err.Error())
 	}
 
 	// 解析 JS 返回的响应。
@@ -456,21 +458,13 @@ func (s *JSService) handleHTTPRequest(msg *Message) *Message {
 	if result == nil || result.Result == "" {
 		slog.Warn("jsplugin-http: empty result from JS (onHTTPRequest resolved to undefined)",
 			"envID", s.envID, "path", reqData.Path, "method", reqData.Method)
-		return &Message{
-			ID: msg.ID, Session: msg.Session,
-			Data: &HTTPResponseData{
-				StatusCode: 502,
-				Body:       "plugin onHTTPRequest resolved to undefined or empty (handler likely missing return)",
-			},
-		}
+		return errorHTTPResponse(msg, 502, "plugin protocol error",
+			"onHTTPRequest resolved to undefined or empty (handler likely missing return)")
 	}
 
 	var resp HTTPResponseData
 	if jsonErr := json.Unmarshal([]byte(result.Result), &resp); jsonErr != nil {
-		return &Message{
-			ID: msg.ID, Session: msg.Session,
-			Data: &HTTPResponseData{StatusCode: 500, Body: "unmarshal response: " + jsonErr.Error()},
-		}
+		return errorHTTPResponse(msg, 500, "internal error", "unmarshal response: "+jsonErr.Error())
 	}
 
 	return &Message{ID: msg.ID, Session: msg.Session, Data: &resp}

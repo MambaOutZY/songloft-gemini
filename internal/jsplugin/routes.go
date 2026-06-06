@@ -140,7 +140,7 @@ func (m *Manager) handlePluginStaticSubdirFiles(w http.ResponseWriter, r *http.R
 // @Failure 403 {object} map[string]string "插件未启用"
 // @Failure 404 {object} map[string]string "插件不存在"
 // @Failure 503 {object} map[string]string "插件不可用或运行异常（健康检查会自愈）"
-// @Failure 504 {string} string "JS 运行时调用超时"
+// @Failure 504 {object} map[string]string "JS 运行时调用超时"
 // @Security BearerAuth
 // @Router /jsplugin/{entryPath}/{path} [get]
 // @Router /jsplugin/{entryPath}/{path} [post]
@@ -389,6 +389,12 @@ func injectHTMLHead(html []byte, entryPath, basePath string) []byte {
 	return result
 }
 
+func writeJSONError(w http.ResponseWriter, status int, errMsg, detail string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": errMsg, "detail": detail})
+}
+
 // forwardToJSRuntime 将请求转发给 JS 运行时处理
 func (m *Manager) forwardToJSRuntime(w http.ResponseWriter, r *http.Request, entryPath, subPath string) {
 	// 1. 通过 EnsureLoaded 拿到 service（与 handlePluginAPIRequest 入口保持一致语义，
@@ -443,19 +449,19 @@ func (m *Manager) forwardToJSRuntime(w http.ResponseWriter, r *http.Request, ent
 	// 4. 通过 scheduler.Call 同步调用（等待 JS 处理完）
 	resp, err := m.scheduler.Call(r.Context(), entryPath, "", MsgHTTPRequest, reqData, 0)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusGatewayTimeout)
+		writeJSONError(w, http.StatusGatewayTimeout, "plugin call failed", err.Error())
 		return
 	}
 
 	// 5. 写入 HTTP 响应
 	if resp == nil || resp.Data == nil {
-		http.Error(w, "empty response from plugin", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "empty response from plugin", "runtime_error")
 		return
 	}
 
 	respData, ok := resp.Data.(*HTTPResponseData)
 	if !ok {
-		http.Error(w, "invalid response type from plugin", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "invalid response type from plugin", "runtime_error")
 		return
 	}
 

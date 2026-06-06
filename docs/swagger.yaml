@@ -1611,7 +1611,9 @@ paths:
         "504":
           description: JS 运行时调用超时
           schema:
-            type: string
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 插件 API 转发 catch-all（动态路由）
@@ -1657,7 +1659,9 @@ paths:
         "504":
           description: JS 运行时调用超时
           schema:
-            type: string
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 插件 API 转发 catch-all（动态路由）
@@ -1703,7 +1707,9 @@ paths:
         "504":
           description: JS 运行时调用超时
           schema:
-            type: string
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 插件 API 转发 catch-all（动态路由）
@@ -1749,7 +1755,9 @@ paths:
         "504":
           description: JS 运行时调用超时
           schema:
-            type: string
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 插件 API 转发 catch-all（动态路由）
