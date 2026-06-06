@@ -392,6 +392,14 @@ func (h *BridgeHandler) commandExists(data string) (string, error) {
 // --- 辅助函数 ---
 
 func (h *BridgeHandler) resolveProgram(program string) (string, error) {
+	if program == "" {
+		return "", fmt.Errorf("invalid program name: program cannot be empty")
+	}
+
+	if filepath.IsAbs(program) {
+		return resolveAbsoluteProgram(program)
+	}
+
 	if err := validateBinFilename(program); err != nil {
 		return "", fmt.Errorf("invalid program name: %w", err)
 	}
@@ -406,6 +414,23 @@ func (h *BridgeHandler) resolveProgram(program string) (string, error) {
 		return "", fmt.Errorf("program %q not found in plugin bin/ or system PATH", program)
 	}
 	return systemPath, nil
+}
+
+func resolveAbsoluteProgram(program string) (string, error) {
+	if strings.Contains(program, "..") {
+		return "", fmt.Errorf("invalid program path: %q contains '..'", program)
+	}
+	if filepath.Clean(program) != program {
+		return "", fmt.Errorf("invalid program path: %q is not clean (expected %q)", program, filepath.Clean(program))
+	}
+	info, err := os.Stat(program)
+	if err != nil {
+		return "", fmt.Errorf("program %q not found: %w", program, err)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("program %q is a directory, not a file", program)
+	}
+	return program, nil
 }
 
 func validateBinFilename(name string) error {
