@@ -1,3 +1,14 @@
+## [v2.6.2] - 2026-06-06
+### :sparkles: New Features
+- [`aa9c260`](https://github.com/songloft-org/songloft/commit/aa9c260da96cc844ce858432e1d1e4163837867d) - 新增歌曲去重功能 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`1e9722f`](https://github.com/songloft-org/songloft/commit/1e9722f96a03a6122c9ea10bd8afd7b01daa3ac7) - 更新 pkg/tag 子模块，修复 APE/WAV 读写问题 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`0b915b6`](https://github.com/songloft-org/songloft/commit/0b915b625b11c1022eab38110ce49bf29bf33192) - release version 2.6.2 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.6.0] - 2026-06-05
 ### :sparkles: New Features
 - [`7bfe806`](https://github.com/songloft-org/songloft/commit/7bfe80604fa49b67202b5ddecd002cf9566dadca) - 扫描歌曲支持用文件名作为标题 songloft-org/songloft[#100](https://github.com/songloft-org/songloft/pull/100) *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1111,3 +1122,4 @@
 [v2.5.0]: https://github.com/songloft-org/songloft/compare/v2.4.0...v2.5.0
 [v2.5.1]: https://github.com/songloft-org/songloft/compare/v2.5.0...v2.5.1
 [v2.6.0]: https://github.com/songloft-org/songloft/compare/v2.5.1...v2.6.0
+[v2.6.2]: https://github.com/songloft-org/songloft/compare/v2.6.1...v2.6.2
