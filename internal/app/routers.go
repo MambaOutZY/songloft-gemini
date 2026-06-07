@@ -49,7 +49,9 @@ func (a *App) setupAPIV1Router() {
 	playlistHandler := handlers.NewPlaylistHandler(a.playlistService)
 	configHandler := handlers.NewConfigHandler(a.configService)
 	scanHandler := handlers.NewScanHandler(a.songService, a.scanner, a.configService)
-	scanHandler.SetFingerprintService(services.NewFingerprintService(a.db.SongRepository()))
+	fingerprintService := services.NewFingerprintService(a.db.SongRepository())
+	scanHandler.SetFingerprintService(fingerprintService)
+	a.songService.SetFingerprintService(fingerprintService)
 
 	// music_path 写后回调：重建 Scanner 并清理排除目录中的歌曲。
 	// 两条入口都触发同一副作用，保持 admin /configs PUT 与业务 /settings/music-path PUT 行为对齐。

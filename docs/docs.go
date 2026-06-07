@@ -3391,7 +3391,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "异步为所有缺失指纹的本地歌曲计算音频指纹，需要服务端安装 fpcalc",
+                "description": "异步为所有缺失指纹的本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。",
                 "produces": [
                     "application/json"
                 ],
@@ -3408,16 +3408,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "fpcalc 不可用",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "计算任务已在进行中",
+                        "description": "chromaprint 不可用",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3460,7 +3451,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回 fpcalc 可用性以及本地歌曲指纹计算统计",
+                "description": "返回 ffmpeg chromaprint 可用性以及本地歌曲指纹计算统计",
                 "produces": [
                     "application/json"
                 ],

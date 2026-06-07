@@ -1,11 +1,14 @@
 package services
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,42 +17,59 @@ import (
 )
 
 var (
-	fpcalcAvailable     bool
-	fpcalcAvailableOnce sync.Once
+	chromaprintAvailable bool
+	chromaprintOnce      sync.Once
+	durationRe          = regexp.MustCompile(`Duration:\s+(\d+):(\d+):(\d+)\.(\d+)`)
 )
 
-// IsFpcalcAvailable 检测 fpcalc 是否可用（首次调用时检测，结果缓存）。
-func IsFpcalcAvailable() bool {
-	fpcalcAvailableOnce.Do(func() {
-		_, err := exec.LookPath("fpcalc")
-		fpcalcAvailable = err == nil
+// IsChromaprintAvailable 检测 ffmpeg 是否支持 chromaprint muxer（首次调用时检测，结果缓存）。
+func IsChromaprintAvailable() bool {
+	chromaprintOnce.Do(func() {
+		out, err := exec.Command("ffmpeg", "-hide_banner", "-muxers").Output()
+		if err == nil && strings.Contains(string(out), "chromaprint") {
+			chromaprintAvailable = true
+		}
 	})
-	return fpcalcAvailable
+	return chromaprintAvailable
 }
 
-type fpcalcOutput struct {
-	Fingerprint string  `json:"fingerprint"`
-	Duration    float64 `json:"duration"`
+func parseDurationFromStderr(stderr string) float64 {
+	matches := durationRe.FindStringSubmatch(stderr)
+	if len(matches) < 5 {
+		return 0
+	}
+	hours, _ := strconv.Atoi(matches[1])
+	minutes, _ := strconv.Atoi(matches[2])
+	seconds, _ := strconv.Atoi(matches[3])
+	frac, _ := strconv.Atoi(matches[4])
+	divisor := 1.0
+	for i := 0; i < len(matches[4]); i++ {
+		divisor *= 10
+	}
+	return float64(hours)*3600 + float64(minutes)*60 + float64(seconds) + float64(frac)/divisor
 }
 
-// ExtractFingerprint 调用 fpcalc -json 提取音频指纹。
+// ExtractFingerprint 调用 ffmpeg chromaprint muxer 提取音频指纹。
 func ExtractFingerprint(ctx context.Context, filePath string) (string, float64, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, "fpcalc", "-json", filePath).Output()
-	if err != nil {
-		return "", 0, fmt.Errorf("fpcalc: %w", err)
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", filePath, "-f", "chromaprint", "-fp_format", "compressed", "-")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", 0, fmt.Errorf("ffmpeg chromaprint: %w (%s)", err, stderr.String())
 	}
 
-	var result fpcalcOutput
-	if err := json.Unmarshal(out, &result); err != nil {
-		return "", 0, fmt.Errorf("fpcalc parse: %w", err)
+	fingerprint := strings.TrimSpace(stdout.String())
+	if fingerprint == "" {
+		return "", 0, fmt.Errorf("ffmpeg chromaprint returned empty fingerprint")
 	}
-	if result.Fingerprint == "" {
-		return "", 0, fmt.Errorf("fpcalc returned empty fingerprint")
-	}
-	return result.Fingerprint, result.Duration, nil
+
+	duration := parseDurationFromStderr(stderr.String())
+	return fingerprint, duration, nil
 }
 
 // FingerprintProgress 指纹计算进度。
@@ -66,6 +86,8 @@ type FingerprintService struct {
 
 	mu       sync.Mutex
 	running  bool
+	cancelFn context.CancelFunc
+	done     chan struct{}
 	progress FingerprintProgress
 }
 
@@ -84,21 +106,30 @@ func (s *FingerprintService) GetProgress() FingerprintProgress {
 	return s.progress
 }
 
-// ComputeMissing 异步为所有缺失指纹的本地歌曲计算指纹。
+// ComputeMissing 为所有缺失指纹的本地歌曲计算指纹。
+// 若已有任务在运行，打断旧任务后重新启动。
 func (s *FingerprintService) ComputeMissing() (int, error) {
 	s.mu.Lock()
 	if s.running {
+		s.cancelFn()
+		done := s.done
 		s.mu.Unlock()
-		return 0, fmt.Errorf("fingerprint computation already in progress")
+		<-done
+		s.mu.Lock()
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancelFn = cancel
 	s.running = true
+	s.done = make(chan struct{})
 	s.mu.Unlock()
 
-	ctx := context.Background()
 	missing, err := s.songs.ListLocalWithoutFingerprint(ctx)
 	if err != nil {
+		cancel()
 		s.mu.Lock()
 		s.running = false
+		close(s.done)
 		s.progress = FingerprintProgress{Status: "idle"}
 		s.mu.Unlock()
 		return 0, fmt.Errorf("list missing: %w", err)
@@ -110,24 +141,27 @@ func (s *FingerprintService) ComputeMissing() (int, error) {
 	s.mu.Unlock()
 
 	if total == 0 {
+		cancel()
 		s.mu.Lock()
 		s.running = false
+		close(s.done)
 		s.progress = FingerprintProgress{Status: "done", Total: 0}
 		s.mu.Unlock()
 		return 0, nil
 	}
 
-	go s.doCompute(missing)
+	go s.doCompute(ctx, missing)
 	return total, nil
 }
 
 const fpWorkers = 4
 
-func (s *FingerprintService) doCompute(items []database.SongIDPath) {
+func (s *FingerprintService) doCompute(ctx context.Context, items []database.SongIDPath) {
 	defer func() {
 		s.mu.Lock()
 		s.running = false
 		s.progress.Status = "done"
+		close(s.done)
 		s.mu.Unlock()
 	}()
 
@@ -139,8 +173,13 @@ func (s *FingerprintService) doCompute(items []database.SongIDPath) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ctx := context.Background()
 			for item := range ch {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
 				fp, dur, err := ExtractFingerprint(ctx, item.FilePath)
 				if err != nil {
 					slog.Info("fingerprint failed", "id", item.ID, "path", item.FilePath, "err", err)
@@ -161,8 +200,13 @@ func (s *FingerprintService) doCompute(items []database.SongIDPath) {
 		}()
 	}
 
+loop:
 	for _, item := range items {
-		ch <- item
+		select {
+		case <-ctx.Done():
+			break loop
+		case ch <- item:
+		}
 	}
 	close(ch)
 	wg.Wait()

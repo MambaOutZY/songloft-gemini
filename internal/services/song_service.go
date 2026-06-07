@@ -61,7 +61,8 @@ type SongService struct {
 	scanProgressManager *ScanProgressManager
 	configService       *ConfigService
 	playlistAutoCreator PlaylistAutoCreator
-	cacheService        *CacheService // 可选;由 app.go 通过 SetCacheService 注入,Delete 时清理 cache 残留
+	cacheService        *CacheService        // 可选;由 app.go 通过 SetCacheService 注入,Delete 时清理 cache 残留
+	fingerprintService  *FingerprintService   // 可选;扫描完成后自动计算指纹
 }
 
 // NewSongService 创建歌曲服务
@@ -93,6 +94,11 @@ func (s *SongService) SetScanner(scanner *Scanner) {
 // 避免歌曲被删后 cache 残留,在 DB 重置/ID 复用场景下被新 song 误命中。
 func (s *SongService) SetCacheService(cs *CacheService) {
 	s.cacheService = cs
+}
+
+// SetFingerprintService 注入指纹服务，扫描完成后自动计算缺失指纹。
+func (s *SongService) SetFingerprintService(fs *FingerprintService) {
+	s.fingerprintService = fs
 }
 
 // GetScanProgress 获取扫描进度
@@ -351,6 +357,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 	if len(toProcess) == 0 {
 		s.runAutoCreatePlaylists(ctx)
 		s.scanProgressManager.Complete()
+		s.runAutoFingerprint()
 		return
 	}
 
@@ -455,6 +462,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 
 	s.runAutoCreatePlaylists(ctx)
 	s.scanProgressManager.Complete()
+	s.runAutoFingerprint()
 }
 
 // runAutoCreatePlaylists 扫描完成后按当前 includeSubdirs 配置重建 auto_created 歌单。
@@ -472,6 +480,16 @@ func (s *SongService) runAutoCreatePlaylists(ctx context.Context) {
 
 	if _, err := s.playlistAutoCreator.AutoCreate(ctx, includeSubdirs); err != nil {
 		slog.Warn("自动创建歌单失败", "include_subdirs", includeSubdirs, "error", err)
+	}
+}
+
+// runAutoFingerprint 扫描完成后自动为缺失指纹的歌曲计算指纹。
+func (s *SongService) runAutoFingerprint() {
+	if s.fingerprintService == nil || !IsChromaprintAvailable() {
+		return
+	}
+	if _, err := s.fingerprintService.ComputeMissing(); err != nil {
+		slog.Info("auto fingerprint skipped", "reason", err)
 	}
 }
 

@@ -388,14 +388,14 @@ func (h *ScanHandler) UpdateScanTitleSourceSetting(w http.ResponseWriter, r *htt
 
 // GetFingerprintStatus 获取指纹计算状态
 // @Summary 获取指纹计算状态
-// @Description 返回 fpcalc 可用性以及本地歌曲指纹计算统计
+// @Description 返回 ffmpeg chromaprint 可用性以及本地歌曲指纹计算统计
 // @Tags 扫描管理
 // @Produce json
 // @Success 200 {object} map[string]interface{} "指纹状态"
 // @Security BearerAuth
 // @Router /scan/fingerprints/status [get]
 func (h *ScanHandler) GetFingerprintStatus(w http.ResponseWriter, r *http.Request) {
-	available := services.IsFpcalcAvailable()
+	available := services.IsChromaprintAvailable()
 	var total, computed int64
 	if h.fingerprintService != nil {
 		var err error
@@ -406,26 +406,25 @@ func (h *ScanHandler) GetFingerprintStatus(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"fpcalc_available": available,
-		"total":            total,
-		"computed":         computed,
-		"missing":          total - computed,
+		"chromaprint_available": available,
+		"total":                total,
+		"computed":             computed,
+		"missing":              total - computed,
 	})
 }
 
 // StartFingerprintCompute 触发批量指纹计算
 // @Summary 触发批量指纹计算
-// @Description 异步为所有缺失指纹的本地歌曲计算音频指纹，需要服务端安装 fpcalc
+// @Description 异步为所有缺失指纹的本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。
 // @Tags 扫描管理
 // @Produce json
 // @Success 200 {object} map[string]interface{} "任务已启动"
-// @Failure 400 {object} map[string]string "fpcalc 不可用"
-// @Failure 409 {object} map[string]string "计算任务已在进行中"
+// @Failure 400 {object} map[string]string "chromaprint 不可用"
 // @Security BearerAuth
 // @Router /scan/fingerprints [post]
 func (h *ScanHandler) StartFingerprintCompute(w http.ResponseWriter, r *http.Request) {
-	if !services.IsFpcalcAvailable() {
-		respondError(w, http.StatusBadRequest, "fpcalc 未安装，无法计算音频指纹", nil)
+	if !services.IsChromaprintAvailable() {
+		respondError(w, http.StatusBadRequest, "ffmpeg chromaprint 不可用，无法计算音频指纹", nil)
 		return
 	}
 	if h.fingerprintService == nil {
@@ -434,7 +433,7 @@ func (h *ScanHandler) StartFingerprintCompute(w http.ResponseWriter, r *http.Req
 	}
 	total, err := h.fingerprintService.ComputeMissing()
 	if err != nil {
-		respondError(w, http.StatusConflict, err.Error(), nil)
+		respondError(w, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]interface{}{
