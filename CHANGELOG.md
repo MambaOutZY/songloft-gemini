@@ -1,3 +1,34 @@
+## [v2.6.3] - 2026-06-07
+### :sparkles: New Features
+- [`5dbbff9`](https://github.com/songloft-org/songloft/commit/5dbbff9f8833b0d44c0fe4989f9d56cbc7a5401d) - 用 ffmpeg chromaprint 替代 fpcalc，扫描后自动计算指纹 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`fe7810c`](https://github.com/songloft-org/songloft/commit/fe7810cb7d1cb369b6636e8fc94b7ef6afd789c6) - 更新 miot 插件，支持定时开关对话监听 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`4fbfdcb`](https://github.com/songloft-org/songloft/commit/4fbfdcbb4ec19b25ae3e38d026c0b76ddf07194b) - 重构插件主题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ca52f4e`](https://github.com/songloft-org/songloft/commit/ca52f4eb3783d6fea92a0f7432d37c438cb37501) - **dedup**: 指纹去重删除时同步删除音频文件 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`cec5a8a`](https://github.com/songloft-org/songloft/commit/cec5a8ae25cff8d1bfdb44ef68ff9afbbd953609) - 设置 PKG_CONFIG_PATH 让 ffmpeg configure 找到 libchromaprint *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d4a8cc4`](https://github.com/songloft-org/songloft/commit/d4a8cc40722029fce6210cfb52766585b45970c1) - 设置 PKG_CONFIG_PATH 让 ffmpeg configure 找到 libchromaprint *(commit by [@hanxi](https://github.com/hanxi))*
+- [`872abaf`](https://github.com/songloft-org/songloft/commit/872abaf8546c8795ee85e46c7252ff43e670380b) - **tag**: 移除与 common.css 重复的导航样式，修复非 embed 模式 tab 异常 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`8336676`](https://github.com/songloft-org/songloft/commit/8336676e53e69043fbe8c23c084685272d53e456) - **tag**: 移除与 common.css 重复的 card 样式定义 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`9c8db18`](https://github.com/songloft-org/songloft/commit/9c8db18c07b1b17da9d8e4b33268c7270fd458c8) - **settings**: 缓存管理操作区域默认折叠，防止误触 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :zap: Performance Improvements
+- [`e8c4d5a`](https://github.com/songloft-org/songloft/commit/e8c4d5afd5ef6787b4368fd696ad378ac9a9fb0c) - 写入标签前预检，标签一致时跳过磁盘写入 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :recycle: Refactors
+- [`a4459ad`](https://github.com/songloft-org/songloft/commit/a4459ad44560ac2207892881c75c9f1ddd4e5c8a) - **tag**: 导航改为底部 tab-bar，统一插件 UI 风格 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`87c217f`](https://github.com/songloft-org/songloft/commit/87c217ff2f51e484af8c2bffab93133c83823e18) - **tag-plugin**: 移除 fpcalc 依赖，改用主程序指纹 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`9882bb0`](https://github.com/songloft-org/songloft/commit/9882bb099ae1951e382ec4a53a4829b6f631feb5) - update CHANGELOG for v2.6.2 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`bd688b2`](https://github.com/songloft-org/songloft/commit/bd688b2b77e69a924cab380dcb17713dc483977c) - **faq**: 添加多音乐目录配置方法 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`316bbd6`](https://github.com/songloft-org/songloft/commit/316bbd6d9da31d793d692deb48f7696be477e1a5) - 更新 dav/subsonic 子模块，清理死代码 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`28da741`](https://github.com/songloft-org/songloft/commit/28da74119db465c8c16567510a8290b9d0031699) - 更新 miot 子模块，搜索前打断音箱播报 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3306c2c`](https://github.com/songloft-org/songloft/commit/3306c2c6551e20473d9b72a2af28d99b1d34982f) - release version 2.6.3 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.6.2] - 2026-06-06
 ### :sparkles: New Features
 - [`aa9c260`](https://github.com/songloft-org/songloft/commit/aa9c260da96cc844ce858432e1d1e4163837867d) - 新增歌曲去重功能 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1123,3 +1154,4 @@
 [v2.5.1]: https://github.com/songloft-org/songloft/compare/v2.5.0...v2.5.1
 [v2.6.0]: https://github.com/songloft-org/songloft/compare/v2.5.1...v2.6.0
 [v2.6.2]: https://github.com/songloft-org/songloft/compare/v2.6.1...v2.6.2
+[v2.6.3]: https://github.com/songloft-org/songloft/compare/v2.6.2...v2.6.3
