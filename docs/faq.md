@@ -85,6 +85,42 @@ A:
 
 ## 配置与运行
 
+### Q: 如何配置多个音乐目录？
+
+A: Songloft 只支持设置一个音乐根目录，但扫描器**完整支持软链接**（符号链接），可以通过在根目录下创建软链接来聚合多个目录。
+
+**Linux / macOS**：
+
+```bash
+# 假设音乐根目录为 /app/music（Docker 默认）或 ~/music
+# 将其他目录通过软链接挂入根目录
+
+ln -s /mnt/nas/music /app/music/nas-music
+ln -s /home/user/downloads/music /app/music/downloads
+```
+
+扫描时会自动跟随软链接递归扫描，并检测循环链接防止死循环。
+
+**Docker 部署**：直接挂载多个卷到音乐根目录的子目录即可，无需软链接：
+
+```yaml
+services:
+  songloft:
+    image: songloft/songloft:latest
+    volumes:
+      - /path/to/data:/app/data
+      - /mnt/nas/music:/app/music/nas-music
+      - /home/user/local-music:/app/music/local-music
+```
+
+**Windows**：使用 `mklink /D` 创建目录链接：
+
+```cmd
+mklink /D C:\music\nas-music \\NAS\music
+```
+
+> **注意**：排除目录（`exclude_dirs`）对所有子目录生效，包括通过软链接引入的目录。
+
 ### Q: 如何修改服务端口？
 
 A: 有两种方式：
