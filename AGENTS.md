@@ -214,6 +214,9 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 - 新建插件：`npx create-songloft-plugin@latest`（交互式脚手架，详见 `plugin-toolchain/README.md`）
 - 沙盒：QuickJS，通过 `internal/jsruntime` 提供的 `host` 桥接调用宿主能力（`http.fetch`、`storage`、`logger`）
 - 路由：`/api/v1/jsplugin/{entry_path}/...`
+- 公共资源：`/api/v1/jsplugin-assets/*` 提供嵌入在 Go 二进制中的 `common.css`/`common.js`/字体，`injectHTMLHead` 自动注入到所有插件 HTML 页面
+- 主题同步：`common.js` 内含 embed 检测 + 主题桥接（URL `?theme=` 参数 + `postMessage` 实时更新 + `data-theme` 属性 + `songloft-theme-change` 事件），暴露 `window.SongloftPlugin` 全局 API（`getTheme`/`onThemeChange`/`apiGet`/`apiPost` 等）
+- `common.css` 定义 `--md-*` CSS 变量（亮/暗双主题），所有使用这些变量的插件自动跟随主题切换
 - 权限：manifest 中 `permissions: ["network", "storage", "fs:music", ...]`，运行时由 `internal/jsplugin` 校验
 - 健康检查 + 文件指纹热更新均自动进行
 

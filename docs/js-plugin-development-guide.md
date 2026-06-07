@@ -72,8 +72,10 @@ my-plugin/
 ├── tsconfig.json
 ├── src/
 │   └── main.ts        # TypeScript 源码入口
-├── static/            # [附加功能] 静态资源（HTML/CSS/JS 模板和 API 封装库）
-│   └── index.html
+├── static/            # [附加功能] 静态资源（HTML + 插件自定义 JS）
+│   ├── index.html
+│   └── js/
+│       └── app.js
 └── bin/               # [附加功能] 可执行文件管理（打包/下载/运行外部程序）
 ```
 
@@ -232,9 +234,11 @@ plugin.json          # 插件清单（必须）
 main.js              # 入口文件（必须，或 main.jsc 字节码）
 static/              # 静态资源目录（可选）
   ├── index.html
-  ├── style.css
-  └── app.js
+  └── js/
+      └── app.js
 ```
+
+> 公共资源（CSS 变量/reset/MD3 组件样式、字体、API 工具库）由主程序自动注入，插件无需打包。详见 [§8. 静态资源](#8-静态资源)。
 
 ### plugin.json 字段说明
 
@@ -615,42 +619,97 @@ my-plugin/
 ├── main.js
 └── static/
     ├── index.html
-    ├── style.css
-    └── app.js
+    └── js/
+        └── app.js       # 插件自定义逻辑
 ```
+
+> 公共资源（CSS 变量/reset/MD3 组件样式、字体文件、API 工具库 `common.js`）由主程序自动注入，**无需**在插件中打包。
+
+### 主程序自动注入
+
+后端在返回插件 HTML 页面时，会在 `<head>` 顶部自动注入以下内容（按顺序）：
+
+1. **`<base>`** — 设置相对路径基准，HTML 中可直接用相对路径引用 `static/...` 和插件 API
+2. **Auth bridge 脚本** — 从 URL `?access_token=` 写入 localStorage、fetch 503 自动重试
+3. **`common.css`** — MD3 颜色变量（含亮/暗双主题）、CSS reset、字体声明、通用组件样式
+4. **`common.js`** — embed 检测、主题桥接、`window.SongloftPlugin` 全局 API
+
+因此插件 HTML **不需要**：
+- `<link>` 引用 fonts.css 或 style.css（主程序提供）
+- embed 检测脚本（主程序提供）
+- 打包字体文件（主程序通过 `/api/v1/jsplugin-assets/fonts/` 提供）
+
+### window.SongloftPlugin — 浏览器端全局 API
+
+主程序注入的 `common.js` 暴露 `window.SongloftPlugin` 全局对象，提供以下方法：
+
+```javascript
+// API 请求
+SongloftPlugin.getAuthToken()        // 从 localStorage 读取 JWT token
+SongloftPlugin.apiGet(path)          // GET 请求，返回 Promise<JSON>
+SongloftPlugin.apiPost(path, body)   // POST 请求
+SongloftPlugin.apiPut(path, body)    // PUT 请求
+SongloftPlugin.apiDelete(path)       // DELETE 请求
+
+// 主题
+SongloftPlugin.getTheme()            // 返回 'light' | 'dark'
+SongloftPlugin.onThemeChange(cb)     // 监听主题变化，cb(theme: 'light' | 'dark')
+```
+
+插件 JS 可直接使用：
+
+```javascript
+const { apiGet, getTheme, onThemeChange } = SongloftPlugin;
+
+const data = await apiGet('/api/hello');
+console.log('当前主题:', getTheme());
+onThemeChange(theme => console.log('主题切换到:', theme));
+```
+
+如果插件用 ES module 方式组织代码（多个 `.js` 文件通过 `import` 引用），可创建一个 `common.js` 薄包装层：
+
+```javascript
+// static/js/common.js — 从全局对象 re-export，供其他模块 import
+export const { getAuthToken, apiGet, apiPost, apiPut, apiDelete, getTheme, onThemeChange } = window.SongloftPlugin;
+```
+
+### 主题适配
+
+主程序的 `common.css` 在 `:root` 下定义了 `--md-*` CSS 变量（亮色），并在 `html[data-theme="dark"]` 下覆盖为暗色值。插件页面使用这些变量即可自动适配主题：
+
+```css
+/* 插件自定义样式 — 引用 --md-* 变量自动跟随主题 */
+.my-card {
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    border: 1px solid var(--md-outline-variant);
+}
+```
+
+主题变化时（用户在主程序设置中切换），`common.js` 会：
+1. 更新 `<html>` 的 `data-theme` 属性和 `theme-light`/`theme-dark` CSS class
+2. 派发 `songloft-theme-change` CustomEvent
+3. 写入 `localStorage['songloft-theme']`
+
+插件 JS 可通过 `SongloftPlugin.onThemeChange(callback)` 监听主题变化做额外处理。
 
 ### 访问路径
 
 安装后，静态文件通过以下路径访问（注意：运行时路由是单数 `jsplugin`，与管理 API `/api/v1/jsplugins`（复数）不同）：
 
 ```
-GET /api/v1/jsplugin/{entryPath}/                 → static/index.html（自动注入 <base>）
+GET /api/v1/jsplugin/{entryPath}/                 → static/index.html（自动注入）
 GET /api/v1/jsplugin/{entryPath}/static           → static/index.html
 GET /api/v1/jsplugin/{entryPath}/static/<file>    → 任意静态资源
-```
-
-例如：`/api/v1/jsplugin/my-plugin/static/style.css`
-
-> 后端在返回 `index.html` 时自动注入 `<base href="/api/v1/jsplugin/{entryPath}/">`，因此 HTML 中可直接用相对路径引用 `static/...` 和插件 API；同时还会注入一段 fetch 拦截脚本，在插件正在热重载（HTTP 503 `plugin_unavailable`）时静默重试。
-
-### 在 HTML 中调用插件 API
-
-```html
-<script>
-async function callPluginAPI() {
-    // 相对路径访问插件的 HTTP API
-    const resp = await fetch('../songs');
-    const data = await resp.json();
-    console.log(data);
-}
-</script>
+GET /api/v1/jsplugin-assets/*                     → 主程序公共资源（CSS/JS/字体）
 ```
 
 ### 注意事项
 
 - 静态文件在安装时从 ZIP 解压到 `data/jsplugins_data/{entryPath}/static/`
 - 更新插件时会重新解压静态文件
-- 建议使用相对路径引用 API
+- 建议使用相对路径引用插件 API
+- 公共资源由主程序提供，插件不需要也不应该打包自己的 CSS 变量/字体/API 工具库
 
 ---
 

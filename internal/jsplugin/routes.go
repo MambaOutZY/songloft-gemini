@@ -2,10 +2,12 @@ package jsplugin
 
 import (
 	"bytes"
+	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,6 +17,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
+
+//go:embed assets/*
+var pluginAssets embed.FS
 
 // authBridgeScriptTpl 注入到每个插件 HTML 页面 <head> 顶部的小脚本：
 //  1. authBridge：从 URL query parameter 读取 access_token 并存入 localStorage，
@@ -26,6 +31,7 @@ import (
 //     用户感知正常。仅重试 errCode=plugin_unavailable，不重试 plugin_disabled
 //     / 4xx / 200，避免无效重试。
 const authBridgeScriptTpl = `<script>(function(){var p=new URLSearchParams(window.location.search);var t=p.get("access_token");if(t){localStorage.setItem("songloft-auth",JSON.stringify({accessToken:t}));p.delete("access_token");var u=window.location.pathname;var r=p.toString();if(r)u+="?"+r;history.replaceState(null,"",u)}var __of=window.fetch.bind(window);window.fetch=function(input,init){return __of(input,init).then(function(resp){if(resp.status!==503)return resp;var u=typeof input==="string"?input:(input&&input.url)||"";if(u.indexOf("/api/v1/jsplugin/")<0)return resp;var ct=resp.headers.get("content-type")||"";if(ct.indexOf("application/json")<0)return resp;var c=resp.clone();return c.json().then(function(j){if(!j||j.error!=="plugin_unavailable")return resp;return new Promise(function(res){setTimeout(function(){res(__of(input,init))},200)})}).catch(function(){return resp})})}})();</script>`
+
 
 // RegisterStaticRoutes 注册 JS 插件静态资源路由（无需认证）
 //
@@ -41,6 +47,52 @@ func (m *Manager) RegisterStaticRoutes(r chi.Router) {
 	r.Get("/api/v1/jsplugin/{entryPath}/", m.handlePluginStatic)
 	r.Get("/api/v1/jsplugin/{entryPath}/static", m.handlePluginStaticSubdir)
 	r.Get("/api/v1/jsplugin/{entryPath}/static/*", m.handlePluginStaticSubdirFiles)
+	r.Get("/api/v1/jsplugin-assets/*", handlePluginAssets)
+}
+
+// handlePluginAssets 服务插件公共资源（CSS/JS/字体）。
+//
+// @Summary     插件公共资源
+// @Description 服务由主程序嵌入的插件通用 CSS、JS 和字体文件，自动注入到所有插件 HTML 页面。
+// @Tags        JS 插件
+// @Produce     octet-stream
+// @Param       * path string true "资源路径"
+// @Success     200 "资源文件"
+// @Failure     404 {object} map[string]string "资源不存在"
+// @Router      /api/v1/jsplugin-assets/{path} [get]
+func handlePluginAssets(w http.ResponseWriter, r *http.Request) {
+	subPath := chi.URLParam(r, "*")
+	if subPath == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	filePath := "assets/" + subPath
+	f, err := pluginAssets.Open(filePath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+
+	seeker, ok := f.(io.ReadSeeker)
+	if !ok {
+		data, err := fs.ReadFile(pluginAssets, filePath)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		seeker = bytes.NewReader(data)
+	}
+	http.ServeContent(w, r, info.Name(), info.ModTime(), seeker)
 }
 
 // RegisterAPIRoutes 注册 JS 插件 API 转发路由（需要认证，由调用方添加 AuthMiddleware）
@@ -339,22 +391,28 @@ func (m *Manager) tryServeStaticFile(w http.ResponseWriter, r *http.Request, sta
 	return true
 }
 
-// injectHTMLHead 在 HTML 的 <head> 后（紧跟开标签）注入 <base> 标签和 auth-bridge 脚本。
-// <base> 标签使浏览器以 /api/v1/jsplugin/{entryPath}/ 为基准解析相对路径，
-// 从而无需 301 重定向即可正确加载资源。
+// injectHTMLHead 在 HTML 的 <head> 后（紧跟开标签）注入 <base> 标签、auth bridge 脚本和公共资源引用。
 //
+// 注入顺序：base → auth bridge → common.css link → common.js script
+// common.js 内含 embed 检测和主题桥接逻辑，render-blocking 保证在页面内容前执行。
+//
+// <base> 标签使浏览器以 /api/v1/jsplugin/{entryPath}/ 为基准解析相对路径。
 // 关键：<base> 必须在所有使用相对 URL 的元素（<link>, <script> 等）之前注入，
-// 否则浏览器的预加载扫描器（preload scanner）会在解析到 <base> 之前就用错误的基准 URL
-// 发起资源请求，导致首次加载时 CSS/JS 路径错误（如缺少 entryPath 路径段）。
-// 刷新后正常是因为资源已缓存或浏览器重新解析时已知 base。
+// 否则浏览器的预加载扫描器（preload scanner）会用错误的基准 URL 发起资源请求。
 //
 // 如果 HTML 中没有 <head> 标签，则在文件开头注入。
 func injectHTMLHead(html []byte, entryPath, basePath string) []byte {
 	baseTag := []byte(`<base href="` + basePath + `/api/v1/jsplugin/` + entryPath + `/">`)
 	authScript := []byte(authBridgeScriptTpl)
-	injectPayload := make([]byte, 0, len(baseTag)+len(authScript))
+	assetsBase := basePath + "/api/v1/jsplugin-assets/"
+	cssLink := []byte(`<link rel="stylesheet" href="` + assetsBase + `common.css">`)
+	jsScript := []byte(`<script src="` + assetsBase + `common.js"></script>`)
+
+	injectPayload := make([]byte, 0, len(baseTag)+len(authScript)+len(cssLink)+len(jsScript))
 	injectPayload = append(injectPayload, baseTag...)
 	injectPayload = append(injectPayload, authScript...)
+	injectPayload = append(injectPayload, cssLink...)
+	injectPayload = append(injectPayload, jsScript...)
 
 	// 优先在 <head> 开标签之后注入（确保 <base> 出现在所有 <link>/<script> 之前）
 	headOpenIdx := bytes.Index(html, []byte("<head>"))
