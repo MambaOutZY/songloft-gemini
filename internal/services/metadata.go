@@ -119,7 +119,8 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 	}
 
 	// 智能合并文件名和刮削标题
-	fileName := strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
+	rawFileName := strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
+	fileName := tag.FixEncoding([]byte(rawFileName))
 	slog.Info("Extract title", "fileName", fileName, "title", metadata.Title)
 
 	// 仅在 tag 库未能获取时长时，回退到 ffprobe 补充技术参数
@@ -425,7 +426,7 @@ func (m *MetadataExtractor) ReadLyricFile(lrcPath string) (string, error) {
 		return "", fmt.Errorf("failed to read lyric file: %w", err)
 	}
 
-	return string(content), nil
+	return tag.FixEncoding(content), nil
 }
 
 // IsFFProbeAvailable 检查 ffprobe 是否可用
