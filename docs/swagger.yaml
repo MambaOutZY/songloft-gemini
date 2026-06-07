@@ -220,6 +220,11 @@ definitions:
         example: tag
         type: string
     type: object
+  handlers.startFingerprintRequest:
+    properties:
+      recompute_all:
+        type: boolean
+    type: object
   handlers.tabConfigSetting:
     properties:
       plugin_tabs:
@@ -3167,7 +3172,16 @@ paths:
       - 扫描管理
   /scan/fingerprints:
     post:
-      description: 异步为所有缺失指纹的本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。
+      consumes:
+      - application/json
+      description: 异步为本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。传入 recompute_all=true
+        时清空已有指纹后重新计算全部。
+      parameters:
+      - description: 计算选项
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/handlers.startFingerprintRequest'
       produces:
       - application/json
       responses:

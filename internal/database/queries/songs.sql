@@ -79,6 +79,9 @@ SELECT added_at, updated_at FROM songs WHERE id = ?;
 -- name: UpdateSongFingerprint :exec
 UPDATE songs SET fingerprint = ?, fingerprint_duration = ? WHERE id = ?;
 
+-- name: ClearAllFingerprints :exec
+UPDATE songs SET fingerprint = '', fingerprint_duration = 0 WHERE type = 'local' AND fingerprint != '';
+
 -- name: ListLocalWithoutFingerprint :many
 SELECT id, file_path FROM songs WHERE type = 'local' AND fingerprint = '';
 

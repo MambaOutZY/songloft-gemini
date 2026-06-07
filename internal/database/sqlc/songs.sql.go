@@ -10,6 +10,15 @@ import (
 	"time"
 )
 
+const clearAllFingerprints = `-- name: ClearAllFingerprints :exec
+UPDATE songs SET fingerprint = '', fingerprint_duration = 0 WHERE type = 'local' AND fingerprint != ''
+`
+
+func (q *Queries) ClearAllFingerprints(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearAllFingerprints)
+	return err
+}
+
 const countLocalFingerprints = `-- name: CountLocalFingerprints :one
 SELECT
     COUNT(*) AS total,

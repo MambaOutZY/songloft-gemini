@@ -54,7 +54,7 @@ func ExtractFingerprint(ctx context.Context, filePath string) (string, float64, 
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", filePath, "-f", "chromaprint", "-fp_format", "compressed", "-")
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", filePath, "-f", "chromaprint", "-fp_format", "base64", "-")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -109,6 +109,16 @@ func (s *FingerprintService) GetProgress() FingerprintProgress {
 // ComputeMissing 为所有缺失指纹的本地歌曲计算指纹。
 // 若已有任务在运行，打断旧任务后重新启动。
 func (s *FingerprintService) ComputeMissing() (int, error) {
+	return s.startCompute(false)
+}
+
+// RecomputeAll 清空所有已有指纹后重新计算全部本地歌曲的指纹。
+// 若已有任务在运行，打断旧任务后重新启动。
+func (s *FingerprintService) RecomputeAll() (int, error) {
+	return s.startCompute(true)
+}
+
+func (s *FingerprintService) startCompute(clearFirst bool) (int, error) {
 	s.mu.Lock()
 	if s.running {
 		s.cancelFn()
@@ -123,6 +133,18 @@ func (s *FingerprintService) ComputeMissing() (int, error) {
 	s.running = true
 	s.done = make(chan struct{})
 	s.mu.Unlock()
+
+	if clearFirst {
+		if err := s.songs.ClearAllFingerprints(ctx); err != nil {
+			cancel()
+			s.mu.Lock()
+			s.running = false
+			close(s.done)
+			s.progress = FingerprintProgress{Status: "idle"}
+			s.mu.Unlock()
+			return 0, fmt.Errorf("clear fingerprints: %w", err)
+		}
+	}
 
 	missing, err := s.songs.ListLocalWithoutFingerprint(ctx)
 	if err != nil {

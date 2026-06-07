@@ -582,6 +582,11 @@ func (r *SongRepository) UpdateFingerprint(ctx context.Context, id int64, finger
 	})
 }
 
+// ClearAllFingerprints 清空所有本地歌曲的指纹数据。
+func (r *SongRepository) ClearAllFingerprints(ctx context.Context) error {
+	return r.queries.ClearAllFingerprints(ctx)
+}
+
 // SongIDPath 是 (id, file_path) 的轻量对。
 type SongIDPath struct {
 	ID       int64

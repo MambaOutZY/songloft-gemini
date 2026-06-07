@@ -36,6 +36,7 @@ type SongRepository interface {
 	ListTypesByIDs(ctx context.Context, ids []int64) (map[int64]string, error)
 	CountCoverPathReferences(ctx context.Context, coverPath string) (int, error)
 	UpdateFingerprint(ctx context.Context, id int64, fingerprint string, duration float64) error
+	ClearAllFingerprints(ctx context.Context) error
 	ListLocalWithoutFingerprint(ctx context.Context) ([]database.SongIDPath, error)
 	CountLocalFingerprints(ctx context.Context) (total, computed int64, err error)
 	ListDuplicateGroups(ctx context.Context) ([]database.DuplicateGroup, error)

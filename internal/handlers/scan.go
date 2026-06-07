@@ -415,9 +415,11 @@ func (h *ScanHandler) GetFingerprintStatus(w http.ResponseWriter, r *http.Reques
 
 // StartFingerprintCompute 触发批量指纹计算
 // @Summary 触发批量指纹计算
-// @Description 异步为所有缺失指纹的本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。
+// @Description 异步为本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。传入 recompute_all=true 时清空已有指纹后重新计算全部。
 // @Tags 扫描管理
+// @Accept json
 // @Produce json
+// @Param request body handlers.startFingerprintRequest false "计算选项"
 // @Success 200 {object} map[string]interface{} "任务已启动"
 // @Failure 400 {object} map[string]string "chromaprint 不可用"
 // @Security BearerAuth
@@ -431,7 +433,22 @@ func (h *ScanHandler) StartFingerprintCompute(w http.ResponseWriter, r *http.Req
 		respondError(w, http.StatusInternalServerError, "fingerprint service not initialized", nil)
 		return
 	}
-	total, err := h.fingerprintService.ComputeMissing()
+
+	var req startFingerprintRequest
+	if r.Body != nil && r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "请求体格式错误", err)
+			return
+		}
+	}
+
+	var total int
+	var err error
+	if req.RecomputeAll {
+		total, err = h.fingerprintService.RecomputeAll()
+	} else {
+		total, err = h.fingerprintService.ComputeMissing()
+	}
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error(), nil)
 		return
@@ -440,6 +457,10 @@ func (h *ScanHandler) StartFingerprintCompute(w http.ResponseWriter, r *http.Req
 		"status": "started",
 		"total":  total,
 	})
+}
+
+type startFingerprintRequest struct {
+	RecomputeAll bool `json:"recompute_all"`
 }
 
 // GetFingerprintProgress 获取指纹计算进度

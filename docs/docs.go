@@ -3426,7 +3426,10 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "异步为所有缺失指纹的本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。",
+                "description": "异步为本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。传入 recompute_all=true 时清空已有指纹后重新计算全部。",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -3434,6 +3437,16 @@ const docTemplate = `{
                     "扫描管理"
                 ],
                 "summary": "触发批量指纹计算",
+                "parameters": [
+                    {
+                        "description": "计算选项",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.startFingerprintRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "任务已启动",
@@ -5982,6 +5995,14 @@ const docTemplate = `{
                         "filename"
                     ],
                     "example": "tag"
+                }
+            }
+        },
+        "handlers.startFingerprintRequest": {
+            "type": "object",
+            "properties": {
+                "recompute_all": {
+                    "type": "boolean"
                 }
             }
         },
