@@ -666,11 +666,10 @@ console.log('当前主题:', getTheme());
 onThemeChange(theme => console.log('主题切换到:', theme));
 ```
 
-如果插件用 ES module 方式组织代码（多个 `.js` 文件通过 `import` 引用），可创建一个 `common.js` 薄包装层：
+如果插件有多个 JS 文件，每个文件顶部直接从全局解构即可：
 
 ```javascript
-// static/js/common.js — 从全局对象 re-export，供其他模块 import
-export const { getAuthToken, apiGet, apiPost, apiPut, apiDelete, getTheme, onThemeChange } = window.SongloftPlugin;
+const { apiGet, apiPost } = SongloftPlugin;
 ```
 
 ### 主题适配
