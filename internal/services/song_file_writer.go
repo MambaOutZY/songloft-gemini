@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"errors"
 	"log/slog"
 	"os"
@@ -26,6 +27,8 @@ const (
 	//   - lyric_source = url（运行时拉取，不缓存到本地文件）
 	//   - 文件扩展名不在 pkg/tag 支持的写入清单（pkg/tag 返回 ErrUnsupportedWrite）
 	FileWriteUnchanged FileWriteStatus = "unchanged"
+	// FileWriteSkipped 文件标签与待写入内容一致，跳过写入。
+	FileWriteSkipped FileWriteStatus = "skipped"
 	// FileWriteFailed 实际写入时报错（IO / 解析失败等）。
 	FileWriteFailed FileWriteStatus = "failed"
 )
@@ -82,6 +85,11 @@ func WriteSongTags(filePath string, song *models.Song) FileWriteStatus {
 		}
 	}
 
+	if tagsUnchanged(filePath, opts) {
+		slog.Debug("tag unchanged, skip write", "path", filePath)
+		return FileWriteSkipped
+	}
+
 	if err := tag.WriteTag(filePath, opts); err != nil {
 		if errors.Is(err, tag.ErrUnsupportedWrite) {
 			slog.Debug("tag write skipped for unsupported format",
@@ -97,4 +105,41 @@ func WriteSongTags(filePath string, song *models.Song) FileWriteStatus {
 		"hasPicture", opts.Picture != nil,
 		"lyricsLen", len(opts.Lyrics))
 	return FileWriteWritten
+}
+
+// tagsUnchanged 读取文件现有标签，与待写入的 opts 逐字段比较。
+// 全部一致返回 true；任何字段不同、或读取失败则返回 false（继续写入）。
+func tagsUnchanged(filePath string, opts tag.WriteOptions) bool {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	m, err := tag.ReadFrom(f)
+	if err != nil {
+		return false
+	}
+
+	if m.Title() != opts.Title ||
+		m.Artist() != opts.Artist ||
+		m.AlbumArtist() != opts.AlbumArtist ||
+		m.Album() != opts.Album ||
+		m.Genre() != opts.Genre ||
+		m.Lyrics() != opts.Lyrics ||
+		m.Year() != opts.Year {
+		return false
+	}
+
+	return pictureEqual(m.Picture(), opts.Picture)
+}
+
+func pictureEqual(a, b *tag.Picture) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.MIMEType == b.MIMEType && bytes.Equal(a.Data, b.Data)
 }
