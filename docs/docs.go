@@ -1531,7 +1531,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "检查并更新所有具有远程更新源的 JS 插件。跳过无 update_url 的插件和已是最新版的插件，逐个下载并安装更新，失败不中断其他插件的更新流程。",
+                "description": "检查并更新所有具有远程更新源的 JS 插件。跳过无 update_url 的插件和已是最新版的插件，逐个下载并安装更新，失败不中断其他插件的更新流程。设置 force=true 可跳过版本检查强制重新下载安装所有插件。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1970,7 +1970,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从远程下载并更新指定的 JS 插件",
+                "description": "从远程下载并更新指定的 JS 插件。设置 force=true 可跳过版本检查强制重新下载安装。",
                 "consumes": [
                     "application/json"
                 ],

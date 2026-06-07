@@ -475,7 +475,7 @@ func (h *JSPluginHandler) handleCheckUpdate(w http.ResponseWriter, r *http.Reque
 
 // handleDownloadUpdate 执行远程更新
 // @Summary 下载并更新 JS 插件
-// @Description 从远程下载并更新指定的 JS 插件
+// @Description 从远程下载并更新指定的 JS 插件。设置 force=true 可跳过版本检查强制重新下载安装。
 // @Tags JS插件管理
 // @Accept json
 // @Produce json
@@ -496,12 +496,13 @@ func (h *JSPluginHandler) handleDownloadUpdate(w http.ResponseWriter, r *http.Re
 	// 允许 body 为空（不使用代理）
 	var req struct {
 		GithubProxy string `json:"github_proxy"`
+		Force       bool   `json:"force"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	plugin, err := h.packageMgr.DownloadUpdate(pluginID, req.GithubProxy)
+	plugin, err := h.packageMgr.DownloadUpdate(pluginID, req.GithubProxy, req.Force)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "下载更新失败", err)
 		return
@@ -543,7 +544,7 @@ type jsPluginBatchUpdateResponse struct {
 
 // handleBatchUpdate 批量更新所有 JS 插件
 // @Summary 批量更新所有 JS 插件
-// @Description 检查并更新所有具有远程更新源的 JS 插件。跳过无 update_url 的插件和已是最新版的插件，逐个下载并安装更新，失败不中断其他插件的更新流程。
+// @Description 检查并更新所有具有远程更新源的 JS 插件。跳过无 update_url 的插件和已是最新版的插件，逐个下载并安装更新，失败不中断其他插件的更新流程。设置 force=true 可跳过版本检查强制重新下载安装所有插件。
 // @Tags JS插件管理
 // @Accept json
 // @Produce json
@@ -555,6 +556,7 @@ type jsPluginBatchUpdateResponse struct {
 func (h *JSPluginHandler) handleBatchUpdate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		GithubProxy string `json:"github_proxy"`
+		Force       bool   `json:"force"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
@@ -591,7 +593,7 @@ func (h *JSPluginHandler) handleBatchUpdate(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 
-		if !updateInfo.HasUpdate {
+		if !req.Force && !updateInfo.HasUpdate {
 			skipped++
 			results = append(results, result)
 			continue
@@ -599,7 +601,7 @@ func (h *JSPluginHandler) handleBatchUpdate(w http.ResponseWriter, r *http.Reque
 
 		result.HasUpdate = true
 
-		updatedPlugin, err := h.packageMgr.DownloadUpdate(plugin.ID, req.GithubProxy)
+		updatedPlugin, err := h.packageMgr.DownloadUpdate(plugin.ID, req.GithubProxy, req.Force)
 		if err != nil {
 			result.Error = fmt.Sprintf("下载更新失败: %v", err)
 			failed++

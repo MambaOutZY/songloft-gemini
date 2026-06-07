@@ -448,14 +448,15 @@ func (pm *PackageManager) CheckUpdate(pluginID int64, githubProxy string) (*Upda
 
 // DownloadUpdate 下载远程更新包并安装。
 // githubProxy 同时用于检查更新与下载新 ZIP。
-func (pm *PackageManager) DownloadUpdate(pluginID int64, githubProxy string) (*JSPlugin, error) {
+// force 为 true 时跳过版本比较，强制重新下载安装。
+func (pm *PackageManager) DownloadUpdate(pluginID int64, githubProxy string, force bool) (*JSPlugin, error) {
 	// [1] 先检查更新（已在内部将代理应用到 download_url 上）
 	updateInfo, err := pm.CheckUpdate(pluginID, githubProxy)
 	if err != nil {
 		return nil, fmt.Errorf("check update: %w", err)
 	}
 
-	if !updateInfo.HasUpdate {
+	if !force && !updateInfo.HasUpdate {
 		return nil, fmt.Errorf("no update available")
 	}
 
