@@ -4343,7 +4343,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据歌曲 ID 列表批量删除歌曲",
+                "description": "根据歌曲 ID 列表批量删除歌曲。设置 delete_files=true 时同步删除本地音频文件（用于去重等场景）",
                 "consumes": [
                     "application/json"
                 ],
@@ -6118,6 +6118,11 @@ const docTemplate = `{
         "models.BatchDeleteSongsRequest": {
             "type": "object",
             "properties": {
+                "delete_files": {
+                    "description": "是否同步删除本地音频文件",
+                    "type": "boolean",
+                    "example": false
+                },
                 "ids": {
                     "description": "要删除的歌曲 ID 列表",
                     "type": "array",
@@ -6414,6 +6419,14 @@ const docTemplate = `{
                     "description": "文件大小（字节）",
                     "type": "integer",
                     "example": 10485760
+                },
+                "fingerprint": {
+                    "description": "音频指纹(Chromaprint)",
+                    "type": "string"
+                },
+                "fingerprint_duration": {
+                    "description": "指纹对应音频时长",
+                    "type": "number"
                 },
                 "format": {
                     "description": "音频格式",

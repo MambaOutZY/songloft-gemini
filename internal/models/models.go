@@ -67,33 +67,33 @@ var (
 
 // Song 歌曲/电台结构体
 type Song struct {
-	ID              int64   `json:"id" example:"1"`                                    // 歌曲ID
-	Type            string  `json:"type" example:"local" enums:"local,remote,radio"`   // 歌曲类型：local/remote/radio
-	Title           string  `json:"title" example:"夜曲"`                                // 标题
-	Artist          string  `json:"artist" example:"周杰伦"`                              // 艺术家/歌手
-	Album           string  `json:"album" example:"十一月的萧邦"`                            // 专辑名称
-	Year            int     `json:"year" example:"2005"`                               // 发行年份
-	Genre           string  `json:"genre" example:"Pop"`                               // 流派
-	Duration        float64 `json:"duration" example:"253.5"`                          // 播放时长（秒）
-	FilePath        string  `json:"file_path" example:"/music/周杰伦/夜曲.mp3"`             // 本地文件路径
-	URL             string  `json:"url" example:"https://example.com/song.mp3"`        // 网络地址
-	CoverPath       string  `json:"-"`                                                 // 封面图片本地路径(内部使用,不暴露给客户端)
-	CoverURL        string  `json:"cover_url" example:"https://example.com/cover.jpg"` // 封面图片URL
-	Lyric           string  `json:"-"`                                                 // 歌词 LyricPayload JSON 文本(内部存储,不暴露给客户端);lyric_source=url 时为空,真正的 URL 在 LyricRemoteURL
-	LyricSource     string  `json:"-"`                                                 // 歌词来源(内部使用,不暴露给客户端)
-	LyricRemoteURL  string  `json:"-"`                                                 // lyric_source=url 时的原始插件 URL(内部使用,运行时由 LyricFetcher 拉取)
-	LyricURL        string  `json:"lyric_url,omitempty"`                               // 歌词端点 URL(客户端唯一可见字段,指向 /api/v1/songs/{id}/lyric)
-	FileSize        int64   `json:"file_size" example:"10485760"`                      // 文件大小（字节）
-	Format          string  `json:"format" example:"mp3"`                              // 音频格式
-	BitRate         int     `json:"bit_rate" example:"320"`                            // 比特率（kbps）
-	SampleRate      int     `json:"sample_rate" example:"44100"`                       // 采样率（Hz）
-	IsLive          bool    `json:"is_live" example:"false"`                           // 是否为直播流
-	PluginEntryPath string  `json:"plugin_entry_path,omitempty" example:"my-source"`   // 音源插件 entryPath(网络歌曲)
-	SourceData      string  `json:"source_data,omitempty"`                             // 音源元数据 JSON(给插件 music/url 接口用,opaque)
+	ID                  int64   `json:"id" example:"1"`                                    // 歌曲ID
+	Type                string  `json:"type" example:"local" enums:"local,remote,radio"`   // 歌曲类型：local/remote/radio
+	Title               string  `json:"title" example:"夜曲"`                                // 标题
+	Artist              string  `json:"artist" example:"周杰伦"`                              // 艺术家/歌手
+	Album               string  `json:"album" example:"十一月的萧邦"`                            // 专辑名称
+	Year                int     `json:"year" example:"2005"`                               // 发行年份
+	Genre               string  `json:"genre" example:"Pop"`                               // 流派
+	Duration            float64 `json:"duration" example:"253.5"`                          // 播放时长（秒）
+	FilePath            string  `json:"file_path" example:"/music/周杰伦/夜曲.mp3"`             // 本地文件路径
+	URL                 string  `json:"url" example:"https://example.com/song.mp3"`        // 网络地址
+	CoverPath           string  `json:"-"`                                                 // 封面图片本地路径(内部使用,不暴露给客户端)
+	CoverURL            string  `json:"cover_url" example:"https://example.com/cover.jpg"` // 封面图片URL
+	Lyric               string  `json:"-"`                                                 // 歌词 LyricPayload JSON 文本(内部存储,不暴露给客户端);lyric_source=url 时为空,真正的 URL 在 LyricRemoteURL
+	LyricSource         string  `json:"-"`                                                 // 歌词来源(内部使用,不暴露给客户端)
+	LyricRemoteURL      string  `json:"-"`                                                 // lyric_source=url 时的原始插件 URL(内部使用,运行时由 LyricFetcher 拉取)
+	LyricURL            string  `json:"lyric_url,omitempty"`                               // 歌词端点 URL(客户端唯一可见字段,指向 /api/v1/songs/{id}/lyric)
+	FileSize            int64   `json:"file_size" example:"10485760"`                      // 文件大小（字节）
+	Format              string  `json:"format" example:"mp3"`                              // 音频格式
+	BitRate             int     `json:"bit_rate" example:"320"`                            // 比特率（kbps）
+	SampleRate          int     `json:"sample_rate" example:"44100"`                       // 采样率（Hz）
+	IsLive              bool    `json:"is_live" example:"false"`                           // 是否为直播流
+	PluginEntryPath     string  `json:"plugin_entry_path,omitempty" example:"my-source"`   // 音源插件 entryPath(网络歌曲)
+	SourceData          string  `json:"source_data,omitempty"`                             // 音源元数据 JSON(给插件 music/url 接口用,opaque)
 	DedupKey            string  `json:"dedup_key,omitempty"`                               // 去重 key(由插件定义,典型形态 "<platform>:<platform_id>");与 PluginEntryPath 组成 UNIQUE
 	SourceURL           string  `json:"source_url,omitempty"`                              // 原始音源 URL(仅 JSON 输出,radio/remote 类型返回原始流地址供编辑使用)
-	Fingerprint         string  `json:"-"`                                                 // 音频指纹(Chromaprint,内部使用)
-	FingerprintDuration float64 `json:"-"`                                                 // 指纹对应音频时长
+	Fingerprint         string  `json:"fingerprint,omitempty"`                             // 音频指纹(Chromaprint)
+	FingerprintDuration float64 `json:"fingerprint_duration,omitempty"`                    // 指纹对应音频时长
 
 	AddedAt   time.Time `json:"added_at" example:"2024-01-01T12:00:00Z"`   // 添加时间
 	UpdatedAt time.Time `json:"updated_at" example:"2024-01-01T12:00:00Z"` // 最后更新时间
@@ -486,7 +486,8 @@ const (
 
 // BatchDeleteSongsRequest 批量删除歌曲请求
 type BatchDeleteSongsRequest struct {
-	IDs []int64 `json:"ids" example:"1"` // 要删除的歌曲 ID 列表
+	IDs         []int64 `json:"ids" example:"1"`              // 要删除的歌曲 ID 列表
+	DeleteFiles bool    `json:"delete_files" example:"false"` // 是否同步删除本地音频文件
 }
 
 // BatchDeleteSongsResponse 批量删除歌曲响应

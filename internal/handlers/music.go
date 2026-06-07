@@ -238,7 +238,7 @@ func (h *SongHandler) DeleteSong(w http.ResponseWriter, r *http.Request) {
 
 // BatchDeleteSongs 批量删除歌曲
 // @Summary 批量删除歌曲
-// @Description 根据歌曲 ID 列表批量删除歌曲
+// @Description 根据歌曲 ID 列表批量删除歌曲。设置 delete_files=true 时同步删除本地音频文件（用于去重等场景）
 // @Tags 歌曲管理
 // @Accept json
 // @Produce json
@@ -262,7 +262,7 @@ func (h *SongHandler) BatchDeleteSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deleted, err := h.songService.BatchDelete(ctx, req.IDs)
+	deleted, err := h.songService.BatchDelete(ctx, req.IDs, req.DeleteFiles)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "批量删除歌曲失败", err)
 		return

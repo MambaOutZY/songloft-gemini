@@ -407,9 +407,9 @@ func (h *ScanHandler) GetFingerprintStatus(w http.ResponseWriter, r *http.Reques
 	}
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"chromaprint_available": available,
-		"total":                total,
-		"computed":             computed,
-		"missing":              total - computed,
+		"total":                 total,
+		"computed":              computed,
+		"missing":               total - computed,
 	})
 }
 

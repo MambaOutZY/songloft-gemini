@@ -310,6 +310,10 @@ definitions:
     type: object
   models.BatchDeleteSongsRequest:
     properties:
+      delete_files:
+        description: 是否同步删除本地音频文件
+        example: false
+        type: boolean
       ids:
         description: 要删除的歌曲 ID 列表
         example:
@@ -532,6 +536,12 @@ definitions:
         description: 文件大小（字节）
         example: 10485760
         type: integer
+      fingerprint:
+        description: 音频指纹(Chromaprint)
+        type: string
+      fingerprint_duration:
+        description: 指纹对应音频时长
+        type: number
       format:
         description: 音频格式
         example: mp3
@@ -4194,7 +4204,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 根据歌曲 ID 列表批量删除歌曲
+      description: 根据歌曲 ID 列表批量删除歌曲。设置 delete_files=true 时同步删除本地音频文件（用于去重等场景）
       parameters:
       - description: 批量删除请求
         in: body

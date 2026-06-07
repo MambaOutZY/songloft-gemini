@@ -61,8 +61,8 @@ type SongService struct {
 	scanProgressManager *ScanProgressManager
 	configService       *ConfigService
 	playlistAutoCreator PlaylistAutoCreator
-	cacheService        *CacheService        // 可选;由 app.go 通过 SetCacheService 注入,Delete 时清理 cache 残留
-	fingerprintService  *FingerprintService   // 可选;扫描完成后自动计算指纹
+	cacheService        *CacheService       // 可选;由 app.go 通过 SetCacheService 注入,Delete 时清理 cache 残留
+	fingerprintService  *FingerprintService // 可选;扫描完成后自动计算指纹
 }
 
 // NewSongService 创建歌曲服务
@@ -163,20 +163,24 @@ func (s *SongService) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// BatchDelete 批量删除歌曲
-func (s *SongService) BatchDelete(ctx context.Context, ids []int64) (int, error) {
+// BatchDelete 批量删除歌曲。deleteFiles 为 true 时同步删除本地音频文件。
+func (s *SongService) BatchDelete(ctx context.Context, ids []int64, deleteFiles bool) (int, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
 
 	coverPathSet := make(map[string]struct{})
+	var filePaths []string
 	for _, id := range ids {
 		song, err := s.GetByID(ctx, id)
-		if err != nil {
+		if err != nil || song == nil {
 			continue
 		}
-		if song != nil && song.CoverPath != "" {
+		if song.CoverPath != "" {
 			coverPathSet[song.CoverPath] = struct{}{}
+		}
+		if deleteFiles && song.Type == models.TypeLocal && song.FilePath != "" {
+			filePaths = append(filePaths, song.FilePath)
 		}
 	}
 
@@ -187,6 +191,13 @@ func (s *SongService) BatchDelete(ctx context.Context, ids []int64) (int, error)
 
 	for coverPath := range coverPathSet {
 		removeCoverIfUnreferenced(ctx, s.songs, coverPath)
+	}
+	for _, fp := range filePaths {
+		if err := os.Remove(fp); err != nil {
+			slog.Warn("删除音频文件失败", "path", fp, "error", err)
+		} else {
+			slog.Info("已删除音频文件", "path", fp)
+		}
 	}
 	if s.cacheService != nil {
 		for _, id := range ids {
@@ -646,7 +657,7 @@ func (s *SongService) cleanStaleRecords(ctx context.Context, scannedFiles []stri
 		return 0
 	}
 
-	cleaned, err := s.BatchDelete(ctx, staleIDs)
+	cleaned, err := s.BatchDelete(ctx, staleIDs, false)
 	if err != nil {
 		slog.Warn("批量清理过期歌曲失败", "error", err, "count", len(staleIDs))
 		return 0

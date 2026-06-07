@@ -19,7 +19,7 @@ import (
 var (
 	chromaprintAvailable bool
 	chromaprintOnce      sync.Once
-	durationRe          = regexp.MustCompile(`Duration:\s+(\d+):(\d+):(\d+)\.(\d+)`)
+	durationRe           = regexp.MustCompile(`Duration:\s+(\d+):(\d+):(\d+)\.(\d+)`)
 )
 
 // IsChromaprintAvailable 检测 ffmpeg 是否支持 chromaprint muxer（首次调用时检测，结果缓存）。
