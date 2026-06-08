@@ -57,11 +57,17 @@ func (a *App) setupAPIV1Router() {
 	// 两条入口都触发同一副作用，保持 admin /configs PUT 与业务 /settings/music-path PUT 行为对齐。
 	musicPathChanged := func() { a.onMusicPathConfigChanged(scanHandler) }
 	scanHandler.SetOnMusicPathChanged(musicPathChanged)
+	scanHandler.SetOnAutoScanChanged(func(cfg services.AutoScanConfig) {
+		a.autoScanner.ApplyConfig(cfg)
+	})
 	configHandler.SetOnConfigChanged(func(key string) {
-		if key != "music_path" {
-			return
+		switch key {
+		case "music_path":
+			musicPathChanged()
+		case "auto_scan":
+			cfg := a.autoScanner.GetConfig()
+			a.autoScanner.ApplyConfig(cfg)
 		}
-		musicPathChanged()
 	})
 	versionHandler := handlers.NewVersionHandler()
 	healthHandler := handlers.NewHealthHandler()
@@ -161,6 +167,8 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/settings/scan-auto-create-include-subdirs", scanHandler.UpdateAutoCreateIncludeSubdirsSetting)
 			r.Get("/settings/scan-title-source", scanHandler.GetScanTitleSourceSetting)
 			r.Put("/settings/scan-title-source", scanHandler.UpdateScanTitleSourceSetting)
+			r.Get("/settings/auto-scan", scanHandler.GetAutoScanSetting)
+			r.Put("/settings/auto-scan", scanHandler.UpdateAutoScanSetting)
 			r.Get("/settings/log-level", logHandler.GetLevelSetting)
 			r.Put("/settings/log-level", logHandler.UpdateLevelSetting)
 			r.Get("/settings/plugin-registries", jsPluginHandler.GetRegistriesSetting)

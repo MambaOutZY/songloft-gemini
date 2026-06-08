@@ -3635,6 +3635,86 @@ const docTemplate = `{
                 }
             }
         },
+        "/settings/auto-scan": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回自动扫描的启用状态和扫描间隔（秒）。默认关闭，间隔 3600 秒（1 小时）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "扫描管理"
+                ],
+                "summary": "获取自动扫描配置",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.AutoScanSetting"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "设置自动扫描的启用状态和扫描间隔。interval_seconds 有效范围 [60, 86400]。更新后立即生效（无需重启）。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "扫描管理"
+                ],
+                "summary": "更新自动扫描配置",
+                "parameters": [
+                    {
+                        "description": "自动扫描配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.AutoScanSetting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.AutoScanSetting"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误或参数无效",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "保存配置失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/settings/hls-proxy": {
             "get": {
                 "security": [
@@ -5670,6 +5750,17 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.AutoScanSetting": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "interval_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
         "handlers.MusicPathSetting": {
             "type": "object",
             "properties": {
@@ -6468,6 +6559,10 @@ const docTemplate = `{
                     "description": "是否为直播流",
                     "type": "boolean",
                     "example": false
+                },
+                "isrc": {
+                    "description": "ISRC(国际标准录音编码)",
+                    "type": "string"
                 },
                 "lyric_url": {
                     "description": "歌词端点 URL(客户端唯一可见字段,指向 /api/v1/songs/{id}/lyric)",

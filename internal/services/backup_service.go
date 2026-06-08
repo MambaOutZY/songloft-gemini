@@ -94,7 +94,7 @@ func (s *BackupService) importPlaylist(
 	ctx context.Context,
 	uow *database.UnitOfWork,
 	bp *models.BackupPlaylist,
-	localPaths map[string]int64,
+	localPaths map[string]database.LocalPathInfo,
 	result *models.ImportResult,
 ) error {
 	songIDs := make([]int64, 0, len(bp.Songs))
@@ -135,14 +135,14 @@ func (s *BackupService) matchOrCreateSong(
 	ctx context.Context,
 	uow *database.UnitOfWork,
 	bs *models.BackupSong,
-	localPaths map[string]int64,
+	localPaths map[string]database.LocalPathInfo,
 	result *models.ImportResult,
 ) int64 {
 	switch bs.Type {
 	case models.TypeLocal:
-		if id, ok := localPaths[bs.FilePath]; ok {
+		if info, ok := localPaths[bs.FilePath]; ok {
 			result.SongsMatched++
-			return id
+			return info.SongID
 		}
 		slog.Debug("跳过本地歌曲（文件不在库中）", "file_path", bs.FilePath)
 		return 0

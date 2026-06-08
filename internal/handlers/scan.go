@@ -19,7 +19,8 @@ type ScanHandler struct {
 	scanner            *services.Scanner
 	configService      *services.ConfigService
 	fingerprintService *services.FingerprintService
-	onMusicPathChanged func() // PUT /settings/music-path 完成后触发，重建 Scanner 等副作用
+	onMusicPathChanged func()                        // PUT /settings/music-path 完成后触发，重建 Scanner 等副作用
+	onAutoScanChanged  func(services.AutoScanConfig) // PUT /settings/auto-scan 完成后触发，重启自动扫描调度
 }
 
 // NewScanHandler 创建扫描处理器。configService 可为 nil（仅纯扫描端点的测试场景）。
@@ -46,6 +47,11 @@ func (h *ScanHandler) SetScanner(scanner *services.Scanner) {
 // 副作用同样生效（保持两条入口语义对齐）。
 func (h *ScanHandler) SetOnMusicPathChanged(cb func()) {
 	h.onMusicPathChanged = cb
+}
+
+// SetOnAutoScanChanged 注入 auto_scan 写后回调（重启自动扫描调度器）。
+func (h *ScanHandler) SetOnAutoScanChanged(cb func(services.AutoScanConfig)) {
+	h.onAutoScanChanged = cb
 }
 
 // ScanRequest 扫描请求参数
@@ -195,6 +201,7 @@ func (h *ScanHandler) ListDirNames(w http.ResponseWriter, r *http.Request) {
 //   - 详见 AGENTS.md「配置接口规范」章节。
 
 const (
+	autoScanConfigKey              = "auto_scan"
 	musicPathConfigKey             = "music_path"
 	scanAutoCreateSubdirsConfigKey = "scan_auto_create_include_subdirs"
 	scanTitleSourceConfigKey       = "scan_title_source"
@@ -477,4 +484,69 @@ func (h *ScanHandler) GetFingerprintProgress(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	respondJSON(w, http.StatusOK, h.fingerprintService.GetProgress())
+}
+
+// AutoScanSetting /settings/auto-scan 的请求与响应体。
+type AutoScanSetting struct {
+	Enabled         bool `json:"enabled"`
+	IntervalSeconds int  `json:"interval_seconds"`
+}
+
+// GetAutoScanSetting GET /api/v1/settings/auto-scan
+// @Summary 获取自动扫描配置
+// @Description 返回自动扫描的启用状态和扫描间隔（秒）。默认关闭，间隔 3600 秒（1 小时）。
+// @Tags 扫描管理
+// @Produce json
+// @Success 200 {object} AutoScanSetting
+// @Security BearerAuth
+// @Router /settings/auto-scan [get]
+func (h *ScanHandler) GetAutoScanSetting(w http.ResponseWriter, r *http.Request) {
+	cfg := AutoScanSetting{
+		Enabled:         false,
+		IntervalSeconds: 3600,
+	}
+	if h.configService != nil {
+		_ = h.configService.GetJSON(autoScanConfigKey, &cfg)
+	}
+	respondJSON(w, http.StatusOK, cfg)
+}
+
+// UpdateAutoScanSetting PUT /api/v1/settings/auto-scan
+// @Summary 更新自动扫描配置
+// @Description 设置自动扫描的启用状态和扫描间隔。interval_seconds 有效范围 [60, 86400]。更新后立即生效（无需重启）。
+// @Tags 扫描管理
+// @Accept json
+// @Produce json
+// @Param request body AutoScanSetting true "自动扫描配置"
+// @Success 200 {object} AutoScanSetting
+// @Failure 400 {object} map[string]string "请求格式错误或参数无效"
+// @Failure 500 {object} map[string]string "保存配置失败"
+// @Security BearerAuth
+// @Router /settings/auto-scan [put]
+func (h *ScanHandler) UpdateAutoScanSetting(w http.ResponseWriter, r *http.Request) {
+	if h.configService == nil {
+		respondError(w, http.StatusInternalServerError, "configService 未注入", nil)
+		return
+	}
+	var req AutoScanSetting
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	if req.IntervalSeconds < 60 || req.IntervalSeconds > 86400 {
+		respondError(w, http.StatusBadRequest, "interval_seconds 必须在 60 到 86400 之间", nil)
+		return
+	}
+	if err := h.configService.SetJSON(autoScanConfigKey, req); err != nil {
+		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
+		return
+	}
+	if h.onAutoScanChanged != nil {
+		cfg := services.AutoScanConfig{
+			Enabled:         req.Enabled,
+			IntervalSeconds: req.IntervalSeconds,
+		}
+		go h.onAutoScanChanged(cfg)
+	}
+	respondJSON(w, http.StatusOK, req)
 }

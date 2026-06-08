@@ -148,15 +148,21 @@ func (r *SongRepository) ListTypesByIDs(ctx context.Context, ids []int64) (map[i
 	return result, nil
 }
 
-// ListLocalPaths 返回所有本地歌曲的 file_path → id 映射，用于扫描去重。
-func (r *SongRepository) ListLocalPaths(ctx context.Context) (map[string]int64, error) {
+// LocalPathInfo 本地歌曲路径信息，用于扫描去重与不完整记录检测。
+type LocalPathInfo struct {
+	SongID   int64
+	Duration float64
+}
+
+// ListLocalPaths 返回所有本地歌曲的 file_path → LocalPathInfo 映射，用于扫描去重。
+func (r *SongRepository) ListLocalPaths(ctx context.Context) (map[string]LocalPathInfo, error) {
 	rows, err := r.queries.ListLocalSongPaths(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list local song paths: %w", err)
 	}
-	paths := make(map[string]int64, len(rows))
+	paths := make(map[string]LocalPathInfo, len(rows))
 	for _, row := range rows {
-		paths[row.FilePath] = row.ID
+		paths[row.FilePath] = LocalPathInfo{SongID: row.ID, Duration: row.Duration}
 	}
 	return paths, nil
 }

@@ -274,12 +274,13 @@ func (q *Queries) ListDuplicateFingerprints(ctx context.Context) ([]ListDuplicat
 }
 
 const listLocalSongPaths = `-- name: ListLocalSongPaths :many
-SELECT id, file_path FROM songs WHERE type = 'local'
+SELECT id, file_path, duration FROM songs WHERE type = 'local'
 `
 
 type ListLocalSongPathsRow struct {
 	ID       int64
 	FilePath string
+	Duration float64
 }
 
 func (q *Queries) ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsRow, error) {
@@ -291,7 +292,7 @@ func (q *Queries) ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsR
 	items := []ListLocalSongPathsRow{}
 	for rows.Next() {
 		var i ListLocalSongPathsRow
-		if err := rows.Scan(&i.ID, &i.FilePath); err != nil {
+		if err := rows.Scan(&i.ID, &i.FilePath, &i.Duration); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

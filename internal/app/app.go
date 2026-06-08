@@ -47,6 +47,7 @@ type App struct {
 	urlResolver        *services.InternalURLResolver // 共享:把 JS 插件相对路径解析为本机绝对 URL + access_token
 	lyricFetcher       *services.LyricFetcher        // 共享:解包插件歌词 JSON 拿 LRC 文本
 	scanner            *services.Scanner
+	autoScanner        *services.AutoScanner
 	metadataExtractor  *services.MetadataExtractor
 	jsPluginManager    *jsplugin.Manager
 	sourceMetrics      *source.SourceMetrics
@@ -73,6 +74,9 @@ func (a *App) Close() error {
 	// 关闭 JS 插件管理器（健康检查 + 热更新 + 所有服务）
 	if a.jsPluginManager != nil {
 		a.jsPluginManager.Close()
+	}
+	if a.autoScanner != nil {
+		a.autoScanner.Stop()
 	}
 	if a.db != nil {
 		slog.Info("关闭数据库连接")
@@ -377,6 +381,11 @@ func (a *App) Init() error {
 	slog.Info("服务器平台已写入配置", "platform", serverPlatform)
 
 	a.setupRouter()
+
+	// 启动自动扫描调度（从持久化配置恢复）
+	a.autoScanner = services.NewAutoScanner(a.songService, a.configService)
+	autoScanCfg := a.autoScanner.GetConfig()
+	a.autoScanner.ApplyConfig(autoScanCfg)
 
 	// 异步启动 JS 插件管理器（加载插件 + 健康检查 + 热更新监控）
 	go func() {

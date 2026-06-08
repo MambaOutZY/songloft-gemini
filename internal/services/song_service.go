@@ -32,7 +32,7 @@ type SongRepository interface {
 	UpdateLyrics(ctx context.Context, id int64, lyric, lyricSource, lyricRemoteURL string) error
 	UpdateDuration(ctx context.Context, id int64, duration float64) error
 	UpdateSource(ctx context.Context, id int64, pluginEntryPath, sourceData string) error
-	ListLocalPaths(ctx context.Context) (map[string]int64, error)
+	ListLocalPaths(ctx context.Context) (map[string]database.LocalPathInfo, error)
 	ListTypesByIDs(ctx context.Context, ids []int64) (map[int64]string, error)
 	CountCoverPathReferences(ctx context.Context, coverPath string) (int, error)
 	UpdateFingerprint(ctx context.Context, id int64, fingerprint string, duration float64) error
@@ -307,8 +307,9 @@ type scanExtractResult struct {
 }
 
 const (
-	metadataWorkers = 4  // 并发元数据提取worker数量
-	dbBatchSize     = 50 // 数据库批量提交大小
+	metadataWorkers        = 4             // 并发元数据提取worker数量
+	dbBatchSize            = 50            // 数据库批量提交大小
+	fileStabilityThreshold = 10 * time.Second // 文件修改时间距今小于此值视为正在写入
 )
 
 // doScanAndImport 执行实际的扫描和导入操作
@@ -336,7 +337,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 
 	existingPaths, _ := s.songs.ListLocalPaths(ctx)
 	if existingPaths == nil {
-		existingPaths = make(map[string]int64)
+		existingPaths = make(map[string]database.LocalPathInfo)
 	}
 
 	toProcess := make([]scanProcessItem, 0, len(files))
@@ -348,15 +349,25 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 		default:
 		}
 
-		songID, exists := existingPaths[filePath]
-		if exists && !reimport {
+		info, exists := existingPaths[filePath]
+		if exists && !reimport && info.Duration > 0 {
 			s.scanProgressManager.UpdateProgress(filePath, ProgressUpdateSkipped)
 			continue
 		}
 
+		// 文件稳定性检测：跳过修改时间在最近 10 秒内的文件，
+		// 避免导入正在拷贝中的不完整文件。
+		if stat, err := os.Stat(filePath); err == nil {
+			if time.Since(stat.ModTime()) < fileStabilityThreshold {
+				slog.Debug("跳过正在写入的文件", "filePath", filePath)
+				s.scanProgressManager.UpdateProgress(filePath, ProgressUpdateSkipped)
+				continue
+			}
+		}
+
 		item := scanProcessItem{filePath: filePath}
 		if exists {
-			item.existingSongID = songID
+			item.existingSongID = info.SongID
 		}
 		toProcess = append(toProcess, item)
 	}
@@ -640,18 +651,18 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 
 // cleanStaleRecords 清理数据库中已不存在于磁盘的本地歌曲记录
 // 对比扫描得到的文件列表和数据库记录，删除文件不存在的记录
-func (s *SongService) cleanStaleRecords(ctx context.Context, scannedFiles []string, existingPaths map[string]int64) int {
+func (s *SongService) cleanStaleRecords(ctx context.Context, scannedFiles []string, existingPaths map[string]database.LocalPathInfo) int {
 	scannedPathSet := make(map[string]struct{}, len(scannedFiles))
 	for _, f := range scannedFiles {
 		scannedPathSet[f] = struct{}{}
 	}
 
 	var staleIDs []int64
-	for path, songID := range existingPaths {
+	for path, info := range existingPaths {
 		if _, found := scannedPathSet[path]; !found {
 			if _, err := os.Stat(path); os.IsNotExist(err) {
-				staleIDs = append(staleIDs, songID)
-				slog.Info("发现过期歌曲记录", "songId", songID, "filePath", path)
+				staleIDs = append(staleIDs, info.SongID)
+				slog.Info("发现过期歌曲记录", "songId", info.SongID, "filePath", path)
 			}
 		}
 	}

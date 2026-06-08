@@ -47,7 +47,7 @@ UPDATE songs SET plugin_entry_path = ?, source_data = ?, updated_at = CURRENT_TI
 WHERE id = ?;
 
 -- name: ListLocalSongPaths :many
-SELECT id, file_path FROM songs WHERE type = 'local';
+SELECT id, file_path, duration FROM songs WHERE type = 'local';
 
 -- name: CountPlaylistsContainingSong :one
 SELECT COUNT(*) FROM playlist_songs WHERE song_id = ?;
