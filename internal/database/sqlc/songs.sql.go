@@ -78,8 +78,9 @@ INSERT INTO songs (
     file_size, format, bit_rate, sample_rate, is_live,
     plugin_entry_path, source_data, dedup_key,
     year, genre,
-    fingerprint, fingerprint_duration
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    fingerprint, fingerprint_duration,
+    isrc
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateSongParams struct {
@@ -107,6 +108,7 @@ type CreateSongParams struct {
 	Genre               string
 	Fingerprint         string
 	FingerprintDuration float64
+	Isrc                string
 }
 
 func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (int64, error) {
@@ -135,6 +137,7 @@ func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (int64, 
 		arg.Genre,
 		arg.Fingerprint,
 		arg.FingerprintDuration,
+		arg.Isrc,
 	)
 	if err != nil {
 		return 0, err
@@ -177,7 +180,8 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     plugin_entry_path, source_data, dedup_key,
     added_at, updated_at, lyric_remote_url,
     year, genre,
-    fingerprint, fingerprint_duration
+    fingerprint, fingerprint_duration,
+    isrc
 FROM songs WHERE id = ?
 `
 
@@ -212,6 +216,7 @@ func (q *Queries) GetSongByID(ctx context.Context, id int64) (Song, error) {
 		&i.Genre,
 		&i.Fingerprint,
 		&i.FingerprintDuration,
+		&i.Isrc,
 	)
 	return i, err
 }
@@ -466,7 +471,8 @@ UPDATE songs SET
     file_size = ?, format = ?, bit_rate = ?, sample_rate = ?, is_live = ?,
     plugin_entry_path = ?, source_data = ?, dedup_key = ?,
     year = ?, genre = ?,
-    fingerprint = ?, fingerprint_duration = ?
+    fingerprint = ?, fingerprint_duration = ?,
+    isrc = ?
 WHERE id = ?
 `
 
@@ -495,6 +501,7 @@ type UpdateSongParams struct {
 	Genre               string
 	Fingerprint         string
 	FingerprintDuration float64
+	Isrc                string
 	ID                  int64
 }
 
@@ -524,6 +531,7 @@ func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (int64, 
 		arg.Genre,
 		arg.Fingerprint,
 		arg.FingerprintDuration,
+		arg.Isrc,
 		arg.ID,
 	)
 	if err != nil {

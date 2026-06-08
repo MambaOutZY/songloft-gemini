@@ -581,6 +581,7 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 				song.Format = r.metadata.Format
 				song.BitRate = r.metadata.BitRate
 				song.SampleRate = r.metadata.SampleRate
+				song.ISRC = r.metadata.ISRC
 				// lyric_source=manual 表示用户手动调整过歌词，
 				// 重扫时不再用文件内嵌/外挂 .lrc 覆盖，否则不支持回写音频文件的格式
 				// （如 .wav）一旦 reimport 就丢调整。
@@ -612,6 +613,7 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 					BitRate:    r.metadata.BitRate,
 					SampleRate: r.metadata.SampleRate,
 					FileSize:   r.fileSize,
+					ISRC:       r.metadata.ISRC,
 					AddedAt:    time.Now(),
 					UpdatedAt:  time.Now(),
 				}

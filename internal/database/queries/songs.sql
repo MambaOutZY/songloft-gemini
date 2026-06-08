@@ -5,7 +5,8 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     plugin_entry_path, source_data, dedup_key,
     added_at, updated_at, lyric_remote_url,
     year, genre,
-    fingerprint, fingerprint_duration
+    fingerprint, fingerprint_duration,
+    isrc
 FROM songs WHERE id = ?;
 
 -- name: CreateSong :execlastid
@@ -15,8 +16,9 @@ INSERT INTO songs (
     file_size, format, bit_rate, sample_rate, is_live,
     plugin_entry_path, source_data, dedup_key,
     year, genre,
-    fingerprint, fingerprint_duration
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    fingerprint, fingerprint_duration,
+    isrc
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateSong :execrows
 UPDATE songs SET
@@ -26,7 +28,8 @@ UPDATE songs SET
     file_size = ?, format = ?, bit_rate = ?, sample_rate = ?, is_live = ?,
     plugin_entry_path = ?, source_data = ?, dedup_key = ?,
     year = ?, genre = ?,
-    fingerprint = ?, fingerprint_duration = ?
+    fingerprint = ?, fingerprint_duration = ?,
+    isrc = ?
 WHERE id = ?;
 
 -- name: DeleteSong :execrows

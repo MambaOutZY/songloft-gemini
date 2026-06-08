@@ -94,6 +94,7 @@ type Song struct {
 	SourceURL           string  `json:"source_url,omitempty"`                              // 原始音源 URL(仅 JSON 输出,radio/remote 类型返回原始流地址供编辑使用)
 	Fingerprint         string  `json:"fingerprint,omitempty"`                             // 音频指纹(Chromaprint)
 	FingerprintDuration float64 `json:"fingerprint_duration,omitempty"`                    // 指纹对应音频时长
+	ISRC                string  `json:"isrc,omitempty"`                                    // ISRC(国际标准录音编码)
 
 	AddedAt   time.Time `json:"added_at" example:"2024-01-01T12:00:00Z"`   // 添加时间
 	UpdatedAt time.Time `json:"updated_at" example:"2024-01-01T12:00:00Z"` // 最后更新时间

@@ -43,6 +43,7 @@ type Metadata struct {
 	CoverPath   string  // 封面文件存储路径（分层目录）
 	CoverData   []byte  // 封面图片数据（用于保存）
 	CoverExt    string  // 封面图片扩展名
+	ISRC        string  // ISRC（国际标准录音编码）
 }
 
 // FFProbeOutput ffprobe 输出结构
@@ -110,6 +111,8 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 				metadata.Lyric = lyrics
 				metadata.LyricSource = "embedded"
 			}
+
+			metadata.ISRC = extractISRC(tagMeta.Raw())
 
 			// 从 tag 库提取时长
 			if duration := tagMeta.Duration(); duration > 0 {
@@ -525,6 +528,19 @@ func pickTag(tags map[string]string, keys ...string) string {
 	for _, k := range keys {
 		if v, ok := tags[k]; ok && strings.TrimSpace(v) != "" {
 			return v
+		}
+	}
+	return ""
+}
+
+// extractISRC 从 Raw() 标签数据中提取 ISRC。
+// ID3v2.3/2.4: "TSRC", ID3v2.2: "TRC", Vorbis/FLAC: "isrc"(vorbis 解析器会 lowercase)
+func extractISRC(raw map[string]interface{}) string {
+	for _, key := range []string{"TSRC", "TRC", "isrc"} {
+		if v, ok := raw[key]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return strings.TrimSpace(s)
+			}
 		}
 	}
 	return ""

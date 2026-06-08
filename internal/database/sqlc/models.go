@@ -100,4 +100,5 @@ type Song struct {
 	Genre               string
 	Fingerprint         string
 	FingerprintDuration float64
+	Isrc                string
 }

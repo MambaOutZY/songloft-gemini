@@ -435,6 +435,7 @@ func songSelectBuilder() sq.SelectBuilder {
 		"added_at", "updated_at",
 		"year", "genre",
 		"fingerprint", "fingerprint_duration",
+		"isrc",
 	).From("songs")
 }
 
@@ -476,6 +477,7 @@ func scanSongRow(scanner interface {
 		&s.AddedAt, &s.UpdatedAt,
 		&s.Year, &s.Genre,
 		&s.Fingerprint, &s.FingerprintDuration,
+		&s.ISRC,
 	); err != nil {
 		return nil, fmt.Errorf("scan song: %w", err)
 	}
@@ -509,6 +511,7 @@ func songRowToModel(row sqlc.Song) *models.Song {
 		DedupKey:            row.DedupKey,
 		Fingerprint:         row.Fingerprint,
 		FingerprintDuration: row.FingerprintDuration,
+		ISRC:                row.Isrc,
 		AddedAt:             row.AddedAt,
 		UpdatedAt:           row.UpdatedAt,
 	}
@@ -540,6 +543,7 @@ func songCreateParams(s *models.Song) sqlc.CreateSongParams {
 		Genre:               s.Genre,
 		Fingerprint:         s.Fingerprint,
 		FingerprintDuration: s.FingerprintDuration,
+		Isrc:                s.ISRC,
 	}
 }
 
@@ -569,6 +573,7 @@ func songUpdateParams(s *models.Song) sqlc.UpdateSongParams {
 		Genre:               s.Genre,
 		Fingerprint:         s.Fingerprint,
 		FingerprintDuration: s.FingerprintDuration,
+		Isrc:                s.ISRC,
 		ID:                  s.ID,
 	}
 }
