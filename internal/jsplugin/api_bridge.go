@@ -105,6 +105,10 @@ songloft.plugin = {
     },
     getHostUrl: async function() {
         return await __callBridge('plugin.getHostUrl', '');
+    },
+    getFileUrl: async function(filePath) {
+        var r = await __callBridge('plugin.getFileUrl', JSON.stringify({filePath: filePath}));
+        return JSON.parse(r).url;
     }
 };
 
@@ -577,7 +581,7 @@ func (h *BridgeHandler) handlePlaylists(action, data string) (string, error) {
 }
 
 // handlePlugin 处理插件自身信息相关的桥接调用（无需权限检查）
-func (h *BridgeHandler) handlePlugin(action, _ string) (string, error) {
+func (h *BridgeHandler) handlePlugin(action, data string) (string, error) {
 	switch action {
 	case "plugin.getToken":
 		return h.pluginToken, nil
@@ -588,6 +592,20 @@ func (h *BridgeHandler) handlePlugin(action, _ string) (string, error) {
 			port = "58091"
 		}
 		return fmt.Sprintf("http://localhost:%s", port), nil
+
+	case "plugin.getFileUrl":
+		var req struct {
+			FilePath string `json:"filePath"`
+		}
+		if data != "" {
+			_ = json.Unmarshal([]byte(data), &req)
+		}
+		if req.FilePath == "" {
+			return "", fmt.Errorf("plugin.getFileUrl: filePath is required")
+		}
+		url := fmt.Sprintf("/api/v1/jsplugin/%s/files/%s?access_token=%s",
+			h.service.plugin.EntryPath, req.FilePath, h.pluginToken)
+		return fmt.Sprintf(`{"url":%q}`, url), nil
 
 	default:
 		return "", fmt.Errorf("handlePlugin: unknown action: %s", action)

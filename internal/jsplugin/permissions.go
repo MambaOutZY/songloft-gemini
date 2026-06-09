@@ -20,6 +20,8 @@ const (
 	PermCommand        = "command"         // 执行命令
 	PermJSEnv          = "jsenv"           // 创建/执行子 JS 环境（songloft.jsenv.*）
 	PermFS             = "fs"              // 插件数据目录内文件读写
+	PermFSMusic        = "fs:music"        // 可访问 music_path 音乐目录
+	PermFSExternal     = "fs:external"     // 可访问管理员配置的外部目录
 	PermWebSocket      = "websocket"       // WebSocket 连接
 )
 
@@ -32,10 +34,12 @@ var AllPermissions = []string{
 	PermSongsRead, PermSongsWrite,
 	PermPlaylistsRead, PermPlaylistsWrite,
 	PermInterPlugin, PermCommand,
-	PermJSEnv, PermFS, PermWebSocket,
+	PermJSEnv, PermFS, PermFSMusic, PermFSExternal,
+	PermWebSocket,
 	// 通配符糖
 	"songs.*",
 	"playlists.*",
+	"fs.*",
 }
 
 // CheckPermission 检查插件是否拥有指定权限

@@ -54,9 +54,17 @@ type HTTPRequestData struct {
 
 // HTTPResponseData 是 HTTP 请求响应的 Data 类型
 type HTTPResponseData struct {
-	StatusCode int               `json:"statusCode"`
-	Headers    map[string]string `json:"headers"`
-	Body       string            `json:"body"`
+	StatusCode int                 `json:"statusCode"`
+	Headers    map[string]string   `json:"headers"`
+	Body       string              `json:"body"`
+	ServeFile  *ServeFileDirective `json:"serveFile,omitempty"`
+}
+
+// ServeFileDirective 指示 Go 层直接 serve 文件（绕过 QuickJS string 管道）。
+// JS 做业务决策（认证、路由），Go 做文件 I/O（零拷贝、Range、HTTP 缓存）。
+type ServeFileDirective struct {
+	SongID   int64  `json:"songId,omitempty"`   // serve 系统内歌曲（需 songs.read 权限）
+	FilePath string `json:"filePath,omitempty"` // serve 文件（路径解析规则见 resolveServeFilePath）
 }
 
 // JSService 代表一个运行中的 JS 插件实例（Actor）

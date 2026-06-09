@@ -12,8 +12,8 @@ import (
 const createJSPlugin = `-- name: CreateJSPlugin :execlastid
 INSERT INTO js_plugins (name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
-    status, zip_hash, entry_hash, file_mod_time, file_path)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    status, zip_hash, entry_hash, file_mod_time, file_path, public_paths)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateJSPluginParams struct {
@@ -34,6 +34,7 @@ type CreateJSPluginParams struct {
 	EntryHash      string
 	FileModTime    string
 	FilePath       string
+	PublicPaths    string
 }
 
 func (q *Queries) CreateJSPlugin(ctx context.Context, arg CreateJSPluginParams) (int64, error) {
@@ -55,6 +56,7 @@ func (q *Queries) CreateJSPlugin(ctx context.Context, arg CreateJSPluginParams) 
 		arg.EntryHash,
 		arg.FileModTime,
 		arg.FilePath,
+		arg.PublicPaths,
 	)
 	if err != nil {
 		return 0, err
@@ -74,7 +76,8 @@ func (q *Queries) DeleteJSPlugin(ctx context.Context, id int64) error {
 const getJSPluginByEntryPath = `-- name: GetJSPluginByEntryPath :one
 SELECT id, name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
-    status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at
+    status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at,
+    public_paths
 FROM js_plugins WHERE entry_path = ?
 `
 
@@ -102,6 +105,7 @@ func (q *Queries) GetJSPluginByEntryPath(ctx context.Context, entryPath string) 
 		&i.FilePath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PublicPaths,
 	)
 	return i, err
 }
@@ -109,7 +113,8 @@ func (q *Queries) GetJSPluginByEntryPath(ctx context.Context, entryPath string) 
 const getJSPluginByID = `-- name: GetJSPluginByID :one
 SELECT id, name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
-    status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at
+    status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at,
+    public_paths
 FROM js_plugins WHERE id = ?
 `
 
@@ -137,6 +142,7 @@ func (q *Queries) GetJSPluginByID(ctx context.Context, id int64) (JsPlugin, erro
 		&i.FilePath,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PublicPaths,
 	)
 	return i, err
 }
@@ -144,7 +150,8 @@ func (q *Queries) GetJSPluginByID(ctx context.Context, id int64) (JsPlugin, erro
 const listJSPlugins = `-- name: ListJSPlugins :many
 SELECT id, name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
-    status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at
+    status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at,
+    public_paths
 FROM js_plugins ORDER BY id
 `
 
@@ -178,6 +185,7 @@ func (q *Queries) ListJSPlugins(ctx context.Context) ([]JsPlugin, error) {
 			&i.FilePath,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PublicPaths,
 		); err != nil {
 			return nil, err
 		}
@@ -196,7 +204,8 @@ const updateJSPlugin = `-- name: UpdateJSPlugin :exec
 UPDATE js_plugins SET name = ?, version = ?, description = ?, author = ?,
     homepage = ?, license = ?, entry_path = ?, main = ?, min_host_version = ?,
     permissions = ?, update_url = ?, download_url = ?, status = ?,
-    zip_hash = ?, entry_hash = ?, file_mod_time = ?, file_path = ?
+    zip_hash = ?, entry_hash = ?, file_mod_time = ?, file_path = ?,
+    public_paths = ?
 WHERE id = ?
 `
 
@@ -218,6 +227,7 @@ type UpdateJSPluginParams struct {
 	EntryHash      string
 	FileModTime    string
 	FilePath       string
+	PublicPaths    string
 	ID             int64
 }
 
@@ -240,6 +250,7 @@ func (q *Queries) UpdateJSPlugin(ctx context.Context, arg UpdateJSPluginParams) 
 		arg.EntryHash,
 		arg.FileModTime,
 		arg.FilePath,
+		arg.PublicPaths,
 		arg.ID,
 	)
 	return err

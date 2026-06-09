@@ -49,6 +49,7 @@ type JsPlugin struct {
 	FilePath       string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	PublicPaths    string
 }
 
 type Playlist struct {

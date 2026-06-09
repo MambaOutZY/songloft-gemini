@@ -64,6 +64,10 @@ func (r *JSPluginRepository) Create(ctx context.Context, plugin *models.JSPlugin
 	if err != nil {
 		return fmt.Errorf("marshal permissions: %w", err)
 	}
+	publicPathsJSON, err := json.Marshal(plugin.PublicPaths)
+	if err != nil {
+		return fmt.Errorf("marshal public_paths: %w", err)
+	}
 	id, err := r.queries.CreateJSPlugin(ctx, sqlc.CreateJSPluginParams{
 		Name:           plugin.Name,
 		Version:        plugin.Version,
@@ -82,6 +86,7 @@ func (r *JSPluginRepository) Create(ctx context.Context, plugin *models.JSPlugin
 		EntryHash:      plugin.EntryHash,
 		FileModTime:    plugin.FileModTime,
 		FilePath:       plugin.FilePath,
+		PublicPaths:    string(publicPathsJSON),
 	})
 	if err != nil {
 		return fmt.Errorf("insert js_plugin: %w", err)
@@ -95,6 +100,10 @@ func (r *JSPluginRepository) Update(ctx context.Context, plugin *models.JSPlugin
 	permissionsJSON, err := json.Marshal(plugin.Permissions)
 	if err != nil {
 		return fmt.Errorf("marshal permissions: %w", err)
+	}
+	publicPathsJSON, err := json.Marshal(plugin.PublicPaths)
+	if err != nil {
+		return fmt.Errorf("marshal public_paths: %w", err)
 	}
 	if err := r.queries.UpdateJSPlugin(ctx, sqlc.UpdateJSPluginParams{
 		Name:           plugin.Name,
@@ -114,6 +123,7 @@ func (r *JSPluginRepository) Update(ctx context.Context, plugin *models.JSPlugin
 		EntryHash:      plugin.EntryHash,
 		FileModTime:    plugin.FileModTime,
 		FilePath:       plugin.FilePath,
+		PublicPaths:    string(publicPathsJSON),
 		ID:             plugin.ID,
 	}); err != nil {
 		return fmt.Errorf("update js_plugin %d: %w", plugin.ID, err)
@@ -182,6 +192,13 @@ func jsPluginRowToModel(row sqlc.JsPlugin) *models.JSPlugin {
 		}
 	} else {
 		p.Permissions = []string{}
+	}
+	if row.PublicPaths != "" {
+		if err := json.Unmarshal([]byte(row.PublicPaths), &p.PublicPaths); err != nil {
+			p.PublicPaths = []string{}
+		}
+	} else {
+		p.PublicPaths = []string{}
 	}
 	return p
 }

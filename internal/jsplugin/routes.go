@@ -2,6 +2,7 @@ package jsplugin
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
@@ -47,6 +48,9 @@ func (m *Manager) RegisterStaticRoutes(r chi.Router) {
 	r.Get("/api/v1/jsplugin/{entryPath}/static", m.handlePluginStaticSubdir)
 	r.Get("/api/v1/jsplugin/{entryPath}/static/*", m.handlePluginStaticSubdirFiles)
 	r.Get("/api/v1/jsplugin-assets/*", handlePluginAssets)
+
+	// publicPaths：为声明了 publicPaths 的插件注册无需 JWT 的路由
+	m.registerPublicPaths(r)
 }
 
 // handlePluginAssets 服务插件公共资源（CSS/JS/字体）。
@@ -97,15 +101,19 @@ func handlePluginAssets(w http.ResponseWriter, r *http.Request) {
 // RegisterAPIRoutes 注册 JS 插件 API 转发路由（需要认证，由调用方添加 AuthMiddleware）
 //
 // 路由结构：
-//   - HandleFunc /api/v1/jsplugin/{entryPath}/*    → catch-all，处理 API 转发
+//   - GET/HEAD /api/v1/jsplugin/{entryPath}/files/* → 文件 serve（Go 原生 ServeFile）
+//   - HandleFunc /api/v1/jsplugin/{entryPath}/*     → catch-all，处理 API 转发
 //
 // 分发逻辑：
-//  1. 子路径为空（尾部斜杠）→ 服务 static/index.html
-//  2. 其他子路径 → 转发给 JS 运行时处理（API 路由）
+//  1. /files/* → 直接 serve 插件可访问范围内的文件（支持 Range、HTTP 缓存）
+//  2. 子路径为空（尾部斜杠）→ 服务 static/index.html
+//  3. 其他子路径 → 转发给 JS 运行时处理（API 路由）
 //
-// 注意：chi 的路由优先级机制确保 GET 请求到 /static/* 路径会优先匹配
-// RegisterStaticRoutes 中注册的更具体的路由，不会进入此 catch-all。
+// 注意：chi 的路由优先级机制确保 GET 请求到 /static/* 或 /files/* 路径会优先匹配
+// 更具体的路由，不会进入 catch-all。
 func (m *Manager) RegisterAPIRoutes(r chi.Router) {
+	r.Get("/api/v1/jsplugin/{entryPath}/files/*", m.handlePluginFileServe)
+	r.Head("/api/v1/jsplugin/{entryPath}/files/*", m.handlePluginFileServe)
 	r.HandleFunc("/api/v1/jsplugin/{entryPath}/*", m.handlePluginAPIRequest)
 }
 
@@ -522,6 +530,12 @@ func (m *Manager) forwardToJSRuntime(w http.ResponseWriter, r *http.Request, ent
 		return
 	}
 
+	// 如果 JS 返回了 serveFile 指令，由 Go 层直接 serve 文件
+	if respData.ServeFile != nil {
+		m.handleServeFileDirective(w, r, entryPath, respData)
+		return
+	}
+
 	for k, v := range respData.Headers {
 		w.Header().Set(k, v)
 	}
@@ -542,4 +556,243 @@ func flattenHeaders(h http.Header) map[string]string {
 		}
 	}
 	return result
+}
+
+// handlePluginFileServe 直接 serve 插件可访问范围内的文件（Go 原生 http.ServeFile）。
+// 支持 Range 请求、HTTP 缓存、Content-Type 自动推断。
+//
+// 路径解析规则：
+//   - 不以 "/" 开头 → 相对于插件 data 目录（需 fs 权限）
+//   - 以 "/" 开头 → 绝对路径，校验在 fs:external 配置的目录内
+//   - "music://" 前缀 → 解析为 music_path 下的相对路径（需 fs:music 权限）
+//
+// @Summary 插件文件直接访问
+// @Description 通过 Go 原生 http.ServeFile 直接返回插件可访问范围内的文件，支持 Range 请求和 HTTP 缓存。
+// @Tags JS 插件
+// @Produce octet-stream
+// @Param entryPath path string true "插件入口标识"
+// @Param path path string true "文件路径"
+// @Success 200 {file} binary "文件内容"
+// @Success 206 {file} binary "部分文件内容（Range 请求）"
+// @Failure 404 {string} string "文件不存在或权限不足"
+// @Security BearerAuth
+// @Router /jsplugin/{entryPath}/files/{path} [get]
+// @Router /jsplugin/{entryPath}/files/{path} [head]
+func (m *Manager) handlePluginFileServe(w http.ResponseWriter, r *http.Request) {
+	entryPath := chi.URLParam(r, "entryPath")
+	filePath := chi.URLParam(r, "*")
+
+	if filePath == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	absPath, err := m.resolveServeFilePath(entryPath, filePath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	http.ServeFile(w, r, absPath)
+}
+
+// handleServeFileDirective 处理 JS 返回的 serveFile 指令，由 Go 层直接 serve 文件。
+func (m *Manager) handleServeFileDirective(w http.ResponseWriter, r *http.Request, entryPath string, resp *HTTPResponseData) {
+	for k, v := range resp.Headers {
+		w.Header().Set(k, v)
+	}
+
+	directive := resp.ServeFile
+
+	if directive.SongID > 0 {
+		if !m.pluginHasPermission(entryPath, PermSongsRead) {
+			http.Error(w, "permission denied", http.StatusForbidden)
+			return
+		}
+		song, err := m.db.SongRepository().GetByID(r.Context(), directive.SongID)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, song.FilePath)
+		return
+	}
+
+	if directive.FilePath != "" {
+		absPath, err := m.resolveServeFilePath(entryPath, directive.FilePath)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, absPath)
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
+// resolveServeFilePath 解析文件路径并校验权限和安全边界。
+// 路径规则：
+//   - "music://xxx" → {music_path}/xxx（需 fs:music 权限）
+//   - "/absolute/path" → 绝对路径（需 fs:external 权限 + 在配置的目录内）
+//   - "relative/path" → {pluginsDataDir}/{entryPath}/relative/path（需 fs 权限）
+func (m *Manager) resolveServeFilePath(entryPath, filePath string) (string, error) {
+	if strings.Contains(filePath, "..") {
+		return "", errors.New("path traversal rejected")
+	}
+
+	if strings.HasPrefix(filePath, "music://") {
+		if !m.pluginHasPermission(entryPath, PermFSMusic) {
+			return "", errors.New("requires fs:music permission")
+		}
+		musicPath := m.getMusicPath()
+		if musicPath == "" {
+			return "", errors.New("music_path not configured")
+		}
+		rel := strings.TrimPrefix(filePath, "music://")
+		return resolveInDir(musicPath, rel)
+	}
+
+	if filepath.IsAbs(filePath) {
+		if !m.pluginHasPermission(entryPath, PermFSExternal) {
+			return "", errors.New("requires fs:external permission")
+		}
+		allowedPaths := m.getPluginExternalPaths(entryPath)
+		return resolveInAllowedDirs(allowedPaths, filePath)
+	}
+
+	if !m.pluginHasPermission(entryPath, PermFS) {
+		return "", errors.New("requires fs permission")
+	}
+	pluginDir := filepath.Join(m.pluginsDataDir, entryPath)
+	return resolveInDir(pluginDir, filePath)
+}
+
+// resolveInDir 解析 rel 到 baseDir 下，确保结果不逃出 baseDir。
+func resolveInDir(baseDir, rel string) (string, error) {
+	absResolved, err := filepath.Abs(filepath.Join(baseDir, rel))
+	if err != nil {
+		return "", err
+	}
+	baseDirResolved, _ := filepath.Abs(baseDir)
+	sep := string(filepath.Separator)
+	if absResolved != baseDirResolved && !strings.HasPrefix(absResolved, baseDirResolved+sep) {
+		return "", errors.New("path outside allowed directory")
+	}
+	info, err := os.Stat(absResolved)
+	if err != nil || info.IsDir() {
+		return "", errors.New("file not found")
+	}
+	return absResolved, nil
+}
+
+// resolveInAllowedDirs 校验绝对路径在已配置的某个 allowed dir 内。
+func resolveInAllowedDirs(allowedDirs []string, absPath string) (string, error) {
+	resolved, err := filepath.Abs(absPath)
+	if err != nil {
+		return "", err
+	}
+	sep := string(filepath.Separator)
+	for _, dir := range allowedDirs {
+		dirResolved, _ := filepath.Abs(dir)
+		if strings.HasPrefix(resolved, dirResolved+sep) || resolved == dirResolved {
+			info, err := os.Stat(resolved)
+			if err != nil || info.IsDir() {
+				return "", errors.New("file not found")
+			}
+			return resolved, nil
+		}
+	}
+	return "", errors.New("path not in allowed directories")
+}
+
+// pluginHasPermission 检查指定插件是否声明了某权限。
+func (m *Manager) pluginHasPermission(entryPath, perm string) bool {
+	plugin, err := m.repo.GetByEntryPath(context.Background(), entryPath)
+	if err != nil {
+		return false
+	}
+	return CheckPermission(plugin.Permissions, perm)
+}
+
+// getMusicPath 从配置表读取 music_path（JSON 格式 {"path":"..."}）。
+func (m *Manager) getMusicPath() string {
+	cfg, err := m.db.ConfigRepository().Get(context.Background(), "music_path")
+	if err != nil {
+		return ""
+	}
+	var data struct {
+		Path string `json:"path"`
+	}
+	if json.Unmarshal([]byte(cfg.Value), &data) != nil {
+		return cfg.Value
+	}
+	return data.Path
+}
+
+// getPluginExternalPaths 从配置表读取插件的外部目录配置。
+func (m *Manager) getPluginExternalPaths(entryPath string) []string {
+	key := "jsplugin." + entryPath + ".external_paths"
+	cfg, err := m.db.ConfigRepository().Get(context.Background(), key)
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	if json.Unmarshal([]byte(cfg.Value), &paths) != nil {
+		return nil
+	}
+	return paths
+}
+
+// registerPublicPaths 为声明了 publicPaths 的插件注册无需 JWT 认证的路由。
+// 在 RegisterStaticRoutes 中调用（无 AuthMiddleware 的路由组）。
+func (m *Manager) registerPublicPaths(r chi.Router) {
+	plugins, err := m.repo.GetAll(context.Background())
+	if err != nil {
+		slog.Warn("registerPublicPaths: failed to load plugins", "error", err)
+		return
+	}
+
+	for _, p := range plugins {
+		if len(p.PublicPaths) == 0 {
+			continue
+		}
+		ep := p.EntryPath
+		for _, pp := range p.PublicPaths {
+			pp = strings.TrimSuffix(pp, "/")
+			if pp == "" {
+				continue
+			}
+			pattern := "/api/v1/jsplugin/" + ep + pp
+			slog.Info("registering public path", "entryPath", ep, "pattern", pattern)
+
+			capturedEP := ep
+			capturedPP := pp
+			r.HandleFunc(pattern, m.makePublicPathHandler(capturedEP, capturedPP))
+			r.HandleFunc(pattern+"/*", m.makePublicPathHandler(capturedEP, capturedPP))
+		}
+	}
+}
+
+func (m *Manager) makePublicPathHandler(entryPath, publicPrefix string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// 从完整 URL 中提取子路径
+		fullPath := r.URL.Path
+		prefix := "/api/v1/jsplugin/" + entryPath
+		if m.basePath != "" {
+			prefix = m.basePath + prefix
+		}
+		subPath := strings.TrimPrefix(fullPath, prefix)
+		if subPath == "" {
+			subPath = "/"
+		}
+
+		if _, err := m.EnsureLoaded(r.Context(), entryPath); err != nil {
+			m.writePluginUnavailable(w, r, entryPath, err)
+			return
+		}
+
+		m.forwardToJSRuntime(w, r, entryPath, subPath)
+	}
 }

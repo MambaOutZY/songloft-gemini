@@ -149,7 +149,8 @@ CREATE TABLE IF NOT EXISTS js_plugins (
     file_mod_time TEXT,
     file_path TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    public_paths TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TRIGGER IF NOT EXISTS update_js_plugins_updated_at

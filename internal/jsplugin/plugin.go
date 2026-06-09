@@ -37,6 +37,7 @@ type PluginManifest struct {
 	Main           string   `json:"main"`
 	MinHostVersion string   `json:"minHostVersion,omitempty"`
 	Permissions    []string `json:"permissions"`
+	PublicPaths    []string `json:"publicPaths,omitempty"`
 	UpdateURL      string   `json:"updateUrl,omitempty"`
 	DownloadURL    string   `json:"download_url,omitempty"`
 	// EntryHash 为入口文件（main.js 或 main.jsc）的 sha256，64 位小写 hex，必填。

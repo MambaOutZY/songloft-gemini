@@ -129,6 +129,7 @@ func (pm *PackageManager) InstallFromUpload(zipData []byte) (*JSPlugin, bool, er
 		Main:           manifest.Main,
 		MinHostVersion: manifest.MinHostVersion,
 		Permissions:    manifest.Permissions,
+		PublicPaths:    manifest.PublicPaths,
 		UpdateURL:      manifest.UpdateURL,
 		DownloadURL:    manifest.DownloadURL,
 		Status:         JSPluginStatusInactive,
@@ -240,6 +241,7 @@ func (pm *PackageManager) Update(pluginID int64, zipData []byte) (*JSPlugin, err
 	existing.Main = manifest.Main
 	existing.MinHostVersion = manifest.MinHostVersion
 	existing.Permissions = manifest.Permissions
+	existing.PublicPaths = manifest.PublicPaths
 	existing.UpdateURL = manifest.UpdateURL
 	existing.DownloadURL = manifest.DownloadURL
 	existing.ZipHash = zipHash
