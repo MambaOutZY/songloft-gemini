@@ -189,7 +189,7 @@ func (s *RegistryService) resolveAll(ctx context.Context, pluginURLs []string, g
 }
 
 // resolvePluginJSON 拉取远程 plugin.json 并映射到 RegistryEntry。
-// 如果 plugin.json 中 download_url 为空但 updateUrl 有值，链式拉取 manifest.json 获取 download_url。
+// 如果 plugin.json 中 download_url 为空但 updateUrl 有值，链式拉取 updateUrl 获取 download_url（兼容旧版插件）。
 func (s *RegistryService) resolvePluginJSON(ctx context.Context, url string, githubProxy string) (RegistryEntry, error) {
 	body, err := s.fetchBody(ctx, url)
 	if err != nil {
@@ -219,7 +219,7 @@ func (s *RegistryService) resolvePluginJSON(ctx context.Context, url string, git
 		}
 	}
 
-	// plugin.json 中 download_url 通常为空，通过 updateUrl 指向的 manifest.json 获取
+	// 兼容旧版插件：如果 plugin.json 未直接提供 download_url，通过 updateUrl 链式获取
 	if entry.DownloadURL == "" && entry.UpdateURL != "" {
 		updateRequestURL := applyProxy(entry.UpdateURL, githubProxy)
 		if updateBody, err := s.fetchBody(ctx, updateRequestURL); err != nil {
