@@ -749,8 +749,8 @@ func (m *Manager) getPluginExternalPaths(entryPath string) []string {
 	return paths
 }
 
-// registerPublicPaths 为声明了 publicPaths 的插件注册无需 JWT 认证的路由。
-// 在 RegisterStaticRoutes 中调用（无 AuthMiddleware 的路由组）。
+// registerPublicPaths 加载所有插件的 publicPaths 到内存缓存。
+// AuthMiddleware 通过 IsPublicPath 查询是否跳过认证。
 func (m *Manager) registerPublicPaths(r chi.Router) {
 	plugins, err := m.repo.GetAll(context.Background())
 	if err != nil {
@@ -762,43 +762,26 @@ func (m *Manager) registerPublicPaths(r chi.Router) {
 		if len(p.PublicPaths) == 0 {
 			continue
 		}
-		ep := p.EntryPath
 		for _, pp := range p.PublicPaths {
 			pp = strings.TrimSuffix(pp, "/")
 			if pp == "" {
 				continue
 			}
-			pattern := "/api/v1/jsplugin/" + ep + pp
-			slog.Info("registering public path", "entryPath", ep, "pattern", pattern)
-
-			capturedEP := ep
-			capturedPP := pp
-			r.HandleFunc(pattern, m.makePublicPathHandler(capturedEP, capturedPP))
-			r.HandleFunc(pattern+"/*", m.makePublicPathHandler(capturedEP, capturedPP))
+			prefix := "/api/v1/jsplugin/" + p.EntryPath + pp
+			m.publicPathPrefixes = append(m.publicPathPrefixes, prefix)
+			slog.Info("registered public path prefix", "prefix", prefix)
 		}
 	}
 }
 
-func (m *Manager) makePublicPathHandler(entryPath, publicPrefix string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// 从完整 URL 中提取子路径
-		fullPath := r.URL.Path
-		prefix := "/api/v1/jsplugin/" + entryPath
-		if m.basePath != "" {
-			prefix = m.basePath + prefix
+// IsPublicPath 检查请求路径是否匹配某个插件的 publicPaths（供 AuthMiddleware 跳过认证）。
+func (m *Manager) IsPublicPath(path string) bool {
+	for _, prefix := range m.publicPathPrefixes {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
 		}
-		subPath := strings.TrimPrefix(fullPath, prefix)
-		if subPath == "" {
-			subPath = "/"
-		}
-
-		if _, err := m.EnsureLoaded(r.Context(), entryPath); err != nil {
-			m.writePluginUnavailable(w, r, entryPath, err)
-			return
-		}
-
-		m.forwardToJSRuntime(w, r, entryPath, subPath)
 	}
+	return false
 }
 
 // handleGetExternalPaths 获取插件的外部目录配置。

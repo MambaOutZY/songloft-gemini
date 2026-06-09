@@ -50,7 +50,8 @@ type Manager struct {
 	mu             sync.RWMutex
 	// loadGroup 对懒加载/恢复加载按 entryPath 去重并发，
 	// 避免同一插件因高并发请求被并行 LoadPlugin 多次（hash 反复校验、scheduler 重复注册等）。
-	loadGroup singleflight.Group
+	loadGroup          singleflight.Group
+	publicPathPrefixes []string // 无需 JWT 的路径前缀（启动时从 DB 加载）
 }
 
 // NewManager 创建 JS 插件管理器

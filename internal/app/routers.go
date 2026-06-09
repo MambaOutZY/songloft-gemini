@@ -25,11 +25,11 @@ func (a *App) setupRouter() {
 	a.setupAPIV1Router()
 
 	// JS 插件运行时路由（必须在中间件注册之后）
-	// 静态资源路由（无需认证）
+	// 静态资源路由（无需认证）+ 加载 publicPaths 缓存
 	a.jsPluginManager.RegisterStaticRoutes(a.router)
-	// API 转发路由（需要认证）
+	// API 转发路由（需要认证，publicPaths 声明的路径除外）
 	a.router.Group(func(r chi.Router) {
-		r.Use(app_middleware.AuthMiddleware(a.authService))
+		r.Use(app_middleware.AuthMiddleware(a.authService, a.jsPluginManager))
 		a.jsPluginManager.RegisterAPIRoutes(r)
 	})
 }

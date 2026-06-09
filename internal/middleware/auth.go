@@ -19,10 +19,23 @@ func respondAuthError(w http.ResponseWriter, status int, message string, err err
 	json.NewEncoder(w).Encode(response)
 }
 
+// PublicPathChecker 用于检查请求路径是否为公开路径（无需 JWT）。
+type PublicPathChecker interface {
+	IsPublicPath(path string) bool
+}
+
 // AuthMiddleware 认证中间件
-func AuthMiddleware(authService *services.AuthService) func(http.Handler) http.Handler {
+func AuthMiddleware(authService *services.AuthService, publicPathCheckers ...PublicPathChecker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// 检查是否为公开路径（如插件 publicPaths 声明的 Subsonic /rest/* 端点）
+			for _, checker := range publicPathCheckers {
+				if checker != nil && checker.IsPublicPath(r.URL.Path) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
 			var tokenString string
 
 			// 优先从 Authorization 头获取 token
