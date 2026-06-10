@@ -54,7 +54,11 @@ func ExtractFingerprint(ctx context.Context, filePath string) (string, float64, 
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", filePath, "-f", "chromaprint", "-fp_format", "base64", "-")
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-i", filePath,
+		"-map", "0:a:0",
+		"-map_metadata", "-1",
+		"-f", "chromaprint", "-fp_format", "base64", "-")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -64,8 +68,14 @@ func ExtractFingerprint(ctx context.Context, filePath string) (string, float64, 
 	}
 
 	fingerprint := strings.TrimSpace(stdout.String())
+	if nl := strings.IndexByte(fingerprint, '\n'); nl >= 0 {
+		fingerprint = fingerprint[:nl]
+	}
 	if fingerprint == "" {
 		return "", 0, fmt.Errorf("ffmpeg chromaprint returned empty fingerprint")
+	}
+	if len(fingerprint) > 2000 {
+		return "", 0, fmt.Errorf("fingerprint too long (%d chars), likely corrupted", len(fingerprint))
 	}
 
 	duration := parseDurationFromStderr(stderr.String())
