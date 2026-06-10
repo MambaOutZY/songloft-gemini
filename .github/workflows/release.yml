@@ -206,6 +206,9 @@ jobs:
       - name: Build binaries (full + lite)
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
+          TRACELY_APP_ID: ${{ secrets.TRACELY_APP_ID }}
+          TRACELY_APP_SECRET: ${{ secrets.TRACELY_APP_SECRET }}
+          TRACELY_HOST: ${{ secrets.TRACELY_HOST }}
         run: |
           SUFFIX="${{ matrix.suffix }}"
           EXT="${{ matrix.ext }}"
