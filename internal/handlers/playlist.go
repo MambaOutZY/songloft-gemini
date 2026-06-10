@@ -661,14 +661,24 @@ func (h *PlaylistHandler) GetPlaylistCover(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// 回退：取歌单内第一首有本地封面的歌曲
+	const coverFallbackLimit = 20
+	songs, err := h.playlistService.GetSongs(r.Context(), id, coverFallbackLimit, 0)
+	if err == nil {
+		for _, s := range songs {
+			if s.CoverPath != "" {
+				h.serveLocalCover(w, &models.Playlist{CoverPath: s.CoverPath})
+				return
+			}
+		}
+	}
+
 	respondError(w, http.StatusNotFound, "封面不存在", nil)
 }
 
 // serveLocalCover 返回本地封面文件
 func (h *PlaylistHandler) serveLocalCover(w http.ResponseWriter, playlist *models.Playlist) {
 	coverPath := playlist.CoverPath
-
-	// 检查封面文件是否存在
 	if _, err := os.Stat(coverPath); os.IsNotExist(err) {
 		respondError(w, http.StatusNotFound, "封面文件不存在", err)
 		return
