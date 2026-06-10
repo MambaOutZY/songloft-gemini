@@ -260,15 +260,15 @@ func (h *BridgeHandler) HandleBridgeCall(action, data string) (string, error) {
 		return h.handlePlugin(action, data)
 	}
 
-	// 1. 解析 action 的权限前缀
-	requiredPerm := extractPermFromAction(action)
-
-	// 2. 检查权限
-	if !CheckPermission(h.permissions, requiredPerm) {
-		return "", fmt.Errorf("permission denied: requires '%s'", requiredPerm)
+	// fs.* 操作的权限按路径类型在 resolveFSPath 内细粒度检查，跳过通用检查
+	if !strings.HasPrefix(action, "fs.") {
+		requiredPerm := extractPermFromAction(action)
+		if !CheckPermission(h.permissions, requiredPerm) {
+			return "", fmt.Errorf("permission denied: requires '%s'", requiredPerm)
+		}
 	}
 
-	// 3. 分发到具体处理器
+	// 分发到具体处理器
 	switch {
 	case strings.HasPrefix(action, "storage."):
 		return h.handleStorage(action, data)

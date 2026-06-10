@@ -1,6 +1,7 @@
 package jsplugin
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -36,24 +37,98 @@ func (h *BridgeHandler) handleFS(action, data string) (string, error) {
 	}
 }
 
-func (h *BridgeHandler) resolveFSPath(relPath string) (string, error) {
-	if relPath == "" {
+// resolveFSPath 解析插件 FS 桥接的路径，支持三种形式：
+//   - "music://xxx" → {music_path}/xxx（需 fs:music 权限）
+//   - "/absolute/path" → 绝对路径（需 fs:external 权限 + 在配置的外部目录内）
+//   - "relative/path" → {pluginDataDir}/relative/path（需 fs 权限）
+func (h *BridgeHandler) resolveFSPath(inputPath string) (string, error) {
+	if inputPath == "" {
 		return "", fmt.Errorf("path cannot be empty")
 	}
-	if strings.Contains(relPath, "..") {
+	if strings.Contains(inputPath, "..") {
 		return "", fmt.Errorf("path cannot contain '..'")
 	}
+
+	sep := string(filepath.Separator)
+
+	if strings.HasPrefix(inputPath, "music://") {
+		if !CheckPermission(h.permissions, PermFSMusic) {
+			return "", fmt.Errorf("requires fs:music permission")
+		}
+		musicPath := h.getMusicPath()
+		if musicPath == "" {
+			return "", fmt.Errorf("music_path not configured")
+		}
+		rel := strings.TrimPrefix(inputPath, "music://")
+		return resolveContained(musicPath, rel, sep)
+	}
+
+	if filepath.IsAbs(inputPath) {
+		if !CheckPermission(h.permissions, PermFSExternal) {
+			return "", fmt.Errorf("requires fs:external permission")
+		}
+		allowedDirs := h.getPluginExternalPaths()
+		resolved, err := filepath.Abs(inputPath)
+		if err != nil {
+			return "", err
+		}
+		for _, dir := range allowedDirs {
+			dirResolved, _ := filepath.Abs(dir)
+			if resolved == dirResolved || strings.HasPrefix(resolved, dirResolved+sep) {
+				return resolved, nil
+			}
+		}
+		return "", fmt.Errorf("path not in allowed directories")
+	}
+
+	if !CheckPermission(h.permissions, PermFS) {
+		return "", fmt.Errorf("requires fs permission")
+	}
 	base := h.pluginDataDir()
-	joined := filepath.Join(base, relPath)
+	return resolveContained(base, inputPath, sep)
+}
+
+// resolveContained 将 rel 解析到 baseDir 下，确保结果不逃出 baseDir。
+// 与 routes.go 的 resolveInDir 不同，此函数不做 os.Stat / 目录拒绝检查，
+// 因为 fs.readdir / fs.stat / fs.mkdir 的目标可能是目录。
+func resolveContained(baseDir, rel, sep string) (string, error) {
+	joined := filepath.Join(baseDir, rel)
 	absClean, err := filepath.Abs(joined)
 	if err != nil {
 		return "", err
 	}
-	sep := string(filepath.Separator)
-	if absClean != base && !strings.HasPrefix(absClean, base+sep) {
-		return "", fmt.Errorf("path escapes plugin data directory")
+	baseDirResolved, _ := filepath.Abs(baseDir)
+	if absClean != baseDirResolved && !strings.HasPrefix(absClean, baseDirResolved+sep) {
+		return "", fmt.Errorf("path escapes allowed directory")
 	}
 	return absClean, nil
+}
+
+func (h *BridgeHandler) getMusicPath() string {
+	cfg, err := h.db.ConfigRepository().Get(context.Background(), "music_path")
+	if err != nil {
+		return ""
+	}
+	var data struct {
+		Path string `json:"path"`
+	}
+	if json.Unmarshal([]byte(cfg.Value), &data) != nil {
+		return cfg.Value
+	}
+	return data.Path
+}
+
+func (h *BridgeHandler) getPluginExternalPaths() []string {
+	key := "jsplugin." + h.service.plugin.EntryPath + ".external_paths"
+	cfg, err := h.db.ConfigRepository().Get(context.Background(), key)
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	if json.Unmarshal([]byte(cfg.Value), &paths) != nil {
+		return nil
+	}
+	return paths
 }
 
 func (h *BridgeHandler) fsReadFile(data string) (string, error) {
