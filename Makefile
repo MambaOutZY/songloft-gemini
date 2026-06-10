@@ -10,7 +10,8 @@ GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 BUILD_TYPE ?=
 
-# Tracely 监控（私有构建时注入；开源构建默认两者为空，运行时不会初始化客户端）
+# Tracely 监控（私有构建时注入；开源构建默认三者为空，运行时不会初始化客户端）
+TRACELY_APP_ID ?=
 TRACELY_APP_SECRET ?=
 TRACELY_HOST ?=
 
@@ -20,6 +21,7 @@ LDFLAGS=-s -w \
 	-X songloft/internal/version.GitCommit=$(GIT_COMMIT) \
 	-X songloft/internal/version.BuildTime=$(BUILD_TIME) \
 	$(if $(BUILD_TYPE),-X songloft/internal/version.BuildType=$(BUILD_TYPE)) \
+	$(if $(TRACELY_APP_ID),-X songloft/internal/tracelycfg.AppID=$(TRACELY_APP_ID)) \
 	$(if $(TRACELY_APP_SECRET),-X songloft/internal/tracelycfg.AppSecret=$(TRACELY_APP_SECRET)) \
 	$(if $(TRACELY_HOST),-X songloft/internal/tracelycfg.Host=$(TRACELY_HOST))
 

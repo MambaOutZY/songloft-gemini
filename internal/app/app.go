@@ -353,7 +353,7 @@ func (a *App) Init() error {
 	// 初始化 Tracely 监控客户端（仅在编译时注入了 AppSecret 与 Host 时启用）
 	if tracelycfg.Enabled() {
 		a.tracelyClient = tracely.New(tracely.Config{
-			AppID:             "songloft",
+			AppID:             tracelycfg.AppID,
 			AppSecret:         tracelycfg.AppSecret,
 			Host:              tracelycfg.Host,
 			EnableHeartbeat:   true,
@@ -363,6 +363,23 @@ func (a *App) Init() error {
 			},
 		})
 		slog.Info("Tracely 监控初始化成功")
+
+		// 上报安装或升级事件
+		serverPlatform := runtime.GOOS + "-" + runtime.GOARCH
+		lastVersion := a.configService.GetString("tracely_reported_version", "")
+		currentVersion := version.Version
+		if lastVersion == "" {
+			a.tracelyClient.ReportInstall(currentVersion, serverPlatform, "")
+			slog.Info("Tracely 上报安装事件", "version", currentVersion)
+		} else if lastVersion != currentVersion {
+			a.tracelyClient.ReportUpgrade(lastVersion, currentVersion, serverPlatform, "")
+			slog.Info("Tracely 上报升级事件", "from", lastVersion, "to", currentVersion)
+		}
+		if lastVersion != currentVersion {
+			if err := a.configService.Set("tracely_reported_version", currentVersion); err != nil {
+				slog.Warn("写入 Tracely 上报版本失败", "error", err)
+			}
+		}
 	} else {
 		slog.Info("Tracely 监控未启用（编译时未注入 AppSecret/Host）")
 	}

@@ -10,7 +10,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/hanxi/tag v0.0.0-20240417053706-3d75831295e8
-	github.com/hanxi/tracely/sdk/go/tracely v1.0.19
+	github.com/hanxi/tracely/sdk/go/tracely v1.1.0
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/swaggo/http-swagger v1.3.4
 	github.com/swaggo/swag v1.16.6

@@ -15,7 +15,7 @@
 - **音频分析**: ffprobe（可选，用于获取精确技术参数）
 - **JS 运行时**: QuickJS（modernc.org/quickjs，纯 Go 实现，用于 JS 插件脚本执行）
 - **插件架构**: JS 脚本插件（QuickJS 沙盒 + 权限模型 + 健康检查 + 热更新）
-- **监控**: Tracely 客户端（心跳包、错误上报、panic 捕获）
+- **监控**: Tracely 客户端（心跳包、安装/升级统计、panic 捕获）
 
 ## 架构设计
 
