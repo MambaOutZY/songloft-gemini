@@ -81,7 +81,7 @@ type Song struct {
 	CoverURL            string  `json:"cover_url" example:"https://example.com/cover.jpg"` // 封面图片URL
 	Lyric               string  `json:"-"`                                                 // 歌词 LyricPayload JSON 文本(内部存储,不暴露给客户端);lyric_source=url 时为空,真正的 URL 在 LyricRemoteURL
 	LyricSource         string  `json:"-"`                                                 // 歌词来源(内部使用,不暴露给客户端)
-	LyricRemoteURL      string  `json:"-"`                                                 // lyric_source=url 时的原始插件 URL(内部使用,运行时由 LyricFetcher 拉取)
+	LyricRemoteURL      string  `json:"lyric_remote_url,omitempty"`                         // lyric_source=url 时的原始 URL(运行时由 LyricFetcher 拉取)
 	LyricURL            string  `json:"lyric_url,omitempty"`                               // 歌词端点 URL(客户端唯一可见字段,指向 /api/v1/songs/{id}/lyric)
 	FileSize            int64   `json:"file_size" example:"10485760"`                      // 文件大小（字节）
 	Format              string  `json:"format" example:"mp3"`                              // 音频格式

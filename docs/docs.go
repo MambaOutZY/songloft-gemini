@@ -6782,6 +6782,10 @@ const docTemplate = `{
                     "description": "ISRC(国际标准录音编码)",
                     "type": "string"
                 },
+                "lyric_remote_url": {
+                    "description": "lyric_source=url 时的原始 URL(运行时由 LyricFetcher 拉取)",
+                    "type": "string"
+                },
                 "lyric_url": {
                     "description": "歌词端点 URL(客户端唯一可见字段,指向 /api/v1/songs/{id}/lyric)",
                     "type": "string"
