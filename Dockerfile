@@ -18,6 +18,9 @@ ARG GIT_COMMIT=unknown
 ARG BUILD_TIME=unknown
 ARG GOPROXY=https://goproxy.cn,https://goproxy.io,direct
 ENV GOPROXY=${GOPROXY}
+ARG TRACELY_APP_ID=
+ARG TRACELY_APP_SECRET=
+ARG TRACELY_HOST=
 
 # 先复制 go.mod 和 go.sum，利用 Docker 层缓存加速依赖下载
 COPY go.mod go.sum ./
@@ -40,9 +43,17 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     set -x && \
     echo "VERSION=[${VERSION}] LITE_BUILD=[${LITE_BUILD}]" && \
     if [ "$LITE_BUILD" = "true" ]; then \
-        make build-prod-lite GIT_COMMIT="${GIT_COMMIT}" BUILD_TIME="${BUILD_TIME}" BUILD_TYPE=lite ${VERSION:+VERSION=${VERSION}}; \
+        make build-prod-lite GIT_COMMIT="${GIT_COMMIT}" BUILD_TIME="${BUILD_TIME}" BUILD_TYPE=lite \
+            TRACELY_APP_ID="${TRACELY_APP_ID}" \
+            TRACELY_APP_SECRET="${TRACELY_APP_SECRET}" \
+            TRACELY_HOST="${TRACELY_HOST}" \
+            ${VERSION:+VERSION=${VERSION}}; \
     else \
-        make build-prod GIT_COMMIT="${GIT_COMMIT}" BUILD_TIME="${BUILD_TIME}" ${VERSION:+VERSION=${VERSION}}; \
+        make build-prod GIT_COMMIT="${GIT_COMMIT}" BUILD_TIME="${BUILD_TIME}" \
+            TRACELY_APP_ID="${TRACELY_APP_ID}" \
+            TRACELY_APP_SECRET="${TRACELY_APP_SECRET}" \
+            TRACELY_HOST="${TRACELY_HOST}" \
+            ${VERSION:+VERSION=${VERSION}}; \
     fi
 
 FROM alpine:latest

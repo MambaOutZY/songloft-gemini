@@ -328,6 +328,9 @@ jobs:
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
+            --build-arg TRACELY_APP_ID="${{ secrets.TRACELY_APP_ID }}" \
+            --build-arg TRACELY_APP_SECRET="${{ secrets.TRACELY_APP_SECRET }}" \
+            --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --platform linux/amd64 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-amd64 \
             --cache-from type=gha,scope=full-linux-amd64 \
@@ -344,6 +347,9 @@ jobs:
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
+            --build-arg TRACELY_APP_ID="${{ secrets.TRACELY_APP_ID }}" \
+            --build-arg TRACELY_APP_SECRET="${{ secrets.TRACELY_APP_SECRET }}" \
+            --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --platform linux/arm64 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-arm64 \
             --cache-from type=gha,scope=full-linux-arm64 \
@@ -360,6 +366,9 @@ jobs:
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
+            --build-arg TRACELY_APP_ID="${{ secrets.TRACELY_APP_ID }}" \
+            --build-arg TRACELY_APP_SECRET="${{ secrets.TRACELY_APP_SECRET }}" \
+            --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --platform linux/arm/v7 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-armv7 \
             --cache-from type=gha,scope=full-linux-armv7 \
@@ -383,6 +392,9 @@ jobs:
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
+            --build-arg TRACELY_APP_ID="${{ secrets.TRACELY_APP_ID }}" \
+            --build-arg TRACELY_APP_SECRET="${{ secrets.TRACELY_APP_SECRET }}" \
+            --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --platform linux/amd64,linux/arm64,linux/arm/v7 \
             --cache-from type=gha,scope=full-linux-amd64 \
             --cache-from type=gha,scope=full-linux-arm64 \
@@ -397,6 +409,9 @@ jobs:
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
+            --build-arg TRACELY_APP_ID="${{ secrets.TRACELY_APP_ID }}" \
+            --build-arg TRACELY_APP_SECRET="${{ secrets.TRACELY_APP_SECRET }}" \
+            --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --build-arg LITE_BUILD=true \
             --platform linux/amd64 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-amd64 \
@@ -414,6 +429,9 @@ jobs:
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
+            --build-arg TRACELY_APP_ID="${{ secrets.TRACELY_APP_ID }}" \
+            --build-arg TRACELY_APP_SECRET="${{ secrets.TRACELY_APP_SECRET }}" \
+            --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --build-arg LITE_BUILD=true \
             --platform linux/arm64 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-arm64 \
@@ -431,6 +449,9 @@ jobs:
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
+            --build-arg TRACELY_APP_ID="${{ secrets.TRACELY_APP_ID }}" \
+            --build-arg TRACELY_APP_SECRET="${{ secrets.TRACELY_APP_SECRET }}" \
+            --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --build-arg LITE_BUILD=true \
             --platform linux/arm/v7 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-armv7 \
@@ -455,6 +476,9 @@ jobs:
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
+            --build-arg TRACELY_APP_ID="${{ secrets.TRACELY_APP_ID }}" \
+            --build-arg TRACELY_APP_SECRET="${{ secrets.TRACELY_APP_SECRET }}" \
+            --build-arg TRACELY_HOST="${{ secrets.TRACELY_HOST }}" \
             --build-arg LITE_BUILD=true \
             --platform linux/amd64,linux/arm64,linux/arm/v7 \
             --cache-from type=gha,scope=lite-linux-amd64 \
