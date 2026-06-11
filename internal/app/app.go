@@ -366,13 +366,17 @@ func (a *App) Init() error {
 
 		// 上报安装或升级事件
 		serverPlatform := runtime.GOOS + "-" + runtime.GOARCH
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			hostname = "unknown"
+		}
 		lastVersion := a.configService.GetString("tracely_reported_version", "")
 		currentVersion := version.Version
 		if lastVersion == "" {
-			a.tracelyClient.ReportInstall(currentVersion, serverPlatform, "")
+			a.tracelyClient.ReportInstall(currentVersion, serverPlatform, hostname)
 			slog.Info("Tracely 上报安装事件", "version", currentVersion)
 		} else if lastVersion != currentVersion {
-			a.tracelyClient.ReportUpgrade(lastVersion, currentVersion, serverPlatform, "")
+			a.tracelyClient.ReportUpgrade(lastVersion, currentVersion, serverPlatform, hostname)
 			slog.Info("Tracely 上报升级事件", "from", lastVersion, "to", currentVersion)
 		}
 		if lastVersion != currentVersion {
