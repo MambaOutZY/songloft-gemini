@@ -170,6 +170,7 @@ func (h *XxxHandler) Method(w http.ResponseWriter, r *http.Request) { ... }
 
 - 提交信息**禁止**添加 `Co-Authored-By` 尾部标记
 - 遵循 Conventional Commits 格式：`type(scope): description`
+- **子模块引用父仓库 issue**：子模块（如 `jsplugins-src/songloft-plugin-miot`、`songloft-player`）的 commit 信息中引用父仓库 issue 时，必须带完整仓库路径，如 `songloft-org/songloft#155`，不能只写 `#155`（否则 GitHub 会解析为子模块自身仓库的 issue）
 
 ---
 
