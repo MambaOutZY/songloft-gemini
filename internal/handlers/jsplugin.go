@@ -363,6 +363,10 @@ func (h *JSPluginHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.manager != nil {
+		h.manager.RefreshPublicPaths()
+	}
+
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "插件已删除",
 	})

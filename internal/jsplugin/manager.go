@@ -52,7 +52,7 @@ type Manager struct {
 	// loadGroup 对懒加载/恢复加载按 entryPath 去重并发，
 	// 避免同一插件因高并发请求被并行 LoadPlugin 多次（hash 反复校验、scheduler 重复注册等）。
 	loadGroup          singleflight.Group
-	publicPathPrefixes []string // 无需 JWT 的路径前缀（启动时从 DB 加载）
+	publicPathPrefixes []string // 无需 JWT 的路径前缀（通过 RefreshPublicPaths 从 DB 加载，运行时可刷新）
 }
 
 // NewManager 创建 JS 插件管理器
@@ -159,6 +159,9 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	// 直接使用 Sync 返回的完整列表加载插件，无需再查 DB
 	m.loadPlugins(internalCtx, synced)
+
+	// Sync 可能新增/更新了带 publicPaths 的插件，刷新内存缓存
+	m.RefreshPublicPaths()
 
 	// 打印插件的静态页面访问 URL（基于 synced 列表，不依赖插件是否 active）
 	m.logPluginStaticURLs(synced)
@@ -288,7 +291,11 @@ func (m *Manager) ReloadPlugin(ctx context.Context, entryPath string) error {
 	os.RemoveAll(cacheDir)
 
 	// 重新加载
-	return m.LoadPlugin(ctx, plugin)
+	if err := m.LoadPlugin(ctx, plugin); err != nil {
+		return err
+	}
+	m.RefreshPublicPaths()
+	return nil
 }
 
 // EnablePlugin 启用插件（更新状态 + 加载）
@@ -316,6 +323,7 @@ func (m *Manager) EnablePlugin(ctx context.Context, id int64) error {
 		m.healthChecker.ClearRecovery(plugin.EntryPath)
 	}
 
+	m.RefreshPublicPaths()
 	return nil
 }
 
@@ -339,6 +347,7 @@ func (m *Manager) DisablePlugin(ctx context.Context, id int64) error {
 		return fmt.Errorf("update plugin status: %w", err)
 	}
 
+	m.RefreshPublicPaths()
 	return nil
 }
 

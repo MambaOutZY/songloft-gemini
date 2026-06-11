@@ -84,6 +84,7 @@ func (h *HotReloader) ReloadPlugin(ctx context.Context, pluginID int64) error {
 		return fmt.Errorf("hot reload failed (rolled back): %w", err)
 	}
 
+	h.manager.RefreshPublicPaths()
 	slog.Info("hot reload plugin completed", "plugin", entryPath, "id", pluginID)
 	return nil
 }

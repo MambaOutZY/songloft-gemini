@@ -50,7 +50,7 @@ func (m *Manager) RegisterStaticRoutes(r chi.Router) {
 	r.Get("/api/v1/jsplugin-assets/*", handlePluginAssets)
 
 	// publicPaths：为声明了 publicPaths 的插件注册无需 JWT 的路由
-	m.registerPublicPaths(r)
+	m.RefreshPublicPaths()
 }
 
 // handlePluginAssets 服务插件公共资源（CSS/JS/字体）。
@@ -740,15 +740,16 @@ func (m *Manager) getPluginExternalPaths(entryPath string) []string {
 	return plugin.ExternalPaths
 }
 
-// registerPublicPaths 加载所有插件的 publicPaths 到内存缓存。
-// AuthMiddleware 通过 IsPublicPath 查询是否跳过认证。
-func (m *Manager) registerPublicPaths(r chi.Router) {
+// RefreshPublicPaths 从 DB 重新加载所有插件的 publicPaths 到内存缓存。
+// 在插件安装/卸载/启用/禁用/热重载等生命周期事件后调用，确保 AuthMiddleware 实时感知变更。
+func (m *Manager) RefreshPublicPaths() {
 	plugins, err := m.repo.GetAll(context.Background())
 	if err != nil {
-		slog.Warn("registerPublicPaths: failed to load plugins", "error", err)
+		slog.Warn("RefreshPublicPaths: failed to load plugins", "error", err)
 		return
 	}
 
+	var prefixes []string
 	for _, p := range plugins {
 		if len(p.PublicPaths) == 0 {
 			continue
@@ -759,15 +760,26 @@ func (m *Manager) registerPublicPaths(r chi.Router) {
 				continue
 			}
 			prefix := "/api/v1/jsplugin/" + p.EntryPath + pp
-			m.publicPathPrefixes = append(m.publicPathPrefixes, prefix)
-			slog.Info("registered public path prefix", "prefix", prefix)
+			prefixes = append(prefixes, prefix)
 		}
+	}
+
+	m.mu.Lock()
+	m.publicPathPrefixes = prefixes
+	m.mu.Unlock()
+
+	if len(prefixes) > 0 {
+		slog.Info("public path prefixes refreshed", "count", len(prefixes))
 	}
 }
 
 // IsPublicPath 检查请求路径是否匹配某个插件的 publicPaths（供 AuthMiddleware 跳过认证）。
 func (m *Manager) IsPublicPath(path string) bool {
-	for _, prefix := range m.publicPathPrefixes {
+	m.mu.RLock()
+	prefixes := m.publicPathPrefixes
+	m.mu.RUnlock()
+
+	for _, prefix := range prefixes {
 		if path == prefix || strings.HasPrefix(path, prefix+"/") {
 			return true
 		}
