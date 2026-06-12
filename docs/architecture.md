@@ -140,7 +140,7 @@ make build-frontend-all            # 当前系统支持的所有平台
 1. **纯 Go 实现**：音频元数据提取、SQLite 驱动、QuickJS 运行时均为纯 Go 实现，无需 CGO，部署简单
 2. **JS 插件系统**：基于 QuickJS 的脚本插件架构，支持动态扩展音源能力，沙盒隔离 + 权限模型 + 健康检查 + 热更新
 3. **JWT 双 Token**：Access Token + Refresh Token，支持令牌撤销和管理
-4. **音乐缓存**：播放远程歌曲时自动缓存，LRU 淘汰策略，支持自定义缓存目录和容量上限
+4. **音乐缓存**：播放远程歌曲时流式代理给客户端并后台异步缓存，LRU 淘汰策略，支持自定义缓存目录和容量上限
 5. **音频 tag 读写**:pkg/tag 在原 dhowden/tag 基础上扩展 MP3 (ID3v2.3) 和 FLAC (Vorbis Comment + Picture) 写入,纯 Go 无外部依赖
 7. **资源代理**：内置 CORS 代理，含 SSRF 防护
 8. **数据库驱动配置**：配置存储在 SQLite，支持 JSON 格式和 API 动态更新
@@ -162,7 +162,7 @@ make build-frontend-all            # 当前系统支持的所有平台
 
 | 表名 | 说明 | 关键字段 |
 |------|------|---------|
-| **songs** | 歌曲/电台 | type(local/remote/radio), title, artist, album, duration, file_path, url, cover_path, lyric, lyric_source, plugin_entry_path, source_data, dedup_key |
+| **songs** | 歌曲/电台 | type(local/remote/radio), title, artist, album, duration, file_path, url, cover_path, lyric, lyric_source, plugin_entry_path, source_data, dedup_key, cache_path |
 | **playlists** | 歌单 | type(normal/radio), name, labels, cover_path, cover_url |
 | **playlist_songs** | 歌单-歌曲关联 | playlist_id, song_id, position |
 | **configs** | 系统配置 | key(唯一), value(JSON) |

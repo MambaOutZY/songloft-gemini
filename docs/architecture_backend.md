@@ -70,7 +70,7 @@ HTTP Server (main.go)
 - `scan.go`: 扫描管理（异步扫描、进度查询、取消扫描）
 - `jsplugin.go`: JS 插件管理（上传 `.jsplugin.zip`、启用/禁用、删除、更新检查）
 - `upgrade.go`: 版本升级（检查更新、执行升级、重置基础镜像）
-- `proxy.go`: 资源代理（解决外部 CDN 的 CORS 限制，支持流式转发和 Range 请求）
+- `proxy.go`: 资源代理（解决外部 CDN 的 CORS 限制，支持流式转发和 Range 请求）。含 `ServeRemoteResourceWithCache` 流式代理上游音频到客户端并触发后台缓存
 - `cache.go`: 音乐缓存管理（统计、清理、配置、自定义目录验证）
 - `version.go`: 版本信息
 - `health.go`: 健康检查
@@ -117,10 +117,13 @@ HTTP Server (main.go)
 - `playlist_service.go`: 歌单服务（CRUD、歌曲管理、自动创建）
 - `upgrade_service.go`: 版本升级服务（获取版本信息、执行升级、重置）
 - `cache_service.go`: 音乐缓存服务（LRU 淘汰、自定义缓存目录、容量上限配置）
-- `cache_service_song.go`: 缓存服务针对 song 维度的辅助（命中查找、并发下载去重、关联清理等）
+- `cache_service_song.go`: 缓存服务针对 song 维度的辅助（命中查找、并发下载去重、关联清理、流式代理回调等）
+- `cache_path_template.go`: 缓存/下载路径模板（`{artist}-{album}/{title}` 等占位符渲染，供 `SongDownloader` 使用）
+- `cache_metadata_writer.go`: 缓存/下载文件元数据嵌入（标签写入 + 远程封面下载，供 `SongDownloader` 使用）
+- `song_downloader.go`: 歌曲下载服务（将远程歌曲下载到本地音乐库，由 JS 插件 bridge `songs.download` 调用）
 - `internal_url.go`: 内部回环 URL 构造（把相对 URL 拼成 `http://127.0.0.1:{port}/...?access_token=...`，给 convert/cache 调插件用）
 - `whitelist.go`: 域名白名单校验（SSRF 防护，阻止内网地址访问）
-- `source/`: 音源适配子包 — `fetcher`（HTTP 取数据）、`resolver`（URL 解析）、`validator`（参数校验）、`orchestrator`（编排）、`metrics`（指标）。具体实现见 `internal/app/source_adapters.go` 的接口绑定
+- `source/`: 音源适配子包 — `fetcher`（HTTP 取数据 + URL 解析）、`resolver`（跨插件 fallback）、`validator`（参数校验）、`orchestrator`（编排，含 `ResolveURL` 仅解析不下载）、`metrics`（指标）。具体实现见 `internal/app/source_adapters.go` 的接口绑定
 
 #### jsplugin/ - JS 插件管理层
 
@@ -129,7 +132,7 @@ HTTP Server (main.go)
 - `loader.go`: 解包 `.jsplugin.zip` / 校验 manifest / 权限解析
 - `package.go`: 安装/更新/卸载流程（含 hash 校验）
 - `repository.go`: 仓储接口（实现见 `database/jsplugin_repository.go`）
-- `api_bridge.go`: 宿主 API 桥接（http、storage、logger 等向 QuickJS 暴露）
+- `api_bridge.go`: 宿主 API 桥接（http、storage、logger、songs、playlists 等向 QuickJS 暴露，含 `songs.download` 下载能力）
 - `communication.go`: 宿主 ↔ 插件 调用协议封装（请求/响应序列化）
 - `invoke.go`: 调用插件入口函数的统一封装（带超时与错误规范化）
 - `hash.go`: 文件指纹工具（用于 hot_reload 与 package 校验）

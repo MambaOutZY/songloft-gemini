@@ -213,7 +213,7 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 
 - 源码 `jsplugins-src/<name>/`，构建产物在各插件仓库的 GitHub Releases
 - 新建插件：`npx create-songloft-plugin@latest`（交互式脚手架，详见 `plugin-toolchain/README.md`）
-- 沙盒：QuickJS，通过 `internal/jsruntime` 提供的 `host` 桥接调用宿主能力（`http.fetch`、`storage`、`logger`）
+- 沙盒：QuickJS，通过 `internal/jsruntime` 提供的 `host` 桥接调用宿主能力（`http.fetch`、`storage`、`logger`、`songs.*`、`playlists.*`）
 - 路由：`/api/v1/jsplugin/{entry_path}/...`
 - 公共资源：`/api/v1/jsplugin-assets/*` 提供嵌入在 Go 二进制中的 `common.css`/`common.js`/字体，`injectHTMLHead` 自动注入到所有插件 HTML 页面
 - 主题同步：`common.js` 内含 embed 检测 + 主题桥接（URL `?theme=` 参数 + `postMessage` 实时更新 + `data-theme` 属性 + `songloft-theme-change` 事件），暴露 `window.SongloftPlugin` 全局 API（`getTheme`/`onThemeChange`/`apiGet`/`apiPost` 等）
@@ -263,12 +263,22 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 
 ### 音乐缓存（cache_service）
 
-- 播放远程歌曲时透明缓存音频文件到服务端，歌曲仍为 `remote` 类型，缓存命中时直接返回
+- 播放远程歌曲时流式代理上游音频到客户端（不阻塞），同时后台异步写入缓存；后续播放缓存命中后直接从本地返回
+- 流式代理 `ServeRemoteResourceWithCache`：200 OK 时 TeeReader 同时代理+写临时文件，206 Partial 时正常代理并触发异步全量下载
+- 缓存路径持久化在 `songs.cache_path` 字段（DB 级别），查找时优先 `cache_path`，fallback 到旧格式哈希分桶目录
 - 缓存目录默认 `{data_dir}/music_cache/`，可通过 `PUT /api/v1/cache-manage/config` 的 `cache_dir` 字段自定义为绝对路径
 - 启动时从 `music_cache_config` 配置读取自定义目录；运行时切换目录会自动重建 LRU 索引，不迁移旧文件
 - LRU 淘汰：超出 `max_size`（默认 1GB）时按最后访问时间淘汰，`max_size=0` 表示不限制
 - `POST /api/v1/cache-manage/validate-dir` 可预先验证目录（自动创建 + 可写性检查 + 返回磁盘空间）
 - inflight 去重：同 `song.ID` 的并发请求只下载一次；首请求被 `ctx.Canceled` 时后续等待者自动重试
+
+### 歌曲下载（song_downloader + 插件）
+
+- 将用户自有网络存储（WebDAV/Subsonic 等）中的歌曲下载到服务端本地 `music_path`，转为 `local` 类型
+- **仅适用于用户自有的本地网络资源**，不支持第三方音乐平台歌曲下载（版权规避）
+- 核心服务 `SongDownloader.Download`：获取音频（缓存命中直接 copy，否则同步下载）→ 路径模板渲染 → 可选元数据嵌入（MP3/FLAC）→ 更新 DB（type=local）
+- 通过 Bridge API `songs.download` 暴露给 JS 插件，权限映射到 `PermSongsWrite`
+- 完整插件 `songloft-plugin-downloader`（独立仓库 `songloft-org/songloft-plugin-downloader`）：UI 页面 + 设置（路径模板、元数据开关）+ 批量下载 + 进度跟踪
 
 ### 文件搬移：跨设备 rename 陷阱
 
