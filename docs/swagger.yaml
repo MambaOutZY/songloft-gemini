@@ -9,6 +9,10 @@ definitions:
     type: object
   handlers.MusicPathSetting:
     properties:
+      auto_create_exclude_dirs:
+        items:
+          type: string
+        type: array
       exclude_dirs:
         items:
           type: string
@@ -617,6 +621,9 @@ definitions:
         description: 采样率（Hz）
         example: 44100
         type: integer
+      source_cover_url:
+        description: 原始封面 URL(仅 JSON 输出,CoverURL 非空时保留原始值供编辑使用)
+        type: string
       source_data:
         description: 音源元数据 JSON(给插件 music/url 接口用,opaque)
         type: string

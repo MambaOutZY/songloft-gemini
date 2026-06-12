@@ -5743,6 +5743,12 @@ const docTemplate = `{
         "handlers.MusicPathSetting": {
             "type": "object",
             "properties": {
+                "auto_create_exclude_dirs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "exclude_dirs": {
                     "type": "array",
                     "items": {
@@ -6616,6 +6622,10 @@ const docTemplate = `{
                     "description": "采样率（Hz）",
                     "type": "integer",
                     "example": 44100
+                },
+                "source_cover_url": {
+                    "description": "原始封面 URL(仅 JSON 输出,CoverURL 非空时保留原始值供编辑使用)",
+                    "type": "string"
                 },
                 "source_data": {
                     "description": "音源元数据 JSON(给插件 music/url 接口用,opaque)",

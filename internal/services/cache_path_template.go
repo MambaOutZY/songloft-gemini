@@ -9,7 +9,7 @@ import (
 	"songloft/internal/models"
 )
 
-const defaultPathTemplate = "{artist}-{album}/{title}"
+const defaultPathTemplate = "downloads/{artist}-{album}/{title}"
 
 var knownPlaceholders = map[string]bool{
 	"title":  true,

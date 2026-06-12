@@ -211,9 +211,10 @@ const (
 // MusicPathSetting /settings/music-path 的请求与响应体。
 // 与 config 表 music_path 行的 JSON value 结构完全一致，便于 admin 工具与业务端点互通。
 type MusicPathSetting struct {
-	Path         string   `json:"path"`
-	ExcludeDirs  []string `json:"exclude_dirs"`
-	ExcludePaths []string `json:"exclude_paths"`
+	Path                  string   `json:"path"`
+	ExcludeDirs           []string `json:"exclude_dirs"`
+	ExcludePaths          []string `json:"exclude_paths"`
+	AutoCreateExcludeDirs []string `json:"auto_create_exclude_dirs"`
 }
 
 // GetMusicPathSetting GET /api/v1/settings/music-path
@@ -225,9 +226,10 @@ type MusicPathSetting struct {
 // @Router /settings/music-path [get]
 func (h *ScanHandler) GetMusicPathSetting(w http.ResponseWriter, r *http.Request) {
 	cfg := MusicPathSetting{
-		Path:         "music",
-		ExcludeDirs:  []string{"@eaDir", "tmp"},
-		ExcludePaths: []string{},
+		Path:                  "music",
+		ExcludeDirs:           []string{"@eaDir", "tmp"},
+		ExcludePaths:          []string{},
+		AutoCreateExcludeDirs: []string{"downloads"},
 	}
 	if h.configService != nil {
 		// 未命中时保留默认值；命中则覆盖
@@ -273,6 +275,9 @@ func (h *ScanHandler) UpdateMusicPathSetting(w http.ResponseWriter, r *http.Requ
 	}
 	if req.ExcludePaths == nil {
 		req.ExcludePaths = []string{}
+	}
+	if req.AutoCreateExcludeDirs == nil {
+		req.AutoCreateExcludeDirs = []string{}
 	}
 	if err := h.configService.SetJSON(musicPathConfigKey, req); err != nil {
 		respondError(w, http.StatusInternalServerError, "保存配置失败", err)

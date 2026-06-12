@@ -144,7 +144,7 @@ type stubPlaylistAutoCreator struct {
 	returnErr   error
 }
 
-func (s *stubPlaylistAutoCreator) AutoCreate(ctx context.Context, includeSubdirs bool) (*models.AutoCreatePlaylistsResponse, error) {
+func (s *stubPlaylistAutoCreator) AutoCreate(ctx context.Context, includeSubdirs bool, excludeDirs []string) (*models.AutoCreatePlaylistsResponse, error) {
 	s.calls++
 	s.lastInclude = includeSubdirs
 	if s.returnErr != nil {

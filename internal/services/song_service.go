@@ -50,7 +50,7 @@ type Transactor interface {
 
 // PlaylistAutoCreator 由扫描完成后调用，重建 auto_created 歌单。
 type PlaylistAutoCreator interface {
-	AutoCreate(ctx context.Context, includeSubdirs bool) (*models.AutoCreatePlaylistsResponse, error)
+	AutoCreate(ctx context.Context, includeSubdirs bool, excludeDirs []string) (*models.AutoCreatePlaylistsResponse, error)
 }
 
 // SongService 歌曲服务
@@ -513,11 +513,17 @@ func (s *SongService) runAutoCreatePlaylists(ctx context.Context) {
 	s.scanProgressManager.BeginCreatingPlaylists()
 
 	includeSubdirs := false
+	var autoCreateExcludeDirs []string
 	if s.configService != nil {
 		includeSubdirs = s.configService.GetBool("scan_auto_create_include_subdirs", false)
+		var cfg struct {
+			AutoCreateExcludeDirs []string `json:"auto_create_exclude_dirs"`
+		}
+		_ = s.configService.GetJSON("music_path", &cfg)
+		autoCreateExcludeDirs = cfg.AutoCreateExcludeDirs
 	}
 
-	if _, err := s.playlistAutoCreator.AutoCreate(ctx, includeSubdirs); err != nil {
+	if _, err := s.playlistAutoCreator.AutoCreate(ctx, includeSubdirs, autoCreateExcludeDirs); err != nil {
 		slog.Warn("自动创建歌单失败", "include_subdirs", includeSubdirs, "error", err)
 	}
 }

@@ -279,7 +279,8 @@ func (r *PlaylistRepository) BatchUpdatePositions(ctx context.Context, playlistI
 
 // AutoCreate 根据本地歌曲的目录结构批量生成歌单，并把每首歌写入对应歌单。
 // 写操作集中在单一事务里：清理旧的 auto_created 歌单 → 插入新歌单 → 批量插入 playlist_songs。
-func (r *PlaylistRepository) AutoCreate(ctx context.Context, includeSubdirs bool) (*models.AutoCreatePlaylistsResponse, error) {
+// excludeDirs 指定在自动创建歌单时要排除的目录名称（按名称匹配，路径中任何层级包含该名称都会被排除）。
+func (r *PlaylistRepository) AutoCreate(ctx context.Context, includeSubdirs bool, excludeDirs []string) (*models.AutoCreatePlaylistsResponse, error) {
 	songRepo := NewSongRepository(r.db)
 	songs, err := songRepo.List(ctx, &SongFilter{
 		Type:  models.TypeLocal,
@@ -299,18 +300,39 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, includeSubdirs bool
 		}, nil
 	}
 
+	// 构建排除目录集合，用于快速查找
+	excludeSet := make(map[string]struct{}, len(excludeDirs))
+	for _, d := range excludeDirs {
+		excludeSet[d] = struct{}{}
+	}
+
+	// 检查路径是否包含排除目录
+	shouldExcludeDir := func(dir string) bool {
+		for _, part := range strings.Split(dir, "/") {
+			if _, ok := excludeSet[part]; ok {
+				return true
+			}
+		}
+		return false
+	}
+
 	dirToSongs := make(map[string][]int64)
 	for _, song := range songs {
 		if song.FilePath == "" {
 			continue
 		}
 		dir := filepath.ToSlash(filepath.Dir(song.FilePath))
+		if shouldExcludeDir(dir) {
+			continue
+		}
 		dirToSongs[dir] = append(dirToSongs[dir], song.ID)
 		if includeSubdirs {
 			parent := filepath.Dir(dir)
 			for parent != "." && parent != "/" && parent != dir {
 				parent = filepath.ToSlash(parent)
-				dirToSongs[parent] = append(dirToSongs[parent], song.ID)
+				if !shouldExcludeDir(parent) {
+					dirToSongs[parent] = append(dirToSongs[parent], song.ID)
+				}
 				parent = filepath.Dir(parent)
 			}
 		}
