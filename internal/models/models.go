@@ -93,6 +93,7 @@ type Song struct {
 	SourceData          string  `json:"source_data,omitempty"`                             // 音源元数据 JSON(给插件 music/url 接口用,opaque)
 	DedupKey            string  `json:"dedup_key,omitempty"`                               // 去重 key(由插件定义,典型形态 "<platform>:<platform_id>");与 PluginEntryPath 组成 UNIQUE
 	SourceURL           string  `json:"source_url,omitempty"`                              // 原始音源 URL(仅 JSON 输出,radio/remote 类型返回原始流地址供编辑使用)
+	SourceCoverURL      string  `json:"source_cover_url,omitempty"`                        // 原始封面 URL(仅 JSON 输出,CoverURL 非空时保留原始值供编辑使用)
 	Fingerprint         string  `json:"fingerprint,omitempty"`                             // 音频指纹(Chromaprint)
 	FingerprintDuration float64 `json:"fingerprint_duration,omitempty"`                    // 指纹对应音频时长
 	ISRC                string  `json:"isrc,omitempty"`                                    // ISRC(国际标准录音编码)
@@ -181,6 +182,9 @@ func (s *Song) MarshalJSON() ([]byte, error) {
 	if s.ID != 0 {
 		if s.Type != TypeLocal && s.URL != "" {
 			s.SourceURL = s.URL
+		}
+		if s.CoverURL != "" {
+			s.SourceCoverURL = s.CoverURL
 		}
 		s.URL = s.PlaybackURL()
 		s.CoverURL = s.CoverURLPath()
