@@ -74,9 +74,6 @@ func ExtractFingerprint(ctx context.Context, filePath string) (string, float64, 
 	if fingerprint == "" {
 		return "", 0, fmt.Errorf("ffmpeg chromaprint returned empty fingerprint")
 	}
-	if len(fingerprint) > 2000 {
-		return "", 0, fmt.Errorf("fingerprint too long (%d chars), likely corrupted", len(fingerprint))
-	}
 
 	duration := parseDurationFromStderr(stderr.String())
 	return fingerprint, duration, nil
