@@ -1,3 +1,29 @@
+## [v2.8.1] - 2026-06-12
+### :sparkles: New Features
+- [`9705163`](https://github.com/songloft-org/songloft/commit/970516327fa8fcbeee7939ee8e04fbde063541af) - **cache**: remove convert-to-local feature and add custom cache directory *(commit by [@hanxi](https://github.com/hanxi))*
+- [`6c35b39`](https://github.com/songloft-org/songloft/commit/6c35b3909ca5117ed2b483e2b1aece6c810a7f9c) - **cache**: streaming proxy with cache_path + song download plugin *(commit by [@hanxi](https://github.com/hanxi))*
+- [`2a1ef4e`](https://github.com/songloft-org/songloft/commit/2a1ef4ebf30f272d7890022ec0044486f7ea24d9) - **model**: 添加 source_cover_url 字段并统一编辑表单短域显示 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`86d1805`](https://github.com/songloft-org/songloft/commit/86d1805efb5969d5b6dc7a712d35350a47bd6d34) - **jsplugin**: 新安装插件默认启用 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`de30985`](https://github.com/songloft-org/songloft/commit/de30985d140096e9d84b1e686278f23c146d5d7c) - 新增自动创建歌单排除目录 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`821aa41`](https://github.com/songloft-org/songloft/commit/821aa4107b7a01c62cfdb0c44ce0ce72ffd771b0) - **jsplugin**: refresh publicPaths at runtime without restart *(PR [#158](https://github.com/songloft-org/songloft/pull/158) by [@hanxi](https://github.com/hanxi))*
+- [`f3a28bc`](https://github.com/songloft-org/songloft/commit/f3a28bcd9bb99f3cae176779e9f9090536d5abb6) - **fingerprint**: remove invalid length threshold in ExtractFingerprint
+- [`bd2aec9`](https://github.com/songloft-org/songloft/commit/bd2aec91cc1e714b25a946f939e38e37a66fd5be) - **cache**: 修复 Windows 编译失败 — syscall.Statfs 不跨平台 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`b023c27`](https://github.com/songloft-org/songloft/commit/b023c2729beacb7a7f197cf9902dabfa11a92a42) - update CHANGELOG for v2.8.0 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`dc661e8`](https://github.com/songloft-org/songloft/commit/dc661e82f45fb63e519cb5c269bad223573ec560) - **repowiki**: regenerate wiki from latest codebase *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`8bb65ea`](https://github.com/songloft-org/songloft/commit/8bb65eae54e61568efef05368c65a4683c6d9b1b) - **miot**: update submodule ref for [#157](https://github.com/songloft-org/songloft/pull/157) fix *(commit by [@hanxi](https://github.com/hanxi))*
+- [`95dd299`](https://github.com/songloft-org/songloft/commit/95dd2997c87a3bb7636f0ae8f63a00bbbe09dc2f) - **miot**: update submodule ref for [#155](https://github.com/songloft-org/songloft/pull/155) indicator light fix *(commit by [@hanxi](https://github.com/hanxi))*
+- [`2396230`](https://github.com/songloft-org/songloft/commit/239623054fa2b20a6895027a5afc7d3024170fa4) - **submodule**: update songloft-plugin-downloader *(commit by [@hanxi](https://github.com/hanxi))*
+- [`83555f4`](https://github.com/songloft-org/songloft/commit/83555f492ccacd5be699f304753678bc5764ed15) - **submodule**: update songloft-plugin-downloader *(commit by [@hanxi](https://github.com/hanxi))*
+- [`49eb151`](https://github.com/songloft-org/songloft/commit/49eb1514424e906cc1699c2e7bd7d70cc349d42f) - **submodule**: update jsplugins package-lock.json *(commit by [@hanxi](https://github.com/hanxi))*
+- [`6213546`](https://github.com/songloft-org/songloft/commit/6213546720877f11ad2f177a213a6aacdd8ded00) - release version 2.8.1 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.8.0] - 2026-06-11
 ### :sparkles: New Features
 - [`da56b08`](https://github.com/songloft-org/songloft/commit/da56b087f3d63172931ba26137099e5b70ce6b71) - **scan**: add toggle to enable/disable auto-create playlists on scan *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1230,3 +1256,4 @@
 [v2.6.4]: https://github.com/songloft-org/songloft/compare/v2.6.3...v2.6.4
 [v2.7.0]: https://github.com/songloft-org/songloft/compare/v2.6.4...v2.7.0
 [v2.8.0]: https://github.com/songloft-org/songloft/compare/v2.7.0...v2.8.0
+[v2.8.1]: https://github.com/songloft-org/songloft/compare/v2.8.0...v2.8.1
