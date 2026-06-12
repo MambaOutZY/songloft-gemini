@@ -117,6 +117,66 @@ type musicURLResponse struct {
 	UsedFallback bool            `json:"used_fallback,omitempty"`
 }
 
+// ResolveURL 仅调用插件 /api/music/url 解析出可下载的音频 URL，不下载、不探测、不校验。
+// 用于流式代理场景：先解析 URL，再由 handler 直接代理到客户端。
+func (f *SourceFetcher) ResolveURL(
+	ctx context.Context,
+	entryPath, sourceData string,
+	song *SongInfo,
+	allowPluginFallback bool,
+) (string, error) {
+	resp, err := f.invokePluginMusicURL(ctx, entryPath, sourceData, song, allowPluginFallback)
+	if err != nil {
+		return "", err
+	}
+	return resp.URL, nil
+}
+
+// invokePluginMusicURL 调用插件 /api/music/url 接口解析真实下载 URL。
+// Fetch 和 ResolveURL 共用此方法。
+func (f *SourceFetcher) invokePluginMusicURL(
+	ctx context.Context,
+	entryPath, sourceData string,
+	song *SongInfo,
+	allowPluginFallback bool,
+) (*musicURLResponse, error) {
+	reqBody := musicURLRequest{SourceData: json.RawMessage(sourceData)}
+	if allowPluginFallback && song != nil {
+		reqBody.Fallback = &musicURLFallback{
+			Enabled:  true,
+			Title:    song.Title,
+			Artist:   song.Artist,
+			Duration: song.Duration,
+		}
+	}
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, &PluginInvocationError{PluginEntryPath: entryPath, Reason: "marshal request", Err: err}
+	}
+
+	status, _, respBody, err := f.opts.PluginInvoker.InvokeHTTP(
+		ctx, entryPath, http.MethodPost, "/api/music/url", nil, bodyBytes,
+	)
+	if err != nil {
+		return nil, &PluginInvocationError{PluginEntryPath: entryPath, Reason: "invoke failed", Err: err}
+	}
+	if status != http.StatusOK {
+		return nil, &PluginInvocationError{PluginEntryPath: entryPath, StatusCode: status, Reason: string(respBody)}
+	}
+	if len(respBody) == 0 {
+		return nil, &PluginInvocationError{PluginEntryPath: entryPath, Reason: "empty response body"}
+	}
+
+	var resp musicURLResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, &PluginInvocationError{PluginEntryPath: entryPath, Reason: "decode response", Err: err}
+	}
+	if resp.URL == "" {
+		return nil, &PluginInvocationError{PluginEntryPath: entryPath, Reason: "empty url"}
+	}
+	return &resp, nil
+}
+
 // Fetch 通过 (entryPath, sourceData) 获取临时文件并完成校验。
 //
 // allowPluginFallback:
@@ -153,50 +213,10 @@ func (f *SourceFetcher) Fetch(
 	}
 
 	// 1. 调用插件 music/url
-	reqBody := musicURLRequest{SourceData: json.RawMessage(sourceData)}
-	if allowPluginFallback && song != nil {
-		reqBody.Fallback = &musicURLFallback{
-			Enabled:  true,
-			Title:    song.Title,
-			Artist:   song.Artist,
-			Duration: song.Duration,
-		}
-	}
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		report(OutcomePluginInvocationFail, "marshal request: "+err.Error(), 0)
-		return nil, &PluginInvocationError{PluginEntryPath: entryPath, Reason: "marshal request", Err: err}
-	}
-
-	status, _, respBody, err := f.opts.PluginInvoker.InvokeHTTP(
-		ctx, entryPath, http.MethodPost, "/api/music/url", nil, bodyBytes,
-	)
+	resp, err := f.invokePluginMusicURL(ctx, entryPath, sourceData, song, allowPluginFallback)
 	if err != nil {
 		report(OutcomePluginInvocationFail, err.Error(), 0)
-		return nil, &PluginInvocationError{PluginEntryPath: entryPath, Reason: "invoke failed", Err: err}
-	}
-	if status != http.StatusOK {
-		report(OutcomePluginInvocationFail, fmt.Sprintf("status %d", status), 0)
-		return nil, &PluginInvocationError{PluginEntryPath: entryPath, StatusCode: status, Reason: string(respBody)}
-	}
-
-	// 空 body 直接拒掉,而不是让下面的 json.Unmarshal 报 "unexpected end of JSON input"
-	// (这是 2026/05 排查 lxmusic 时遇到的脆弱链:JS onHTTPRequest 在某条路径返回 undefined
-	// → JSON.stringify(undefined) → 主程序 jsplugin 层零值 HTTPResponseData → status=0 升级 200)。
-	// 现在 jsplugin.InvokeHTTP 已经把 status=0 升级为 502,但保留这条防御作为协议层兜底。
-	if len(respBody) == 0 {
-		report(OutcomePluginInvocationFail, "empty response body", 0)
-		return nil, &PluginInvocationError{PluginEntryPath: entryPath, Reason: "empty response body"}
-	}
-
-	var resp musicURLResponse
-	if err := json.Unmarshal(respBody, &resp); err != nil {
-		report(OutcomePluginInvocationFail, "decode response: "+err.Error(), 0)
-		return nil, &PluginInvocationError{PluginEntryPath: entryPath, Reason: "decode response", Err: err}
-	}
-	if resp.URL == "" {
-		report(OutcomePluginInvocationFail, "empty url in response", 0)
-		return nil, &PluginInvocationError{PluginEntryPath: entryPath, Reason: "empty url"}
+		return nil, err
 	}
 
 	// 2. HTTP 下载到临时文件

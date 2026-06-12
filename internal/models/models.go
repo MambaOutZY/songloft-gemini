@@ -76,6 +76,7 @@ type Song struct {
 	Genre               string  `json:"genre" example:"Pop"`                               // 流派
 	Duration            float64 `json:"duration" example:"253.5"`                          // 播放时长（秒）
 	FilePath            string  `json:"file_path" example:"/music/周杰伦/夜曲.mp3"`             // 本地文件路径
+	CachePath           string  `json:"-"`                                                 // 缓存文件路径（内部使用，不暴露给客户端）
 	URL                 string  `json:"url" example:"https://example.com/song.mp3"`        // 网络地址
 	CoverPath           string  `json:"-"`                                                 // 封面图片本地路径(内部使用,不暴露给客户端)
 	CoverURL            string  `json:"cover_url" example:"https://example.com/cover.jpg"` // 封面图片URL

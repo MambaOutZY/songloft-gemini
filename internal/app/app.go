@@ -288,6 +288,10 @@ func (a *App) Init() error {
 	a.jsPluginManager = jsplugin.NewManager(jsPluginRepo, jsPluginsDir, jsPluginsDataDir, a.config.BasePath, a.router, a.db)
 	a.jsPluginManager.SetAuthService(a.authService, a.config.Port)
 
+	// 创建歌曲下载服务并注入到 JS 插件管理器（bridge songs.download 调用）
+	songDownloader := services.NewSongDownloader(a.songService, a.cacheService, a.configService, a.scanner.GetMusicPath)
+	a.jsPluginManager.SetSongDownloader(songDownloader)
+
 	// 装配音源处理链:Fetcher → Resolver → Orchestrator
 	// 三个组件都通过接口注入,与具体类型(jsplugin.Manager / services.MetadataExtractor)解耦。
 	// 必须在 cacheService + convertService + jsPluginManager 都创建完后再装配。
@@ -321,6 +325,15 @@ func (a *App) Init() error {
 	})
 	a.sourceOrchestrator = sourceOrchestrator
 	a.cacheService.SetOrchestrator(sourceOrchestrator)
+
+	// 注入缓存路径回调和歌曲查询
+	songRepo := a.db.SongRepository()
+	a.cacheService.SetCachePathCallbacks(
+		songRepo.UpdateCachePath,
+		songRepo.ClearCachePath,
+		songRepo.ClearAllCachePaths,
+		songRepo.ListSongsWithCache,
+	)
 
 	// 初始化 Tracely 监控客户端（仅在编译时注入了 AppSecret 与 Host 时启用）
 	if tracelycfg.Enabled() {

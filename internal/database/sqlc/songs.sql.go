@@ -10,12 +10,30 @@ import (
 	"time"
 )
 
+const clearAllCachePaths = `-- name: ClearAllCachePaths :exec
+UPDATE songs SET cache_path = '', updated_at = CURRENT_TIMESTAMP WHERE cache_path != ''
+`
+
+func (q *Queries) ClearAllCachePaths(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearAllCachePaths)
+	return err
+}
+
 const clearAllFingerprints = `-- name: ClearAllFingerprints :exec
 UPDATE songs SET fingerprint = '', fingerprint_duration = 0 WHERE type = 'local' AND fingerprint != ''
 `
 
 func (q *Queries) ClearAllFingerprints(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, clearAllFingerprints)
+	return err
+}
+
+const clearCachePath = `-- name: ClearCachePath :exec
+UPDATE songs SET cache_path = '', updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+func (q *Queries) ClearCachePath(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, clearCachePath, id)
 	return err
 }
 
@@ -181,7 +199,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     added_at, updated_at, lyric_remote_url,
     year, genre,
     fingerprint, fingerprint_duration,
-    isrc
+    isrc, cache_path
 FROM songs WHERE id = ?
 `
 
@@ -217,6 +235,7 @@ func (q *Queries) GetSongByID(ctx context.Context, id int64) (Song, error) {
 		&i.Fingerprint,
 		&i.FingerprintDuration,
 		&i.Isrc,
+		&i.CachePath,
 	)
 	return i, err
 }
@@ -401,6 +420,85 @@ func (q *Queries) ListSongsByFingerprint(ctx context.Context, fingerprint string
 		return nil, err
 	}
 	return items, nil
+}
+
+const listSongsWithCache = `-- name: ListSongsWithCache :many
+SELECT id, type, title, artist, album, duration, file_path, url,
+    cover_path, cover_url, lyric, lyric_source, file_size,
+    format, bit_rate, sample_rate, is_live,
+    plugin_entry_path, source_data, dedup_key,
+    added_at, updated_at, lyric_remote_url,
+    year, genre,
+    fingerprint, fingerprint_duration,
+    isrc, cache_path
+FROM songs WHERE cache_path != ''
+`
+
+func (q *Queries) ListSongsWithCache(ctx context.Context) ([]Song, error) {
+	rows, err := q.db.QueryContext(ctx, listSongsWithCache)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Song{}
+	for rows.Next() {
+		var i Song
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.Artist,
+			&i.Album,
+			&i.Duration,
+			&i.FilePath,
+			&i.Url,
+			&i.CoverPath,
+			&i.CoverUrl,
+			&i.Lyric,
+			&i.LyricSource,
+			&i.FileSize,
+			&i.Format,
+			&i.BitRate,
+			&i.SampleRate,
+			&i.IsLive,
+			&i.PluginEntryPath,
+			&i.SourceData,
+			&i.DedupKey,
+			&i.AddedAt,
+			&i.UpdatedAt,
+			&i.LyricRemoteUrl,
+			&i.Year,
+			&i.Genre,
+			&i.Fingerprint,
+			&i.FingerprintDuration,
+			&i.Isrc,
+			&i.CachePath,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateCachePath = `-- name: UpdateCachePath :exec
+UPDATE songs SET cache_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type UpdateCachePathParams struct {
+	CachePath string
+	ID        int64
+}
+
+func (q *Queries) UpdateCachePath(ctx context.Context, arg UpdateCachePathParams) error {
+	_, err := q.db.ExecContext(ctx, updateCachePath, arg.CachePath, arg.ID)
+	return err
 }
 
 const updateRemoteSongMutable = `-- name: UpdateRemoteSongMutable :exec

@@ -159,6 +159,15 @@ func (o *SourceOrchestrator) Fetch(ctx context.Context, song *SongInfo, mode Fet
 	return nil, &AllSourcesFailedError{Tried: tried, LastErr: lastErr}
 }
 
+// ResolveURL 解析插件歌曲的可下载音频 URL（不下载）。
+// 仅调用主源插件，不走 L2 fallback。用于流式代理场景。
+func (o *SourceOrchestrator) ResolveURL(ctx context.Context, song *SongInfo) (string, error) {
+	if song == nil {
+		return "", errors.New("song is nil")
+	}
+	return o.opts.Fetcher.ResolveURL(ctx, song.PluginEntryPath, song.SourceData, song, true)
+}
+
 // AsyncReassign 在后台为指定 song 寻找新源并更新字段。
 // 用于 cache HTTP handler 失败时:同步返回错误给客户端,后台静默切源。
 // 5 分钟内同一 songID 的多次调用会被去重。

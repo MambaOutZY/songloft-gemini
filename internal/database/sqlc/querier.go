@@ -13,7 +13,9 @@ type Querier interface {
 	AddSongToPlaylist(ctx context.Context, arg AddSongToPlaylistParams) error
 	AddSongToPlaylistIgnore(ctx context.Context, arg AddSongToPlaylistIgnoreParams) (int64, error)
 	CleanExpiredTokens(ctx context.Context, expiresAt time.Time) (int64, error)
+	ClearAllCachePaths(ctx context.Context) error
 	ClearAllFingerprints(ctx context.Context) error
+	ClearCachePath(ctx context.Context, id int64) error
 	CountLocalFingerprints(ctx context.Context) (CountLocalFingerprintsRow, error)
 	CountPlaylistSongs(ctx context.Context, playlistID int64) (int64, error)
 	CountPlaylistsByCoverPath(ctx context.Context, coverPath string) (int64, error)
@@ -50,11 +52,13 @@ type Querier interface {
 	ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalWithoutFingerprintRow, error)
 	ListPlaylistsContainingSong(ctx context.Context, songID int64) ([]int64, error)
 	ListSongsByFingerprint(ctx context.Context, fingerprint string) ([]ListSongsByFingerprintRow, error)
+	ListSongsWithCache(ctx context.Context) ([]Song, error)
 	MaxPositionInPlaylist(ctx context.Context, playlistID int64) (int64, error)
 	RemoveSongFromPlaylist(ctx context.Context, arg RemoveSongFromPlaylistParams) (int64, error)
 	RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64, error)
 	SetConfig(ctx context.Context, arg SetConfigParams) error
 	TouchPlaylist(ctx context.Context, arg TouchPlaylistParams) (int64, error)
+	UpdateCachePath(ctx context.Context, arg UpdateCachePathParams) error
 	UpdateJSPlugin(ctx context.Context, arg UpdateJSPluginParams) error
 	UpdateJSPluginHashes(ctx context.Context, arg UpdateJSPluginHashesParams) error
 	UpdateJSPluginStatus(ctx context.Context, arg UpdateJSPluginStatusParams) error

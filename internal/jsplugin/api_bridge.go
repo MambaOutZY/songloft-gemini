@@ -12,6 +12,7 @@ import (
 
 	"songloft/internal/database"
 	"songloft/internal/jsruntime"
+	"songloft/internal/services"
 )
 
 // pluginBootstrapJS 是注入到每个插件 JS 环境的引导代码
@@ -77,6 +78,11 @@ songloft.songs = {
     search: async function(query) {
         var s = await __callBridge('songs.search', JSON.stringify({query: query}));
         return s ? JSON.parse(s) : [];
+    },
+    download: async function(songId, options) {
+        var data = JSON.stringify(Object.assign({song_id: songId}, options || {}));
+        var s = await __callBridge('songs.download', data);
+        return s ? JSON.parse(s) : null;
     }
 };
 
@@ -230,24 +236,26 @@ func GetBootstrapCode() string {
 
 // BridgeHandler 处理 JS 通过 __go_bridge 调用的请求
 type BridgeHandler struct {
-	service     *JSService
-	permissions []string
-	dataDir     string      // data/jsplugins_data/
-	db          database.DB // 数据库访问（用于 songs/playlists 查询）
-	pluginToken string      // 插件专用的永久 JWT Token
-	port        string      // 服务器监听端口（用于构造宿主 URL）
-	processes   sync.Map    // map[name]*managedProcess — 后台进程跟踪
+	service        *JSService
+	permissions    []string
+	dataDir        string                   // data/jsplugins_data/
+	db             database.DB              // 数据库访问（用于 songs/playlists 查询）
+	songDownloader *services.SongDownloader // 歌曲下载服务（songs.download bridge 调用）
+	pluginToken    string                   // 插件专用的永久 JWT Token
+	port           string                   // 服务器监听端口（用于构造宿主 URL）
+	processes      sync.Map                 // map[name]*managedProcess — 后台进程跟踪
 }
 
 // NewBridgeHandler 创建桥接处理器
-func NewBridgeHandler(service *JSService, dataDir string, db database.DB, pluginToken string, port string) *BridgeHandler {
+func NewBridgeHandler(service *JSService, dataDir string, db database.DB, songDownloader *services.SongDownloader, pluginToken string, port string) *BridgeHandler {
 	return &BridgeHandler{
-		service:     service,
-		permissions: service.plugin.Permissions,
-		dataDir:     dataDir,
-		db:          db,
-		pluginToken: pluginToken,
-		port:        port,
+		service:        service,
+		permissions:    service.plugin.Permissions,
+		dataDir:        dataDir,
+		db:             db,
+		songDownloader: songDownloader,
+		pluginToken:    pluginToken,
+		port:           port,
 	}
 }
 
@@ -301,7 +309,7 @@ func extractPermFromAction(action string) string {
 	switch action {
 	case "songs.list", "songs.getById", "songs.search":
 		return PermSongsRead
-	case "songs.create", "songs.update", "songs.delete":
+	case "songs.create", "songs.update", "songs.delete", "songs.download":
 		return PermSongsWrite
 	}
 
@@ -499,6 +507,37 @@ func (h *BridgeHandler) handleSongs(action, data string) (string, error) {
 		result, err := json.Marshal(songs)
 		if err != nil {
 			return "", fmt.Errorf("handleSongs: marshal search: %w", err)
+		}
+		return string(result), nil
+
+	case "songs.download":
+		if h.songDownloader == nil {
+			return "", fmt.Errorf("handleSongs: download service not configured")
+		}
+		var req struct {
+			SongID        int64  `json:"song_id"`
+			TargetDir     string `json:"target_dir"`
+			PathTemplate  string `json:"path_template"`
+			EmbedMetadata *bool  `json:"embed_metadata"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handleSongs: parse download: %w", err)
+		}
+		embedMeta := true
+		if req.EmbedMetadata != nil {
+			embedMeta = *req.EmbedMetadata
+		}
+		dlResult, err := h.songDownloader.Download(ctx, req.SongID, services.SongDownloadOptions{
+			TargetDir:     req.TargetDir,
+			PathTemplate:  req.PathTemplate,
+			EmbedMetadata: embedMeta,
+		})
+		if err != nil {
+			return "", fmt.Errorf("handleSongs: download: %w", err)
+		}
+		result, err := json.Marshal(dlResult)
+		if err != nil {
+			return "", fmt.Errorf("handleSongs: marshal download: %w", err)
 		}
 		return string(result), nil
 

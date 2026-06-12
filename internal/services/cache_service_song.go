@@ -25,6 +25,7 @@ import (
 // 解耦 cache_service 与 source 包的具体类型,便于后续替换或单测 mock。
 type CacheSongFetcher interface {
 	Fetch(ctx context.Context, song *source.SongInfo, mode source.FetchMode) (*source.FetchResult, error)
+	ResolveURL(ctx context.Context, song *source.SongInfo) (string, error)
 }
 
 // 全局唯一(per process)的 song-id-indexed 状态。
@@ -127,16 +128,26 @@ func sanitizeCacheKey(s string) string {
 	return out
 }
 
-// FindCachedFileBySong 在 song.ID 对应的目录下查找属于该 song 的 cache 文件。
-// 严格匹配 `<id>.<key>.<ext>` 形态,key 由 cacheKeyOf(song) 计算。
-// 命中时返回路径并 touch LRU;cacheKeyOf 返回空(无法唯一识别歌曲)时直接 miss。
-//
-// 旧格式 `<id><ext>` (无 .<key> 段) 不会命中——这是设计意图,
-// 旧 cache 残留(如跨 DB 重建)因 key 不一致会自然失效,触发重新下载。
+// FindCachedFileBySong 查找歌曲的缓存文件。
+// 优先从 song.CachePath（DB 存储的路径）查找；fallback 到旧格式哈希分桶目录。
 func (c *CacheService) FindCachedFileBySong(song *models.Song) (string, bool) {
 	if song == nil {
 		return "", false
 	}
+
+	// 优先：DB 中记录的结构化缓存路径
+	if song.CachePath != "" {
+		if _, err := os.Stat(song.CachePath); err == nil {
+			c.touchSongLRU(song.ID)
+			return song.CachePath, true
+		}
+		// 文件不存在，惰性清理
+		if c.clearCachePath != nil {
+			_ = c.clearCachePath(context.Background(), song.ID)
+		}
+	}
+
+	// fallback：旧格式哈希分桶（兼容升级期间的旧缓存文件）
 	key := cacheKeyOf(song)
 	if key == "" {
 		return "", false
@@ -154,7 +165,6 @@ func (c *CacheService) FindCachedFileBySong(song *models.Song) (string, bool) {
 		if !strings.HasPrefix(name, base) || strings.HasSuffix(name, ".tmp") {
 			continue
 		}
-		// 严格匹配 "base" 或 "base.ext" 形式,避免前缀误命中
 		if name == base || (len(name) > len(base) && name[len(base)] == '.') {
 			p := filepath.Join(dir, name)
 			c.touchSongLRU(song.ID)
@@ -164,10 +174,21 @@ func (c *CacheService) FindCachedFileBySong(song *models.Song) (string, bool) {
 	return "", false
 }
 
-// EvictSong 删除指定 song.ID 的所有缓存文件(供 SongService.Delete 钩子调用)。
-// 删除目录下所有以 `<id>` 开头(后跟 `.` 或文件结束)的文件——含历史多个 key 的残留与旧格式。
-// 目录或文件不存在视为成功。
-func (c *CacheService) EvictSong(songID int64) error {
+// EvictSong 删除指定歌曲的所有缓存文件。
+// 先从 cachePath (DB 存储的结构化路径) 删除，再 fallback 到旧格式哈希分桶清理。
+func (c *CacheService) EvictSong(songID int64, cachePath string) error {
+	// 新格式：从 DB cache_path 删除
+	if cachePath != "" {
+		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
+			slog.Warn("cache: remove structured file failed", "path", cachePath, "error", err)
+		}
+		cleanEmptyParentDirs(filepath.Dir(cachePath), c.cacheDir)
+		if c.clearCachePath != nil {
+			_ = c.clearCachePath(context.Background(), songID)
+		}
+	}
+
+	// 旧格式 fallback
 	dir, _ := c.getCachePath(songID, "")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -185,7 +206,6 @@ func (c *CacheService) EvictSong(songID int64) error {
 		if !strings.HasPrefix(name, idStr) {
 			continue
 		}
-		// 必须是 "<id>" 或 "<id>." 开头,避免 id=12 误删 1234.mp3
 		if name == idStr || (len(name) > len(idStr) && name[len(idStr)] == '.') {
 			if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
 				slog.Warn("cache: remove file failed", "path", name, "error", err)
@@ -313,9 +333,6 @@ func (c *CacheService) Get(ctx context.Context, song *models.Song) (string, erro
 }
 
 // moveToCache 把临时文件移入 song 对应的缓存路径,返回最终路径。
-// 文件名形如 `<id>.<key><ext>`,key 由 cacheKeyOf(song) 计算。key 为空时(理论上不会到这,
-// 上层 Get 在 song 没有任何可识别源时已直接报错)退化为 `<id><ext>`。
-// Windows 上若目标已存在则先删除。
 func (c *CacheService) moveToCache(song *models.Song, tmpPath, ext string) (string, error) {
 	if song == nil {
 		return "", errors.New("song is nil")
@@ -325,11 +342,7 @@ func (c *CacheService) moveToCache(song *models.Song, tmpPath, ext string) (stri
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("mkdir cache dir: %w", err)
 	}
-	name := base
-	if ext != "" {
-		name = base + ext
-	}
-	finalPath := filepath.Join(dir, name)
+	finalPath := filepath.Join(dir, base+ext)
 	if _, err := os.Stat(finalPath); err == nil {
 		_ = os.Remove(finalPath)
 	}
@@ -337,6 +350,57 @@ func (c *CacheService) moveToCache(song *models.Song, tmpPath, ext string) (stri
 		return "", fmt.Errorf("move to cache: %w", err)
 	}
 	return finalPath, nil
+}
+
+// FinalizeCache 将临时文件移入结构化缓存目录并写入元数据。
+// 由流式代理完成回调在 goroutine 中调用。
+func (c *CacheService) FinalizeCache(ctx context.Context, song *models.Song, tmpPath, ext string) {
+	defer func() {
+		if _, err := os.Stat(tmpPath); err == nil {
+			os.Remove(tmpPath)
+		}
+	}()
+
+	finalPath, err := c.moveToCache(song, tmpPath, ext)
+	if err != nil {
+		slog.Warn("finalize cache: move failed", "songId", song.ID, "error", err)
+		return
+	}
+
+	if c.updateCachePath != nil {
+		if err := c.updateCachePath(ctx, song.ID, finalPath); err != nil {
+			slog.Warn("finalize cache: update cache_path failed", "songId", song.ID, "error", err)
+		}
+	}
+
+	c.touchSongLRU(song.ID)
+	c.EvictLRU()
+}
+
+// AsyncDownloadAndCache 在后台全量下载远程歌曲并缓存。
+// 用于 206 场景：客户端已在接收代理流，此方法独立发起全量 GET。
+func (c *CacheService) AsyncDownloadAndCache(ctx context.Context, song *models.Song, url string) {
+	tmpPath, ext, err := c.downloadExternalToTemp(ctx, url)
+	if err != nil {
+		slog.Warn("async cache download failed", "songId", song.ID, "error", err)
+		return
+	}
+	c.FinalizeCache(ctx, song, tmpPath, ext)
+}
+
+// ResolveURL 解析插件歌曲的可下载音频 URL（不下载）。
+func (c *CacheService) ResolveURL(ctx context.Context, song *models.Song) (string, error) {
+	if c.orchestrator == nil {
+		return "", ErrNoOrchestrator
+	}
+	return c.orchestrator.ResolveURL(ctx, songInfoOf(song))
+}
+
+// ClearStaleCachePath 清理过期的缓存路径记录（文件已不存在时调用）。
+func (c *CacheService) ClearStaleCachePath(songID int64) {
+	if c.clearCachePath != nil {
+		_ = c.clearCachePath(context.Background(), songID)
+	}
 }
 
 // downloadExternalToTemp 纯外链歌曲的简化下载:直接 HTTP GET,无 fallback、无元数据校验。
@@ -358,7 +422,7 @@ func (c *CacheService) downloadExternalToTemp(ctx context.Context, url string) (
 	}
 
 	contentType := resp.Header.Get("Content-Type")
-	ext := getExtFromContentType(contentType)
+	ext := GetExtFromContentType(contentType)
 
 	tmp, err := os.CreateTemp("", "songloft-extdl-*"+ext)
 	if err != nil {

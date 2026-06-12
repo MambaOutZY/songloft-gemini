@@ -6,7 +6,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     added_at, updated_at, lyric_remote_url,
     year, genre,
     fingerprint, fingerprint_duration,
-    isrc
+    isrc, cache_path
 FROM songs WHERE id = ?;
 
 -- name: CreateSong :execlastid
@@ -107,3 +107,23 @@ SELECT id, type, title, artist, album, duration, file_path,
     cover_path, cover_url, added_at
 FROM songs
 WHERE fingerprint = ?;
+
+-- name: UpdateCachePath :exec
+UPDATE songs SET cache_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
+
+-- name: ClearCachePath :exec
+UPDATE songs SET cache_path = '', updated_at = CURRENT_TIMESTAMP WHERE id = ?;
+
+-- name: ClearAllCachePaths :exec
+UPDATE songs SET cache_path = '', updated_at = CURRENT_TIMESTAMP WHERE cache_path != '';
+
+-- name: ListSongsWithCache :many
+SELECT id, type, title, artist, album, duration, file_path, url,
+    cover_path, cover_url, lyric, lyric_source, file_size,
+    format, bit_rate, sample_rate, is_live,
+    plugin_entry_path, source_data, dedup_key,
+    added_at, updated_at, lyric_remote_url,
+    year, genre,
+    fingerprint, fingerprint_duration,
+    isrc, cache_path
+FROM songs WHERE cache_path != '';

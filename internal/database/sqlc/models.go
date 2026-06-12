@@ -104,4 +104,5 @@ type Song struct {
 	Fingerprint         string
 	FingerprintDuration float64
 	Isrc                string
+	CachePath           string
 }

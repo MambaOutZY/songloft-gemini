@@ -501,6 +501,7 @@ func songRowToModel(row sqlc.Song) *models.Song {
 		Genre:               row.Genre,
 		Duration:            row.Duration,
 		FilePath:            row.FilePath,
+		CachePath:           row.CachePath,
 		URL:                 row.Url,
 		CoverPath:           row.CoverPath,
 		CoverURL:            row.CoverUrl,
@@ -671,6 +672,37 @@ func (r *SongRepository) ListDuplicateGroups(ctx context.Context) ([]DuplicateGr
 		groups = append(groups, DuplicateGroup{Fingerprint: fp.Fingerprint, Songs: songs})
 	}
 	return groups, nil
+}
+
+// UpdateCachePath 更新歌曲的缓存文件路径。
+func (r *SongRepository) UpdateCachePath(ctx context.Context, id int64, cachePath string) error {
+	return r.queries.UpdateCachePath(ctx, sqlc.UpdateCachePathParams{
+		CachePath: cachePath,
+		ID:        id,
+	})
+}
+
+// ClearCachePath 清除歌曲的缓存文件路径。
+func (r *SongRepository) ClearCachePath(ctx context.Context, id int64) error {
+	return r.queries.ClearCachePath(ctx, id)
+}
+
+// ClearAllCachePaths 清除所有歌曲的缓存文件路径。
+func (r *SongRepository) ClearAllCachePaths(ctx context.Context) error {
+	return r.queries.ClearAllCachePaths(ctx)
+}
+
+// ListSongsWithCache 列出所有有缓存文件的歌曲。
+func (r *SongRepository) ListSongsWithCache(ctx context.Context) ([]*models.Song, error) {
+	rows, err := r.queries.ListSongsWithCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list songs with cache: %w", err)
+	}
+	songs := make([]*models.Song, len(rows))
+	for i, row := range rows {
+		songs[i] = songRowToModel(row)
+	}
+	return songs, nil
 }
 
 func boolToInt64(b bool) int64 {

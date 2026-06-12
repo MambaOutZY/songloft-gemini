@@ -157,7 +157,11 @@ func (s *SongService) Delete(ctx context.Context, id int64) error {
 		removeCoverIfUnreferenced(ctx, s.songs, song.CoverPath)
 	}
 	if s.cacheService != nil {
-		if err := s.cacheService.EvictSong(id); err != nil {
+		cachePath := ""
+		if song != nil {
+			cachePath = song.CachePath
+		}
+		if err := s.cacheService.EvictSong(id, cachePath); err != nil {
 			slog.Warn("evict cache after song delete failed", "songId", id, "error", err)
 		}
 	}
@@ -171,6 +175,7 @@ func (s *SongService) BatchDelete(ctx context.Context, ids []int64, deleteFiles 
 	}
 
 	coverPathSet := make(map[string]struct{})
+	cachePaths := make(map[int64]string)
 	var filePaths []string
 	for _, id := range ids {
 		song, err := s.GetByID(ctx, id)
@@ -179,6 +184,9 @@ func (s *SongService) BatchDelete(ctx context.Context, ids []int64, deleteFiles 
 		}
 		if song.CoverPath != "" {
 			coverPathSet[song.CoverPath] = struct{}{}
+		}
+		if song.CachePath != "" {
+			cachePaths[id] = song.CachePath
 		}
 		if deleteFiles && song.Type == models.TypeLocal && song.FilePath != "" {
 			filePaths = append(filePaths, song.FilePath)
@@ -202,7 +210,7 @@ func (s *SongService) BatchDelete(ctx context.Context, ids []int64, deleteFiles 
 	}
 	if s.cacheService != nil {
 		for _, id := range ids {
-			if err := s.cacheService.EvictSong(id); err != nil {
+			if err := s.cacheService.EvictSong(id, cachePaths[id]); err != nil {
 				slog.Warn("evict cache after batch delete failed", "songId", id, "error", err)
 			}
 		}

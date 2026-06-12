@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -172,4 +173,90 @@ func ServeRemoteResource(w http.ResponseWriter, r *http.Request, resourceURL str
 
 	// 流式转发响应体
 	io.Copy(w, resp.Body)
+}
+
+// ServeRemoteResourceWithCache 流式代理上游音频到客户端，并触发后台缓存。
+//
+// 缓存策略：
+//   - 200 OK：TeeReader 同时代理+写临时文件，完成后调 onCached
+//   - 206 Partial：正常代理给客户端 + 调 onCacheMiss 触发异步全量下载
+//   - 其他状态码 / 流中断：不缓存
+func ServeRemoteResourceWithCache(
+	w http.ResponseWriter,
+	r *http.Request,
+	resourceURL string,
+	onCached func(tmpPath, contentType string),
+	onCacheMiss func(),
+) {
+	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, resourceURL, nil)
+	if err != nil {
+		slog.Warn("remote resource request creation failed", "url", resourceURL, "error", err)
+		http.Error(w, "resource fetch failed", http.StatusInternalServerError)
+		return
+	}
+
+	if upstreamReq.URL.User != nil {
+		password, _ := upstreamReq.URL.User.Password()
+		upstreamReq.SetBasicAuth(upstreamReq.URL.User.Username(), password)
+		upstreamReq.URL.User = nil
+	}
+
+	if rangeHeader := r.Header.Get("Range"); rangeHeader != "" {
+		upstreamReq.Header.Set("Range", rangeHeader)
+	}
+
+	upstreamReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	if accept := r.Header.Get("Accept"); accept != "" {
+		upstreamReq.Header.Set("Accept", accept)
+	}
+	httputil.ApplyBasicAuthFromURL(upstreamReq)
+
+	client := &http.Client{
+		Timeout: 120 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
+	}
+
+	resp, err := client.Do(upstreamReq)
+	if err != nil {
+		slog.Warn("remote resource fetch failed", "url", resourceURL, "error", err)
+		http.Error(w, "resource fetch failed", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	forwardResponseHeaders(w, resp)
+	w.WriteHeader(resp.StatusCode)
+
+	if resp.StatusCode == http.StatusOK {
+		contentType := resp.Header.Get("Content-Type")
+		ext := services.GetExtFromContentType(contentType)
+		tmpFile, tmpErr := os.CreateTemp("", "songloft-proxy-cache-*"+ext)
+		if tmpErr != nil {
+			io.Copy(w, resp.Body)
+			return
+		}
+		tmpPath := tmpFile.Name()
+
+		tee := io.TeeReader(resp.Body, tmpFile)
+		written, copyErr := io.Copy(w, tee)
+		tmpFile.Close()
+
+		if copyErr == nil && written >= services.MinAudioSize {
+			go onCached(tmpPath, contentType)
+		} else {
+			os.Remove(tmpPath)
+		}
+	} else if resp.StatusCode == http.StatusPartialContent {
+		io.Copy(w, resp.Body)
+		if onCacheMiss != nil {
+			go onCacheMiss()
+		}
+	} else {
+		io.Copy(w, resp.Body)
+	}
 }

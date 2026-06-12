@@ -14,7 +14,7 @@ SELECT s.id, s.type, s.title, s.artist, s.album, s.duration,
     s.added_at, s.updated_at, s.lyric_remote_url,
     s.year, s.genre,
     s.fingerprint, s.fingerprint_duration,
-    s.isrc
+    s.isrc, s.cache_path
 FROM songs s
 INNER JOIN playlist_songs ps ON s.id = ps.song_id
 WHERE ps.playlist_id = ?
@@ -29,7 +29,7 @@ SELECT s.id, s.type, s.title, s.artist, s.album, s.duration,
     s.added_at, s.updated_at, s.lyric_remote_url,
     s.year, s.genre,
     s.fingerprint, s.fingerprint_duration,
-    s.isrc
+    s.isrc, s.cache_path
 FROM songs s
 INNER JOIN playlist_songs ps ON s.id = ps.song_id
 WHERE ps.playlist_id = ?

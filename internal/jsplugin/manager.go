@@ -41,10 +41,11 @@ type Manager struct {
 	pluginsDataDir string   // data/jsplugins_data/
 	basePath       string   // URL 基础路径，用于反向代理子路径部署
 	router         chi.Router
-	db             database.DB           // 数据库访问
-	authService    *services.AuthService // 用于生成插件 JWT Token
-	pluginToken    string                // 插件专用的永久 JWT Token（启动时生成一次）
-	port           string                // 服务器监听端口
+	db             database.DB              // 数据库访问
+	authService    *services.AuthService    // 用于生成插件 JWT Token
+	songDownloader *services.SongDownloader // 歌曲下载服务（bridge songs.download 用）
+	pluginToken    string                   // 插件专用的永久 JWT Token（启动时生成一次）
+	port           string                   // 服务器监听端口
 	healthChecker  *HealthChecker
 	hotReloader    *HotReloader
 	cancelFunc     context.CancelFunc
@@ -133,6 +134,11 @@ func (m *Manager) SetAuthService(authService *services.AuthService, port string)
 	}
 }
 
+// SetSongDownloader 注入歌曲下载服务（bridge songs.download 调用）。
+func (m *Manager) SetSongDownloader(d *services.SongDownloader) {
+	m.songDownloader = d
+}
+
 // Start 启动 JS 插件管理器（清理旧数据 → 重建 → 加载插件 → 健康检查 → 热更新监控）
 func (m *Manager) Start(ctx context.Context) error {
 	// 创建 HealthChecker 和 HotReloader
@@ -217,7 +223,7 @@ func (m *Manager) LoadPlugin(ctx context.Context, plugin *JSPlugin) error {
 	service := NewJSService(plugin, m.scheduler, m.jsManager)
 
 	// 2. 创建并关联 BridgeHandler
-	bridgeHandler := NewBridgeHandler(service, dataDir, m.db, m.pluginToken, m.getPort())
+	bridgeHandler := NewBridgeHandler(service, dataDir, m.db, m.songDownloader, m.pluginToken, m.getPort())
 	service.bridgeHandler = bridgeHandler
 
 	// 3. 加载插件（读取 ZIP、校验 hash、创建 JS 环境）

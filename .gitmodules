@@ -34,3 +34,6 @@
 [submodule "jsplugins-src/songloft-plugin-registry"]
 	path = jsplugins-src/songloft-plugin-registry
 	url = https://github.com/songloft-org/songloft-plugin-registry.git
+[submodule "jsplugins-src/songloft-plugin-downloader"]
+	path = jsplugins-src/songloft-plugin-downloader
+	url = https://github.com/songloft-org/songloft-plugin-downloader.git

@@ -2,6 +2,7 @@ package services
 
 import (
 	"container/heap"
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"songloft/internal/models"
 )
 
 const (
@@ -59,6 +62,11 @@ type CacheService struct {
 	orchestrator    CacheSongFetcher // 下载编排器(按 song.ID),由 app.go 注入
 	ffmpegPath      string           // ffmpeg 可执行文件路径,由 app.go 注入
 	transcodeSem    chan struct{}    // 转码串行信号量（默认 size=1），防止并发 ffmpeg 争抢 CPU
+	// 回调：由 app.go 注入,连接 SongRepository
+	updateCachePath    func(ctx context.Context, songID int64, cachePath string) error
+	clearCachePath     func(ctx context.Context, songID int64) error
+	clearAllCachePaths func(ctx context.Context) error
+	listSongsWithCache func(ctx context.Context) ([]*models.Song, error)
 }
 
 // NewCacheService 创建缓存服务
@@ -73,7 +81,6 @@ func NewCacheService(defaultCacheDir string, configService *ConfigService) *Cach
 			Timeout: 120 * time.Second,
 		},
 	}
-	// 启动时从 config 读取自定义缓存目录
 	var cfg CacheConfig
 	if err := configService.GetJSON(cacheConfigKey, &cfg); err == nil && cfg.CacheDir != "" {
 		cs.cacheDir = cfg.CacheDir
@@ -81,6 +88,19 @@ func NewCacheService(defaultCacheDir string, configService *ConfigService) *Cach
 	}
 	cs.loadLRUIndex()
 	return cs
+}
+
+// SetCachePathCallbacks 注入缓存路径更新回调（由 app.go 调用）。
+func (c *CacheService) SetCachePathCallbacks(
+	update func(ctx context.Context, songID int64, cachePath string) error,
+	clear func(ctx context.Context, songID int64) error,
+	clearAll func(ctx context.Context) error,
+	listWithCache func(ctx context.Context) ([]*models.Song, error),
+) {
+	c.updateCachePath = update
+	c.clearCachePath = clear
+	c.clearAllCachePaths = clearAll
+	c.listSongsWithCache = listWithCache
 }
 
 // isAudioContentType 检查 Content-Type 是否为音频类型
@@ -91,8 +111,8 @@ func isAudioContentType(contentType string) bool {
 		strings.Contains(ct, "application/octet-stream")
 }
 
-// getExtFromContentType 根据 Content-Type 获取文件扩展名
-func getExtFromContentType(contentType string) string {
+// GetExtFromContentType 根据 Content-Type 获取文件扩展名
+func GetExtFromContentType(contentType string) string {
 	ct := strings.ToLower(contentType)
 	switch {
 	case strings.Contains(ct, "audio/mpeg"):
@@ -193,6 +213,14 @@ func (c *CacheService) CleanCache() error {
 
 	// 清空内存索引
 	c.lruIndex = make(map[string]time.Time)
+
+	// 清空所有歌曲的 cache_path
+	if c.clearAllCachePaths != nil {
+		if err := c.clearAllCachePaths(context.Background()); err != nil {
+			slog.Warn("清空 cache_path 失败", "error", err)
+		}
+	}
+
 	slog.Info("缓存已全部清理")
 	return nil
 }
@@ -319,6 +347,7 @@ func (c *CacheService) EvictLRU() {
 		}
 		totalSize -= entry.size
 		delete(c.lruIndex, entry.hash)
+		cleanEmptyParentDirs(filepath.Dir(entry.filePath), c.cacheDir)
 		evicted++
 		slog.Debug("LRU 淘汰缓存文件", "hash", entry.hash, "size", entry.size)
 	}
@@ -377,6 +406,20 @@ func (c *CacheService) UpdateCacheConfig(cfg CacheConfig) error {
 
 	go c.EvictLRU()
 	return nil
+}
+
+// cleanEmptyParentDirs 向上递归删除空目录，直到 stopAt（不含 stopAt 本身）。
+func cleanEmptyParentDirs(dir, stopAt string) {
+	for dir != stopAt && strings.HasPrefix(dir, stopAt) {
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) > 0 {
+			return
+		}
+		if err := os.Remove(dir); err != nil {
+			return
+		}
+		dir = filepath.Dir(dir)
+	}
 }
 
 // setCacheDir 切换缓存目录并重建 LRU 索引

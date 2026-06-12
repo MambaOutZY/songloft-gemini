@@ -920,36 +920,59 @@ func isHLSURL(rawURL string) bool {
 // 失败时:返回 502,后台异步切源(若注入了 reassigner),客户端下次播放该 song 会用新源。
 // targetFormat 非空且与原格式不同时,对已缓存文件走 ffmpeg 转码。
 func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string) {
-	// 纯外链歌曲:直接代理转发(不缓存,不转码)
-	if !song.IsPluginSourced() && song.URL != "" {
-		ServeRemoteResource(w, r, song.URL)
+	// 1. 缓存命中 → 直接 ServeFile
+	if song.CachePath != "" {
+		if _, err := os.Stat(song.CachePath); err == nil {
+			h.serveCachedFile(w, r, song, song.CachePath, targetFormat)
+			return
+		}
+		h.cacheService.ClearStaleCachePath(song.ID)
+	}
+
+	// fallback: 旧格式缓存（兼容升级过渡）
+	if cachedPath, ok := h.cacheService.FindCachedFileBySong(song); ok {
+		h.serveCachedFile(w, r, song, cachedPath, targetFormat)
 		return
 	}
 
-	// 插件来源歌曲:走缓存服务
-	if song.URL == "" && !song.IsPluginSourced() {
+	// 2. 缓存未命中：解析播放 URL
+	var playURL string
+	if song.IsPluginSourced() {
+		resolved, err := h.cacheService.ResolveURL(r.Context(), song)
+		if err != nil {
+			slog.Warn("resolve url failed", "songId", song.ID, "error", err)
+			sk := playactivity.SessionFromContext(r.Context())
+			if h.reassigner != nil {
+				h.reassigner.AsyncReassign(song.ID, sk)
+			}
+			http.Error(w, "source unavailable: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		playURL = resolved
+	} else if song.URL != "" {
+		playURL = song.URL
+	} else {
 		http.NotFound(w, r)
 		return
 	}
 
-	// 把 cache.Get 注册到 playActivity（CatPlay）：用户切到其他歌时，
-	// Activate(otherID) 会 cancel 同会话下其他 songID 的所有工作（含此 ctx）；
-	// 但不会 cancel 自己（同 songID 的 CatPlay）。
-	sk := playactivity.SessionFromContext(r.Context())
-	playCtx, releasePlay := h.trackActivity(r.Context(), sk, song.ID, playactivity.CatPlay)
-	defer releasePlay()
+	// 3. 流式代理 + 后台缓存
+	songCopy := *song
+	ServeRemoteResourceWithCache(w, r, playURL,
+		func(tmpPath, contentType string) {
+			ext := services.GetExtFromContentType(contentType)
+			h.cacheService.FinalizeCache(context.Background(), &songCopy, tmpPath, ext)
+		},
+		func() {
+			h.cacheService.AsyncDownloadAndCache(context.Background(), &songCopy, playURL)
+		},
+	)
+}
 
-	cachedPath, err := h.cacheService.Get(playCtx, song)
-	if err != nil {
-		slog.Warn("cache get failed", "songId", song.ID, "type", song.Type, "error", err)
-		if h.reassigner != nil && song.IsPluginSourced() {
-			h.reassigner.AsyncReassign(song.ID, sk)
-		}
-		http.Error(w, "source unavailable: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-
+// serveCachedFile 从缓存文件提供服务,支持转码。
+func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, song *models.Song, cachedPath, targetFormat string) {
 	if services.NeedsTranscode(services.EffectiveSourceFormat(song, cachedPath), targetFormat) {
+		sk := playactivity.SessionFromContext(r.Context())
 		tcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		trackedCtx, releaseTc := h.trackActivity(tcCtx, sk, song.ID, playactivity.CatTranscode)
@@ -961,7 +984,6 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 			cachedPath = path
 		}
 	}
-
 	w.Header().Set("Cache-Control", "public, max-age=604800")
 	http.ServeFile(w, r, cachedPath)
 }
