@@ -1,3 +1,22 @@
+## [v2.8.2] - 2026-06-13
+### :sparkles: New Features
+- [`feb75bb`](https://github.com/songloft-org/songloft/commit/feb75bb142b1ef2ec5c0e4d5f822b392a5c3f060) - **jsplugin**: add onPlayEvent callback for play event subscription (close [#164](https://github.com/songloft-org/songloft/pull/164)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`23311d3`](https://github.com/songloft-org/songloft/commit/23311d3007bcd88477247bd838ee680de4d97a66) - **transcode**: 支持多音质转码与按码率缓存 (close [#169](https://github.com/songloft-org/songloft/pull/169)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`7ea30d2`](https://github.com/songloft-org/songloft/commit/7ea30d2fc9e85c9a8cf0b8926b00ebb68f4c6ff1) - **playlist**: 歌单歌曲支持排序与搜索 (close [#168](https://github.com/songloft-org/songloft/pull/168)) *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`0737849`](https://github.com/songloft-org/songloft/commit/0737849e273db2ae046696c71b63d9b1ec9eeca5) - **miot**: 修复语音调音量"百分之X"被误解析为100% (close [#166](https://github.com/songloft-org/songloft/pull/166)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e31f67d`](https://github.com/songloft-org/songloft/commit/e31f67d1b44b003e68ff0d4ddae3e2b142268894) - **jsruntime**: HealthProbe 污染 eval 超时导致定时器驱动操作被误中断 (close songloft-org/songloft-plugin-miot[#10](https://github.com/songloft-org/songloft/pull/10)) *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`136fbf3`](https://github.com/songloft-org/songloft/commit/136fbf388605c24ba4d7030e02e6759e63994712) - update CHANGELOG for v2.8.1 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`0bac21d`](https://github.com/songloft-org/songloft/commit/0bac21de3de3adffdf20a81c494bbe87e8a37250) - **submodule**: update jsplugins and player submodules *(commit by [@hanxi](https://github.com/hanxi))*
+- [`cecabad`](https://github.com/songloft-org/songloft/commit/cecabadcf7cce6bbe405c7e597b1b72682e9ae78) - **submodule**: update player and plugin-toolchain for play event support *(PR [#164](https://github.com/songloft-org/songloft/pull/164) by [@hanxi](https://github.com/hanxi))*
+- [`65d806d`](https://github.com/songloft-org/songloft/commit/65d806d274590bce118355d6f14c1119915ee7e7) - release version 2.8.2 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.8.1] - 2026-06-12
 ### :sparkles: New Features
 - [`9705163`](https://github.com/songloft-org/songloft/commit/970516327fa8fcbeee7939ee8e04fbde063541af) - **cache**: remove convert-to-local feature and add custom cache directory *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1257,3 +1276,4 @@
 [v2.7.0]: https://github.com/songloft-org/songloft/compare/v2.6.4...v2.7.0
 [v2.8.0]: https://github.com/songloft-org/songloft/compare/v2.7.0...v2.8.0
 [v2.8.1]: https://github.com/songloft-org/songloft/compare/v2.8.0...v2.8.1
+[v2.8.2]: https://github.com/songloft-org/songloft/compare/v2.8.1...v2.8.2
