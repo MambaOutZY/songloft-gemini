@@ -52,8 +52,9 @@ type Manager struct {
 	mu             sync.RWMutex
 	// loadGroup 对懒加载/恢复加载按 entryPath 去重并发，
 	// 避免同一插件因高并发请求被并行 LoadPlugin 多次（hash 反复校验、scheduler 重复注册等）。
-	loadGroup          singleflight.Group
-	publicPathPrefixes []string // 无需 JWT 的路径前缀（通过 RefreshPublicPaths 从 DB 加载，运行时可刷新）
+	loadGroup            singleflight.Group
+	publicPathPrefixes   []string // 无需 JWT 的路径前缀（通过 RefreshPublicPaths 从 DB 加载，运行时可刷新）
+	playEventSubscribers sync.Map // 已订阅播放事件的插件 entryPath 集合
 }
 
 // NewManager 创建 JS 插件管理器
@@ -224,6 +225,8 @@ func (m *Manager) LoadPlugin(ctx context.Context, plugin *JSPlugin) error {
 
 	// 2. 创建并关联 BridgeHandler
 	bridgeHandler := NewBridgeHandler(service, dataDir, m.db, m.songDownloader, m.pluginToken, m.getPort())
+	bridgeHandler.onPlayEventRegister = m.RegisterPlayEvent
+	bridgeHandler.onPlayEventUnregister = m.UnregisterPlayEvent
 	service.bridgeHandler = bridgeHandler
 
 	// 3. 加载插件（读取 ZIP、校验 hash、创建 JS 环境）
@@ -277,6 +280,9 @@ func (m *Manager) UnloadPlugin(ctx context.Context, entryPath string) error {
 
 	// 从 map 中移除
 	m.services.Delete(entryPath)
+
+	// 清理播放事件订阅
+	m.playEventSubscribers.Delete(entryPath)
 
 	return nil
 }
@@ -439,6 +445,40 @@ func (m *Manager) ListServices() []*JSService {
 		return true
 	})
 	return result
+}
+
+// RegisterPlayEvent 将插件注册为播放事件订阅者
+func (m *Manager) RegisterPlayEvent(entryPath string) {
+	m.playEventSubscribers.Store(entryPath, true)
+	slog.Info("plugin registered for play events", "plugin", entryPath)
+}
+
+// UnregisterPlayEvent 取消插件的播放事件订阅
+func (m *Manager) UnregisterPlayEvent(entryPath string) {
+	m.playEventSubscribers.Delete(entryPath)
+	slog.Info("plugin unregistered from play events", "plugin", entryPath)
+}
+
+// BroadcastPlayEvent 向所有已订阅的插件异步发送播放事件
+func (m *Manager) BroadcastPlayEvent(song *PlayEventSong, eventType string) {
+	eventData := &PlayEventData{
+		Type:      eventType,
+		Song:      *song,
+		Timestamp: time.Now().UnixMilli(),
+	}
+
+	m.playEventSubscribers.Range(func(key, _ interface{}) bool {
+		entryPath := key.(string)
+		if err := m.scheduler.Send(&Message{
+			Type:   MsgPlayEvent,
+			Target: entryPath,
+			Data:   eventData,
+		}); err != nil {
+			slog.Debug("broadcast play event: send failed",
+				"plugin", entryPath, "error", err)
+		}
+		return true
+	})
 }
 
 // Close 关闭管理器（停止所有服务）

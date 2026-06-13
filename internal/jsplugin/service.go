@@ -60,6 +60,20 @@ type HTTPResponseData struct {
 	ServeFile  *ServeFileDirective `json:"serveFile,omitempty"`
 }
 
+// PlayEventData 是 MsgPlayEvent 消息的 Data 类型
+type PlayEventData struct {
+	Type      string        `json:"type"`
+	Song      PlayEventSong `json:"song"`
+	Timestamp int64         `json:"timestamp"`
+}
+
+// PlayEventSong 包含播放事件中的歌曲信息
+type PlayEventSong struct {
+	ID     int64  `json:"id"`
+	Title  string `json:"title"`
+	Artist string `json:"artist"`
+}
+
 // ServeFileDirective 指示 Go 层直接 serve 文件（绕过 QuickJS string 管道）。
 // JS 做业务决策（认证、路由），Go 做文件 I/O（零拷贝、Range、HTTP 缓存）。
 type ServeFileDirective struct {
@@ -353,6 +367,8 @@ func (s *JSService) HandleMessage(msg *Message) *Message {
 		return s.handleLifecycle(msg)
 	case MsgHealthCheck:
 		return s.handleHealthCheck(msg)
+	case MsgPlayEvent:
+		return s.handlePlayEvent(msg)
 	default:
 		return nil
 	}
@@ -570,6 +586,29 @@ func (s *JSService) handleLifecycle(msg *Message) *Message {
 		if err := s.Deinit(); err != nil {
 			slog.Warn("lifecycle deinit error", "plugin", s.plugin.EntryPath, "error", err)
 		}
+	}
+	return nil
+}
+
+func (s *JSService) handlePlayEvent(msg *Message) *Message {
+	eventData, ok := msg.Data.(*PlayEventData)
+	if !ok {
+		slog.Warn("play event: invalid data type", "plugin", s.plugin.EntryPath)
+		return nil
+	}
+
+	eventJSON, err := json.Marshal(eventData)
+	if err != nil {
+		slog.Warn("play event: marshal failed", "plugin", s.plugin.EntryPath, "error", err)
+		return nil
+	}
+
+	code := fmt.Sprintf(`(async function(){if(typeof onPlayEvent==='function'){await onPlayEvent(%s);}})()`,
+		string(eventJSON))
+
+	_, err = s.jsManager.ExecuteJS(context.Background(), s.envID, code, 5000)
+	if err != nil {
+		slog.Warn("onPlayEvent failed", "plugin", s.plugin.EntryPath, "error", err)
 	}
 	return nil
 }

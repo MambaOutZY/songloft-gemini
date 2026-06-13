@@ -20,6 +20,7 @@ const (
 	MsgLifecycle                      // 生命周期事件（init/deinit）
 	MsgHostCall                       // 宿主函数调用结果
 	MsgHealthCheck                    // 健康检查
+	MsgPlayEvent                      // 播放事件（play/finish/skip）
 )
 
 const (

@@ -40,6 +40,20 @@ if (typeof globalThis.onHTTPRequest !== 'function') {
     };
 }
 
+// 事件订阅（动态注册/取消注册，可在任意时刻调用）
+songloft.events = {
+    onPlayEvent: function(fn) {
+        if (typeof fn === 'function') {
+            globalThis.onPlayEvent = fn;
+            __callBridge('plugin.registerPlayEvent', '');
+        }
+    },
+    offPlayEvent: function() {
+        globalThis.onPlayEvent = undefined;
+        __callBridge('plugin.unregisterPlayEvent', '');
+    }
+};
+
 // 日志（同步本地操作，无需 await）
 songloft.log = {
     info: function(msg) { console.log('[plugin] ' + msg); },
@@ -236,14 +250,16 @@ func GetBootstrapCode() string {
 
 // BridgeHandler 处理 JS 通过 __go_bridge 调用的请求
 type BridgeHandler struct {
-	service        *JSService
-	permissions    []string
-	dataDir        string                   // data/jsplugins_data/
-	db             database.DB              // 数据库访问（用于 songs/playlists 查询）
-	songDownloader *services.SongDownloader // 歌曲下载服务（songs.download bridge 调用）
-	pluginToken    string                   // 插件专用的永久 JWT Token
-	port           string                   // 服务器监听端口（用于构造宿主 URL）
-	processes      sync.Map                 // map[name]*managedProcess — 后台进程跟踪
+	service               *JSService
+	permissions           []string
+	dataDir               string                   // data/jsplugins_data/
+	db                    database.DB              // 数据库访问（用于 songs/playlists 查询）
+	songDownloader        *services.SongDownloader // 歌曲下载服务（songs.download bridge 调用）
+	pluginToken           string                   // 插件专用的永久 JWT Token
+	port                  string                   // 服务器监听端口（用于构造宿主 URL）
+	processes             sync.Map                 // map[name]*managedProcess — 后台进程跟踪
+	onPlayEventRegister   func(entryPath string)   // 播放事件订阅回调
+	onPlayEventUnregister func(entryPath string)   // 播放事件取消订阅回调
 }
 
 // NewBridgeHandler 创建桥接处理器
@@ -645,6 +661,18 @@ func (h *BridgeHandler) handlePlugin(action, data string) (string, error) {
 		url := fmt.Sprintf("/api/v1/jsplugin/%s/files/%s?access_token=%s",
 			h.service.plugin.EntryPath, req.FilePath, h.pluginToken)
 		return fmt.Sprintf(`{"url":%q}`, url), nil
+
+	case "plugin.registerPlayEvent":
+		if h.onPlayEventRegister != nil {
+			h.onPlayEventRegister(h.service.plugin.EntryPath)
+		}
+		return "", nil
+
+	case "plugin.unregisterPlayEvent":
+		if h.onPlayEventUnregister != nil {
+			h.onPlayEventUnregister(h.service.plugin.EntryPath)
+		}
+		return "", nil
 
 	default:
 		return "", fmt.Errorf("handlePlugin: unknown action: %s", action)

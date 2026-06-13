@@ -24,15 +24,21 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// PlayEventBroadcaster 向 JS 插件广播播放事件
+type PlayEventBroadcaster interface {
+	BroadcastPlayEvent(songID int64, title, artist, eventType string)
+}
+
 // SongHandler 歌曲处理器
 type SongHandler struct {
-	songService  *services.SongService
-	cacheService *services.CacheService
-	reassigner   AsyncReassigner
-	lyricFetcher *services.LyricFetcher // 解包插件 JSON 拿 LRC 文本(歌词 url 分支用)
-	hlsHandler   *HLSHandler            // 电台 HLS 流的反代委托（开关在 HLSHandler 内）
-	playActivity *playactivity.Registry // 跟踪进行中的 play/prefetch/transcode/reassign 工作，用户切歌时一次性 cancel
-	getMusicPath func() string          // 获取 music_path（由 scanner.GetMusicPath 注入）
+	songService     *services.SongService
+	cacheService    *services.CacheService
+	reassigner      AsyncReassigner
+	lyricFetcher    *services.LyricFetcher // 解包插件 JSON 拿 LRC 文本(歌词 url 分支用)
+	hlsHandler      *HLSHandler            // 电台 HLS 流的反代委托（开关在 HLSHandler 内）
+	playActivity    *playactivity.Registry // 跟踪进行中的 play/prefetch/transcode/reassign 工作，用户切歌时一次性 cancel
+	getMusicPath    func() string          // 获取 music_path（由 scanner.GetMusicPath 注入）
+	playBroadcaster PlayEventBroadcaster   // JS 插件播放事件广播（可选，nil 安全）
 }
 
 // NewSongHandler 创建歌曲处理器
@@ -57,6 +63,11 @@ func NewSongHandler(
 // SetGetMusicPath 注入 music_path 获取函数。
 func (h *SongHandler) SetGetMusicPath(fn func() string) {
 	h.getMusicPath = fn
+}
+
+// SetPlayBroadcaster 注入 JS 插件播放事件广播器。
+func (h *SongHandler) SetPlayBroadcaster(b PlayEventBroadcaster) {
+	h.playBroadcaster = b
 }
 
 // ListSongs 获取歌曲列表
@@ -1292,4 +1303,36 @@ func (h *SongHandler) GetDuplicates(w http.ResponseWriter, r *http.Request) {
 		"total_groups":     len(result),
 		"total_duplicates": totalDuplicates,
 	})
+}
+
+// SongPlayed 通知歌曲播放完成
+// @Summary 通知歌曲播放完成
+// @Description 客户端播放完一首歌后调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent 注册）。
+// @Tags 歌曲管理
+// @Produce json
+// @Param id path int true "歌曲 ID"
+// @Success 204 "无内容"
+// @Failure 400 {object} models.ErrorResponse "无效的歌曲 ID"
+// @Failure 404 {object} models.ErrorResponse "歌曲不存在"
+// @Security BearerAuth
+// @Router /songs/{id}/played [post]
+func (h *SongHandler) SongPlayed(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "无效的歌曲 ID", err)
+		return
+	}
+
+	song, err := h.songService.GetByID(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "歌曲不存在", err)
+		return
+	}
+
+	if h.playBroadcaster != nil {
+		go h.playBroadcaster.BroadcastPlayEvent(song.ID, song.Title, song.Artist, "finish")
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

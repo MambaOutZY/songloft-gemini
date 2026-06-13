@@ -97,6 +97,19 @@ func (a *reassignAdapter) AsyncReassign(songID int64, sk playactivity.SessionKey
 	})
 }
 
+// playEventBroadcastAdapter 把 jsplugin.Manager 适配到 handlers.PlayEventBroadcaster
+type playEventBroadcastAdapter struct {
+	m *jsplugin.Manager
+}
+
+func (a *playEventBroadcastAdapter) BroadcastPlayEvent(songID int64, title, artist, eventType string) {
+	a.m.BroadcastPlayEvent(&jsplugin.PlayEventSong{
+		ID:     songID,
+		Title:  title,
+		Artist: artist,
+	}, eventType)
+}
+
 // playActivityReassignTracker 把 playactivity.Registry 适配到 source.ReassignTracker，
 // 让 source 包不直接依赖 playactivity 包。category 用 string 透传，wrapper 内固定为
 // playactivity.CatReassign。
