@@ -40,8 +40,8 @@ features:
     title: 主流格式全支持
     details: MP3 / FLAC / WAV / APE / OGG / M4A 自动识别，封面、歌词、元数据一键提取
   - icon: 🔁
-    title: 网络歌曲落盘
-    details: 一键把网络歌曲离线下载到本地，按歌单分目录，自动回写标签 / 封面 / 歌词
+    title: 自动扫描 & 变更同步
+    details: 实时监测音乐目录变更，新增 / 修改 / 删除自动同步，支持定时扫描与手动触发
   - icon: 🚀
     title: 一键部署 & 升级
     details: Docker / 二进制两种方式秒启动，容器内支持在线热升级，无需重建

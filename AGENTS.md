@@ -282,14 +282,13 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 - `POST /api/v1/cache-manage/validate-dir` 可预先验证目录（自动创建 + 可写性检查 + 返回磁盘空间）
 - inflight 去重：同 `song.ID` 的并发请求只下载一次；首请求被 `ctx.Canceled` 时后续等待者自动重试
 
-### 歌曲下载（song_downloader + 插件）
+### 歌曲持久化（song_downloader — 插件基础设施）
 
-- 将用户自有网络存储（WebDAV/Subsonic 等）中的歌曲下载到服务端本地 `music_path`，转为 `local` 类型
-- **仅适用于用户自有的本地网络资源**，不支持第三方音乐平台歌曲下载（版权规避）
+- **定位**：插件基础设施能力，不是主程序面向用户的功能。主程序提供 `songs.download` Bridge API，允许插件将远程歌曲持久化到服务端本地 `music_path`，转为 `local` 类型
 - 核心服务 `SongDownloader.Download`：获取音频（缓存命中直接 copy，否则同步下载）→ 路径模板渲染 → 可选元数据嵌入（所有支持的格式）→ 更新 DB（type=local）
-- **URL 歌词自动拉取**：`embed_metadata=true` 且 `lyric_source=url` 时，通过 `LyricFetcher` 拉取歌词 → 主歌词写入文件标签 → 完整 payload（含翻译/罗马音）缓存到 DB → `lyric_source` 更新为 `embedded`。拉取失败仅 warn 不阻塞下载
+- **URL 歌词自动拉取**：`embed_metadata=true` 且 `lyric_source=url` 时，通过 `LyricFetcher` 拉取歌词 → 主歌词写入文件标签 → 完整 payload（含翻译/罗马音）缓存到 DB → `lyric_source` 更新为 `embedded`。拉取失败仅 warn 不阻塞持久化
 - 通过 Bridge API `songs.download` 暴露给 JS 插件，权限映射到 `PermSongsWrite`
-- 完整插件 `songloft-plugin-downloader`（独立仓库 `songloft-org/songloft-plugin-downloader`）：UI 页面 + 设置（路径模板、元数据开关）+ 批量下载 + 进度跟踪
+- 示例插件 `songloft-plugin-downloader`（独立仓库 `songloft-org/songloft-plugin-downloader`）展示了如何使用此 API。**该插件为示例/参考实现，不上架官方插件仓库**
 
 ### 文件搬移：跨设备 rename 陷阱
 

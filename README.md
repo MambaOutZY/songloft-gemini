@@ -34,7 +34,7 @@
 - 📱 **跨平台客户端** — Flutter 客户端支持 Android、iOS、macOS、Windows、Linux、Web 六端
 - 🌐 **Web 界面** — 完整版内置 Web 前端，开箱即用
 - 🔑 **JWT 认证** — 双 Token 机制（Access Token + Refresh Token），支持多设备管理
-- 📡 **网络歌曲 & 电台** — 支持添加你已合法获取的网络音频 URL 与电台，播放时自动缓存
+- 📡 **网络歌曲 & 电台** — 支持添加网络音频 URL 与电台流，播放时透明缓存到服务端
 - 🔌 **完整 REST API** — 内置 Swagger 文档，方便集成和二次开发
 - ⚡ **轻量高效** — Go 编写，CGO-free，无外部依赖，适合 NAS / 树莓派等低功耗设备
 
