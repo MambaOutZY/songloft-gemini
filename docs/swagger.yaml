@@ -4293,8 +4293,8 @@ paths:
       - 歌曲管理
   /songs/{id}/played:
     post:
-      description: 客户端播放完一首歌后调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent
-        注册）。source 参数标识调用来源，如 songloft-player（官方客户端）、miot（小爱音箱插件）等。
+      description: 客户端在歌曲开始播放、播放完成或被跳过时调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent
+        注册）。source 参数标识调用来源，如 songloft-player（官方客户端）、miot（小爱音箱插件）等。type 参数标识事件类型：play（开始播放）、finish（播放完成）、skip（用户跳过）。
       parameters:
       - description: 歌曲 ID
         in: path
@@ -4305,13 +4305,21 @@ paths:
         in: query
         name: source
         type: string
+      - description: 事件类型：play、finish、skip，默认 finish
+        enum:
+        - play
+        - finish
+        - skip
+        in: query
+        name: type
+        type: string
       produces:
       - application/json
       responses:
         "204":
           description: 无内容
         "400":
-          description: 无效的歌曲 ID
+          description: 无效的歌曲 ID 或事件类型
           schema:
             $ref: '#/definitions/models.ErrorResponse'
         "404":
@@ -4320,7 +4328,7 @@ paths:
             $ref: '#/definitions/models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 通知歌曲播放完成
+      summary: 通知歌曲播放事件
       tags:
       - 歌曲管理
   /songs/batch-delete:

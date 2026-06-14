@@ -5564,14 +5564,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "客户端播放完一首歌后调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent 注册）。source 参数标识调用来源，如 songloft-player（官方客户端）、miot（小爱音箱插件）等。",
+                "description": "客户端在歌曲开始播放、播放完成或被跳过时调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent 注册）。source 参数标识调用来源，如 songloft-player（官方客户端）、miot（小爱音箱插件）等。type 参数标识事件类型：play（开始播放）、finish（播放完成）、skip（用户跳过）。",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "歌曲管理"
                 ],
-                "summary": "通知歌曲播放完成",
+                "summary": "通知歌曲播放事件",
                 "parameters": [
                     {
                         "type": "integer",
@@ -5585,6 +5585,17 @@ const docTemplate = `{
                         "description": "调用来源标识，如 songloft-player、miot",
                         "name": "source",
                         "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "play",
+                            "finish",
+                            "skip"
+                        ],
+                        "type": "string",
+                        "description": "事件类型：play、finish、skip，默认 finish",
+                        "name": "type",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -5592,7 +5603,7 @@ const docTemplate = `{
                         "description": "无内容"
                     },
                     "400": {
-                        "description": "无效的歌曲 ID",
+                        "description": "无效的歌曲 ID 或事件类型",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
                         }

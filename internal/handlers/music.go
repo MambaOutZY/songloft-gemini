@@ -1309,15 +1309,16 @@ func (h *SongHandler) GetDuplicates(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SongPlayed 通知歌曲播放完成
-// @Summary 通知歌曲播放完成
-// @Description 客户端播放完一首歌后调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent 注册）。source 参数标识调用来源，如 songloft-player（官方客户端）、miot（小爱音箱插件）等。
+// SongPlayed 通知歌曲播放事件
+// @Summary 通知歌曲播放事件
+// @Description 客户端在歌曲开始播放、播放完成或被跳过时调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent 注册）。source 参数标识调用来源，如 songloft-player（官方客户端）、miot（小爱音箱插件）等。type 参数标识事件类型：play（开始播放）、finish（播放完成）、skip（用户跳过）。
 // @Tags 歌曲管理
 // @Produce json
 // @Param id path int true "歌曲 ID"
 // @Param source query string false "调用来源标识，如 songloft-player、miot"
+// @Param type query string false "事件类型：play、finish、skip，默认 finish" Enums(play, finish, skip)
 // @Success 204 "无内容"
-// @Failure 400 {object} models.ErrorResponse "无效的歌曲 ID"
+// @Failure 400 {object} models.ErrorResponse "无效的歌曲 ID 或事件类型"
 // @Failure 404 {object} models.ErrorResponse "歌曲不存在"
 // @Security BearerAuth
 // @Router /songs/{id}/played [post]
@@ -1329,6 +1330,15 @@ func (h *SongHandler) SongPlayed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	eventType := r.URL.Query().Get("type")
+	if eventType == "" {
+		eventType = "finish"
+	}
+	if eventType != "play" && eventType != "finish" && eventType != "skip" {
+		respondError(w, http.StatusBadRequest, "无效的事件类型，必须是 play、finish 或 skip", nil)
+		return
+	}
+
 	song, err := h.songService.GetByID(r.Context(), id)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "歌曲不存在", err)
@@ -1337,7 +1347,7 @@ func (h *SongHandler) SongPlayed(w http.ResponseWriter, r *http.Request) {
 
 	if h.playBroadcaster != nil {
 		source := r.URL.Query().Get("source")
-		go h.playBroadcaster.BroadcastPlayEvent(song.ID, song.Title, song.Artist, "finish", source)
+		go h.playBroadcaster.BroadcastPlayEvent(song.ID, song.Title, song.Artist, eventType, source)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
