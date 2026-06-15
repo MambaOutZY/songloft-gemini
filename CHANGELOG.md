@@ -1,3 +1,15 @@
+## [v2.8.4] - 2026-06-15
+### :bug: Bug Fixes
+- [`422c968`](https://github.com/songloft-org/songloft/commit/422c968f60fae1a70bd50bc09334b848148d9bff) - **miot**: 更新 miot 插件 - 修复语音搜歌匹配错误 (close [#83](https://github.com/songloft-org/songloft/pull/83)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e127621`](https://github.com/songloft-org/songloft/commit/e127621150d023390c44fd6aa282b077ba23d121) - **playlist**: 修复编辑歌单从歌曲选择封面无效的问题 (close [#176](https://github.com/songloft-org/songloft/pull/176)) *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`ca6eae8`](https://github.com/songloft-org/songloft/commit/ca6eae8c425c95a40f5806d9142a5439576812f8) - update CHANGELOG for v2.8.3 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`379bf51`](https://github.com/songloft-org/songloft/commit/379bf51d2c761cadb5aa32c38fe3df2a3301a322) - release version 2.8.4 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.8.3] - 2026-06-15
 ### :sparkles: New Features
 - [`00763f2`](https://github.com/songloft-org/songloft/commit/00763f26c7096888d911287d23f9d5842e9bdd52) - 下载歌曲时拉取 URL 歌词写入文件，实现 MP4/OGG 元数据写入 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1297,3 +1309,4 @@
 [v2.8.1]: https://github.com/songloft-org/songloft/compare/v2.8.0...v2.8.1
 [v2.8.2]: https://github.com/songloft-org/songloft/compare/v2.8.1...v2.8.2
 [v2.8.3]: https://github.com/songloft-org/songloft/compare/v2.8.2...v2.8.3
+[v2.8.4]: https://github.com/songloft-org/songloft/compare/v2.8.3...v2.8.4
