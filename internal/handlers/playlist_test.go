@@ -64,7 +64,7 @@ func newRouteRequest(method, target string, body []byte, params map[string]strin
 
 func TestNewPlaylistHandler(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	if handler == nil {
 		t.Error("NewPlaylistHandler() returned nil")
@@ -74,7 +74,7 @@ func TestNewPlaylistHandler(t *testing.T) {
 func TestListPlaylists(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
 	svc := env.newService()
-	handler := NewPlaylistHandler(svc)
+	handler := NewPlaylistHandler(svc, nil)
 
 	createTestPlaylist(t, svc, &models.Playlist{Type: models.PlaylistTypeNormal, Name: "歌单1"})
 	createTestPlaylist(t, svc, &models.Playlist{Type: models.PlaylistTypeNormal, Name: "歌单2"})
@@ -92,7 +92,7 @@ func TestListPlaylists(t *testing.T) {
 func TestGetPlaylist(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
 	svc := env.newService()
-	handler := NewPlaylistHandler(svc)
+	handler := NewPlaylistHandler(svc, nil)
 
 	playlist := createTestPlaylist(t, svc, &models.Playlist{
 		Type: models.PlaylistTypeNormal,
@@ -112,7 +112,7 @@ func TestGetPlaylist(t *testing.T) {
 
 func TestGetPlaylistNotFound(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	req := newRouteRequest("GET", "/api/v1/playlists/999", nil, map[string]string{"id": "999"})
 	rr := httptest.NewRecorder()
@@ -126,7 +126,7 @@ func TestGetPlaylistNotFound(t *testing.T) {
 
 func TestCreatePlaylist(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	playlist := models.Playlist{
 		Type: models.PlaylistTypeNormal,
@@ -147,7 +147,7 @@ func TestCreatePlaylist(t *testing.T) {
 
 func TestCreatePlaylistInvalidJSON(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	req := httptest.NewRequest("POST", "/api/v1/playlists", bytes.NewReader([]byte("invalid json")))
 	req.Header.Set("Content-Type", "application/json")
@@ -163,7 +163,7 @@ func TestCreatePlaylistInvalidJSON(t *testing.T) {
 func TestUpdatePlaylist(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
 	svc := env.newService()
-	handler := NewPlaylistHandler(svc)
+	handler := NewPlaylistHandler(svc, nil)
 
 	playlist := createTestPlaylist(t, svc, &models.Playlist{
 		Type: models.PlaylistTypeNormal,
@@ -190,7 +190,7 @@ func TestUpdatePlaylist(t *testing.T) {
 func TestDeletePlaylist(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
 	svc := env.newService()
-	handler := NewPlaylistHandler(svc)
+	handler := NewPlaylistHandler(svc, nil)
 
 	playlist := createTestPlaylist(t, svc, &models.Playlist{
 		Type: models.PlaylistTypeNormal,
@@ -211,7 +211,7 @@ func TestDeletePlaylist(t *testing.T) {
 func TestGetPlaylistSongs(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
 	svc := env.newService()
-	handler := NewPlaylistHandler(svc)
+	handler := NewPlaylistHandler(svc, nil)
 
 	playlist := createTestPlaylist(t, svc, &models.Playlist{
 		Type: models.PlaylistTypeNormal,
@@ -232,7 +232,7 @@ func TestGetPlaylistSongs(t *testing.T) {
 func TestAddSongToPlaylist(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
 	svc := env.newService()
-	handler := NewPlaylistHandler(svc)
+	handler := NewPlaylistHandler(svc, nil)
 
 	playlist := createTestPlaylist(t, svc, &models.Playlist{
 		Type: models.PlaylistTypeNormal,
@@ -265,7 +265,7 @@ func TestAddSongToPlaylist(t *testing.T) {
 func TestRemoveSongFromPlaylist(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
 	svc := env.newService()
-	handler := NewPlaylistHandler(svc)
+	handler := NewPlaylistHandler(svc, nil)
 
 	playlist := createTestPlaylist(t, svc, &models.Playlist{
 		Type: models.PlaylistTypeNormal,
@@ -293,7 +293,7 @@ func TestRemoveSongFromPlaylist(t *testing.T) {
 
 func TestInvalidPlaylistID(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	tests := []struct {
 		name    string
@@ -323,7 +323,7 @@ func TestInvalidPlaylistID(t *testing.T) {
 func TestReorderPlaylistSongs(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
 	svc := env.newService()
-	handler := NewPlaylistHandler(svc)
+	handler := NewPlaylistHandler(svc, nil)
 	ctx := context.Background()
 
 	playlist := createTestPlaylist(t, svc, &models.Playlist{
@@ -367,7 +367,7 @@ func TestReorderPlaylistSongs(t *testing.T) {
 
 func TestReorderPlaylistSongsInvalidID(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	reqBody := map[string][]int64{"song_ids": {1, 2, 3}}
 	body, _ := json.Marshal(reqBody)
@@ -384,7 +384,7 @@ func TestReorderPlaylistSongsInvalidID(t *testing.T) {
 
 func TestReorderPlaylistSongsInvalidJSON(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	req := newRouteRequest("PUT", "/api/v1/playlists/1/songs/reorder", []byte("invalid json"), map[string]string{"id": "1"})
 	rr := httptest.NewRecorder()
@@ -399,7 +399,7 @@ func TestReorderPlaylistSongsInvalidJSON(t *testing.T) {
 func TestListPlaylistsWithFilters(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
 	svc := env.newService()
-	handler := NewPlaylistHandler(svc)
+	handler := NewPlaylistHandler(svc, nil)
 
 	createTestPlaylist(t, svc, &models.Playlist{Type: models.PlaylistTypeNormal, Name: "歌单1"})
 	createTestPlaylist(t, svc, &models.Playlist{Type: models.PlaylistTypeNormal, Name: "歌单2"})
@@ -416,7 +416,7 @@ func TestListPlaylistsWithFilters(t *testing.T) {
 
 func TestGetPlaylistSongsInvalidID(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	req := newRouteRequest("GET", "/api/v1/playlists/invalid/songs", nil, map[string]string{"id": "invalid"})
 	rr := httptest.NewRecorder()
@@ -430,7 +430,7 @@ func TestGetPlaylistSongsInvalidID(t *testing.T) {
 
 func TestAddSongToPlaylistInvalidID(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	reqBody := map[string]int64{"song_id": 1}
 	body, _ := json.Marshal(reqBody)
@@ -447,7 +447,7 @@ func TestAddSongToPlaylistInvalidID(t *testing.T) {
 
 func TestAddSongToPlaylistInvalidJSON(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	req := newRouteRequest("POST", "/api/v1/playlists/1/songs", []byte("invalid json"), map[string]string{"id": "1"})
 	rr := httptest.NewRecorder()
@@ -461,7 +461,7 @@ func TestAddSongToPlaylistInvalidJSON(t *testing.T) {
 
 func TestRemoveSongFromPlaylistInvalidIDs(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	tests := []struct {
 		name         string
@@ -489,7 +489,7 @@ func TestRemoveSongFromPlaylistInvalidIDs(t *testing.T) {
 
 func TestUpdatePlaylistInvalidJSON(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
-	handler := NewPlaylistHandler(env.newService())
+	handler := NewPlaylistHandler(env.newService(), nil)
 
 	req := newRouteRequest("PUT", "/api/v1/playlists/1", []byte("invalid json"), map[string]string{"id": "1"})
 	rr := httptest.NewRecorder()

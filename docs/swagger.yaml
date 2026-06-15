@@ -709,6 +709,29 @@ definitions:
     required:
     - value
     type: object
+  models.UpdatePlaylistRequest:
+    properties:
+      cover_path:
+        description: 封面图片本地路径（传空字符串清除）
+        example: ""
+        type: string
+      cover_song_id:
+        description: 从指定歌曲复制封面（与 cover_path/cover_url 互斥，优先级更高）
+        example: 42
+        type: integer
+      cover_url:
+        description: 封面图片 URL（传空字符串清除）
+        example: ""
+        type: string
+      description:
+        description: 歌单描述
+        example: 收藏的经典歌曲
+        type: string
+      name:
+        description: 歌单名称
+        example: 我的最爱
+        type: string
+    type: object
   models.UpgradeProgress:
     properties:
       current_step:
@@ -2510,7 +2533,7 @@ paths:
     put:
       consumes:
       - application/json
-      description: 更新歌单信息
+      description: 更新歌单信息。支持通过 cover_song_id 从指定歌曲复制封面，与 cover_path/cover_url 互斥且优先级更高
       parameters:
       - description: 歌单ID
         in: path
@@ -2522,7 +2545,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/models.Playlist'
+          $ref: '#/definitions/models.UpdatePlaylistRequest'
       produces:
       - application/json
       responses:

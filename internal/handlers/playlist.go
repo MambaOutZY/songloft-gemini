@@ -20,12 +20,14 @@ import (
 // PlaylistHandler 歌单处理器
 type PlaylistHandler struct {
 	playlistService *services.PlaylistService
+	songService     *services.SongService
 }
 
 // NewPlaylistHandler 创建歌单处理器
-func NewPlaylistHandler(playlistService *services.PlaylistService) *PlaylistHandler {
+func NewPlaylistHandler(playlistService *services.PlaylistService, songService *services.SongService) *PlaylistHandler {
 	return &PlaylistHandler{
 		playlistService: playlistService,
+		songService:     songService,
 	}
 }
 
@@ -160,12 +162,12 @@ func (h *PlaylistHandler) CreatePlaylist(w http.ResponseWriter, r *http.Request)
 
 // UpdatePlaylist 更新歌单
 // @Summary 更新歌单
-// @Description 更新歌单信息
+// @Description 更新歌单信息。支持通过 cover_song_id 从指定歌曲复制封面，与 cover_path/cover_url 互斥且优先级更高
 // @Tags 歌单管理
 // @Accept json
 // @Produce json
 // @Param id path int true "歌单ID"
-// @Param request body models.Playlist true "歌单信息"
+// @Param request body models.UpdatePlaylistRequest true "歌单信息"
 // @Success 200 {object} models.Playlist "更新成功"
 // @Failure 400 {object} map[string]string "请求数据错误"
 // @Failure 500 {object} map[string]string "更新失败"
@@ -181,12 +183,7 @@ func (h *PlaylistHandler) UpdatePlaylist(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var req struct {
-		Name        string  `json:"name"`
-		Description string  `json:"description"`
-		CoverPath   *string `json:"cover_path"`
-		CoverURL    *string `json:"cover_url"`
-	}
+	var req models.UpdatePlaylistRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
 		return
@@ -200,11 +197,22 @@ func (h *PlaylistHandler) UpdatePlaylist(w http.ResponseWriter, r *http.Request)
 
 	existing.Name = req.Name
 	existing.Description = req.Description
-	if req.CoverPath != nil {
-		existing.CoverPath = *req.CoverPath
-	}
-	if req.CoverURL != nil {
-		existing.CoverURL = *req.CoverURL
+
+	if req.CoverSongID != nil {
+		song, err := h.songService.GetByID(ctx, *req.CoverSongID)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "封面来源歌曲不存在", err)
+			return
+		}
+		existing.CoverPath = song.CoverPath
+		existing.CoverURL = song.CoverURL
+	} else {
+		if req.CoverPath != nil {
+			existing.CoverPath = *req.CoverPath
+		}
+		if req.CoverURL != nil {
+			existing.CoverURL = *req.CoverURL
+		}
 	}
 
 	if err := h.playlistService.Update(ctx, existing); err != nil {
