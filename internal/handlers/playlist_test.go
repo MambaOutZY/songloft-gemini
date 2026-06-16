@@ -500,3 +500,142 @@ func TestUpdatePlaylistInvalidJSON(t *testing.T) {
 		t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, http.StatusBadRequest)
 	}
 }
+
+func TestUpdatePlaylistWithCoverSongID(t *testing.T) {
+	env := newPlaylistHandlerEnv(t)
+	svc := env.newService()
+	ctx := context.Background()
+
+	// Create a song with CoverPath (simulating a local song with extracted cover)
+	song := &models.Song{
+		Type:      models.TypeLocal,
+		Title:     "Song With Cover",
+		FilePath:  "/music/test.mp3",
+		CoverPath: "/data/covers/ab/cd/testhash.jpg",
+	}
+	if err := env.songs.Create(ctx, song); err != nil {
+		t.Fatalf("create song: %v", err)
+	}
+	t.Logf("Song created: ID=%d, CoverPath=%q, CoverURL=%q", song.ID, song.CoverPath, song.CoverURL)
+
+	// Create a song service for the handler
+	songSvc := services.NewSongService(env.songs, nil, nil, nil, nil, nil)
+	handler := NewPlaylistHandler(svc, songSvc)
+
+	// Create a playlist
+	playlist := createTestPlaylist(t, svc, &models.Playlist{
+		Type: models.PlaylistTypeNormal,
+		Name: "Test Playlist",
+	})
+	t.Logf("Playlist created: ID=%d, CoverPath=%q, CoverURL=%q", playlist.ID, playlist.CoverPath, playlist.CoverURL)
+
+	// Update playlist with cover_song_id
+	reqBody := map[string]interface{}{
+		"name":          "Test Playlist",
+		"cover_song_id": song.ID,
+	}
+	body, _ := json.Marshal(reqBody)
+
+	idStr := strconv.FormatInt(playlist.ID, 10)
+	req := newRouteRequest("PUT", "/api/v1/playlists/"+idStr, body, map[string]string{"id": idStr})
+	rr := httptest.NewRecorder()
+
+	handler.UpdatePlaylist(rr, req)
+
+	t.Logf("Update response: Status=%d", rr.Code)
+	t.Logf("Response body: %s", rr.Body.String())
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("handler returned wrong status code: got %v want %v", rr.Code, http.StatusOK)
+	}
+
+	// Parse the response
+	var respPlaylist map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&respPlaylist); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	// Check cover_url in response
+	coverURL, ok := respPlaylist["cover_url"]
+	t.Logf("Response cover_url: %v (exists: %v)", coverURL, ok)
+
+	if !ok || coverURL == "" || coverURL == nil {
+		t.Errorf("expected cover_url to be set, got: %v", coverURL)
+	}
+
+	// Verify DB state directly
+	updated, err := svc.GetByID(ctx, playlist.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	t.Logf("DB state: CoverPath=%q, CoverURL=%q", updated.CoverPath, updated.CoverURL)
+
+	if updated.CoverPath != song.CoverPath {
+		t.Errorf("expected CoverPath=%q, got %q", song.CoverPath, updated.CoverPath)
+	}
+}
+
+func TestUpdatePlaylistWithCoverSongID_RemoteSong(t *testing.T) {
+	env := newPlaylistHandlerEnv(t)
+	svc := env.newService()
+	ctx := context.Background()
+
+	// Create a remote song with CoverURL
+	song := &models.Song{
+		Type:     models.TypeRemote,
+		Title:    "Remote Song",
+		URL:      "https://example.com/song.mp3",
+		CoverURL: "https://cdn.example.com/cover.jpg",
+	}
+	if err := env.songs.Create(ctx, song); err != nil {
+		t.Fatalf("create song: %v", err)
+	}
+	t.Logf("Song created: ID=%d, CoverPath=%q, CoverURL=%q", song.ID, song.CoverPath, song.CoverURL)
+
+	songSvc := services.NewSongService(env.songs, nil, nil, nil, nil, nil)
+	handler := NewPlaylistHandler(svc, songSvc)
+
+	playlist := createTestPlaylist(t, svc, &models.Playlist{
+		Type: models.PlaylistTypeNormal,
+		Name: "Test Playlist Remote",
+	})
+
+	reqBody := map[string]interface{}{
+		"name":          "Test Playlist Remote",
+		"cover_song_id": song.ID,
+	}
+	body, _ := json.Marshal(reqBody)
+
+	idStr := strconv.FormatInt(playlist.ID, 10)
+	req := newRouteRequest("PUT", "/api/v1/playlists/"+idStr, body, map[string]string{"id": idStr})
+	rr := httptest.NewRecorder()
+
+	handler.UpdatePlaylist(rr, req)
+
+	t.Logf("Update response: Status=%d", rr.Code)
+	t.Logf("Response body: %s", rr.Body.String())
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("handler returned wrong status code: got %v want %v", rr.Code, http.StatusOK)
+	}
+
+	// Verify DB state
+	updated, err := svc.GetByID(ctx, playlist.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	t.Logf("DB state: CoverPath=%q, CoverURL=%q", updated.CoverPath, updated.CoverURL)
+
+	if updated.CoverURL != song.CoverURL {
+		t.Errorf("expected CoverURL=%q, got %q", song.CoverURL, updated.CoverURL)
+	}
+
+	// Verify JSON response has cover_url
+	var respPlaylist map[string]interface{}
+	json.NewDecoder(bytes.NewReader(rr.Body.Bytes())).Decode(&respPlaylist)
+	coverURL := respPlaylist["cover_url"]
+	t.Logf("Response cover_url: %v", coverURL)
+	if coverURL == "" || coverURL == nil {
+		t.Errorf("expected cover_url to be set")
+	}
+}
