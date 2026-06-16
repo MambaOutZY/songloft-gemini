@@ -31,7 +31,7 @@ var defaultTabConfig = tabConfigSetting{
 
 // GetTabConfigSetting 获取底部导航栏 Tab 配置
 // @Summary 获取底部导航栏 Tab 配置
-// @Description 获取用户自定义的底部导航栏 Tab 配置。首页和设置固定显示，歌曲库和歌单可关闭，最多可添加 2 个插件 Tab，总计不超过 5 个。未配置时返回默认值（4 个 Tab：首页、歌曲库、歌单、设置）。
+// @Description 获取用户自定义的底部导航栏 Tab 配置。首页和设置固定显示，歌曲库和歌单可关闭，可选项（歌曲库+歌单+插件 Tab）总数不超过 10 个。未配置时返回默认值（4 个 Tab：首页、歌曲库、歌单、设置）。移动端超过 5 个时自动折叠到「更多」菜单，桌面端侧边栏可全部展示。
 // @Tags 设置
 // @Produce json
 // @Success 200 {object} tabConfigSetting "Tab 配置"
@@ -51,7 +51,7 @@ func (h *ConfigHandler) GetTabConfigSetting(w http.ResponseWriter, r *http.Reque
 
 // UpdateTabConfigSetting 保存底部导航栏 Tab 配置
 // @Summary 保存底部导航栏 Tab 配置
-// @Description 保存用户自定义的底部导航栏 Tab 配置。首页和设置固定显示（不在配置中），可选项为歌曲库、歌单和插件 Tab，可选项总数不超过 3 个（总计 5 个 Tab）。每个插件 Tab 的 entry_path 和 name 不能为空，且不能重复。
+// @Description 保存用户自定义的底部导航栏 Tab 配置。首页和设置固定显示（不在配置中），可选项为歌曲库、歌单和插件 Tab，可选项总数不超过 10 个。每个插件 Tab 的 entry_path 和 name 不能为空，且不能重复。移动端超过 5 个时自动折叠到「更多」菜单。
 // @Tags 设置
 // @Accept json
 // @Produce json
@@ -78,8 +78,8 @@ func (h *ConfigHandler) UpdateTabConfigSetting(w http.ResponseWriter, r *http.Re
 	if req.ShowPlaylists {
 		optionalCount++
 	}
-	if optionalCount > 3 {
-		respondError(w, http.StatusBadRequest, "可选标签总数不能超过 3 个（总计最多 5 个标签）", nil)
+	if optionalCount > 10 {
+		respondError(w, http.StatusBadRequest, "可选标签总数不能超过 10 个", nil)
 		return
 	}
 

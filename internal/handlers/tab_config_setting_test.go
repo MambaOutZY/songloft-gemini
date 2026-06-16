@@ -74,13 +74,47 @@ func TestTabConfigSetting_UpdateThenRead(t *testing.T) {
 func TestTabConfigSetting_ExceedLimit(t *testing.T) {
 	h := newTestConfigHandler(t)
 
-	// 4 个可选项 = 超过上限 3
-	body := `{"show_library":true,"show_playlists":true,"plugin_tabs":[{"plugin_id":1,"entry_path":"a","name":"A"},{"plugin_id":2,"entry_path":"b","name":"B"}]}`
+	// 11 个可选项 = 超过上限 10（show_library + show_playlists + 9 个插件）
+	plugins := make([]pluginTabEntry, 9)
+	for i := range plugins {
+		plugins[i] = pluginTabEntry{PluginID: i + 1, EntryPath: string(rune('a' + i)), Name: string(rune('A' + i))}
+	}
+	req := tabConfigSetting{ShowLibrary: true, ShowPlaylists: true, PluginTabs: plugins}
+	body, _ := json.Marshal(req)
 	rr := httptest.NewRecorder()
 	h.UpdateTabConfigSetting(rr, httptest.NewRequest("PUT", "/api/v1/settings/tab-config",
-		strings.NewReader(body)))
+		strings.NewReader(string(body))))
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("exceed limit: got %d want 400, body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestTabConfigSetting_ManyTabs(t *testing.T) {
+	h := newTestConfigHandler(t)
+
+	// 8 个可选项 = 在新上限 10 以内（show_library + show_playlists + 6 个插件）
+	plugins := make([]pluginTabEntry, 6)
+	for i := range plugins {
+		plugins[i] = pluginTabEntry{PluginID: i + 1, EntryPath: string(rune('a' + i)), Name: string(rune('A' + i))}
+	}
+	req := tabConfigSetting{ShowLibrary: true, ShowPlaylists: true, PluginTabs: plugins}
+	body, _ := json.Marshal(req)
+	rr := httptest.NewRecorder()
+	h.UpdateTabConfigSetting(rr, httptest.NewRequest("PUT", "/api/v1/settings/tab-config",
+		strings.NewReader(string(body))))
+	if rr.Code != http.StatusOK {
+		t.Errorf("many tabs should succeed: got %d want 200, body=%s", rr.Code, rr.Body.String())
+	}
+
+	// 验证读取返回正确数量
+	rr2 := httptest.NewRecorder()
+	h.GetTabConfigSetting(rr2, httptest.NewRequest("GET", "/api/v1/settings/tab-config", nil))
+	var resp tabConfigSetting
+	if err := json.Unmarshal(rr2.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.PluginTabs) != 6 {
+		t.Errorf("plugin_tabs length: got %d want 6", len(resp.PluginTabs))
 	}
 }
 
