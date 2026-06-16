@@ -29,6 +29,7 @@ const (
 	LyricSourceEmbedded = "embedded" // 内嵌歌词
 	LyricSourceURL      = "url"      // URL 延迟加载（lyric 字段存放获取路径）
 	LyricSourceCached   = "cached"   // 从 URL 获取后缓存（lyric 字段存放歌词文本）
+	LyricSourceScraped  = "scraped"  // 由歌词提供者插件自动搜索获取
 	LyricSourceManual   = "manual"   // 用户手动调整后的歌词，scanner 重扫不再覆盖
 )
 

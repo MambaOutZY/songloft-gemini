@@ -241,6 +241,16 @@ songloft.fs = {
         await __callBridge('fs.rename', JSON.stringify({oldPath: oldPath, newPath: newPath}));
     }
 };
+
+// === songloft.lyrics — 歌词提供者注册 ===
+songloft.lyrics = {
+    registerProvider: function() {
+        __callBridge('plugin.registerLyricProvider', '');
+    },
+    unregisterProvider: function() {
+        __callBridge('plugin.unregisterLyricProvider', '');
+    }
+};
 `
 
 // GetBootstrapCode 返回插件引导 JS 代码（含通信 API）
@@ -258,8 +268,10 @@ type BridgeHandler struct {
 	pluginToken           string                   // 插件专用的永久 JWT Token
 	port                  string                   // 服务器监听端口（用于构造宿主 URL）
 	processes             sync.Map                 // map[name]*managedProcess — 后台进程跟踪
-	onPlayEventRegister   func(entryPath string)   // 播放事件订阅回调
-	onPlayEventUnregister func(entryPath string)   // 播放事件取消订阅回调
+	onPlayEventRegister       func(entryPath string) // 播放事件订阅回调
+	onPlayEventUnregister     func(entryPath string) // 播放事件取消订阅回调
+	onLyricProviderRegister   func(entryPath string) // 歌词提供者注册回调
+	onLyricProviderUnregister func(entryPath string) // 歌词提供者取消注册回调
 }
 
 // NewBridgeHandler 创建桥接处理器
@@ -671,6 +683,18 @@ func (h *BridgeHandler) handlePlugin(action, data string) (string, error) {
 	case "plugin.unregisterPlayEvent":
 		if h.onPlayEventUnregister != nil {
 			h.onPlayEventUnregister(h.service.plugin.EntryPath)
+		}
+		return "", nil
+
+	case "plugin.registerLyricProvider":
+		if h.onLyricProviderRegister != nil {
+			h.onLyricProviderRegister(h.service.plugin.EntryPath)
+		}
+		return "", nil
+
+	case "plugin.unregisterLyricProvider":
+		if h.onLyricProviderUnregister != nil {
+			h.onLyricProviderUnregister(h.service.plugin.EntryPath)
 		}
 		return "", nil
 

@@ -29,6 +29,11 @@ type PlayEventBroadcaster interface {
 	BroadcastPlayEvent(songID int64, title, artist, eventType, source string)
 }
 
+// LyricSearcher 歌词搜索接口（由 JS 插件管理器实现）
+type LyricSearcher interface {
+	SearchLyrics(ctx context.Context, title, artist, album string, duration float64) (*models.LyricPayload, error)
+}
+
 // SongHandler 歌曲处理器
 type SongHandler struct {
 	songService     *services.SongService
@@ -39,6 +44,7 @@ type SongHandler struct {
 	playActivity    *playactivity.Registry // 跟踪进行中的 play/prefetch/transcode/reassign 工作，用户切歌时一次性 cancel
 	getMusicPath    func() string          // 获取 music_path（由 scanner.GetMusicPath 注入）
 	playBroadcaster PlayEventBroadcaster   // JS 插件播放事件广播（可选，nil 安全）
+	lyricSearcher   LyricSearcher          // 歌词提供者搜索（可选，nil 安全）
 }
 
 // NewSongHandler 创建歌曲处理器
@@ -68,6 +74,11 @@ func (h *SongHandler) SetGetMusicPath(fn func() string) {
 // SetPlayBroadcaster 注入 JS 插件播放事件广播器。
 func (h *SongHandler) SetPlayBroadcaster(b PlayEventBroadcaster) {
 	h.playBroadcaster = b
+}
+
+// SetLyricSearcher 注入歌词搜索器（由 JS 插件管理器实现）。
+func (h *SongHandler) SetLyricSearcher(s LyricSearcher) {
+	h.lyricSearcher = s
 }
 
 // ListSongs 获取歌曲列表
@@ -1041,26 +1052,24 @@ func (h *SongHandler) GetSongLyric(w http.ResponseWriter, r *http.Request) {
 
 	var payload models.LyricPayload
 	if song.LyricSource == models.LyricSourceURL {
-		if song.LyricRemoteURL == "" {
-			http.NotFound(w, r)
-			return
+		if song.LyricRemoteURL != "" && h.lyricFetcher != nil {
+			p, err := h.lyricFetcher.Fetch(ctx, song.LyricRemoteURL)
+			if err != nil {
+				respondError(w, http.StatusBadGateway, "歌词获取失败", err)
+				return
+			}
+			payload = p
 		}
-		if h.lyricFetcher == nil {
-			respondError(w, http.StatusBadGateway, "歌词获取失败:未配置 LyricFetcher", nil)
-			return
-		}
-		p, err := h.lyricFetcher.Fetch(ctx, song.LyricRemoteURL)
-		if err != nil {
-			respondError(w, http.StatusBadGateway, "歌词获取失败", err)
-			return
-		}
-		payload = p
-	} else {
-		if song.Lyric == "" {
-			http.NotFound(w, r)
-			return
-		}
+	} else if song.Lyric != "" {
 		payload = models.UnmarshalLyric(song.Lyric)
+	}
+
+	// 歌词为空时，尝试从已注册的歌词提供者插件获取
+	if payload.IsEmpty() && h.lyricSearcher != nil {
+		if found, err := h.lyricSearcher.SearchLyrics(ctx, song.Title, song.Artist, song.Album, song.Duration); err == nil && found != nil && !found.IsEmpty() {
+			go h.songService.UpdateLyrics(context.Background(), song.ID, found.MarshalString(), models.LyricSourceScraped, "")
+			payload = *found
+		}
 	}
 
 	if payload.IsEmpty() {

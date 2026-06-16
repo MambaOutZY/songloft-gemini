@@ -3,17 +3,22 @@ package jsplugin
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"songloft/internal/database"
 	"songloft/internal/jsruntime"
+	"songloft/internal/models"
 	"songloft/internal/services"
 
 	"github.com/go-chi/chi/v5"
@@ -55,6 +60,7 @@ type Manager struct {
 	loadGroup            singleflight.Group
 	publicPathPrefixes   []string // 无需 JWT 的路径前缀（通过 RefreshPublicPaths 从 DB 加载，运行时可刷新）
 	playEventSubscribers sync.Map // 已订阅播放事件的插件 entryPath 集合
+	lyricProviders       sync.Map // 已注册为歌词提供者的插件 entryPath 集合
 }
 
 // NewManager 创建 JS 插件管理器
@@ -227,6 +233,8 @@ func (m *Manager) LoadPlugin(ctx context.Context, plugin *JSPlugin) error {
 	bridgeHandler := NewBridgeHandler(service, dataDir, m.db, m.songDownloader, m.pluginToken, m.getPort())
 	bridgeHandler.onPlayEventRegister = m.RegisterPlayEvent
 	bridgeHandler.onPlayEventUnregister = m.UnregisterPlayEvent
+	bridgeHandler.onLyricProviderRegister = m.RegisterLyricProvider
+	bridgeHandler.onLyricProviderUnregister = m.UnregisterLyricProvider
 	service.bridgeHandler = bridgeHandler
 
 	// 3. 加载插件（读取 ZIP、校验 hash、创建 JS 环境）
@@ -283,6 +291,8 @@ func (m *Manager) UnloadPlugin(ctx context.Context, entryPath string) error {
 
 	// 清理播放事件订阅
 	m.playEventSubscribers.Delete(entryPath)
+	// 清理歌词提供者注册
+	m.lyricProviders.Delete(entryPath)
 
 	return nil
 }
@@ -457,6 +467,57 @@ func (m *Manager) RegisterPlayEvent(entryPath string) {
 func (m *Manager) UnregisterPlayEvent(entryPath string) {
 	m.playEventSubscribers.Delete(entryPath)
 	slog.Info("plugin unregistered from play events", "plugin", entryPath)
+}
+
+// RegisterLyricProvider 将插件注册为歌词提供者
+func (m *Manager) RegisterLyricProvider(entryPath string) {
+	m.lyricProviders.Store(entryPath, true)
+	slog.Info("plugin registered as lyric provider", "plugin", entryPath)
+}
+
+// UnregisterLyricProvider 取消插件的歌词提供者注册
+func (m *Manager) UnregisterLyricProvider(entryPath string) {
+	m.lyricProviders.Delete(entryPath)
+	slog.Info("plugin unregistered as lyric provider", "plugin", entryPath)
+}
+
+// SearchLyrics 遍历已注册的歌词提供者插件，通过 InvokeHTTP 调用其 /lyric-search 端点。
+// 第一个返回非空歌词的结果即停止。
+func (m *Manager) SearchLyrics(ctx context.Context, title, artist, album string, duration float64) (*models.LyricPayload, error) {
+	query := url.Values{
+		"title":    {title},
+		"artist":   {artist},
+		"album":    {album},
+		"duration": {strconv.FormatFloat(duration, 'f', 1, 64)},
+	}
+
+	var result *models.LyricPayload
+	m.lyricProviders.Range(func(key, _ interface{}) bool {
+		entryPath := key.(string)
+		searchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+
+		statusCode, _, body, err := m.InvokeHTTP(searchCtx, entryPath, "GET", "/lyric-search", query, nil)
+		if err != nil {
+			slog.Debug("lyric search failed", "plugin", entryPath, "error", err)
+			return true
+		}
+		if statusCode != http.StatusOK || len(body) == 0 {
+			return true
+		}
+
+		var payload models.LyricPayload
+		if err := json.Unmarshal(body, &payload); err != nil || payload.IsEmpty() {
+			return true
+		}
+		result = &payload
+		return false
+	})
+
+	if result != nil {
+		return result, nil
+	}
+	return nil, errors.New("no lyrics found from any provider")
 }
 
 // BroadcastPlayEvent 向所有已订阅的插件异步发送播放事件
