@@ -165,6 +165,10 @@ func ServeRemoteResource(w http.ResponseWriter, r *http.Request, resourceURL str
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 400 {
+		slog.Warn("remote resource upstream error", "url", upstreamReq.URL.String(), "status", resp.StatusCode)
+	}
+
 	// 透传关键响应头（Content-Type、Content-Range、Accept-Ranges、Cache-Control 等）
 	forwardResponseHeaders(w, resp)
 
@@ -257,6 +261,7 @@ func ServeRemoteResourceWithCache(
 			go onCacheMiss()
 		}
 	} else {
+		slog.Warn("remote resource upstream error", "url", upstreamReq.URL.String(), "status", resp.StatusCode)
 		io.Copy(w, resp.Body)
 	}
 }
