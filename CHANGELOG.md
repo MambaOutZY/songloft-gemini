@@ -1,3 +1,25 @@
+## [v2.8.5] - 2026-06-16
+### :sparkles: New Features
+- [`5744cc3`](https://github.com/songloft-org/songloft/commit/5744cc35db02d0d0c53e6f1ad92746ced61fa73b) - **nav**: 放宽 tab 数量限制至 10，移动端支持「更多」溢出菜单 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`389be4a`](https://github.com/songloft-org/songloft/commit/389be4a4900554dd1cef5a460a09e8058332a0c0) - **playlist**: 更新 songloft-player 子模块，歌单列表高亮当前播放歌单 (close [#182](https://github.com/songloft-org/songloft/pull/182)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3c37727`](https://github.com/songloft-org/songloft/commit/3c3772728fd3aeb4a96f3bf886628279c1c99218) - **plugin**: 新增歌词提供者回调机制和 lrclib 歌词插件 (close [#183](https://github.com/songloft-org/songloft/pull/183)) *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`bec658c`](https://github.com/songloft-org/songloft/commit/bec658cbafde9b921cee8e6f4daa59f2a4f9c6d9) - **web**: 更新 songloft-player 子模块，修复 embedded 模式字体缺失 (close [#177](https://github.com/songloft-org/songloft/pull/177)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e1b7d40`](https://github.com/songloft-org/songloft/commit/e1b7d408e44c47a83b5df116d8055cc66d24a9ea) - **playlist**: 修复从歌曲选择封面后预览空白及缓存不刷新 (close [#176](https://github.com/songloft-org/songloft/pull/176)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`4c01988`](https://github.com/songloft-org/songloft/commit/4c01988f47a5bf50fbbb4c732c3262f45bb70772) - **plugin**: 更新 songloft-player 子模块，修复 Windows 最小化后插件 WebView 拦截桌面右键 (close [#181](https://github.com/songloft-org/songloft/pull/181)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1eb05ac`](https://github.com/songloft-org/songloft/commit/1eb05ac89536efa2a3771719f929281193e4353f) - **plugin**: 修复 DAV 插件 buildStreamUrl 路径双重前缀导致播放 404 (close [#180](https://github.com/songloft-org/songloft/pull/180)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d5ec3cc`](https://github.com/songloft-org/songloft/commit/d5ec3cc3b9b0678d783541eeee81911a01472f23) - **plugin**: URLSearchParams polyfill 支持对象参数，修复歌词插件精确搜索参数丢失 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`690c6cc`](https://github.com/songloft-org/songloft/commit/690c6ccdb40dc41596ed8697eeeb62248419542a) - update CHANGELOG for v2.8.4 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`12b565d`](https://github.com/songloft-org/songloft/commit/12b565d45e9c6f8706df6ca8a5b4215fe2739668) - **plugin**: 更新歌词插件子模块，补全元数据和发布流程 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`841fffc`](https://github.com/songloft-org/songloft/commit/841fffc0af44fb332fdd6c97d7b044da16b1af2a) - **plugin**: 更新插件源子模块，添加歌词搜索插件 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`27be42d`](https://github.com/songloft-org/songloft/commit/27be42d92c92c0d3f7aaaad88aac4e599577ef22) - release version 2.8.5 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.8.4] - 2026-06-15
 ### :bug: Bug Fixes
 - [`422c968`](https://github.com/songloft-org/songloft/commit/422c968f60fae1a70bd50bc09334b848148d9bff) - **miot**: 更新 miot 插件 - 修复语音搜歌匹配错误 (close [#83](https://github.com/songloft-org/songloft/pull/83)) *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1310,3 +1332,4 @@
 [v2.8.2]: https://github.com/songloft-org/songloft/compare/v2.8.1...v2.8.2
 [v2.8.3]: https://github.com/songloft-org/songloft/compare/v2.8.2...v2.8.3
 [v2.8.4]: https://github.com/songloft-org/songloft/compare/v2.8.3...v2.8.4
+[v2.8.5]: https://github.com/songloft-org/songloft/compare/v2.8.4...v2.8.5
