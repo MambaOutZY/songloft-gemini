@@ -157,6 +157,62 @@
         });
     }
 
+    // ── Accessibility ──
+
+    function hideDecorationIcons() {
+        document.querySelectorAll('.material-symbols-outlined, .mi').forEach(function(el) {
+            if (!el.getAttribute('aria-hidden')) {
+                el.setAttribute('aria-hidden', 'true');
+            }
+        });
+    }
+
+    function enhanceClickableElements() {
+        document.querySelectorAll('[onclick]').forEach(function(el) {
+            var tag = el.tagName.toLowerCase();
+            if (tag !== 'button' && tag !== 'a' && tag !== 'input' && tag !== 'select') {
+                if (!el.getAttribute('role')) el.setAttribute('role', 'button');
+                if (!el.getAttribute('tabindex')) el.setAttribute('tabindex', '0');
+                el.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        el.click();
+                    }
+                });
+            }
+        });
+    }
+
+    function announce(message, priority) {
+        var region = document.getElementById('songloft-a11y-live');
+        if (!region) {
+            region = document.createElement('div');
+            region.id = 'songloft-a11y-live';
+            region.className = 'sr-only';
+            region.setAttribute('aria-live', priority || 'polite');
+            region.setAttribute('aria-atomic', 'true');
+            document.body.appendChild(region);
+        }
+        region.textContent = '';
+        setTimeout(function() { region.textContent = message; }, 100);
+    }
+
+    function initAccessibility() {
+        hideDecorationIcons();
+        enhanceClickableElements();
+        var snackbar = document.getElementById('snackbar');
+        if (snackbar && !snackbar.getAttribute('role')) {
+            snackbar.setAttribute('role', 'status');
+            snackbar.setAttribute('aria-live', 'polite');
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initAccessibility);
+    } else {
+        initAccessibility();
+    }
+
     window.SongloftPlugin = {
         getAuthToken: getAuthToken,
         apiGet: apiGet,
@@ -164,6 +220,9 @@
         apiPut: apiPut,
         apiDelete: apiDelete,
         getTheme: getTheme,
-        onThemeChange: onThemeChange
+        onThemeChange: onThemeChange,
+        announce: announce,
+        hideDecorationIcons: hideDecorationIcons,
+        enhanceClickableElements: enhanceClickableElements
     };
 })();
