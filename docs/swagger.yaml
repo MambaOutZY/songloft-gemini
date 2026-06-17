@@ -789,6 +789,17 @@ definitions:
         description: 总大小（字节）
         type: integer
     type: object
+  services.DurationRefreshProgress:
+    properties:
+      failed:
+        type: integer
+      processed:
+        type: integer
+      status:
+        type: string
+      total:
+        type: integer
+    type: object
   services.FingerprintProgress:
     properties:
       computed:
@@ -4517,6 +4528,63 @@ paths:
       security:
       - BearerAuth: []
       summary: 批量添加电台/广播
+      tags:
+      - 歌曲管理
+  /songs/refresh-duration:
+    post:
+      description: 对所有 duration=0 的远程歌曲，通过 ffprobe 探测实际播放时长并回填。已在运行时返回 409。
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: 已启动
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 已在运行
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 启动失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 刷新远程歌曲时长
+      tags:
+      - 歌曲管理
+  /songs/refresh-duration/cancel:
+    post:
+      description: 取消正在执行的远程歌曲时长刷新任务
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: 已取消
+      security:
+      - BearerAuth: []
+      summary: 取消时长刷新
+      tags:
+      - 歌曲管理
+  /songs/refresh-duration/progress:
+    get:
+      description: 轮询远程歌曲时长刷新的执行状态和进度
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 进度信息
+          schema:
+            $ref: '#/definitions/services.DurationRefreshProgress'
+      security:
+      - BearerAuth: []
+      summary: 获取时长刷新进度
       tags:
       - 歌曲管理
   /songs/remote:

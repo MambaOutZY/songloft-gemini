@@ -4697,6 +4697,99 @@ const docTemplate = `{
                 }
             }
         },
+        "/songs/refresh-duration": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "对所有 duration=0 的远程歌曲，通过 ffprobe 探测实际播放时长并回填。已在运行时返回 409。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "刷新远程歌曲时长",
+                "responses": {
+                    "202": {
+                        "description": "已启动",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "已在运行",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "启动失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/songs/refresh-duration/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "取消正在执行的远程歌曲时长刷新任务",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "取消时长刷新",
+                "responses": {
+                    "204": {
+                        "description": "已取消"
+                    }
+                }
+            }
+        },
+        "/songs/refresh-duration/progress": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "轮询远程歌曲时长刷新的执行状态和进度",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "获取时长刷新进度",
+                "responses": {
+                    "200": {
+                        "description": "进度信息",
+                        "schema": {
+                            "$ref": "#/definitions/services.DurationRefreshProgress"
+                        }
+                    }
+                }
+            }
+        },
         "/songs/remote": {
             "post": {
                 "security": [
@@ -6969,6 +7062,23 @@ const docTemplate = `{
                 },
                 "total_size": {
                     "description": "总大小（字节）",
+                    "type": "integer"
+                }
+            }
+        },
+        "services.DurationRefreshProgress": {
+            "type": "object",
+            "properties": {
+                "failed": {
+                    "type": "integer"
+                },
+                "processed": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "total": {
                     "type": "integer"
                 }
             }

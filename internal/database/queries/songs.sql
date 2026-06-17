@@ -127,3 +127,8 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     fingerprint, fingerprint_duration,
     isrc, cache_path
 FROM songs WHERE cache_path != '';
+
+-- name: ListSongsNeedingDuration :many
+SELECT id, plugin_entry_path, source_data, url
+FROM songs
+WHERE type = 'remote' AND (duration = 0 OR duration IS NULL);

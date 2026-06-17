@@ -36,15 +36,16 @@ type LyricSearcher interface {
 
 // SongHandler 歌曲处理器
 type SongHandler struct {
-	songService     *services.SongService
-	cacheService    *services.CacheService
-	reassigner      AsyncReassigner
-	lyricFetcher    *services.LyricFetcher // 解包插件 JSON 拿 LRC 文本(歌词 url 分支用)
-	hlsHandler      *HLSHandler            // 电台 HLS 流的反代委托（开关在 HLSHandler 内）
-	playActivity    *playactivity.Registry // 跟踪进行中的 play/prefetch/transcode/reassign 工作，用户切歌时一次性 cancel
-	getMusicPath    func() string          // 获取 music_path（由 scanner.GetMusicPath 注入）
-	playBroadcaster PlayEventBroadcaster   // JS 插件播放事件广播（可选，nil 安全）
-	lyricSearcher   LyricSearcher          // 歌词提供者搜索（可选，nil 安全）
+	songService       *services.SongService
+	cacheService      *services.CacheService
+	reassigner        AsyncReassigner
+	lyricFetcher      *services.LyricFetcher // 解包插件 JSON 拿 LRC 文本(歌词 url 分支用)
+	hlsHandler        *HLSHandler            // 电台 HLS 流的反代委托（开关在 HLSHandler 内）
+	playActivity      *playactivity.Registry // 跟踪进行中的 play/prefetch/transcode/reassign 工作，用户切歌时一次性 cancel
+	getMusicPath      func() string          // 获取 music_path（由 scanner.GetMusicPath 注入）
+	playBroadcaster   PlayEventBroadcaster   // JS 插件播放事件广播（可选，nil 安全）
+	lyricSearcher     LyricSearcher          // 歌词提供者搜索（可选，nil 安全）
+	durationRefresher *services.DurationRefresher
 }
 
 // NewSongHandler 创建歌曲处理器
@@ -79,6 +80,64 @@ func (h *SongHandler) SetPlayBroadcaster(b PlayEventBroadcaster) {
 // SetLyricSearcher 注入歌词搜索器（由 JS 插件管理器实现）。
 func (h *SongHandler) SetLyricSearcher(s LyricSearcher) {
 	h.lyricSearcher = s
+}
+
+// SetDurationRefresher 注入时长刷新器。
+func (h *SongHandler) SetDurationRefresher(d *services.DurationRefresher) {
+	h.durationRefresher = d
+}
+
+// StartDurationRefresh 触发刷新远程歌曲时长
+// @Summary 刷新远程歌曲时长
+// @Description 对所有 duration=0 的远程歌曲，通过 ffprobe 探测实际播放时长并回填。已在运行时返回 409。
+// @Tags 歌曲管理
+// @Produce json
+// @Success 202 {object} map[string]string "已启动"
+// @Failure 409 {object} map[string]string "已在运行"
+// @Failure 500 {object} map[string]string "启动失败"
+// @Security BearerAuth
+// @Router /songs/refresh-duration [post]
+func (h *SongHandler) StartDurationRefresh(w http.ResponseWriter, r *http.Request) {
+	if h.durationRefresher == nil {
+		respondError(w, http.StatusInternalServerError, "duration refresher not configured", nil)
+		return
+	}
+	if err := h.durationRefresher.Start(); err != nil {
+		respondError(w, http.StatusConflict, err.Error(), nil)
+		return
+	}
+	respondJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+// GetDurationRefreshProgress 获取时长刷新进度
+// @Summary 获取时长刷新进度
+// @Description 轮询远程歌曲时长刷新的执行状态和进度
+// @Tags 歌曲管理
+// @Produce json
+// @Success 200 {object} services.DurationRefreshProgress "进度信息"
+// @Security BearerAuth
+// @Router /songs/refresh-duration/progress [get]
+func (h *SongHandler) GetDurationRefreshProgress(w http.ResponseWriter, r *http.Request) {
+	if h.durationRefresher == nil {
+		respondJSON(w, http.StatusOK, services.DurationRefreshProgress{Status: "idle"})
+		return
+	}
+	respondJSON(w, http.StatusOK, h.durationRefresher.GetProgress())
+}
+
+// CancelDurationRefresh 取消时长刷新
+// @Summary 取消时长刷新
+// @Description 取消正在执行的远程歌曲时长刷新任务
+// @Tags 歌曲管理
+// @Produce json
+// @Success 204 "已取消"
+// @Security BearerAuth
+// @Router /songs/refresh-duration/cancel [post]
+func (h *SongHandler) CancelDurationRefresh(w http.ResponseWriter, r *http.Request) {
+	if h.durationRefresher != nil {
+		h.durationRefresher.Cancel()
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ListSongs 获取歌曲列表

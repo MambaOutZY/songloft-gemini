@@ -336,6 +336,35 @@ func (m *MetadataExtractor) ExtractDuration(ctx context.Context, filePath string
 	return 0, nil
 }
 
+// ProbeDurationFromURL 通过 ffprobe 探测远程 URL 的音频时长。
+// ffprobe 原生支持 HTTP/HTTPS（含 Basic Auth），仅下载头部数据即可获取时长。
+func (m *MetadataExtractor) ProbeDurationFromURL(ctx context.Context, url string) (float64, error) {
+	if m.config.FFProbePath == "" {
+		return 0, fmt.Errorf("ffprobe not configured")
+	}
+	cmd := exec.CommandContext(
+		ctx,
+		m.config.FFProbePath,
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_format",
+		"-analyzeduration", "10000000",
+		url,
+	)
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("ffprobe url: %w", err)
+	}
+	var probe FFProbeOutput
+	if err := json.Unmarshal(output, &probe); err != nil {
+		return 0, fmt.Errorf("parse ffprobe output: %w", err)
+	}
+	if probe.Format.Duration != "" {
+		return parseDuration(probe.Format.Duration)
+	}
+	return 0, nil
+}
+
 // runFFProbe 执行 ffprobe 并解析 JSON 输出
 func (m *MetadataExtractor) runFFProbe(ctx context.Context, filePath string) (*FFProbeOutput, error) {
 	cmd := m.buildFFProbeCommandContext(ctx, filePath)

@@ -51,6 +51,7 @@ type App struct {
 	jsPluginManager    *jsplugin.Manager
 	sourceMetrics      *source.SourceMetrics
 	sourceOrchestrator *source.SourceOrchestrator
+	durationRefresher  *services.DurationRefresher
 	playActivity       *playactivity.Registry // 跨 song/会话 cancel 的全局表，处理快速切歌时旧请求的让位（issue #79）
 	webDist            embed.FS
 	tracelyClient      *tracely.Client
@@ -343,6 +344,17 @@ func (a *App) Init() error {
 			return info.GetDuration(), nil
 		},
 		a.songService.UpdateSongDuration,
+	)
+	a.durationRefresher = services.NewDurationRefresher(
+		songRepo.ListSongsNeedingDuration,
+		a.songService.UpdateSongDuration,
+		func(ctx context.Context, song *models.Song) (string, error) {
+			if song.IsPluginSourced() {
+				return a.cacheService.ResolveURL(ctx, song)
+			}
+			return song.URL, nil
+		},
+		a.metadataExtractor,
 	)
 
 	// 初始化 Tracely 监控客户端（仅在编译时注入了 AppSecret 与 Host 时启用）

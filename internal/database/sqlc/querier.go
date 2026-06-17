@@ -52,6 +52,7 @@ type Querier interface {
 	ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalWithoutFingerprintRow, error)
 	ListPlaylistsContainingSong(ctx context.Context, songID int64) ([]int64, error)
 	ListSongsByFingerprint(ctx context.Context, fingerprint string) ([]ListSongsByFingerprintRow, error)
+	ListSongsNeedingDuration(ctx context.Context) ([]ListSongsNeedingDurationRow, error)
 	ListSongsWithCache(ctx context.Context) ([]Song, error)
 	MaxPositionInPlaylist(ctx context.Context, playlistID int64) (int64, error)
 	RemoveSongFromPlaylist(ctx context.Context, arg RemoveSongFromPlaylistParams) (int64, error)

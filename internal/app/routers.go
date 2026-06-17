@@ -48,6 +48,7 @@ func (a *App) setupAPIV1Router() {
 	songHandler.SetGetMusicPath(a.scanner.GetMusicPath)
 	songHandler.SetPlayBroadcaster(&playEventBroadcastAdapter{m: a.jsPluginManager})
 	songHandler.SetLyricSearcher(a.jsPluginManager)
+	songHandler.SetDurationRefresher(a.durationRefresher)
 	playlistHandler := handlers.NewPlaylistHandler(a.playlistService, a.songService)
 	configHandler := handlers.NewConfigHandler(a.configService)
 	scanHandler := handlers.NewScanHandler(a.songService, a.scanner, a.configService)
@@ -131,6 +132,9 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/songs/organize", songHandler.OrganizeSongs)
 			r.Post("/songs/{id}/activate", songHandler.ActivateSong)
 			r.Post("/songs/{id}/played", songHandler.SongPlayed)
+			r.Post("/songs/refresh-duration", songHandler.StartDurationRefresh)
+			r.Get("/songs/refresh-duration/progress", songHandler.GetDurationRefreshProgress)
+			r.Post("/songs/refresh-duration/cancel", songHandler.CancelDurationRefresh)
 
 			// 歌单管理模块
 			backupHandler := handlers.NewBackupHandler(a.backupService)

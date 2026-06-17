@@ -422,6 +422,47 @@ func (q *Queries) ListSongsByFingerprint(ctx context.Context, fingerprint string
 	return items, nil
 }
 
+const listSongsNeedingDuration = `-- name: ListSongsNeedingDuration :many
+SELECT id, plugin_entry_path, source_data, url
+FROM songs
+WHERE type = 'remote' AND (duration = 0 OR duration IS NULL)
+`
+
+type ListSongsNeedingDurationRow struct {
+	ID              int64
+	PluginEntryPath string
+	SourceData      string
+	Url             string
+}
+
+func (q *Queries) ListSongsNeedingDuration(ctx context.Context) ([]ListSongsNeedingDurationRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSongsNeedingDuration)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSongsNeedingDurationRow{}
+	for rows.Next() {
+		var i ListSongsNeedingDurationRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PluginEntryPath,
+			&i.SourceData,
+			&i.Url,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSongsWithCache = `-- name: ListSongsWithCache :many
 SELECT id, type, title, artist, album, duration, file_path, url,
     cover_path, cover_url, lyric, lyric_source, file_size,

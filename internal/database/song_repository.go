@@ -711,3 +711,8 @@ func boolToInt64(b bool) int64 {
 	}
 	return 0
 }
+
+// ListSongsNeedingDuration 返回所有 duration=0 的远程歌曲（用于批量时长探测）。
+func (r *SongRepository) ListSongsNeedingDuration(ctx context.Context) ([]sqlc.ListSongsNeedingDurationRow, error) {
+	return r.queries.ListSongsNeedingDuration(ctx)
+}
