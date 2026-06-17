@@ -373,6 +373,18 @@ func (c *CacheService) FinalizeCache(ctx context.Context, song *models.Song, tmp
 		}
 	}
 
+	if song.Duration == 0 && c.probeDuration != nil && c.updateDuration != nil {
+		go func(songID int64, path string) {
+			dur, err := c.probeDuration(context.Background(), path)
+			if err != nil || dur <= 0 {
+				return
+			}
+			if err := c.updateDuration(context.Background(), songID, dur); err != nil {
+				slog.Warn("duration backfill failed", "songId", songID, "error", err)
+			}
+		}(song.ID, finalPath)
+	}
+
 	c.touchSongLRU(song.ID)
 	c.EvictLRU()
 }

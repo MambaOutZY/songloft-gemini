@@ -67,6 +67,9 @@ type CacheService struct {
 	clearCachePath     func(ctx context.Context, songID int64) error
 	clearAllCachePaths func(ctx context.Context) error
 	listSongsWithCache func(ctx context.Context) ([]*models.Song, error)
+	// 时长回填：缓存完成后对 duration=0 的歌曲探测音频时长并回写
+	probeDuration  func(ctx context.Context, filePath string) (float64, error)
+	updateDuration func(ctx context.Context, songID int64, duration float64) error
 }
 
 // NewCacheService 创建缓存服务
@@ -101,6 +104,16 @@ func (c *CacheService) SetCachePathCallbacks(
 	c.clearCachePath = clear
 	c.clearAllCachePaths = clearAll
 	c.listSongsWithCache = listWithCache
+}
+
+// SetDurationBackfillCallbacks 注入时长回填回调（由 app.go 调用）。
+// 缓存完成后，对 duration=0 的歌曲异步探测音频时长并回写 DB。
+func (c *CacheService) SetDurationBackfillCallbacks(
+	probe func(ctx context.Context, filePath string) (float64, error),
+	update func(ctx context.Context, songID int64, duration float64) error,
+) {
+	c.probeDuration = probe
+	c.updateDuration = update
 }
 
 // isAudioContentType 检查 Content-Type 是否为音频类型

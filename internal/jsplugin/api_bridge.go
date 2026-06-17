@@ -260,18 +260,18 @@ func GetBootstrapCode() string {
 
 // BridgeHandler 处理 JS 通过 __go_bridge 调用的请求
 type BridgeHandler struct {
-	service               *JSService
-	permissions           []string
-	dataDir               string                   // data/jsplugins_data/
-	db                    database.DB              // 数据库访问（用于 songs/playlists 查询）
-	songDownloader        *services.SongDownloader // 歌曲下载服务（songs.download bridge 调用）
-	pluginToken           string                   // 插件专用的永久 JWT Token
-	port                  string                   // 服务器监听端口（用于构造宿主 URL）
-	processes             sync.Map                 // map[name]*managedProcess — 后台进程跟踪
-	onPlayEventRegister       func(entryPath string) // 播放事件订阅回调
-	onPlayEventUnregister     func(entryPath string) // 播放事件取消订阅回调
-	onLyricProviderRegister   func(entryPath string) // 歌词提供者注册回调
-	onLyricProviderUnregister func(entryPath string) // 歌词提供者取消注册回调
+	service                   *JSService
+	permissions               []string
+	dataDir                   string                   // data/jsplugins_data/
+	db                        database.DB              // 数据库访问（用于 songs/playlists 查询）
+	songDownloader            *services.SongDownloader // 歌曲下载服务（songs.download bridge 调用）
+	pluginToken               string                   // 插件专用的永久 JWT Token
+	port                      string                   // 服务器监听端口（用于构造宿主 URL）
+	processes                 sync.Map                 // map[name]*managedProcess — 后台进程跟踪
+	onPlayEventRegister       func(entryPath string)   // 播放事件订阅回调
+	onPlayEventUnregister     func(entryPath string)   // 播放事件取消订阅回调
+	onLyricProviderRegister   func(entryPath string)   // 歌词提供者注册回调
+	onLyricProviderUnregister func(entryPath string)   // 歌词提供者取消注册回调
 }
 
 // NewBridgeHandler 创建桥接处理器

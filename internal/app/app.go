@@ -334,6 +334,16 @@ func (a *App) Init() error {
 		songRepo.ClearAllCachePaths,
 		songRepo.ListSongsWithCache,
 	)
+	a.cacheService.SetDurationBackfillCallbacks(
+		func(ctx context.Context, filePath string) (float64, error) {
+			info, err := a.metadataExtractor.ProbeForValidation(ctx, filePath)
+			if err != nil {
+				return 0, err
+			}
+			return info.GetDuration(), nil
+		},
+		a.songService.UpdateSongDuration,
+	)
 
 	// 初始化 Tracely 监控客户端（仅在编译时注入了 AppSecret 与 Host 时启用）
 	if tracelycfg.Enabled() {

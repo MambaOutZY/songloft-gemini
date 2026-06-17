@@ -516,9 +516,9 @@ type BatchDeletePlaylistsResponse struct {
 type UpdatePlaylistRequest struct {
 	Name        string  `json:"name" example:"我的最爱"`                  // 歌单名称
 	Description string  `json:"description" example:"收藏的经典歌曲"`        // 歌单描述
-	CoverPath   *string `json:"cover_path,omitempty" example:""`       // 封面图片本地路径（传空字符串清除）
-	CoverURL    *string `json:"cover_url,omitempty" example:""`        // 封面图片 URL（传空字符串清除）
-	CoverSongID *int64  `json:"cover_song_id,omitempty" example:"42"`  // 从指定歌曲复制封面（与 cover_path/cover_url 互斥，优先级更高）
+	CoverPath   *string `json:"cover_path,omitempty" example:""`      // 封面图片本地路径（传空字符串清除）
+	CoverURL    *string `json:"cover_url,omitempty" example:""`       // 封面图片 URL（传空字符串清除）
+	CoverSongID *int64  `json:"cover_song_id,omitempty" example:"42"` // 从指定歌曲复制封面（与 cover_path/cover_url 互斥，优先级更高）
 }
 
 // JSPluginStatus JS 插件状态枚举
