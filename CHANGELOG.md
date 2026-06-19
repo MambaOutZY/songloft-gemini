@@ -1,3 +1,21 @@
+## [v2.8.6] - 2026-06-19
+### :sparkles: New Features
+- [`2341268`](https://github.com/songloft-org/songloft/commit/23412687dc4050de1e53146a69b2f0bcfe6fcb87) - **songs**: 批量刷新远程歌曲时长 API *(PR [#185](https://github.com/songloft-org/songloft/pull/185) by [@hanxi](https://github.com/hanxi))*
+- [`2104a03`](https://github.com/songloft-org/songloft/commit/2104a0377741175006b0853f475eb373ca4969bb) - **a11y**: 全面改进无障碍支持 *(PR [#186](https://github.com/songloft-org/songloft/pull/186) by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`6db9455`](https://github.com/songloft-org/songloft/commit/6db945554f0808436021ffa6f19c88852286da77) - **player**: 随机播放模式下全部播放不再固定从第一首开始 *(PR [#184](https://github.com/songloft-org/songloft/pull/184) by [@hanxi](https://github.com/hanxi))*
+- [`6c9590a`](https://github.com/songloft-org/songloft/commit/6c9590a881dd70f81ade84a8e47a2bbb38c94a69) - **cache**: 流式播放缓存后自动回填歌曲时长 *(PR [#185](https://github.com/songloft-org/songloft/pull/185) by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`d036d02`](https://github.com/songloft-org/songloft/commit/d036d02a62ee370af9bf7bbe1fecbb3eb49a9404) - update CHANGELOG for v2.8.5 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`50e9ce9`](https://github.com/songloft-org/songloft/commit/50e9ce94c40d8a4419237de8753dfc3967d66c60) - update songloft-player submodule *(commit by [@hanxi](https://github.com/hanxi))*
+- [`925a2a7`](https://github.com/songloft-org/songloft/commit/925a2a7ef100c633645ce295b76448ebd2e0a87a) - update songloft-plugin-miot submodule *(commit by [@hanxi](https://github.com/hanxi))*
+- [`15ebc80`](https://github.com/songloft-org/songloft/commit/15ebc802b1d1c395c39fbc5f52ea28a5709b3505) - release version 2.8.6 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.8.5] - 2026-06-16
 ### :sparkles: New Features
 - [`5744cc3`](https://github.com/songloft-org/songloft/commit/5744cc35db02d0d0c53e6f1ad92746ced61fa73b) - **nav**: 放宽 tab 数量限制至 10，移动端支持「更多」溢出菜单 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1333,3 +1351,4 @@
 [v2.8.3]: https://github.com/songloft-org/songloft/compare/v2.8.2...v2.8.3
 [v2.8.4]: https://github.com/songloft-org/songloft/compare/v2.8.3...v2.8.4
 [v2.8.5]: https://github.com/songloft-org/songloft/compare/v2.8.4...v2.8.5
+[v2.8.6]: https://github.com/songloft-org/songloft/compare/v2.8.5...v2.8.6
