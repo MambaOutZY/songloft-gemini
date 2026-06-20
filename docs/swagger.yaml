@@ -265,6 +265,21 @@ definitions:
       show_playlists:
         type: boolean
     type: object
+  handlers.userPreferencesSetting:
+    properties:
+      audio_quality:
+        type: string
+      local_cache_max_size:
+        type: integer
+      play_mode:
+        type: string
+      playlist_view_mode:
+        type: string
+      theme_mode:
+        type: string
+      volume:
+        type: number
+    type: object
   jsplugin.JSPlugin:
     properties:
       author:
@@ -3782,6 +3797,52 @@ paths:
       security:
       - BearerAuth: []
       summary: 保存底部导航栏 Tab 配置
+      tags:
+      - 设置
+  /settings/user-preferences:
+    get:
+      description: 获取用户跨设备同步的偏好设置，包括主题、播放模式、视图模式、音质、缓存上限和音量。未配置时返回默认值。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 用户偏好设置
+          schema:
+            $ref: '#/definitions/handlers.userPreferencesSetting'
+      security:
+      - BearerAuth: []
+      summary: 获取用户偏好设置
+      tags:
+      - 设置
+    put:
+      consumes:
+      - application/json
+      description: 保存用户跨设备同步的偏好设置。客户端登录后拉取、修改偏好时推送，实现多设备间偏好同步。
+      parameters:
+      - description: 用户偏好设置
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.userPreferencesSetting'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 保存后的用户偏好设置
+          schema:
+            $ref: '#/definitions/handlers.userPreferencesSetting'
+        "400":
+          description: 请求格式错误
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: 保存配置失败
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 保存用户偏好设置
       tags:
       - 设置
   /songs:

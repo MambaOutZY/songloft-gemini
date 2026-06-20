@@ -177,6 +177,8 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/settings/http-proxy", jsPluginHandler.UpdateHttpProxySetting)
 			r.Get("/settings/tab-config", configHandler.GetTabConfigSetting)
 			r.Put("/settings/tab-config", configHandler.UpdateTabConfigSetting)
+			r.Get("/settings/user-preferences", configHandler.GetUserPreferencesSetting)
+			r.Put("/settings/user-preferences", configHandler.UpdateUserPreferencesSetting)
 
 			// 配置管理模块
 			r.Get("/configs", configHandler.ListConfigs)
