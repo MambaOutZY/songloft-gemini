@@ -203,6 +203,62 @@ func TestSongPlaybackURL_HLSRadioGetsM3U8Suffix(t *testing.T) {
 	}
 }
 
+func TestLyricURLPath(t *testing.T) {
+	cases := []struct {
+		name string
+		song Song
+		want string
+	}{
+		{
+			name: "ID 为 0 返回空",
+			song: Song{ID: 0, Type: TypeLocal},
+			want: "",
+		},
+		{
+			name: "local 有歌词",
+			song: Song{ID: 1, Type: TypeLocal, Lyric: `{"lyric":"[00:00.00]hi"}`},
+			want: "/api/v1/songs/1/lyric",
+		},
+		{
+			name: "local 无歌词",
+			song: Song{ID: 1, Type: TypeLocal},
+			want: "",
+		},
+		{
+			name: "remote 无歌词也返回 URL（触发插件搜索）",
+			song: Song{ID: 5, Type: TypeRemote},
+			want: "/api/v1/songs/5/lyric",
+		},
+		{
+			name: "remote 有歌词",
+			song: Song{ID: 5, Type: TypeRemote, Lyric: `{"lyric":"[00:00.00]hi"}`},
+			want: "/api/v1/songs/5/lyric",
+		},
+		{
+			name: "radio 无歌词",
+			song: Song{ID: 3, Type: TypeRadio},
+			want: "",
+		},
+		{
+			name: "lyric_source=url 有远程 URL",
+			song: Song{ID: 7, Type: TypeLocal, LyricSource: LyricSourceURL, LyricRemoteURL: "https://example.com/lyric"},
+			want: "/api/v1/songs/7/lyric",
+		},
+		{
+			name: "lyric_source=url 但远程 URL 为空",
+			song: Song{ID: 7, Type: TypeLocal, LyricSource: LyricSourceURL},
+			want: "",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.song.LyricURLPath(); got != c.want {
+				t.Errorf("LyricURLPath() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // TestPlaylistValidate 测试 Playlist 验证逻辑
 func TestPlaylistValidate(t *testing.T) {
 	tests := []struct {

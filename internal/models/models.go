@@ -155,8 +155,9 @@ func (s *Song) CoverURLPath() string {
 }
 
 // LyricURLPath 返回客户端用的统一歌词 URL。
-// 有歌词时(无论来源):返回 /api/v1/songs/{id}/lyric 端点
-// 无歌词时:返回空字符串
+// 有歌词时(无论来源):返回 /api/v1/songs/{id}/lyric 端点。
+// remote 歌曲即使暂无歌词也返回端点,使客户端能发起请求触发歌词插件自动搜索。
+// 其他情况无歌词时:返回空字符串。
 func (s *Song) LyricURLPath() string {
 	if s.ID == 0 {
 		return ""
@@ -165,7 +166,11 @@ func (s *Song) LyricURLPath() string {
 	// 才视作有歌词。后者保持 LyricRemoteURL 与 GetSongLyric 实际分发(按 lyric_source)语义一致 ——
 	// 远程歌转 local 时 lyric_remote_url 会被保留作档案,但 lyric_source 已经不再是 "url",
 	// 此时不应再误报"有歌词"导致前端发出注定 404 的请求。
-	if s.Lyric != "" || (s.LyricSource == LyricSourceURL && s.LyricRemoteURL != "") {
+	//
+	// remote 歌曲额外放行：插件添加的远程歌曲初始通常无歌词,但 GetSongLyric handler
+	// 在 payload 为空时会 fallback 到已注册的歌词搜索插件。若此处不返回 URL,客户端
+	// 永远不会发起歌词请求,搜索逻辑无法被激活。(#201)
+	if s.Lyric != "" || (s.LyricSource == LyricSourceURL && s.LyricRemoteURL != "") || s.Type == TypeRemote {
 		return fmt.Sprintf("/api/v1/songs/%d/lyric", s.ID)
 	}
 	return ""
