@@ -34,3 +34,6 @@
 [submodule "jsplugins-src/songloft-plugin-lyrics"]
 	path = jsplugins-src/songloft-plugin-lyrics
 	url = https://github.com/songloft-org/songloft-plugin-lyrics.git
+[submodule "jsplugins-src/songloft-plugin-radio"]
+	path = jsplugins-src/songloft-plugin-radio
+	url = https://github.com/songloft-org/songloft-plugin-radio.git
