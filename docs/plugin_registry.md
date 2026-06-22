@@ -201,6 +201,49 @@ https://cdn.jsdelivr.net/gh/{用户名}/{仓库名}@{分支}/registry.json
 
 ---
 
+## 私有源认证
+
+插件源支持 **Bearer Token 认证**，用于分发未开源的插件或访问 GitHub 私有仓库中的插件。
+
+### 配置方式
+
+在「管理订阅源」对话框中添加或编辑源时，填入 Token 字段即可。配置了 Token 的源会在列表中显示锁图标。
+
+Token 会随该源的所有 HTTP 请求（registry JSON、plugin.json、includes、ZIP 下载）以 `Authorization: Bearer <token>` 头发送。
+
+### GitHub 私有仓库
+
+1. 在 GitHub 创建 [Fine-grained Personal Access Token](https://github.com/settings/tokens?type=beta)
+2. 权限：只需目标仓库的 **Contents: Read-only**
+3. 源 URL 使用 `raw.githubusercontent.com` 格式，与公开仓库相同：
+   ```
+   https://raw.githubusercontent.com/{用户名}/{私有仓库}/main/registry.json
+   ```
+4. 在「管理订阅源」中将 PAT 填入 Token 字段
+
+> GitHub PAT 同时适用于 `raw.githubusercontent.com`（registry/plugin.json）和 `github.com`（Release 下载）。Go HTTP 客户端在跨域重定向时会自动剥离 Authorization 头，Release 下载重定向到的 S3 签名 URL 不需要 Token，因此行为正确。
+
+### 自托管私有源
+
+在你的服务器上校验 `Authorization: Bearer <token>` 头即可。以 nginx 为例：
+
+```nginx
+location /registry/ {
+    if ($http_authorization != "Bearer your-secret-token") {
+        return 401;
+    }
+    root /var/www/plugins;
+}
+```
+
+### 安全注意事项
+
+- Token 以明文存储在服务端 config 表中（自托管应用，在用户控制范围内）
+- Token 会发给该源下拉取的**所有** URL（包括 `includes` 引用的子源），私有源不应 include 不受信任的第三方源
+- Token 通过 `Authorization` 请求头发送，不会出现在 URL 中，不会泄露到日志或 Referrer
+
+---
+
 ## 注意事项
 
 | 限制 | 值 | 说明 |

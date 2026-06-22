@@ -220,6 +220,7 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 - `common.css` 定义 `--md-*` CSS 变量（亮/暗双主题），所有使用这些变量的插件自动跟随主题切换
 - 权限：manifest 中 `permissions: ["network", "storage", "fs:music", ...]`，运行时由 `internal/jsplugin` 校验
 - 健康检查 + 文件指纹热更新均自动进行
+- **私有源认证**：`RegistryConfig` 支持 `token` 字段，拉取该源下所有资源时自动携带 `Authorization: Bearer <token>` 头，兼容 GitHub 私有仓库 PAT 和自托管私有源。详见 [插件源制作指南 · 私有源认证](docs/plugin_registry.md#私有源认证)
 
 ---
 
