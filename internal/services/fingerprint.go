@@ -19,15 +19,21 @@ import (
 var (
 	chromaprintAvailable bool
 	chromaprintOnce      sync.Once
+	resolvedFFmpegPath   string
 	durationRe           = regexp.MustCompile(`Duration:\s+(\d+):(\d+):(\d+)\.(\d+)`)
 )
 
 // IsChromaprintAvailable 检测 ffmpeg 是否支持 chromaprint muxer（首次调用时检测，结果缓存）。
 func IsChromaprintAvailable() bool {
 	chromaprintOnce.Do(func() {
-		out, err := exec.Command("ffmpeg", "-hide_banner", "-muxers").Output()
+		path, err := safeLookPath("ffmpeg")
+		if err != nil {
+			return
+		}
+		out, err := exec.Command(path, "-hide_banner", "-muxers").Output()
 		if err == nil && strings.Contains(string(out), "chromaprint") {
 			chromaprintAvailable = true
+			resolvedFFmpegPath = path
 		}
 	})
 	return chromaprintAvailable
@@ -54,7 +60,7 @@ func ExtractFingerprint(ctx context.Context, filePath string) (string, float64, 
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ffmpeg",
+	cmd := exec.CommandContext(ctx, resolvedFFmpegPath,
 		"-i", filePath,
 		"-map", "0:a:0",
 		"-map_metadata", "-1",

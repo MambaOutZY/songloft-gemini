@@ -424,11 +424,18 @@ func (h *BridgeHandler) resolveProgram(program string) (string, error) {
 		return binPath, nil
 	}
 
-	systemPath, err := exec.LookPath(program)
-	if err != nil {
-		return "", fmt.Errorf("program %q not found in plugin bin/ or system PATH", program)
+	// Avoid exec.LookPath which uses faccessat2 syscall — blocked by seccomp on Termux.
+	pathEnv := os.Getenv("PATH")
+	for _, dir := range filepath.SplitList(pathEnv) {
+		if dir == "" {
+			dir = "."
+		}
+		p := filepath.Join(dir, program)
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p, nil
+		}
 	}
-	return systemPath, nil
+	return "", fmt.Errorf("program %q not found in plugin bin/ or system PATH", program)
 }
 
 func resolveAbsoluteProgram(program string) (string, error) {

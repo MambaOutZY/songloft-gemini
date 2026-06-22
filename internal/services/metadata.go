@@ -87,8 +87,40 @@ type FFProbeStream struct {
 	Tags       map[string]string `json:"tags"`
 }
 
+// safeLookPath finds an executable by name in PATH using os.Stat.
+// Unlike exec.LookPath, it avoids the faccessat2 syscall which triggers
+// SIGSYS on platforms with restrictive seccomp filters (e.g., Termux on Android).
+func safeLookPath(name string) (string, error) {
+	if strings.Contains(name, string(filepath.Separator)) {
+		if fi, err := os.Stat(name); err == nil && !fi.IsDir() {
+			return name, nil
+		}
+		return "", fmt.Errorf("%s: not found", name)
+	}
+
+	pathEnv := os.Getenv("PATH")
+	for _, dir := range filepath.SplitList(pathEnv) {
+		if dir == "" {
+			dir = "."
+		}
+		path := filepath.Join(dir, name)
+		if fi, err := os.Stat(path); err == nil && !fi.IsDir() {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("%s: not found in PATH", name)
+}
+
 // NewMetadataExtractor 创建新的元数据提取器
 func NewMetadataExtractor(config *MetadataConfig) *MetadataExtractor {
+	if config.FFProbePath != "" {
+		if resolved, err := safeLookPath(config.FFProbePath); err == nil {
+			config.FFProbePath = resolved
+		} else {
+			slog.Warn("ffprobe not found, metadata extraction will rely on tag library only", "path", config.FFProbePath, "error", err)
+			config.FFProbePath = ""
+		}
+	}
 	return &MetadataExtractor{
 		config: config,
 	}
@@ -101,7 +133,16 @@ func (m *MetadataExtractor) SetTitleSource(titleSource string) {
 
 // SetFFMpegPath 更新 ffmpeg 路径配置（配置变更时调用）
 func (m *MetadataExtractor) SetFFMpegPath(path string) {
-	m.config.FFMpegPath = path
+	if path != "" {
+		if resolved, err := safeLookPath(path); err == nil {
+			m.config.FFMpegPath = resolved
+		} else {
+			slog.Warn("ffmpeg not found", "path", path, "error", err)
+			m.config.FFMpegPath = ""
+		}
+	} else {
+		m.config.FFMpegPath = ""
+	}
 }
 
 // SetHTTPClient 注入 HTTP 客户端（用于 tag 库远程探测 Range 请求）
@@ -156,60 +197,59 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 	slog.Info("Extract title", "fileName", fileName, "title", metadata.Title)
 
 	// 仅在 tag 库未能获取时长时，回退到 ffprobe 补充技术参数
-	if metadata.Duration == 0 {
+	if metadata.Duration == 0 && m.config.FFProbePath != "" {
 		probeOutput, err := m.runFFProbe(ctx, filePath)
 		if err != nil {
-			slog.Error("ffprobe failed", "err", err)
-			return nil, fmt.Errorf("failed to run ffprobe: %w", err)
-		}
-
-		if probeOutput.Format.Duration != "" {
-			if duration, err := parseDuration(probeOutput.Format.Duration); err == nil {
-				metadata.Duration = duration
-			}
-		}
-
-		if probeOutput.Format.BitRate != "" {
-			if bitRate, err := parseInteger(probeOutput.Format.BitRate); err == nil {
-				metadata.BitRate = bitRate / 1000
-			}
-		}
-
-		for _, stream := range probeOutput.Streams {
-			if stream.CodecType == "audio" && stream.SampleRate != "" {
-				if sampleRate, err := parseInteger(stream.SampleRate); err == nil {
-					metadata.SampleRate = sampleRate
-					break
+			slog.Warn("ffprobe failed, continuing without probe data", "filePath", filePath, "err", err)
+		} else {
+			if probeOutput.Format.Duration != "" {
+				if duration, err := parseDuration(probeOutput.Format.Duration); err == nil {
+					metadata.Duration = duration
 				}
 			}
-		}
 
-		if metadata.Format == "" && probeOutput.Format.FormatName != "" {
-			formats := strings.Split(probeOutput.Format.FormatName, ",")
-			if len(formats) > 0 {
-				metadata.Format = formats[0]
-			}
-		}
-
-		// 当 tag 库未能解析出标签时（如 WMA/APE 等 tag 库不原生支持的格式），从 ffprobe 标签兜底补齐
-		if tags := mergeFFProbeTags(probeOutput); len(tags) > 0 {
-			if metadata.Title == "" {
-				metadata.Title = pickTag(tags, "title", "TITLE")
-			}
-			if metadata.Artist == "" {
-				metadata.Artist = pickTag(tags, "artist", "ARTIST", "album_artist", "ALBUM_ARTIST")
-			}
-			if metadata.Album == "" {
-				metadata.Album = pickTag(tags, "album", "ALBUM")
-			}
-			if metadata.Lyric == "" {
-				if lyric := pickTag(tags, "lyrics", "LYRICS", "unsynced_lyrics"); lyric != "" {
-					metadata.Lyric = lyric
-					metadata.LyricSource = "embedded"
+			if probeOutput.Format.BitRate != "" {
+				if bitRate, err := parseInteger(probeOutput.Format.BitRate); err == nil {
+					metadata.BitRate = bitRate / 1000
 				}
 			}
+
+			for _, stream := range probeOutput.Streams {
+				if stream.CodecType == "audio" && stream.SampleRate != "" {
+					if sampleRate, err := parseInteger(stream.SampleRate); err == nil {
+						metadata.SampleRate = sampleRate
+						break
+					}
+				}
+			}
+
+			if metadata.Format == "" && probeOutput.Format.FormatName != "" {
+				formats := strings.Split(probeOutput.Format.FormatName, ",")
+				if len(formats) > 0 {
+					metadata.Format = formats[0]
+				}
+			}
+
+			// 当 tag 库未能解析出标签时（如 WMA/APE 等 tag 库不原生支持的格式），从 ffprobe 标签兜底补齐
+			if tags := mergeFFProbeTags(probeOutput); len(tags) > 0 {
+				if metadata.Title == "" {
+					metadata.Title = pickTag(tags, "title", "TITLE")
+				}
+				if metadata.Artist == "" {
+					metadata.Artist = pickTag(tags, "artist", "ARTIST", "album_artist", "ALBUM_ARTIST")
+				}
+				if metadata.Album == "" {
+					metadata.Album = pickTag(tags, "album", "ALBUM")
+				}
+				if metadata.Lyric == "" {
+					if lyric := pickTag(tags, "lyrics", "LYRICS", "unsynced_lyrics"); lyric != "" {
+						metadata.Lyric = lyric
+						metadata.LyricSource = "embedded"
+					}
+				}
+			}
+			slog.Info("Extract format", "format", metadata.Format, "bitRate", metadata.BitRate, "sampleRate", metadata.SampleRate, "duration", metadata.Duration)
 		}
-		slog.Info("Extract format", "format", metadata.Format, "bitRate", metadata.BitRate, "sampleRate", metadata.SampleRate, "duration", metadata.Duration)
 	}
 
 	// ffprobe 回退可能补齐了 title，需要在标签提取完成后再进行智能合并
@@ -638,8 +678,7 @@ func (m *MetadataExtractor) ReadLyricFile(lrcPath string) (string, error) {
 
 // IsFFProbeAvailable 检查 ffprobe 是否可用
 func (m *MetadataExtractor) IsFFProbeAvailable() bool {
-	cmd := exec.Command(m.config.FFProbePath, "-version")
-	return cmd.Run() == nil
+	return m.config.FFProbePath != ""
 }
 
 // buildFFProbeCommandContext 构建带上下文的 ffprobe 命令

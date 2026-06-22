@@ -18,7 +18,16 @@ var ErrUnsupportedTranscodeFormat = errors.New("unsupported transcode format")
 
 // SetFFmpegPath 注入 ffmpeg 可执行文件路径。
 func (c *CacheService) SetFFmpegPath(path string) {
-	c.ffmpegPath = path
+	if path != "" {
+		if resolved, err := safeLookPath(path); err == nil {
+			c.ffmpegPath = resolved
+		} else {
+			slog.Warn("ffmpeg not found for transcoding", "path", path, "error", err)
+			c.ffmpegPath = ""
+		}
+	} else {
+		c.ffmpegPath = ""
+	}
 }
 
 // ParseBitrate 解析 quality 参数值为 kbps int。
