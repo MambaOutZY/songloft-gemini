@@ -4871,7 +4871,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "批量添加网络歌曲到数据库",
+                "description": "批量添加网络歌曲到数据库。cover_url 支持以 \"/\" 开头的相对路径（插件场景下由服务端自动解析为内部 URL，与歌词 lyric_remote_url 的解析机制一致）。lyric_remote_url 为歌词远程 URL 直传字段，提供时优先于 lyric + lyric_source=url 的间接方式。",
                 "consumes": [
                     "application/json"
                 ],
@@ -4909,6 +4909,9 @@ const docTemplate = `{
                                         "type": "number"
                                     },
                                     "lyric": {
+                                        "type": "string"
+                                    },
+                                    "lyric_remote_url": {
                                         "type": "string"
                                     },
                                     "lyric_source": {
@@ -5216,7 +5219,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据歌曲 ID 获取封面图片，支持本地歌曲的封面文件",
+                "description": "根据歌曲 ID 获取封面图片。优先使用本地封面文件（CoverPath），其次代理 CoverURL。CoverURL 支持以 \"/\" 开头的相对路径，服务端自动经 InternalURLResolver 解析为内部 URL（含 access_token），用于插件歌曲封面代理。",
                 "produces": [
                     "image/jpeg"
                 ],

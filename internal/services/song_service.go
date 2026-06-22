@@ -716,6 +716,7 @@ type RemoteSongInput struct {
 	DedupKey        string // 去重 key(由插件定义,典型形态 "<platform>:<platform_id>");空时不去重
 	Lyric           string // 歌词内容或歌词获取 URL
 	LyricSource     string // 歌词来源类型
+	LyricRemoteURL  string // 歌词远程 URL(直传,优先于 Lyric+LyricSource=url 间接方式)
 }
 
 // RadioInput 批量添加电台的单条输入
@@ -747,6 +748,11 @@ func (s *SongService) AddRemoteSongs(ctx context.Context, inputs []RemoteSongInp
 			UpdatedAt:       now,
 		}
 		models.ApplyLyricToSong(songs[i], input.Lyric, input.LyricSource)
+		if input.LyricRemoteURL != "" {
+			songs[i].LyricSource = models.LyricSourceURL
+			songs[i].Lyric = ""
+			songs[i].LyricRemoteURL = input.LyricRemoteURL
+		}
 	}
 
 	for _, song := range songs {

@@ -46,6 +46,7 @@ type SongHandler struct {
 	playBroadcaster   PlayEventBroadcaster   // JS 插件播放事件广播（可选，nil 安全）
 	lyricSearcher     LyricSearcher          // 歌词提供者搜索（可选，nil 安全）
 	metadataRefresher *services.MetadataRefresher
+	urlResolver       *services.InternalURLResolver // 把插件相对路径解析为本机绝对 URL + access_token（封面代理用）
 }
 
 // NewSongHandler 创建歌曲处理器
@@ -85,6 +86,11 @@ func (h *SongHandler) SetLyricSearcher(s LyricSearcher) {
 // SetMetadataRefresher 注入元数据刷新器。
 func (h *SongHandler) SetMetadataRefresher(d *services.MetadataRefresher) {
 	h.metadataRefresher = d
+}
+
+// SetURLResolver 注入内部 URL 解析器，用于将插件相对路径（如封面 URL）解析为本机可访问的绝对 URL。
+func (h *SongHandler) SetURLResolver(r *services.InternalURLResolver) {
+	h.urlResolver = r
 }
 
 // StartMetadataRefresh 触发刷新远程歌曲元数据
@@ -431,11 +437,11 @@ func (h *SongHandler) UpdateSong(w http.ResponseWriter, r *http.Request) {
 
 // AddRemoteSongs 批量添加网络歌曲
 // @Summary 批量添加网络歌曲
-// @Description 批量添加网络歌曲到数据库
+// @Description 批量添加网络歌曲到数据库。cover_url 支持以 "/" 开头的相对路径（插件场景下由服务端自动解析为内部 URL，与歌词 lyric_remote_url 的解析机制一致）。lyric_remote_url 为歌词远程 URL 直传字段，提供时优先于 lyric + lyric_source=url 的间接方式。
 // @Tags 歌曲管理
 // @Accept json
 // @Produce json
-// @Param request body []object{url=string,title=string,artist=string,album=string,cover_url=string,duration=number,plugin_entry_path=string,source_data=string,dedup_key=string,lyric=string,lyric_source=string} true "网络歌曲列表"
+// @Param request body []object{url=string,title=string,artist=string,album=string,cover_url=string,duration=number,plugin_entry_path=string,source_data=string,dedup_key=string,lyric=string,lyric_source=string,lyric_remote_url=string} true "网络歌曲列表"
 // @Success 201 {object} object{songs=[]models.Song,count=int} "添加成功"
 // @Failure 400 {object} map[string]string "请求数据错误"
 // @Failure 500 {object} map[string]string "添加失败"
@@ -456,6 +462,7 @@ func (h *SongHandler) AddRemoteSongs(w http.ResponseWriter, r *http.Request) {
 		DedupKey        string  `json:"dedup_key"`         // 去重 key(由插件定义);空时不去重直接 INSERT
 		Lyric           string  `json:"lyric"`
 		LyricSource     string  `json:"lyric_source"`
+		LyricRemoteURL  string  `json:"lyric_remote_url"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
@@ -492,6 +499,7 @@ func (h *SongHandler) AddRemoteSongs(w http.ResponseWriter, r *http.Request) {
 			DedupKey:        req.DedupKey,
 			Lyric:           req.Lyric,
 			LyricSource:     req.LyricSource,
+			LyricRemoteURL:  req.LyricRemoteURL,
 		})
 	}
 
@@ -568,7 +576,7 @@ func (h *SongHandler) AddRadios(w http.ResponseWriter, r *http.Request) {
 
 // GetSongCover 获取歌曲封面图片
 // @Summary 获取歌曲封面图片
-// @Description 根据歌曲 ID 获取封面图片，支持本地歌曲的封面文件
+// @Description 根据歌曲 ID 获取封面图片。优先使用本地封面文件（CoverPath），其次代理 CoverURL。CoverURL 支持以 "/" 开头的相对路径，服务端自动经 InternalURLResolver 解析为内部 URL（含 access_token），用于插件歌曲封面代理。
 // @Tags 歌曲管理
 // @Produce image/jpeg
 // @Param id path int true "歌曲 ID"
@@ -602,8 +610,14 @@ func (h *SongHandler) GetSongCover(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 本地封面不存在时,代理转发外部 URL
+	// 支持插件相对路径:以 "/" 开头的 URL 经 InternalURLResolver 解析为本机绝对 URL + access_token,
+	// 与歌词的 LyricFetcher 解析机制一致;绝对 URL 原样透传。
 	if song.CoverURL != "" {
-		ServeRemoteResource(w, r, song.CoverURL)
+		coverURL := song.CoverURL
+		if h.urlResolver != nil {
+			coverURL = h.urlResolver.Resolve(coverURL)
+		}
+		ServeRemoteResource(w, r, coverURL)
 		return
 	}
 
