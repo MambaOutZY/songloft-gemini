@@ -1,3 +1,27 @@
+## [v2.8.8] - 2026-06-22
+### :sparkles: New Features
+- [`6e36dcb`](https://github.com/songloft-org/songloft/commit/6e36dcb377d413653da16c56f3485207e329dbd6) - **jsplugin**: 插件源支持 Bearer Token 认证，用于私有源分发 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`90a3f19`](https://github.com/songloft-org/songloft/commit/90a3f194a73f12f859427f64cebfbf583e808c0b) - 封面支持插件相对 URL 解析 + AddRemoteSongs 新增 lyric_remote_url 直传字段 *(PR [#203](https://github.com/songloft-org/songloft/pull/203) by [@hanxi](https://github.com/hanxi))*
+- [`9f7eaf7`](https://github.com/songloft-org/songloft/commit/9f7eaf7415460e569e6a35322463b898c1139452) - 添加 songloft-plugin-radio 子模块 + 更新 registry *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`5f0cec3`](https://github.com/songloft-org/songloft/commit/5f0cec349040055f18677c396cb58de1dad6e586) - **models**: LyricURLPath 对 remote 歌曲始终返回歌词端点 URL *(PR [#201](https://github.com/songloft-org/songloft/pull/201) by [@hanxi](https://github.com/hanxi))*
+- [`8a73b0a`](https://github.com/songloft-org/songloft/commit/8a73b0a0945cbd52ef585cde2238a57419bb6462) - **services**: 避免 exec.LookPath 使用 faccessat2 导致 Termux 上 SIGSYS 崩溃 *(PR [#202](https://github.com/songloft-org/songloft/pull/202) by [@hanxi](https://github.com/hanxi))*
+- [`ce441f2`](https://github.com/songloft-org/songloft/commit/ce441f210b565331adda728539a18b53c73b11ac) - **miot**: 更新子模块引用，修复密码/Token登录 token 续期问题 *(PR [#200](https://github.com/songloft-org/songloft/pull/200) by [@hanxi](https://github.com/hanxi))*
+- [`b3e077f`](https://github.com/songloft-org/songloft/commit/b3e077faefe16b4961c49da93a44ddcd84e0f935) - **jsplugin**: 私有源 token 仅对同 host 的 includes 透传，防止跨域泄露 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`046cf14`](https://github.com/songloft-org/songloft/commit/046cf144cd9b657925e87c7c89adcb42adf34a85) - 修正开发版下载链接，release tag 应为 dev 而非 main *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`947881b`](https://github.com/songloft-org/songloft/commit/947881b1cef0f045c849b2cd022aa78d73bcf30a) - update CHANGELOG for v2.8.7 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`738adfd`](https://github.com/songloft-org/songloft/commit/738adfd9234e5c4aca16a48c19c9a391f3b7f2c9) - 补充插件源私有认证文档 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ab06610`](https://github.com/songloft-org/songloft/commit/ab066104fcd13ac548fdc776ae3e5d768888a968) - 免责声明新增侵权举报渠道（GitHub Issues + 邮箱） *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`7ab59e3`](https://github.com/songloft-org/songloft/commit/7ab59e3b3ec9f456c57ed0b848ad36a6b2f3a9a5) - **legal**: 补全字体许可证，清理插件子模块，更新文档引用 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ffec8e9`](https://github.com/songloft-org/songloft/commit/ffec8e9458e6872b1e282cd23b253fb3c54adef7) - 更新 songloft-player 子模块引用 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`9ee94e0`](https://github.com/songloft-org/songloft/commit/9ee94e097bd7ce7ce5f4c1edf73f5e47f42a45a9) - release version 2.8.8 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.8.7] - 2026-06-20
 ### :sparkles: New Features
 - [`5e79cdc`](https://github.com/songloft-org/songloft/commit/5e79cdcc41d244d7fa807a6d2497138f083f25b0) - **settings**: 用户偏好跨设备同步 *(PR [#196](https://github.com/songloft-org/songloft/pull/196) by [@hanxi](https://github.com/hanxi))*
@@ -1371,3 +1395,4 @@
 [v2.8.5]: https://github.com/songloft-org/songloft/compare/v2.8.4...v2.8.5
 [v2.8.6]: https://github.com/songloft-org/songloft/compare/v2.8.5...v2.8.6
 [v2.8.7]: https://github.com/songloft-org/songloft/compare/v2.8.6...v2.8.7
+[v2.8.8]: https://github.com/songloft-org/songloft/compare/v2.8.7...v2.8.8
