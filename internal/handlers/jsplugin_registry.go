@@ -90,6 +90,7 @@ type registryRefreshRequest struct {
 	PageSize    int    `json:"page_size"`
 	Search      string `json:"search"`
 	GithubProxy string `json:"github_proxy"`
+	Token       string `json:"token,omitempty"`
 }
 
 // registryPluginEntry 注册表插件条目（含安装状态）。
@@ -118,7 +119,7 @@ type registryRefreshResponse struct {
 
 // handleRegistryRefresh 拉取指定订阅源的插件列表
 // @Summary 刷新插件注册表
-// @Description 拉取指定订阅源 URL（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。
+// @Description 拉取指定订阅源 URL（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。可选传入 token 字段，用于访问需要认证的私有插件源（如 GitHub 私有仓库 PAT）。
 // @Tags JS插件管理
 // @Accept json
 // @Produce json
@@ -146,7 +147,7 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 	}
 
 	svc := jsplugin.NewRegistryService()
-	entries, warnings, err := svc.FetchAndMerge(r.Context(), req.RegistryURL, req.GithubProxy)
+	entries, warnings, err := svc.FetchAndMerge(r.Context(), req.RegistryURL, req.GithubProxy, req.Token)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "拉取注册表失败", err)
 		return
@@ -225,11 +226,12 @@ func (h *JSPluginHandler) buildInstalledMap(ctx context.Context) map[string]stri
 type registryInstallRequest struct {
 	DownloadURL string `json:"download_url"`
 	GithubProxy string `json:"github_proxy"`
+	Token       string `json:"token,omitempty"`
 }
 
 // handleRegistryInstall 从注册表 download_url 安装插件
 // @Summary 从注册表安装插件
-// @Description 从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理。
+// @Description 从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理。可选传入 token 字段，用于从需要认证的私有源下载插件。
 // @Tags JS插件管理
 // @Accept json
 // @Produce json
@@ -260,7 +262,7 @@ func (h *JSPluginHandler) handleRegistryInstall(w http.ResponseWriter, r *http.R
 		downloadURL = proxyPrefix + downloadURL
 	}
 
-	zipData, err := downloadZIP(r.Context(), downloadURL)
+	zipData, err := downloadZIP(r.Context(), downloadURL, req.Token)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "下载插件失败", err)
 		return
@@ -321,11 +323,14 @@ func (h *JSPluginHandler) handleRegistryInstall(w http.ResponseWriter, r *http.R
 	})
 }
 
-func downloadZIP(ctx context.Context, url string) ([]byte, error) {
+func downloadZIP(ctx context.Context, url string, token string) ([]byte, error) {
 	client := httputil.NewClient(60 * time.Second)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := client.Do(req)
 	if err != nil {

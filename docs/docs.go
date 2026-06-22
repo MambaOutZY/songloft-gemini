@@ -1575,7 +1575,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理。",
+                "description": "从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理。可选传入 token 字段，用于从需要认证的私有源下载插件。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1632,7 +1632,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "拉取指定订阅源 URL（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。",
+                "description": "拉取指定订阅源 URL（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。可选传入 token 字段，用于访问需要认证的私有插件源（如 GitHub 私有仓库 PAT）。",
                 "consumes": [
                     "application/json"
                 ],
@@ -6290,6 +6290,9 @@ const docTemplate = `{
                 },
                 "github_proxy": {
                     "type": "string"
+                },
+                "token": {
+                    "type": "string"
                 }
             }
         },
@@ -6347,6 +6350,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "search": {
+                    "type": "string"
+                },
+                "token": {
                     "type": "string"
                 }
             }
@@ -6552,6 +6558,9 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "token": {
                     "type": "string"
                 },
                 "url": {

@@ -67,7 +67,7 @@ func TestFetchAndMerge_Basic(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "")
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
 	if err != nil {
 		t.Fatalf("FetchAndMerge error: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestFetchAndMerge_Dedup(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "")
+	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
 	if err != nil {
 		t.Fatalf("FetchAndMerge error: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestFetchAndMerge_Includes(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL+"/main.json", "")
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL+"/main.json", "", "")
 	if err != nil {
 		t.Fatalf("FetchAndMerge error: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestFetchAndMerge_IncludesDedup(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL+"/main.json", "")
+	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL+"/main.json", "", "")
 	if err != nil {
 		t.Fatalf("FetchAndMerge error: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestFetchAndMerge_CycleDetection(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL+"/a.json", "")
+	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL+"/a.json", "", "")
 	if err != nil {
 		t.Fatalf("cycle should not cause error, got: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestFetchAndMerge_DepthLimit(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL+"/0.json", "")
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL+"/0.json", "", "")
 	if err != nil {
 		t.Fatalf("depth limit should not cause error, got: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestFetchAndMerge_PluginFetchFailureWarning(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "")
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
 	if err != nil {
 		t.Fatalf("FetchAndMerge error: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestFetchAndMerge_IncludeFailureWarning(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL+"/main.json", "")
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL+"/main.json", "", "")
 	if err != nil {
 		t.Fatalf("include failure should not cause error, got: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestFetchAndMerge_RootFailure(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	_, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "")
+	_, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
 	if err == nil {
 		t.Fatal("expected error for root registry failure")
 	}
@@ -367,7 +367,7 @@ func TestFetchAndMerge_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	_, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "")
+	_, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
@@ -403,7 +403,7 @@ func TestFetchAndMerge_ChainFetchManifest(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "")
+	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
 	if err != nil {
 		t.Fatalf("FetchAndMerge error: %v", err)
 	}
@@ -439,7 +439,7 @@ func TestFetchAndMerge_NoDownloadURL_Warning(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "")
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
 	if err != nil {
 		t.Fatalf("FetchAndMerge error: %v", err)
 	}
@@ -489,7 +489,7 @@ func TestFetchAndMerge_ChainFetchFailure_Warning(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "")
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
 	if err != nil {
 		t.Fatalf("FetchAndMerge error: %v", err)
 	}
@@ -498,6 +498,108 @@ func TestFetchAndMerge_ChainFetchFailure_Warning(t *testing.T) {
 	}
 	if len(warnings) == 0 {
 		t.Error("expected warning about missing download_url after chain fetch failure")
+	}
+}
+
+func TestFetchAndMerge_WithToken(t *testing.T) {
+	const testToken = "ghp_test123"
+
+	requireAuth := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != "Bearer "+testToken {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			next(w, r)
+		}
+	}
+
+	pluginMux := http.NewServeMux()
+	pluginMux.HandleFunc("/a/plugin.json", requireAuth(servePluginJSON("Plugin A", "plugin-a", "1.0.0", "https://example.com/a.zip")))
+	pluginSrv := httptest.NewServer(pluginMux)
+	defer pluginSrv.Close()
+
+	registry := RegistryJSON{
+		Plugins: []string{pluginSrv.URL + "/a/plugin.json"},
+	}
+	srv := httptest.NewServer(requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(registry)
+	}))
+	defer srv.Close()
+
+	svc := NewRegistryService()
+
+	// 不带 token 应该失败
+	_, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
+	if err == nil {
+		t.Fatal("expected error without token")
+	}
+
+	// 带正确 token 应该成功
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "", testToken)
+	if err != nil {
+		t.Fatalf("FetchAndMerge with token error: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("expected 1 plugin, got %d", len(plugins))
+	}
+	if plugins[0].EntryPath != "plugin-a" {
+		t.Errorf("expected plugin-a, got %q", plugins[0].EntryPath)
+	}
+}
+
+func TestFetchAndMerge_TokenWithIncludes(t *testing.T) {
+	const testToken = "secret-token"
+
+	requireAuth := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != "Bearer "+testToken {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			next(w, r)
+		}
+	}
+
+	pluginMux := http.NewServeMux()
+	pluginMux.HandleFunc("/a/plugin.json", requireAuth(servePluginJSON("A", "a", "1.0.0", "https://example.com/a.zip")))
+	pluginMux.HandleFunc("/b/plugin.json", requireAuth(servePluginJSON("B", "b", "1.0.0", "https://example.com/b.zip")))
+	pluginSrv := httptest.NewServer(pluginMux)
+	defer pluginSrv.Close()
+
+	mux := http.NewServeMux()
+	var srv *httptest.Server
+
+	mux.HandleFunc("/main.json", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		reg := RegistryJSON{
+			Includes: []string{srv.URL + "/sub.json"},
+			Plugins:  []string{pluginSrv.URL + "/a/plugin.json"},
+		}
+		json.NewEncoder(w).Encode(reg)
+	}))
+	mux.HandleFunc("/sub.json", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		reg := RegistryJSON{
+			Plugins: []string{pluginSrv.URL + "/b/plugin.json"},
+		}
+		json.NewEncoder(w).Encode(reg)
+	}))
+
+	srv = httptest.NewServer(mux)
+	defer srv.Close()
+
+	svc := NewRegistryService()
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL+"/main.json", "", testToken)
+	if err != nil {
+		t.Fatalf("FetchAndMerge error: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if len(plugins) != 2 {
+		t.Fatalf("expected 2 plugins from authenticated main + sub, got %d", len(plugins))
 	}
 }
 
@@ -512,7 +614,7 @@ func TestFetchAndMerge_EmptyPlugins(t *testing.T) {
 	defer srv.Close()
 
 	svc := NewRegistryService()
-	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "")
+	plugins, warnings, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
 	if err != nil {
 		t.Fatalf("FetchAndMerge error: %v", err)
 	}

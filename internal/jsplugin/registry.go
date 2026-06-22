@@ -28,6 +28,7 @@ type RegistryConfig struct {
 	URL     string `json:"url"`
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
+	Token   string `json:"token,omitempty"`
 }
 
 // RegistryEntry 解析后的插件条目（内部表示 + API 返回值）。
@@ -65,13 +66,14 @@ func NewRegistryService() *RegistryService {
 }
 
 // FetchAndMerge 从指定 URL 拉取注册表（含递归 includes），去重合并后返回插件列表。
-func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string, githubProxy string) ([]RegistryEntry, []string, error) {
+// token 非空时，所有 HTTP 请求携带 Authorization: Bearer <token> 头。
+func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string, githubProxy string, token string) ([]RegistryEntry, []string, error) {
 	visited := make(map[string]bool)
 	var warnings []string
 
 	// [1] 递归拉取所有 registry JSON，收集 plugin.json URL
 	var pluginURLs []string
-	if err := s.fetchRecursive(ctx, registryURL, githubProxy, 0, visited, &pluginURLs, &warnings); err != nil {
+	if err := s.fetchRecursive(ctx, registryURL, githubProxy, token, 0, visited, &pluginURLs, &warnings); err != nil {
 		return nil, warnings, err
 	}
 
@@ -81,7 +83,7 @@ func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string,
 	}
 
 	// [2] 并发解析所有 plugin.json URL
-	resolved := s.resolveAll(ctx, pluginURLs, githubProxy, &warnings)
+	resolved := s.resolveAll(ctx, pluginURLs, githubProxy, token, &warnings)
 
 	// [3] 按 entry_path 去重（高版本优先）
 	plugins := make(map[string]RegistryEntry)
@@ -110,6 +112,7 @@ func (s *RegistryService) fetchRecursive(
 	ctx context.Context,
 	url string,
 	githubProxy string,
+	token string,
 	depth int,
 	visited map[string]bool,
 	pluginURLs *[]string,
@@ -128,7 +131,7 @@ func (s *RegistryService) fetchRecursive(
 
 	requestURL := applyProxy(url, githubProxy)
 
-	registry, err := s.fetchJSON(ctx, requestURL)
+	registry, err := s.fetchJSON(ctx, requestURL, token)
 	if err != nil {
 		if depth == 0 {
 			return fmt.Errorf("fetch registry %s: %w", requestURL, err)
@@ -143,7 +146,7 @@ func (s *RegistryService) fetchRecursive(
 		if includeURL == "" {
 			continue
 		}
-		if err := s.fetchRecursive(ctx, includeURL, githubProxy, depth+1, visited, pluginURLs, warnings); err != nil {
+		if err := s.fetchRecursive(ctx, includeURL, githubProxy, token, depth+1, visited, pluginURLs, warnings); err != nil {
 			return err
 		}
 	}
@@ -152,7 +155,7 @@ func (s *RegistryService) fetchRecursive(
 }
 
 // resolveAll 并发拉取所有 plugin.json URL，返回解析后的 RegistryEntry 列表。
-func (s *RegistryService) resolveAll(ctx context.Context, pluginURLs []string, githubProxy string, warnings *[]string) []RegistryEntry {
+func (s *RegistryService) resolveAll(ctx context.Context, pluginURLs []string, githubProxy string, token string, warnings *[]string) []RegistryEntry {
 	if len(pluginURLs) == 0 {
 		return nil
 	}
@@ -173,7 +176,7 @@ func (s *RegistryService) resolveAll(ctx context.Context, pluginURLs []string, g
 			defer func() { <-sem }()
 
 			requestURL := applyProxy(rawURL, githubProxy)
-			entry, err := s.resolvePluginJSON(ctx, requestURL, githubProxy)
+			entry, err := s.resolvePluginJSON(ctx, requestURL, githubProxy, token)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -190,8 +193,8 @@ func (s *RegistryService) resolveAll(ctx context.Context, pluginURLs []string, g
 
 // resolvePluginJSON 拉取远程 plugin.json 并映射到 RegistryEntry。
 // 如果 plugin.json 中 download_url 为空但 updateUrl 有值，链式拉取 updateUrl 获取 download_url（兼容旧版插件）。
-func (s *RegistryService) resolvePluginJSON(ctx context.Context, url string, githubProxy string) (RegistryEntry, error) {
-	body, err := s.fetchBody(ctx, url)
+func (s *RegistryService) resolvePluginJSON(ctx context.Context, url string, githubProxy string, token string) (RegistryEntry, error) {
+	body, err := s.fetchBody(ctx, url, token)
 	if err != nil {
 		return RegistryEntry{}, err
 	}
@@ -222,7 +225,7 @@ func (s *RegistryService) resolvePluginJSON(ctx context.Context, url string, git
 	// 兼容旧版插件：如果 plugin.json 未直接提供 download_url，通过 updateUrl 链式获取
 	if entry.DownloadURL == "" && entry.UpdateURL != "" {
 		updateRequestURL := applyProxy(entry.UpdateURL, githubProxy)
-		if updateBody, err := s.fetchBody(ctx, updateRequestURL); err != nil {
+		if updateBody, err := s.fetchBody(ctx, updateRequestURL, token); err != nil {
 			slog.Debug("chain fetch updateUrl failed", "entryPath", entry.EntryPath, "updateUrl", entry.UpdateURL, "error", err)
 		} else {
 			var updateManifest PluginManifest
@@ -236,8 +239,8 @@ func (s *RegistryService) resolvePluginJSON(ctx context.Context, url string, git
 	return entry, nil
 }
 
-func (s *RegistryService) fetchJSON(ctx context.Context, url string) (*RegistryJSON, error) {
-	body, err := s.fetchBody(ctx, url)
+func (s *RegistryService) fetchJSON(ctx context.Context, url string, token string) (*RegistryJSON, error) {
+	body, err := s.fetchBody(ctx, url, token)
 	if err != nil {
 		return nil, err
 	}
@@ -250,10 +253,13 @@ func (s *RegistryService) fetchJSON(ctx context.Context, url string) (*RegistryJ
 	return &registry, nil
 }
 
-func (s *RegistryService) fetchBody(ctx context.Context, url string) ([]byte, error) {
+func (s *RegistryService) fetchBody(ctx context.Context, url string, token string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := s.httpClient.Do(req)
