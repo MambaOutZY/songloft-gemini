@@ -21,7 +21,7 @@ import (
 const (
 	// GitHub Release 版本文件 URL
 	stableVersionURL = "https://github.com/songloft-org/songloft/releases/latest/download/version.json"
-	devVersionURL    = "https://github.com/songloft-org/songloft/releases/download/main/version.json"
+	devVersionURL    = "https://github.com/songloft-org/songloft/releases/download/dev/version.json"
 
 	// 二进制文件路径
 	// 注意：临时文件必须与目标文件在同一目录，才能使用原子 rename 替换正在运行的二进制文件
