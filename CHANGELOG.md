@@ -1,3 +1,34 @@
+## [v2.8.9] - 2026-06-24
+### :sparkles: New Features
+- [`34a6e4c`](https://github.com/songloft-org/songloft/commit/34a6e4ca1a93d92e9a44d95168e9663a5b832bfd) - remote 歌曲播放时自动提取元数据 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`0b19732`](https://github.com/songloft-org/songloft/commit/0b19732fc11b1db116a460b2b406d9b0e6ee447c) - **jsplugin**: implement remaining Bridge API operations *(commit by [@hanxi](https://github.com/hanxi))*
+- [`0984246`](https://github.com/songloft-org/songloft/commit/0984246439491810b6a58a862ca123e3df87e877) - **jsplugin**: add yt-dlp music import plugin *(commit by [@hanxi](https://github.com/hanxi))*
+- [`15dbb79`](https://github.com/songloft-org/songloft/commit/15dbb79c7ac10677ac7028e9854f3b3efb1c04b9) - support AIF/AIFF format scanning and metadata extraction *(commit by [@hanxi](https://github.com/hanxi))*
+- [`15b47b8`](https://github.com/songloft-org/songloft/commit/15b47b8578860d8632330aa84d9b8d3a2ed82b1c) - add AIFF write support and update docs *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c9cf78e`](https://github.com/songloft-org/songloft/commit/c9cf78e4cf6bfee0f8647ae5fc32572eb5ddad7e) - **subsonic**: 补全 Subsonic 协议支持，修复音流等客户端兼容性问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`bd98b73`](https://github.com/songloft-org/songloft/commit/bd98b73d4d775ed5a10392bc53300745d6e92623) - **jsplugin**: 新增 plugin.getNetworkAddresses bridge API 并更新 miot 插件 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`96a1718`](https://github.com/songloft-org/songloft/commit/96a171819bbf7ce42a217f66a18e57ca88d5fce7) - 解决 http proxy 问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`9048266`](https://github.com/songloft-org/songloft/commit/90482663f80b5cd2eb2da51ed9ae3c792145589d) - **jsplugin**: 修复禁用插件后状态被自愈机制覆盖回 active 的竞态问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`962950c`](https://github.com/songloft-org/songloft/commit/962950cd716d24f4dc67643898a512c08662d4a5) - **jsplugin**: 电台插件 M3U 导入大小限制从 5MB 提升到 20MB *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`0aaf384`](https://github.com/songloft-org/songloft/commit/0aaf384a4634c9fdf1faa66ef27b65490e7ef291) - update CHANGELOG for v2.8.8 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`f162a8f`](https://github.com/songloft-org/songloft/commit/f162a8f975cf2404294bcb1888c80b6c046dcbac) - update supported formats to include AIF/AIFF *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`e371ff7`](https://github.com/songloft-org/songloft/commit/e371ff7913fcd228e0d34fc18e554d93a1f9ef4a) - update radio plugin submodule (v2026.6.23) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`8391804`](https://github.com/songloft-org/songloft/commit/8391804b30853a8c4b67f3c511bb2538f4f83d35) - update songloft-player submodule *(commit by [@hanxi](https://github.com/hanxi))*
+- [`15a7f33`](https://github.com/songloft-org/songloft/commit/15a7f33ca2c560f57f0d26908b87fd3064494225) - update subsonic plugin submodule (歌单浏览功能) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`5b87148`](https://github.com/songloft-org/songloft/commit/5b8714879dfc0b9115a43c470caf48b7528bf31d) - update miot plugin submodule (升级 SDK 2.6.3) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ec153c9`](https://github.com/songloft-org/songloft/commit/ec153c9e2b1e1db2718adafa170e26c4a35ca13d) - update subsonic/dav plugin submodules (icon + v2.1.1/v1.1.1) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`aa3a4e8`](https://github.com/songloft-org/songloft/commit/aa3a4e8624448ba1c0ff7f61d1250826366c0b76) - update miot plugin submodule (设置页 UI 补全) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b5b7021`](https://github.com/songloft-org/songloft/commit/b5b7021c2324a6984b159995704ab71ae9cc7ef4) - update miot plugin submodule (外部搜索下拉列表) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b1ae529`](https://github.com/songloft-org/songloft/commit/b1ae5290c4cb36bcd6f91de31c069b9d578dc814) - update miot plugin submodule (外部搜索超时可配置) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`f5aef4e`](https://github.com/songloft-org/songloft/commit/f5aef4e2438152b9dfec532cbff16367135a5a84) - release version 2.8.9 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.8.8] - 2026-06-22
 ### :sparkles: New Features
 - [`6e36dcb`](https://github.com/songloft-org/songloft/commit/6e36dcb377d413653da16c56f3485207e329dbd6) - **jsplugin**: 插件源支持 Bearer Token 认证，用于私有源分发 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1396,3 +1427,4 @@
 [v2.8.6]: https://github.com/songloft-org/songloft/compare/v2.8.5...v2.8.6
 [v2.8.7]: https://github.com/songloft-org/songloft/compare/v2.8.6...v2.8.7
 [v2.8.8]: https://github.com/songloft-org/songloft/compare/v2.8.7...v2.8.8
+[v2.8.9]: https://github.com/songloft-org/songloft/compare/v2.8.8...v2.8.9
