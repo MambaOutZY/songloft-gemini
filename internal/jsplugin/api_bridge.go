@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,6 +169,10 @@ songloft.plugin = {
     getFileUrl: async function(filePath) {
         var r = await __callBridge('plugin.getFileUrl', JSON.stringify({filePath: filePath}));
         return JSON.parse(r).url;
+    },
+    getNetworkAddresses: async function() {
+        var r = await __callBridge('plugin.getNetworkAddresses', '');
+        return r ? JSON.parse(r) : [];
     }
 };
 
@@ -984,6 +989,14 @@ func (h *BridgeHandler) handlePlugin(action, data string) (string, error) {
 		}
 		return fmt.Sprintf("http://localhost:%s", port), nil
 
+	case "plugin.getNetworkAddresses":
+		port := h.port
+		if port == "" {
+			port = "58091"
+		}
+		return getNetworkAddresses(port)
+
+
 	case "plugin.getFileUrl":
 		var req struct {
 			FilePath string `json:"filePath"`
@@ -1025,6 +1038,54 @@ func (h *BridgeHandler) handlePlugin(action, data string) (string, error) {
 	default:
 		return "", fmt.Errorf("handlePlugin: unknown action: %s", action)
 	}
+}
+
+// getNetworkAddresses 返回本机局域网可达的 IPv4 地址列表，192.168.x.x 优先。
+// 过滤规则：排除回环、IPv6、Docker 虚拟网桥接口、172.16.0.0/12 网段（Docker 默认使用）。
+func getNetworkAddresses(port string) (string, error) {
+	// 172.16.0.0/12 几乎全被 Docker bridge 占用，排除
+	docker12 := net.IPNet{IP: net.IP{172, 16, 0, 0}, Mask: net.CIDRMask(12, 32)}
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "[]", nil
+	}
+
+	var preferred, others []string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		name := strings.ToLower(iface.Name)
+		if strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "br-") ||
+			strings.HasPrefix(name, "veth") || strings.HasPrefix(name, "virbr") {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := ipNet.IP.To4()
+			if ip == nil || docker12.Contains(ip) {
+				continue
+			}
+			url := fmt.Sprintf("http://%s:%s", ip.String(), port)
+			if strings.HasPrefix(ip.String(), "192.168.") {
+				preferred = append(preferred, url)
+			} else {
+				others = append(others, url)
+			}
+		}
+	}
+
+	result := append(preferred, others...)
+	data, _ := json.Marshal(result)
+	return string(data), nil
 }
 
 // handleComm 处理插件间通信的桥接调用
