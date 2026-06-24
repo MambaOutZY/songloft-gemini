@@ -560,6 +560,11 @@ globalThis.URLSearchParams.prototype.has = function(name) {
     for (var i = 0; i < this._params.length; i++) if (this._params[i][0] === name) return true;
     return false;
 };
+globalThis.URLSearchParams.prototype.getAll = function(name) {
+    var r = [];
+    for (var i = 0; i < this._params.length; i++) if (this._params[i][0] === name) r.push(this._params[i][1]);
+    return r;
+};
 globalThis.URLSearchParams.prototype.toString = function() {
     return this._params.map(function(p) { return encodeURIComponent(p[0])+'='+encodeURIComponent(p[1]); }).join('&');
 };

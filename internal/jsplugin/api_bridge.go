@@ -513,6 +513,9 @@ func (h *BridgeHandler) handleSongs(action, data string) (string, error) {
 	case "songs.list":
 		var req struct {
 			PathPrefix string `json:"pathPrefix"`
+			Type       string `json:"type"`
+			OrderBy    string `json:"orderBy"`
+			Order      string `json:"order"`
 			Limit      int    `json:"limit"`
 			Offset     int    `json:"offset"`
 		}
@@ -524,6 +527,9 @@ func (h *BridgeHandler) handleSongs(action, data string) (string, error) {
 		}
 		filter := &database.SongFilter{
 			PathPrefix: req.PathPrefix,
+			Type:       req.Type,
+			OrderBy:    req.OrderBy,
+			Order:      req.Order,
 			Limit:      req.Limit,
 			Offset:     req.Offset,
 		}
