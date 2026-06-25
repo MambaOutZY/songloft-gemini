@@ -996,7 +996,6 @@ func (h *BridgeHandler) handlePlugin(action, data string) (string, error) {
 		}
 		return getNetworkAddresses(port)
 
-
 	case "plugin.getFileUrl":
 		var req struct {
 			FilePath string `json:"filePath"`

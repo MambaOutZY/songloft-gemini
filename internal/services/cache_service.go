@@ -80,7 +80,7 @@ func NewCacheService(defaultCacheDir string, configService *ConfigService) *Cach
 		configService:   configService,
 		lruIndex:        make(map[string]time.Time),
 		transcodeSem:    make(chan struct{}, 1),
-		downloadClient: httputil.NewClient(120 * time.Second),
+		downloadClient:  httputil.NewClient(120 * time.Second),
 	}
 	var cfg CacheConfig
 	if err := configService.GetJSON(cacheConfigKey, &cfg); err == nil && cfg.CacheDir != "" {

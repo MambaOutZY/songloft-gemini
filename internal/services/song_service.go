@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hanxi/tag"
+
 	"songloft/internal/database"
 	"songloft/internal/httputil"
 	"songloft/internal/models"
@@ -309,9 +311,10 @@ type scanProcessItem struct {
 
 // scanExtractResult 元数据提取结果
 type scanExtractResult struct {
-	item     scanProcessItem
-	metadata *Metadata
-	fileSize int64
+	item             scanProcessItem
+	metadata         *Metadata
+	fileSize         int64
+	extractionFailed bool
 }
 
 const (
@@ -412,12 +415,14 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 				}
 
 				metadata, err := s.safeExtractMetadata(ctx, item.filePath)
+				extractionFailed := err != nil
 				if err != nil {
+					rawName := strings.TrimSuffix(filepath.Base(item.filePath), filepath.Ext(item.filePath))
 					metadata = &Metadata{
-						Title:  filepath.Base(item.filePath),
-						Format: filepath.Ext(item.filePath),
+						Title:  tag.FixEncoding([]byte(rawName)),
+						Format: NormalizeFormat(filepath.Ext(item.filePath)),
 					}
-					slog.Info("doScanAndImport metadata failed", "filePath", item.filePath, "err", err)
+					slog.Warn("doScanAndImport metadata failed", "filePath", item.filePath, "err", err)
 				}
 
 				if metadata.HasCover && metadata.CoverData != nil {
@@ -437,9 +442,10 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 
 				select {
 				case resultCh <- scanExtractResult{
-					item:     item,
-					metadata: metadata,
-					fileSize: fileSize,
+					item:             item,
+					metadata:         metadata,
+					fileSize:         fileSize,
+					extractionFailed: extractionFailed,
 				}:
 				case <-cancelCh:
 					return
@@ -485,7 +491,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 
 	for i := 0; i < len(allResults); i += dbBatchSize {
 		end := min(i+dbBatchSize, len(allResults))
-		s.flushScanBatch(ctx, allResults[i:end], reimport)
+		s.flushScanBatch(ctx, allResults[i:end])
 	}
 
 	select {
@@ -589,7 +595,7 @@ func fixSpamTags(results []scanExtractResult) {
 
 // flushScanBatch 批量处理扫描结果，使用事务提高写入效率
 // 将多条数据库操作合并在同一事务中提交，减少磁盘fsync次数和WAL刷写开销
-func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractResult, reimport bool) {
+func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractResult) {
 	if s.tx == nil {
 		slog.Error("flushScanBatch 缺少事务执行器,跳过批次")
 		for _, r := range batch {
@@ -600,7 +606,12 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 	err := s.tx.RunInTx(ctx, func(ctx context.Context, uow *database.UnitOfWork) error {
 		txRepo := uow.Songs
 		for _, r := range batch {
-			if r.item.existingSongID > 0 && reimport {
+			if r.item.existingSongID > 0 {
+				if r.extractionFailed {
+					slog.Warn("元数据提取失败，保留已有记录", "filePath", r.item.filePath)
+					s.scanProgressManager.UpdateProgress(r.item.filePath, ProgressUpdateFailed)
+					continue
+				}
 				song, err := txRepo.GetByID(ctx, r.item.existingSongID)
 				if err != nil {
 					slog.Error("获取已有歌曲失败", "err", err, "songId", r.item.existingSongID)
@@ -615,9 +626,6 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 				song.BitRate = r.metadata.BitRate
 				song.SampleRate = r.metadata.SampleRate
 				song.ISRC = r.metadata.ISRC
-				// lyric_source=manual 表示用户手动调整过歌词，
-				// 重扫时不再用文件内嵌/外挂 .lrc 覆盖，否则不支持回写音频文件的格式
-				// （如 .wav）一旦 reimport 就丢调整。
 				if song.LyricSource != models.LyricSourceManual {
 					models.ApplyLyricToSong(song, r.metadata.Lyric, r.metadata.LyricSource)
 				}
