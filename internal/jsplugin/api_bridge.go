@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -912,6 +913,8 @@ func (h *BridgeHandler) handlePlaylists(action, data string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("handlePlaylists: getSongs: %w", err)
 		}
+		slog.Info("bridge playlists.getSongs",
+			"playlistID", req.ID, "limit", limit, "offset", offset, "count", len(songs))
 		result, err := json.Marshal(songs)
 		if err != nil {
 			return "", fmt.Errorf("handlePlaylists: marshal getSongs: %w", err)
