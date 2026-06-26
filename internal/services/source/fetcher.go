@@ -257,6 +257,7 @@ func (f *SourceFetcher) Fetch(
 	infoCopy := &AudioInfoCopy{
 		Duration: info.GetDuration(),
 		Size:     info.GetSize(),
+		Format:   info.GetFormat(),
 	}
 
 	result := &FetchResult{

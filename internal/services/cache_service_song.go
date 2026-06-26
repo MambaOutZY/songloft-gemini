@@ -483,12 +483,9 @@ func songInfoOf(s *models.Song) *source.SongInfo {
 // extensionFromFormat 把 AudioInfoCopy 的格式字段映射回扩展名。
 // 留空时由调用方根据 Content-Type 兜底。
 func extensionFromFormat(info *source.AudioInfoCopy) string {
-	_ = info
-	// FetchResult 的 Info 只有 Duration/Size 等校验关键字段,没有 Format
-	// (Format 字段在 metadata.AudioInfo 里,但 source.AudioInfoCopy 投影时未带过来)
-	// 暂时统一返回 .mp3,后续可在 FetchResult 加 Ext 字段
-	// 注意:FetchResult.TempPath 由 os.CreateTemp 创建,后缀是随机的,不能直接保留
-	// TODO(ext-detection): 在 SourceFetcher 中根据 Content-Type 设置 ext,通过 FetchResult 透传。
+	if info != nil && info.Format != "" {
+		return "." + info.Format
+	}
 	return ".mp3"
 }
 

@@ -292,6 +292,9 @@ func (a *AudioInfo) GetDuration() float64 { return a.Duration }
 // GetSize 实现 source.AudioInfoLike
 func (a *AudioInfo) GetSize() int64 { return a.Size }
 
+// GetFormat 实现 source.AudioInfoLike
+func (a *AudioInfo) GetFormat() string { return a.Format }
+
 // ProbeForValidation 探测下载文件的关键技术指标,供下载完整性校验使用。
 //
 // 与 Extract 的区别:不读取封面/歌词/标签元数据,只关心格式相关指标。

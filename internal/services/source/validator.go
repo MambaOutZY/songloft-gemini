@@ -59,16 +59,19 @@ type ValidationResult struct {
 type AudioInfoLike interface {
 	GetDuration() float64
 	GetSize() int64
+	GetFormat() string
 }
 
 // SimpleAudioInfo 一个最小实现,供调用方在不想引 metadata 包的场景下使用。
 type SimpleAudioInfo struct {
 	Duration float64
 	Size     int64
+	Format   string
 }
 
 func (s SimpleAudioInfo) GetDuration() float64 { return s.Duration }
 func (s SimpleAudioInfo) GetSize() int64       { return s.Size }
+func (s SimpleAudioInfo) GetFormat() string    { return s.Format }
 
 // Validate 判定下载文件是否完整。纯函数,无 IO,便于单测。
 //
