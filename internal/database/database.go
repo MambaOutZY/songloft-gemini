@@ -18,6 +18,7 @@ type DB interface {
 	SongRepository() *SongRepository
 	PlaylistRepository() *PlaylistRepository
 	PlaylistSongRepository() *PlaylistSongRepository
+	PluginStorageRepository() *PluginStorageRepository
 }
 
 // NewSQLiteDB 兼容旧调用方的构造函数，内部委托给 Open。

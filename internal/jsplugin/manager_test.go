@@ -666,7 +666,7 @@ func TestPackageManager_Uninstall(t *testing.T) {
 	}
 
 	// Uninstall
-	if err := pm.Uninstall(plugin.ID); err != nil {
+	if err := pm.Uninstall(plugin.ID, false); err != nil {
 		t.Fatalf("Uninstall failed: %v", err)
 	}
 

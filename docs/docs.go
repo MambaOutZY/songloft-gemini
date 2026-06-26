@@ -1676,6 +1676,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/jsplugins/storage/cleanup": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除 plugin_storage 表中不属于任何已安装插件的数据。当插件被卸载后，其持久化存储数据会保留在数据库中；此端点用于清理这些无主数据。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "JS插件管理"
+                ],
+                "summary": "清理孤儿持久化存储",
+                "responses": {
+                    "200": {
+                        "description": "清理完成",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jsplugins/update-all": {
             "post": {
                 "security": [
@@ -1898,7 +1932,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据插件ID删除 JS 插件",
+                "description": "根据插件ID删除 JS 插件。可通过 keep_data 参数保留插件数据目录（文件系统存储），持久化存储（数据库）始终保留。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1916,6 +1950,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "是否保留插件数据目录（true/false，默认 false）",
+                        "name": "keep_data",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -7475,6 +7515,10 @@ const docTemplate = `{
                 },
                 "imported_files": {
                     "description": "已导入文件数",
+                    "type": "integer"
+                },
+                "local_song_count": {
+                    "description": "扫描完成后数据库中本地歌曲总数",
                     "type": "integer"
                 },
                 "scanned_files": {

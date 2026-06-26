@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"songloft/internal/database"
 	"songloft/internal/jsplugin"
 	"songloft/internal/models"
 	"songloft/internal/services"
@@ -40,16 +41,18 @@ type JSPluginHandler struct {
 	manager       *jsplugin.Manager
 	sourceMetrics *source.SourceMetrics
 	configService *services.ConfigService
+	db            database.DB
 }
 
 // NewJSPluginHandler 创建 JS 插件管理处理器
-func NewJSPluginHandler(packageMgr *jsplugin.PackageManager, repo jsplugin.Repository, manager *jsplugin.Manager, sourceMetrics *source.SourceMetrics, configService *services.ConfigService) *JSPluginHandler {
+func NewJSPluginHandler(packageMgr *jsplugin.PackageManager, repo jsplugin.Repository, manager *jsplugin.Manager, sourceMetrics *source.SourceMetrics, configService *services.ConfigService, db database.DB) *JSPluginHandler {
 	return &JSPluginHandler{
 		packageMgr:    packageMgr,
 		repo:          repo,
 		manager:       manager,
 		sourceMetrics: sourceMetrics,
 		configService: configService,
+		db:            db,
 	}
 }
 
@@ -64,6 +67,7 @@ func (h *JSPluginHandler) RegisterRoutes(r chi.Router) {
 		r.Get("/{id}", h.handleGet)
 		r.Put("/{id}", h.handleUpdate)
 		r.Delete("/{id}", h.handleDelete)
+		r.Post("/storage/cleanup", h.handleCleanupOrphanStorage)
 		r.Post("/{id}/enable", h.handleEnable)
 		r.Post("/{id}/disable", h.handleDisable)
 		r.Get("/{id}/check-update", h.handleCheckUpdate)
@@ -336,11 +340,12 @@ func (h *JSPluginHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 
 // handleDelete 删除插件
 // @Summary 删除 JS 插件
-// @Description 根据插件ID删除 JS 插件
+// @Description 根据插件ID删除 JS 插件。可通过 keep_data 参数保留插件数据目录（文件系统存储），持久化存储（数据库）始终保留。
 // @Tags JS插件管理
 // @Accept json
 // @Produce json
 // @Param id path int true "插件ID"
+// @Param keep_data query string false "是否保留插件数据目录（true/false，默认 false）"
 // @Success 200 {object} map[string]interface{} "删除成功"
 // @Failure 401 {object} models.ErrorResponse "未授权"
 // @Failure 404 {object} models.ErrorResponse "插件不存在"
@@ -367,7 +372,8 @@ func (h *JSPluginHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 执行卸载
-	if err := h.packageMgr.Uninstall(pluginID); err != nil {
+	keepData := r.URL.Query().Get("keep_data") == "true"
+	if err := h.packageMgr.Uninstall(pluginID, keepData); err != nil {
 		respondError(w, http.StatusInternalServerError, "删除插件失败", err)
 		return
 	}
@@ -660,6 +666,52 @@ func (h *JSPluginHandler) handleBatchUpdate(w http.ResponseWriter, r *http.Reque
 		Skipped: skipped,
 		Results: results,
 		Message: fmt.Sprintf("批量更新完成：%d 已更新，%d 失败，%d 无需更新", updated, failed, skipped),
+	})
+}
+
+// handleCleanupOrphanStorage 清理没有对应已安装插件的持久化存储数据
+// @Summary 清理孤儿持久化存储
+// @Description 删除 plugin_storage 表中不属于任何已安装插件的数据。当插件被卸载后，其持久化存储数据会保留在数据库中；此端点用于清理这些无主数据。
+// @Tags JS插件管理
+// @Produce json
+// @Success 200 {object} map[string]string "清理完成"
+// @Failure 500 {object} models.ErrorResponse "服务器错误"
+// @Security BearerAuth
+// @Router /jsplugins/storage/cleanup [post]
+func (h *JSPluginHandler) handleCleanupOrphanStorage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	storagePaths, err := h.db.PluginStorageRepository().ListEntryPaths(ctx)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取持久化存储列表失败", err)
+		return
+	}
+
+	plugins, err := h.repo.GetAll(ctx)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取插件列表失败", err)
+		return
+	}
+
+	installed := make(map[string]bool, len(plugins))
+	for _, p := range plugins {
+		installed[p.EntryPath] = true
+	}
+
+	cleaned := 0
+	for _, path := range storagePaths {
+		if !installed[path] {
+			if err := h.db.PluginStorageRepository().DeleteAll(ctx, path); err != nil {
+				slog.Warn("cleanup orphan storage failed", "entryPath", path, "error", err)
+				continue
+			}
+			cleaned++
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": fmt.Sprintf("已清理 %d 个插件的孤儿数据", cleaned),
+		"cleaned": cleaned,
 	})
 }
 

@@ -95,6 +95,7 @@ func (a *App) setupAPIV1Router() {
 		a.jsPluginManager,
 		a.sourceMetrics,
 		a.configService,
+		a.db,
 	)
 
 	a.router.Route("/api/v1", func(r chi.Router) {

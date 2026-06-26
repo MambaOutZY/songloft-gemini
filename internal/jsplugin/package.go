@@ -260,8 +260,9 @@ func (pm *PackageManager) Update(pluginID int64, zipData []byte) (*JSPlugin, err
 	return existing, nil
 }
 
-// Uninstall 卸载插件（删除 ZIP + 数据库记录 + static 目录）
-func (pm *PackageManager) Uninstall(pluginID int64) error {
+// Uninstall 卸载插件（删除 ZIP + 数据库记录，可选保留数据目录）
+// keepData=true 时仅删除 ZIP 和 DB 记录，保留插件数据目录
+func (pm *PackageManager) Uninstall(pluginID int64, keepData bool) error {
 	ctx := context.Background()
 
 	// [1] 获取插件信息
@@ -276,10 +277,12 @@ func (pm *PackageManager) Uninstall(pluginID int64) error {
 		slog.Warn("remove zip file failed", "path", zipFilePath, "error", err)
 	}
 
-	// [3] 删除 static 目录
-	staticDir := filepath.Join(pm.dataDir, plugin.EntryPath)
-	if err := os.RemoveAll(staticDir); err != nil {
-		slog.Warn("remove static dir failed", "path", staticDir, "error", err)
+	// [3] 删除数据目录（keepData=true 时跳过）
+	if !keepData {
+		staticDir := filepath.Join(pm.dataDir, plugin.EntryPath)
+		if err := os.RemoveAll(staticDir); err != nil {
+			slog.Warn("remove data dir failed", "path", staticDir, "error", err)
+		}
 	}
 
 	// [4] 删除数据库记录
@@ -287,7 +290,7 @@ func (pm *PackageManager) Uninstall(pluginID int64) error {
 		return fmt.Errorf("delete plugin record: %w", err)
 	}
 
-	slog.Info("plugin uninstalled", "entryPath", plugin.EntryPath)
+	slog.Info("plugin uninstalled", "entryPath", plugin.EntryPath, "keepData", keepData)
 	return nil
 }
 
@@ -379,7 +382,7 @@ func (pm *PackageManager) SyncPluginsFromDirectory() ([]*JSPlugin, error) {
 		zipFilePath := filepath.Join(pm.pluginsDir, plugin.FilePath)
 		if _, err := os.Stat(zipFilePath); os.IsNotExist(err) {
 			slog.Info("plugin zip missing, removing orphan record", "entryPath", entryPath)
-			if err := pm.Uninstall(plugin.ID); err != nil {
+			if err := pm.Uninstall(plugin.ID, false); err != nil {
 				slog.Warn("remove orphan plugin failed", "entryPath", entryPath, "error", err)
 			}
 		}

@@ -25,9 +25,11 @@ type Querier interface {
 	CreatePlaylist(ctx context.Context, arg CreatePlaylistParams) (int64, error)
 	CreateSong(ctx context.Context, arg CreateSongParams) (int64, error)
 	CreateToken(ctx context.Context, arg CreateTokenParams) (int64, error)
+	DeleteAllPluginStorage(ctx context.Context, pluginEntryPath string) error
 	DeleteConfig(ctx context.Context, key string) (int64, error)
 	DeleteJSPlugin(ctx context.Context, id int64) error
 	DeletePlaylist(ctx context.Context, id int64) (int64, error)
+	DeletePluginStorage(ctx context.Context, arg DeletePluginStorageParams) (int64, error)
 	DeleteSong(ctx context.Context, id int64) (int64, error)
 	FindPlaylistByName(ctx context.Context, name string) (int64, error)
 	FindPlaylistByNameExcludeID(ctx context.Context, arg FindPlaylistByNameExcludeIDParams) (int64, error)
@@ -40,6 +42,8 @@ type Querier interface {
 	GetPlaylistByID(ctx context.Context, arg GetPlaylistByIDParams) (GetPlaylistByIDRow, error)
 	GetPlaylistSongs(ctx context.Context, playlistID int64) ([]Song, error)
 	GetPlaylistSongsPaginated(ctx context.Context, arg GetPlaylistSongsPaginatedParams) ([]Song, error)
+	GetPluginStorage(ctx context.Context, arg GetPluginStorageParams) (string, error)
+	GetPluginStorageTotalSize(ctx context.Context, pluginEntryPath string) (int64, error)
 	GetSongByID(ctx context.Context, id int64) (Song, error)
 	GetSongTimestamps(ctx context.Context, id int64) (GetSongTimestampsRow, error)
 	GetTokenByID(ctx context.Context, tokenID string) (GetTokenByIDRow, error)
@@ -51,6 +55,8 @@ type Querier interface {
 	ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsRow, error)
 	ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalWithoutFingerprintRow, error)
 	ListPlaylistsContainingSong(ctx context.Context, songID int64) ([]int64, error)
+	ListPluginStorageEntryPaths(ctx context.Context) ([]string, error)
+	ListPluginStorageKeys(ctx context.Context, pluginEntryPath string) ([]string, error)
 	ListSongsByFingerprint(ctx context.Context, fingerprint string) ([]ListSongsByFingerprintRow, error)
 	ListSongsNeedingMetadata(ctx context.Context) ([]ListSongsNeedingMetadataRow, error)
 	ListSongsWithCache(ctx context.Context) ([]Song, error)
@@ -58,6 +64,7 @@ type Querier interface {
 	RemoveSongFromPlaylist(ctx context.Context, arg RemoveSongFromPlaylistParams) (int64, error)
 	RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64, error)
 	SetConfig(ctx context.Context, arg SetConfigParams) error
+	SetPluginStorage(ctx context.Context, arg SetPluginStorageParams) error
 	TouchPlaylist(ctx context.Context, arg TouchPlaylistParams) (int64, error)
 	UpdateCachePath(ctx context.Context, arg UpdateCachePathParams) error
 	UpdateJSPlugin(ctx context.Context, arg UpdateJSPluginParams) error

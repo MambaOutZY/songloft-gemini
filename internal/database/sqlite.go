@@ -130,3 +130,8 @@ func (s *SQLiteDB) PlaylistRepository() *PlaylistRepository {
 func (s *SQLiteDB) PlaylistSongRepository() *PlaylistSongRepository {
 	return NewPlaylistSongRepository(s.db)
 }
+
+// PluginStorageRepository 返回插件持久化存储仓储
+func (s *SQLiteDB) PluginStorageRepository() *PluginStorageRepository {
+	return NewPluginStorageRepository(s.db)
+}

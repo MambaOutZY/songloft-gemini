@@ -22,7 +22,8 @@ const (
 	PermFS             = "fs"              // 插件数据目录内文件读写
 	PermFSMusic        = "fs:music"        // 可访问 music_path 音乐目录
 	PermFSExternal     = "fs:external"     // 可访问管理员配置的外部目录
-	PermWebSocket      = "websocket"       // WebSocket 连接
+	PermWebSocket          = "websocket"           // WebSocket 连接
+	PermPersistentStorage  = "persistent-storage"  // 持久化存储（卸载后保留）
 )
 
 // AllPermissions 所有合法权限列表（声明层白名单）。
@@ -35,7 +36,7 @@ var AllPermissions = []string{
 	PermPlaylistsRead, PermPlaylistsWrite,
 	PermInterPlugin, PermCommand,
 	PermJSEnv, PermFS, PermFSMusic, PermFSExternal,
-	PermWebSocket,
+	PermWebSocket, PermPersistentStorage,
 	// 通配符糖
 	"songs.*",
 	"playlists.*",

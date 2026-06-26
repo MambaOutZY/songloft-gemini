@@ -75,6 +75,15 @@ type PlaylistSong struct {
 	AddedAt    time.Time
 }
 
+type PluginStorage struct {
+	ID              int64
+	PluginEntryPath string
+	Key             string
+	Value           string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 type Song struct {
 	ID                  int64
 	Type                string

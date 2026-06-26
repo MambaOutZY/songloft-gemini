@@ -3,6 +3,7 @@ package jsplugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -77,6 +78,24 @@ songloft.storage = {
     },
     keys: async function() {
         var s = await __callBridge('storage.keys', '');
+        return s ? JSON.parse(s) : [];
+    }
+};
+
+// === songloft.persistentStorage（async）===
+songloft.persistentStorage = {
+    get: async function(key) {
+        var s = await __callBridge('persistent-storage.get', key);
+        return s ? JSON.parse(s) : null;
+    },
+    set: async function(key, value) {
+        await __callBridge('persistent-storage.set', JSON.stringify({key: key, value: value}));
+    },
+    delete: async function(key) {
+        await __callBridge('persistent-storage.delete', key);
+    },
+    keys: async function() {
+        var s = await __callBridge('persistent-storage.keys', '');
         return s ? JSON.parse(s) : [];
     }
 };
@@ -357,6 +376,8 @@ func (h *BridgeHandler) HandleBridgeCall(action, data string) (string, error) {
 
 	// 分发到具体处理器
 	switch {
+	case strings.HasPrefix(action, "persistent-storage."):
+		return h.handlePersistentStorage(action, data)
 	case strings.HasPrefix(action, "storage."):
 		return h.handleStorage(action, data)
 	case strings.HasPrefix(action, "songs."):
@@ -402,6 +423,9 @@ func extractPermFromAction(action string) string {
 	}
 
 	// 存储权限
+	if strings.HasPrefix(action, "persistent-storage.") {
+		return PermPersistentStorage
+	}
 	if strings.HasPrefix(action, "storage.") {
 		return PermStorage
 	}
@@ -499,6 +523,78 @@ func (h *BridgeHandler) handleStorage(action, data string) (string, error) {
 
 	default:
 		return "", fmt.Errorf("handleStorage: unknown action: %s", action)
+	}
+}
+
+const maxPersistentStorageBytes int64 = 10 << 20 // 10MB per plugin
+
+func (h *BridgeHandler) handlePersistentStorage(action, data string) (string, error) {
+	ctx := context.Background()
+	repo := h.db.PluginStorageRepository()
+	entryPath := h.service.plugin.EntryPath
+
+	switch action {
+	case "persistent-storage.get":
+		key := data
+		if err := validateStorageKey(key); err != nil {
+			return "", fmt.Errorf("handlePersistentStorage: %w", err)
+		}
+		value, err := repo.Get(ctx, entryPath, key)
+		if err != nil {
+			if errors.Is(err, database.ErrNotFound) {
+				return "", nil
+			}
+			return "", fmt.Errorf("handlePersistentStorage: %w", err)
+		}
+		return value, nil
+
+	case "persistent-storage.set":
+		var req struct {
+			Key   string          `json:"key"`
+			Value json.RawMessage `json:"value"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handlePersistentStorage: parse set request: %w", err)
+		}
+		if err := validateStorageKey(req.Key); err != nil {
+			return "", fmt.Errorf("handlePersistentStorage: %w", err)
+		}
+		totalSize, err := repo.TotalSize(ctx, entryPath)
+		if err != nil {
+			return "", fmt.Errorf("handlePersistentStorage: check quota: %w", err)
+		}
+		newValueSize := int64(len(req.Value))
+		if totalSize+newValueSize > maxPersistentStorageBytes {
+			return "", fmt.Errorf("handlePersistentStorage: storage quota exceeded (limit %dMB)", maxPersistentStorageBytes>>20)
+		}
+		if err := repo.Set(ctx, entryPath, req.Key, string(req.Value)); err != nil {
+			return "", fmt.Errorf("handlePersistentStorage: %w", err)
+		}
+		return "", nil
+
+	case "persistent-storage.delete":
+		key := data
+		if err := validateStorageKey(key); err != nil {
+			return "", fmt.Errorf("handlePersistentStorage: %w", err)
+		}
+		if err := repo.Delete(ctx, entryPath, key); err != nil && !errors.Is(err, database.ErrNotFound) {
+			return "", fmt.Errorf("handlePersistentStorage: %w", err)
+		}
+		return "", nil
+
+	case "persistent-storage.keys":
+		keys, err := repo.Keys(ctx, entryPath)
+		if err != nil {
+			return "", fmt.Errorf("handlePersistentStorage: %w", err)
+		}
+		result, err := json.Marshal(keys)
+		if err != nil {
+			return "", fmt.Errorf("handlePersistentStorage: marshal keys: %w", err)
+		}
+		return string(result), nil
+
+	default:
+		return "", fmt.Errorf("handlePersistentStorage: unknown action: %s", action)
 	}
 }
 
