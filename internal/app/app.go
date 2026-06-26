@@ -155,6 +155,10 @@ func (a *App) Init() error {
 		musicPathConfig.ExcludeDirs = []string{"@eaDir", "tmp"}
 		musicPathConfig.ExcludePaths = []string{}
 	}
+	// 移动端传入的音乐目录优先级最高（每次启动时由客户端指定）
+	if a.config.MusicDir != "" {
+		musicPathConfig.Path = a.config.MusicDir
+	}
 
 	// 从数据库读取扫描配置
 	var scanConfigData struct {
@@ -496,7 +500,21 @@ func (a *App) onMusicPathConfigChanged(scanHandler *handlers.ScanHandler) {
 	}()
 }
 
-// Start 启动应用程序
+// BuildHandler 构建 HTTP Handler（含 BasePath 处理），供外部自行绑定 http.Server
+func (a *App) BuildHandler() http.Handler {
+	var handler http.Handler = a.router
+	if a.config.BasePath != "" {
+		mux := http.NewServeMux()
+		mux.Handle(a.config.BasePath+"/", http.StripPrefix(a.config.BasePath, a.router))
+		mux.HandleFunc(a.config.BasePath, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, a.config.BasePath+"/", http.StatusMovedPermanently)
+		})
+		handler = mux
+	}
+	return handler
+}
+
+// Start 启动应用程序（阻塞监听）
 func (a *App) Start() error {
 	if a.config.UsingDefaultCredentials {
 		slog.Info("使用默认管理员账号密码启动")
@@ -510,17 +528,7 @@ func (a *App) Start() error {
 		"port", a.config.Port,
 		"base_path", a.config.BasePath)
 
-	var handler http.Handler = a.router
-	if a.config.BasePath != "" {
-		mux := http.NewServeMux()
-		mux.Handle(a.config.BasePath+"/", http.StripPrefix(a.config.BasePath, a.router))
-		mux.HandleFunc(a.config.BasePath, func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, a.config.BasePath+"/", http.StatusMovedPermanently)
-		})
-		handler = mux
-	}
-
-	return http.ListenAndServe(":"+a.config.Port, handler)
+	return http.ListenAndServe(":"+a.config.Port, a.BuildHandler())
 }
 
 // initJWTSecret 初始化JWT密钥

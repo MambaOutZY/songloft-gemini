@@ -82,6 +82,52 @@ build-frontend-windows: ## 构建 Flutter Windows 桌面版
 build-frontend-macos: ## 构建 Flutter macOS 桌面版
 	@bash songloft-player/scripts/build-frontend.sh macos $(if $(OUTPUT_DIR),$(OUTPUT_DIR),songloft-player-build)
 
+.PHONY: build-go-mobile-android
+build-go-mobile-android: ## 编译 Go 后端为 Android .aar（gomobile bind）
+	@echo "$(BLUE)正在编译 Go 后端为 Android .aar...$(NC)"
+	@which gomobile > /dev/null || (echo "$(RED)错误: gomobile 未安装，请运行: go install golang.org/x/mobile/cmd/gomobile@latest && gomobile init$(NC)" && exit 1)
+	gomobile bind -v -target=android/arm64,android/arm -androidapi 23 \
+		-tags lite \
+		-ldflags="$(LDFLAGS)" \
+		-o songloft-player/android/app/libs/songloft.aar ./mobile
+	@echo "$(GREEN)✓ Go Android .aar 编译完成$(NC)"
+
+.PHONY: build-go-mobile-ios
+build-go-mobile-ios: ## 编译 Go 后端为 iOS .xcframework（gomobile bind，仅 macOS）
+	@echo "$(BLUE)正在编译 Go 后端为 iOS .xcframework...$(NC)"
+	@which gomobile > /dev/null || (echo "$(RED)错误: gomobile 未安装，请运行: go install golang.org/x/mobile/cmd/gomobile@latest && gomobile init$(NC)" && exit 1)
+	gomobile bind -v -target=ios/arm64 \
+		-tags lite \
+		-ldflags="$(LDFLAGS)" \
+		-o songloft-player/ios/Songloft.xcframework ./mobile
+	@echo "$(GREEN)✓ Go iOS .xcframework 编译完成$(NC)"
+
+# 桌面端 Go 后端编译（编译为独立可执行文件，与 Flutter 桌面应用打包在一起）
+# 产物输出到 songloft-player/{platform}/Runner/ 或同级目录，Flutter build 时自动包含
+.PHONY: build-go-desktop-macos
+build-go-desktop-macos: ## 编译 Go 后端为 macOS 可执行文件（嵌入桌面客户端用）
+	@echo "$(BLUE)正在编译 Go 后端 macOS 版本...$(NC)"
+	GOOS=darwin GOARCH=amd64 $(GO) build $(GOFLAGS) -tags lite -ldflags="$(LDFLAGS)" -o songloft-player/macos/Runner/songloft-server .
+	@echo "$(GREEN)✓ Go macOS 版本编译完成$(NC)"
+
+.PHONY: build-go-desktop-macos-arm64
+build-go-desktop-macos-arm64: ## 编译 Go 后端为 macOS ARM64 可执行文件
+	@echo "$(BLUE)正在编译 Go 后端 macOS ARM64 版本...$(NC)"
+	GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -tags lite -ldflags="$(LDFLAGS)" -o songloft-player/macos/Runner/songloft-server .
+	@echo "$(GREEN)✓ Go macOS ARM64 版本编译完成$(NC)"
+
+.PHONY: build-go-desktop-windows
+build-go-desktop-windows: ## 编译 Go 后端为 Windows 可执行文件（嵌入桌面客户端用）
+	@echo "$(BLUE)正在编译 Go 后端 Windows 版本...$(NC)"
+	GOOS=windows GOARCH=amd64 $(GO) build $(GOFLAGS) -tags lite -ldflags="$(LDFLAGS)" -o songloft-player/windows/runner/songloft-server.exe .
+	@echo "$(GREEN)✓ Go Windows 版本编译完成$(NC)"
+
+.PHONY: build-go-desktop-linux
+build-go-desktop-linux: ## 编译 Go 后端为 Linux 可执行文件（嵌入桌面客户端用）
+	@echo "$(BLUE)正在编译 Go 后端 Linux 版本...$(NC)"
+	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -tags lite -ldflags="$(LDFLAGS)" -o songloft-player/linux/runner/songloft-server .
+	@echo "$(GREEN)✓ Go Linux 版本编译完成$(NC)"
+
 .PHONY: build-frontend-android
 build-frontend-android: ## 构建 Flutter Android 版（APK + AAB）
 	@bash songloft-player/scripts/build-frontend.sh android $(if $(OUTPUT_DIR),$(OUTPUT_DIR),songloft-player-build)
