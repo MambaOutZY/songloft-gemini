@@ -11,19 +11,19 @@ import (
 // 声明层允许题外子集： songs.* / playlists.* 仅作为“一把梭”通配符糖，
 // 以配合 CheckPermission 的前缀匹配实现。
 const (
-	PermStorage        = "storage"         // 持久化存储
-	PermSongsRead      = "songs.read"      // 读取歌曲
-	PermSongsWrite     = "songs.write"     // 修改歌曲
-	PermPlaylistsRead  = "playlists.read"  // 读取歌单
-	PermPlaylistsWrite = "playlists.write" // 修改歌单
-	PermInterPlugin    = "inter-plugin"    // 插件间通信
-	PermCommand        = "command"         // 执行命令
-	PermJSEnv          = "jsenv"           // 创建/执行子 JS 环境（songloft.jsenv.*）
-	PermFS             = "fs"              // 插件数据目录内文件读写
-	PermFSMusic        = "fs:music"        // 可访问 music_path 音乐目录
-	PermFSExternal     = "fs:external"     // 可访问管理员配置的外部目录
-	PermWebSocket          = "websocket"           // WebSocket 连接
-	PermPersistentStorage  = "persistent-storage"  // 持久化存储（卸载后保留）
+	PermStorage           = "storage"            // 持久化存储
+	PermSongsRead         = "songs.read"         // 读取歌曲
+	PermSongsWrite        = "songs.write"        // 修改歌曲
+	PermPlaylistsRead     = "playlists.read"     // 读取歌单
+	PermPlaylistsWrite    = "playlists.write"    // 修改歌单
+	PermInterPlugin       = "inter-plugin"       // 插件间通信
+	PermCommand           = "command"            // 执行命令
+	PermJSEnv             = "jsenv"              // 创建/执行子 JS 环境（songloft.jsenv.*）
+	PermFS                = "fs"                 // 插件数据目录内文件读写
+	PermFSMusic           = "fs:music"           // 可访问 music_path 音乐目录
+	PermFSExternal        = "fs:external"        // 可访问管理员配置的外部目录
+	PermWebSocket         = "websocket"          // WebSocket 连接
+	PermPersistentStorage = "persistent-storage" // 持久化存储（卸载后保留）
 )
 
 // AllPermissions 所有合法权限列表（声明层白名单）。
