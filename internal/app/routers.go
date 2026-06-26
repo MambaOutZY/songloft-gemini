@@ -183,6 +183,8 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/settings/tab-config", configHandler.UpdateTabConfigSetting)
 			r.Get("/settings/user-preferences", configHandler.GetUserPreferencesSetting)
 			r.Put("/settings/user-preferences", configHandler.UpdateUserPreferencesSetting)
+			r.Get("/settings/equalizer", configHandler.GetEqualizerSetting)
+			r.Put("/settings/equalizer", configHandler.UpdateEqualizerSetting)
 
 			// 配置管理模块
 			r.Get("/configs", configHandler.ListConfigs)
