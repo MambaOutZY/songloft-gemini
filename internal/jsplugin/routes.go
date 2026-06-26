@@ -615,6 +615,10 @@ func (m *Manager) handleServeFileDirective(w http.ResponseWriter, r *http.Reques
 			http.NotFound(w, r)
 			return
 		}
+		if song.FilePath == "" {
+			http.Error(w, "song has no local file", http.StatusNotFound)
+			return
+		}
 		http.ServeFile(w, r, song.FilePath)
 		return
 	}
