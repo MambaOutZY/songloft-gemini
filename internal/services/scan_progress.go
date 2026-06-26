@@ -30,17 +30,18 @@ const (
 
 // ScanProgress 扫描进度信息
 type ScanProgress struct {
-	Status        ScanStatus `json:"status"`         // 当前状态
-	TotalFiles    int        `json:"total_files"`    // 总文件数
-	ScannedFiles  int        `json:"scanned_files"`  // 已扫描文件数
-	ImportedFiles int        `json:"imported_files"` // 已导入文件数
-	SkippedFiles  int        `json:"skipped_files"`  // 跳过的文件数（已存在）
-	FailedFiles   int        `json:"failed_files"`   // 失败的文件数
-	CleanedFiles  int        `json:"cleaned_files"`  // 清理的过期文件数
-	CurrentFile   string     `json:"current_file"`   // 当前处理的文件
-	StartTime     *time.Time `json:"start_time"`     // 开始时间
-	EndTime       *time.Time `json:"end_time"`       // 结束时间
-	Error         string     `json:"error"`          // 错误信息
+	Status         ScanStatus `json:"status"`           // 当前状态
+	TotalFiles     int        `json:"total_files"`      // 总文件数
+	ScannedFiles   int        `json:"scanned_files"`    // 已扫描文件数
+	ImportedFiles  int        `json:"imported_files"`   // 已导入文件数
+	SkippedFiles   int        `json:"skipped_files"`    // 跳过的文件数（已存在）
+	FailedFiles    int        `json:"failed_files"`     // 失败的文件数
+	CleanedFiles   int        `json:"cleaned_files"`    // 清理的过期文件数
+	LocalSongCount int        `json:"local_song_count"` // 扫描完成后数据库中本地歌曲总数
+	CurrentFile    string     `json:"current_file"`     // 当前处理的文件
+	StartTime      *time.Time `json:"start_time"`       // 开始时间
+	EndTime        *time.Time `json:"end_time"`         // 结束时间
+	Error          string     `json:"error"`            // 错误信息
 }
 
 // ScanProgressManager 扫描进度管理器
@@ -209,6 +210,13 @@ func (m *ScanProgressManager) SetCleanedFiles(count int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.progress.CleanedFiles = count
+}
+
+// SetLocalSongCount 设置数据库中本地歌曲总数（扫描完成时调用）
+func (m *ScanProgressManager) SetLocalSongCount(count int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.progress.LocalSongCount = count
 }
 
 // Reset 重置进度（仅在空闲或完成状态下可用）

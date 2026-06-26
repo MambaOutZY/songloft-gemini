@@ -394,6 +394,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 		} else {
 			slog.Info("auto-create playlists disabled, skipping")
 		}
+		s.setLocalSongCount(ctx)
 		s.scanProgressManager.Complete()
 		s.runAutoFingerprint()
 		return
@@ -506,8 +507,19 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 	} else {
 		slog.Info("auto-create playlists disabled, skipping")
 	}
+	s.setLocalSongCount(ctx)
 	s.scanProgressManager.Complete()
 	s.runAutoFingerprint()
+}
+
+// setLocalSongCount 查询 DB 中本地歌曲总数并写入扫描进度，供前端展示。
+func (s *SongService) setLocalSongCount(ctx context.Context) {
+	localCount, err := s.songs.Count(ctx, &database.SongFilter{Type: "local"})
+	if err != nil {
+		slog.Warn("查询本地歌曲总数失败", "error", err)
+		return
+	}
+	s.scanProgressManager.SetLocalSongCount(int(localCount))
 }
 
 // runAutoCreatePlaylists 扫描完成后按当前 playlistMode 配置重建 auto_created 歌单。
