@@ -24,9 +24,9 @@ func moveFile(src, dst string) error {
 }
 
 func isCrossDeviceError(err error) bool {
-	var linkErr *os.LinkError
-	if errors.As(err, &linkErr) {
-		return errors.Is(linkErr.Err, syscall.EXDEV)
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		return errno == syscall.EXDEV
 	}
 	return false
 }
