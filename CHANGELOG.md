@@ -1,3 +1,12 @@
+## [v2.9.2] - 2026-06-29
+### :memo: Documentation Changes
+- [`be5455d`](https://github.com/songloft-org/songloft/commit/be5455df89a905bf2dee0bdb8a1e41ed7f3585c6) - update CHANGELOG for v2.9.1 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`03ea947`](https://github.com/songloft-org/songloft/commit/03ea947a9025bc0d91da14378f14fe761799251f) - **player**: update songloft-player submodule *(commit by [@hanxi](https://github.com/hanxi))*
+- [`0047882`](https://github.com/songloft-org/songloft/commit/00478824d3e748ccb0cd0a2d96375aa025345a9a) - release version 2.9.2 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.9.1] - 2026-06-29
 ### :bug: Bug Fixes
 - [`5b92b91`](https://github.com/songloft-org/songloft/commit/5b92b91e574641146b7101dcc7a827b650ab0f2d) - **player**: update frontend playback crash fix *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1495,3 +1504,4 @@
 [v2.8.10]: https://github.com/songloft-org/songloft/compare/v2.8.9...v2.8.10
 [v2.9.0]: https://github.com/songloft-org/songloft/compare/v2.8.10...v2.9.0
 [v2.9.1]: https://github.com/songloft-org/songloft/compare/v2.9.0...v2.9.1
+[v2.9.2]: https://github.com/songloft-org/songloft/compare/v2.9.1...v2.9.2
