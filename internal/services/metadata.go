@@ -164,8 +164,11 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 	if err == nil {
 		defer file.Close()
 
-		tagMeta, err := tag.ReadFrom(file)
-		if err == nil {
+		tagMeta, tagErr := tag.ReadFrom(file)
+		if tagErr != nil {
+			slog.Debug("tag 库读取失败，将回退到 ffprobe", "filePath", filePath, "error", tagErr)
+		}
+		if tagErr == nil {
 			metadata.Title = tagMeta.Title()
 			metadata.Artist = tagMeta.Artist()
 			metadata.Album = tagMeta.Album()

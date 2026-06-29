@@ -348,7 +348,17 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 
 	s.scanProgressManager.SetTotalFiles(len(files))
 
-	existingPaths, _ := s.songs.ListLocalPaths(ctx)
+	existingPaths, err := s.songs.ListLocalPaths(ctx)
+	if err != nil {
+		slog.Warn("ListLocalPaths 查询失败，重试一次", "error", err)
+		time.Sleep(500 * time.Millisecond)
+		existingPaths, err = s.songs.ListLocalPaths(ctx)
+		if err != nil {
+			slog.Error("ListLocalPaths 重试仍然失败，终止扫描", "error", err)
+			s.scanProgressManager.Fail(fmt.Errorf("数据库查询失败: %w", err))
+			return
+		}
+	}
 	if existingPaths == nil {
 		existingPaths = make(map[string]database.LocalPathInfo)
 	}
@@ -617,19 +627,22 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 		}
 		return
 	}
-	err := s.tx.RunInTx(ctx, func(ctx context.Context, uow *database.UnitOfWork) error {
+	// 每个 item 的进度结果，事务提交成功后才写入 progress manager
+	itemResults := make([]ProgressUpdateType, len(batch))
+
+	txFn := func(ctx context.Context, uow *database.UnitOfWork) error {
 		txRepo := uow.Songs
-		for _, r := range batch {
+		for i, r := range batch {
 			if r.item.existingSongID > 0 {
 				if r.extractionFailed {
 					slog.Warn("元数据提取失败，保留已有记录", "filePath", r.item.filePath)
-					s.scanProgressManager.UpdateProgress(r.item.filePath, ProgressUpdateFailed)
+					itemResults[i] = ProgressUpdateFailed
 					continue
 				}
 				song, err := txRepo.GetByID(ctx, r.item.existingSongID)
 				if err != nil {
 					slog.Error("获取已有歌曲失败", "err", err, "songId", r.item.existingSongID)
-					s.scanProgressManager.UpdateProgress(r.item.filePath, ProgressUpdateFailed)
+					itemResults[i] = ProgressUpdateFailed
 					continue
 				}
 				song.Title = r.metadata.Title
@@ -652,10 +665,10 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 
 				if err := txRepo.Update(ctx, song); err != nil {
 					slog.Error("更新歌曲失败", "err", err, "song", song)
-					s.scanProgressManager.UpdateProgress(r.item.filePath, ProgressUpdateFailed)
+					itemResults[i] = ProgressUpdateFailed
 					continue
 				}
-				s.scanProgressManager.UpdateProgress(r.item.filePath, ProgressUpdateImported)
+				itemResults[i] = ProgressUpdateImported
 			} else {
 				song := &models.Song{
 					Type:       models.TypeLocal,
@@ -680,16 +693,33 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 
 				if err := txRepo.Create(ctx, song); err != nil {
 					slog.Error("创建歌曲失败", "err", err, "song", song)
-					s.scanProgressManager.UpdateProgress(r.item.filePath, ProgressUpdateFailed)
+					itemResults[i] = ProgressUpdateFailed
 					continue
 				}
-				s.scanProgressManager.UpdateProgress(r.item.filePath, ProgressUpdateImported)
+				itemResults[i] = ProgressUpdateImported
 			}
 		}
 		return nil
-	})
-	if err != nil {
-		slog.Error("批次事务执行失败", "error", err)
+	}
+
+	const maxRetries = 3
+	retryDelays := [maxRetries]time.Duration{500 * time.Millisecond, 1 * time.Second, 2 * time.Second}
+	var err error
+	for attempt := range maxRetries {
+		err = s.tx.RunInTx(ctx, txFn)
+		if err == nil {
+			for i, r := range batch {
+				s.scanProgressManager.UpdateProgress(r.item.filePath, itemResults[i])
+			}
+			return
+		}
+		slog.Warn("批次事务执行失败，准备重试", "attempt", attempt+1, "error", err)
+		time.Sleep(retryDelays[attempt])
+	}
+
+	slog.Error("批次事务执行失败，已耗尽重试", "error", err)
+	for _, r := range batch {
+		s.scanProgressManager.UpdateProgress(r.item.filePath, ProgressUpdateFailed)
 	}
 }
 
