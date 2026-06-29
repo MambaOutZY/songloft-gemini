@@ -1,3 +1,14 @@
+## [v2.9.1] - 2026-06-29
+### :bug: Bug Fixes
+- [`5b92b91`](https://github.com/songloft-org/songloft/commit/5b92b91e574641146b7101dcc7a827b650ab0f2d) - **player**: update frontend playback crash fix *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`9534a8e`](https://github.com/songloft-org/songloft/commit/9534a8ea1103dfc1cac47ff28f0ebad3671d873d) - update CHANGELOG for v2.9.0 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`1af5db9`](https://github.com/songloft-org/songloft/commit/1af5db96a6512e388e018f774a54b8a32551852a) - release version 2.9.1 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.9.0] - 2026-06-29
 ### :sparkles: New Features
 - [`993a3e7`](https://github.com/songloft-org/songloft/commit/993a3e742d9ba5ad7150e3adcd90863b43fec2d0) - **scan**: 歌单创建方式支持三种模式（按文件夹/按顶层文件夹/包含子目录） *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1483,3 +1494,4 @@
 [v2.8.9]: https://github.com/songloft-org/songloft/compare/v2.8.8...v2.8.9
 [v2.8.10]: https://github.com/songloft-org/songloft/compare/v2.8.9...v2.8.10
 [v2.9.0]: https://github.com/songloft-org/songloft/compare/v2.8.10...v2.9.0
+[v2.9.1]: https://github.com/songloft-org/songloft/compare/v2.9.0...v2.9.1
