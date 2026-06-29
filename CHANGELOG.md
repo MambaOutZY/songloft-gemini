@@ -1,3 +1,48 @@
+## [v2.9.0] - 2026-06-29
+### :sparkles: New Features
+- [`993a3e7`](https://github.com/songloft-org/songloft/commit/993a3e742d9ba5ad7150e3adcd90863b43fec2d0) - **scan**: 歌单创建方式支持三种模式（按文件夹/按顶层文件夹/包含子目录） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e858260`](https://github.com/songloft-org/songloft/commit/e858260ad4f662bb54faef99ea618456a83c88fe) - **plugin**: 新增自动下载 bridge API，支持插件注册缓存完成后自动下载 *(PR [#224](https://github.com/songloft-org/songloft/pull/224) by [@hanxi](https://github.com/hanxi))*
+- [`2989703`](https://github.com/songloft-org/songloft/commit/2989703dc32c1daf8280659dd1751c795bee1964) - **equalizer**: 添加 EQ 均衡器 settings 端点 *(PR [#217](https://github.com/songloft-org/songloft/pull/217) by [@hanxi](https://github.com/hanxi))*
+- [`8f82ef7`](https://github.com/songloft-org/songloft/commit/8f82ef758af4f58b32f8f9ed78b781cc8bea876d) - 将 Go 后端嵌入客户端，支持本地模式播放 *(PR [#225](https://github.com/songloft-org/songloft/pull/225) by [@hanxi](https://github.com/hanxi))*
+- [`7cf670d`](https://github.com/songloft-org/songloft/commit/7cf670de00918bac88be41adb2b0f50fff01d018) - **plugin**: 插件持久化存储 API + 卸载保留数据 + 孤儿清理 *(PR [#220](https://github.com/songloft-org/songloft/pull/220) by [@hanxi](https://github.com/hanxi))*
+- [`0f732ed`](https://github.com/songloft-org/songloft/commit/0f732edddf4ac6c979939099bc24c5c0ea2540be) - **player**: 更新子模块实现按服务器隔离凭证 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`0456bbf`](https://github.com/songloft-org/songloft/commit/0456bbf9b6d191903e072c9dde1c0266b260eebe) - **scan**: 修复元数据提取失败时标题含扩展名、空数据覆盖已有记录的问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`02a866b`](https://github.com/songloft-org/songloft/commit/02a866b14c5521b3c4b6696755729724f57b937c) - **cache**: 修复插件来源歌曲缓存/下载时扩展名始终为 .mp3 的问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`0eeb224`](https://github.com/songloft-org/songloft/commit/0eeb2240b274d77f8f5fecfaa5c46073db6335cc) - **cache**: ffprobe format_name 未标准化导致 M4A 文件可能获得 .mov 扩展名 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`f3aa113`](https://github.com/songloft-org/songloft/commit/f3aa11359eedc8aac6bc30c8d25634bb0d662364) - **subsonic**: 修复 Subsonic 服务端模式无法播放远程歌曲和电台 *(PR [#219](https://github.com/songloft-org/songloft/pull/219) by [@hanxi](https://github.com/hanxi))*
+- [`c5f2cb2`](https://github.com/songloft-org/songloft/commit/c5f2cb22b8840dfd5bdfb4388e5848a8c31eec54) - **scan**: 扫描完成后返回本地歌曲总数，解决与歌曲库计数不一致的困惑 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`49fff2e`](https://github.com/songloft-org/songloft/commit/49fff2e343cbbf61a0afc9daa4e9646ce50cdd76) - **plugin**: EnablePlugin 前先卸载残留环境，避免 env already exists 错误 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e14cae5`](https://github.com/songloft-org/songloft/commit/e14cae55713ad06224048683e73599bf6bea045d) - **cover**: 封面 URL 追加时间戳参数穿透客户端缓存 *(PR [#218](https://github.com/songloft-org/songloft/pull/218) by [@hanxi](https://github.com/hanxi))*
+- [`5e36bf0`](https://github.com/songloft-org/songloft/commit/5e36bf0ba34d74ea916604476a36e2720a9d2ef4) - **ci**: 添加 gomobile tool 依赖修复 iOS/Android 构建 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`73e28ec`](https://github.com/songloft-org/songloft/commit/73e28ec345913cc4daf8ca54d23b1c01635e0af6) - **plugin**: playlists.getSongs 桥接增加诊断日志和重试 *(PR [#21](https://github.com/songloft-org/songloft/pull/21) by [@hanxi](https://github.com/hanxi))*
+- [`a3811da`](https://github.com/songloft-org/songloft/commit/a3811daeb18655e93c1a4041155c1f39cbac96d2) - **ci**: 更新 songloft-player 子模块修复 macOS 构建 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`412b28c`](https://github.com/songloft-org/songloft/commit/412b28cc5d737768c80006da632536e865131e54) - **plugin**: 私有 GitHub 仓库插件通过 API 端点下载 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`90f5a79`](https://github.com/songloft-org/songloft/commit/90f5a79fc86ab8386b5044b60162311d8b671c77) - **player**: 更新 songloft-player 子模块修复本地模式 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`f812e1d`](https://github.com/songloft-org/songloft/commit/f812e1d943b6e91cd3508f553ed7bdd02792f2ff) - **player**: 更新子模块修复 Xcode 26.5 编译 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a48b776`](https://github.com/songloft-org/songloft/commit/a48b776f15e15b023825a18219c6d3062ead8389) - **player**: 更新子模块修复 macOS linker 错误 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1c27231`](https://github.com/songloft-org/songloft/commit/1c272317ae3738a9a1fef483e49cdb6a288a88c8) - **player**: 更新子模块修复 iOS 构建 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a0b8c1b`](https://github.com/songloft-org/songloft/commit/a0b8c1bfeea37026b1a67be1177ba38cdc824636) - **player**: 更新子模块修复 iOS EqualizerPlugin 和 SongloftBackendPlugin 编译 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`da65db1`](https://github.com/songloft-org/songloft/commit/da65db17f6cc1216d0413d85d41842e661b7aee0) - 修复 Android bundled 模式下 covers 目录路径解析错误 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`8739e1a`](https://github.com/songloft-org/songloft/commit/8739e1a5f4e36483c43b301355ce3baebbcde5ea) - **local**: 修复 Android 本地模式扫描 + 更新子模块 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`039bdf5`](https://github.com/songloft-org/songloft/commit/039bdf5ca454d1146126d712dd1194fb9b10a71a) - **player**: 更新子模块修复本地模式设置页入口 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`56e042c`](https://github.com/songloft-org/songloft/commit/56e042c49beda84780ed1e207f585d8d00220ddd) - **scan**: 扫描文件发现阶段增加进度报告 *(PR [#227](https://github.com/songloft-org/songloft/pull/227) by [@hanxi](https://github.com/hanxi))*
+- [`281a8d5`](https://github.com/songloft-org/songloft/commit/281a8d59401d4365e60c6d4c27afe93bd03c5d05) - **settings**: 更新子模块修复歌单创建方式下拉竖排显示 *(PR [#228](https://github.com/songloft-org/songloft/pull/228) by [@hanxi](https://github.com/hanxi))*
+- [`e5ac251`](https://github.com/songloft-org/songloft/commit/e5ac2518898a07cd3695ba8b1626ed54756c2c60) - **web**: 更新子模块修复移动端浏览器切后台黑屏 *(PR [#229](https://github.com/songloft-org/songloft/pull/229) by [@hanxi](https://github.com/hanxi))*
+- [`7c13a31`](https://github.com/songloft-org/songloft/commit/7c13a31e07855ab1e077530ad362a29e10049f43) - **player**: 更新子模块修复桌面端播完不自动切歌 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`bd84888`](https://github.com/songloft-org/songloft/commit/bd84888b7793a8c6f7d4a0b89b127891468f5941) - 标签解析与扫描稳定性修复 (songloft-org/songloft-player[#14](https://github.com/songloft-org/songloft/pull/14)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e433aa3`](https://github.com/songloft-org/songloft/commit/e433aa3d3b636e58b56d67c962b3d96552377e23) - **jsplugin**: serveFile 支持非本地歌曲 + removeSongs 容错 (songloft-org/songloft-plugin-subsonic[#6](https://github.com/songloft-org/songloft/pull/6)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e58358d`](https://github.com/songloft-org/songloft/commit/e58358dba3272432da8c4a55d1a49bdff4da65b4) - Subsonic 远程歌曲格式显示与电台列表修复 + Windows 缓存兼容 *(PR [#231](https://github.com/songloft-org/songloft/pull/231) by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`dd2f902`](https://github.com/songloft-org/songloft/commit/dd2f902965167a1165be66be742fa505be732dc7) - update CHANGELOG for v2.8.10 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`1fd17f5`](https://github.com/songloft-org/songloft/commit/1fd17f50223fe97d6b962e3ba5a3768830cead11) - 在 README 中增加 Kodi 插件客户端描述 *(PR [#232](https://github.com/songloft-org/songloft/pull/232) by [@altman08](https://github.com/altman08))*
+
+### :wrench: Chores
+- [`5e56377`](https://github.com/songloft-org/songloft/commit/5e5637771d3079e3fad9a57ed058548683012f9d) - release version 2.9.0 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.8.10] - 2026-06-24
 ### :memo: Documentation Changes
 - [`e015dba`](https://github.com/songloft-org/songloft/commit/e015dba42403d68c72a94c2dafebcee132361e77) - update CHANGELOG for v2.8.9 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
@@ -1437,3 +1482,4 @@
 [v2.8.8]: https://github.com/songloft-org/songloft/compare/v2.8.7...v2.8.8
 [v2.8.9]: https://github.com/songloft-org/songloft/compare/v2.8.8...v2.8.9
 [v2.8.10]: https://github.com/songloft-org/songloft/compare/v2.8.9...v2.8.10
+[v2.9.0]: https://github.com/songloft-org/songloft/compare/v2.8.10...v2.9.0
