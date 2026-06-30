@@ -1,3 +1,20 @@
+## [v2.9.4] - 2026-06-30
+### :sparkles: New Features
+- [`7da4a96`](https://github.com/songloft-org/songloft/commit/7da4a9686545c7543ae4587ec02b664f842f47dc) - 删除歌曲支持删除本地文件、歌单隐藏功能 [#235](https://github.com/songloft-org/songloft/pull/235) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`f28d4ee`](https://github.com/songloft-org/songloft/commit/f28d4eee087b1734524480d94d1bb3fe3fb6e7f9) - **jsplugin**: 新增 UDP socket Bridge API (songloft.net) [#222](https://github.com/songloft-org/songloft/pull/222) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3919550`](https://github.com/songloft-org/songloft/commit/3919550151dd240b9e1d670c750b5a4e68723db2) - **jsplugin**: 插件常驻运行白名单 [#237](https://github.com/songloft-org/songloft/pull/237) *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :white_check_mark: Tests
+- [`e0f3b5f`](https://github.com/songloft-org/songloft/commit/e0f3b5f6950330ffa526d77804f446bc723adba2) - **jsplugin**: 新增 UDP socket API 单元测试 + 文档更新 [#222](https://github.com/songloft-org/songloft/pull/222) *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`0c3d882`](https://github.com/songloft-org/songloft/commit/0c3d88244510e142ad7657cd78f05811578add4f) - update CHANGELOG for v2.9.3 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`d8b3fd6`](https://github.com/songloft-org/songloft/commit/d8b3fd6a81c36443ec11cbd60b1da8137e6210d6) - 补充 Bundle 本地模式文档 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`edb9249`](https://github.com/songloft-org/songloft/commit/edb9249b773b0b8817c3cfe6e2b9b408aba0c3cb) - release version 2.9.4 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.9.3] - 2026-06-30
 ### :bug: Bug Fixes
 - [`66a3453`](https://github.com/songloft-org/songloft/commit/66a3453b69ddef57049f7c5a356fdd33a90e9f55) - **tag**: update WAV metadata parser *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1518,3 +1535,4 @@
 [v2.9.1]: https://github.com/songloft-org/songloft/compare/v2.9.0...v2.9.1
 [v2.9.2]: https://github.com/songloft-org/songloft/compare/v2.9.1...v2.9.2
 [v2.9.3]: https://github.com/songloft-org/songloft/compare/v2.9.2...v2.9.3
+[v2.9.4]: https://github.com/songloft-org/songloft/compare/v2.9.3...v2.9.4
