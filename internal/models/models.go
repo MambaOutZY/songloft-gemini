@@ -299,6 +299,21 @@ func (p *Playlist) ValidateForUpdate() error {
 	return nil
 }
 
+// IsBuiltIn 判断是否为内置歌单
+func (p *Playlist) IsBuiltIn() bool {
+	return p.HasLabel(PlaylistLabelBuiltIn)
+}
+
+// HasLabel 判断歌单是否包含指定标签
+func (p *Playlist) HasLabel(label string) bool {
+	for _, l := range p.Labels {
+		if l == label {
+			return true
+		}
+	}
+	return false
+}
+
 // CanAddSong 判断是否可以添加指定类型的歌曲
 func (p *Playlist) CanAddSong(songType string) bool {
 	switch p.Type {
@@ -494,6 +509,7 @@ type AutoCreatePlaylistsResponse struct {
 const (
 	PlaylistLabelAutoCreated = "auto_created" // 自动创建歌单标签
 	PlaylistLabelBuiltIn     = "built_in"     // 内置歌单标签（不可删除）
+	PlaylistLabelHidden      = "hidden"       // 隐藏歌单标签
 
 	PlaylistModeDirectory = "directory" // 每个文件夹生成独立歌单
 	PlaylistModeTopLevel  = "top_level" // 按一级子目录合并歌单
@@ -528,6 +544,11 @@ type UpdatePlaylistRequest struct {
 	CoverPath   *string `json:"cover_path,omitempty" example:""`      // 封面图片本地路径（传空字符串清除）
 	CoverURL    *string `json:"cover_url,omitempty" example:""`       // 封面图片 URL（传空字符串清除）
 	CoverSongID *int64  `json:"cover_song_id,omitempty" example:"42"` // 从指定歌曲复制封面（与 cover_path/cover_url 互斥，优先级更高）
+}
+
+// SetPlaylistVisibilityRequest 设置歌单可见性请求
+type SetPlaylistVisibilityRequest struct {
+	Hidden bool `json:"hidden" example:"true"` // 是否隐藏歌单
 }
 
 // JSPluginStatus JS 插件状态枚举

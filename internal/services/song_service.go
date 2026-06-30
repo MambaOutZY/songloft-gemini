@@ -145,7 +145,7 @@ func (s *SongService) Update(ctx context.Context, song *models.Song) error {
 }
 
 // Delete 删除歌曲
-func (s *SongService) Delete(ctx context.Context, id int64) error {
+func (s *SongService) Delete(ctx context.Context, id int64, deleteFiles bool) error {
 	song, err := s.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to get song: %w", err)
@@ -157,6 +157,13 @@ func (s *SongService) Delete(ctx context.Context, id int64) error {
 
 	if song != nil && song.CoverPath != "" {
 		removeCoverIfUnreferenced(ctx, s.songs, song.CoverPath)
+	}
+	if deleteFiles && song != nil && song.Type == models.TypeLocal && song.FilePath != "" {
+		if err := os.Remove(song.FilePath); err != nil {
+			slog.Warn("删除音频文件失败", "path", song.FilePath, "error", err)
+		} else {
+			slog.Info("已删除音频文件", "path", song.FilePath)
+		}
 	}
 	if s.cacheService != nil {
 		cachePath := ""
@@ -887,7 +894,7 @@ func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, erro
 		}
 
 		if shouldClean {
-			if err := s.Delete(ctx, song.ID); err != nil {
+			if err := s.Delete(ctx, song.ID, false); err != nil {
 				slog.Warn("删除无效歌曲失败", "songId", song.ID, "filePath", song.FilePath, "reason", reason, "error", err)
 				if reason == "file_not_found" {
 					result.FileNotFound--

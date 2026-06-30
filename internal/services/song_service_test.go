@@ -201,7 +201,7 @@ func TestSongServiceDelete(t *testing.T) {
 		t.Fatalf("create song: %v", err)
 	}
 
-	if err := service.Delete(ctx, song.ID); err != nil {
+	if err := service.Delete(ctx, song.ID, false); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 

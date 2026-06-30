@@ -33,11 +33,12 @@ func NewPlaylistHandler(playlistService *services.PlaylistService, songService *
 
 // ListPlaylists 获取歌单列表
 // @Summary 获取歌单列表
-// @Description 获取歌单列表，支持按类型过滤和分页
+// @Description 获取歌单列表，支持按类型过滤和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部
 // @Tags 歌单管理
 // @Accept json
 // @Produce json
 // @Param type query string false "歌单类型" Enums(normal, radio)
+// @Param exclude_labels query string false "要排除的标签(逗号分隔), 默认排除 hidden; 传 none 显示全部" default(hidden)
 // @Param limit query int false "每页数量" default(20)
 // @Param offset query int false "偏移量" default(0)
 // @Success 200 {object} map[string]interface{} "成功返回歌单列表"
@@ -66,10 +67,19 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	var excludeLabels []string
+	excludeLabelsStr := r.URL.Query().Get("exclude_labels")
+	if excludeLabelsStr == "" {
+		excludeLabels = []string{models.PlaylistLabelHidden}
+	} else if excludeLabelsStr != "none" {
+		excludeLabels = strings.Split(excludeLabelsStr, ",")
+	}
+
 	filter := &database.PlaylistFilter{
-		Type:   playlistType,
-		Limit:  limit,
-		Offset: offset,
+		Type:          playlistType,
+		ExcludeLabels: excludeLabels,
+		Limit:         limit,
+		Offset:        offset,
 	}
 
 	playlists, err := h.playlistService.List(ctx, filter)
@@ -78,9 +88,9 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 获取歌单总数（使用相同的过滤条件，不含分页）
 	countFilter := &database.PlaylistFilter{
-		Type: filter.Type,
+		Type:          filter.Type,
+		ExcludeLabels: excludeLabels,
 	}
 	total, err := h.playlistService.Count(ctx, countFilter)
 	if err != nil {
@@ -724,4 +734,76 @@ func (h *PlaylistHandler) serveLocalCover(w http.ResponseWriter, playlist *model
 	w.Header().Set("Cache-Control", "public, max-age=31536000") // 缓存一年
 	w.WriteHeader(http.StatusOK)
 	w.Write(coverData)
+}
+
+// SetPlaylistVisibility 设置歌单可见性
+// @Summary 设置歌单可见性
+// @Description 切换歌单的隐藏状态。内置歌单（收藏、电台收藏）不允许隐藏
+// @Tags 歌单管理
+// @Accept json
+// @Produce json
+// @Param id path int true "歌单ID"
+// @Param request body models.SetPlaylistVisibilityRequest true "可见性设置"
+// @Success 200 {object} models.Playlist "更新后的歌单"
+// @Failure 400 {object} map[string]string "请求错误或内置歌单不可隐藏"
+// @Failure 404 {object} map[string]string "歌单不存在"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Security BearerAuth
+// @Router /playlists/{id}/visibility [put]
+func (h *PlaylistHandler) SetPlaylistVisibility(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "无效的歌单ID", err)
+		return
+	}
+
+	var req models.SetPlaylistVisibilityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
+		return
+	}
+
+	playlist, err := h.playlistService.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			respondError(w, http.StatusNotFound, "歌单不存在", err)
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "获取歌单失败", err)
+		return
+	}
+
+	if playlist.IsBuiltIn() && req.Hidden {
+		respondError(w, http.StatusBadRequest, "内置歌单不可隐藏", nil)
+		return
+	}
+
+	if req.Hidden {
+		if !playlist.HasLabel(models.PlaylistLabelHidden) {
+			playlist.Labels = append(playlist.Labels, models.PlaylistLabelHidden)
+		}
+	} else {
+		filtered := make([]string, 0, len(playlist.Labels))
+		for _, l := range playlist.Labels {
+			if l != models.PlaylistLabelHidden {
+				filtered = append(filtered, l)
+			}
+		}
+		playlist.Labels = filtered
+	}
+
+	if err := h.playlistService.Update(ctx, playlist); err != nil {
+		respondError(w, http.StatusInternalServerError, "更新歌单可见性失败", err)
+		return
+	}
+
+	updated, err := h.playlistService.GetByID(ctx, id)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取更新后歌单失败", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, updated)
 }

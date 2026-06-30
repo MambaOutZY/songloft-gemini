@@ -523,6 +523,9 @@ func applyPlaylistFilter(sb sq.SelectBuilder, filter *PlaylistFilter, prefix str
 	for _, label := range filter.Labels {
 		sb = sb.Where(fmt.Sprintf("EXISTS (SELECT 1 FROM json_each(%slabels) WHERE value = ?)", prefix), label)
 	}
+	for _, label := range filter.ExcludeLabels {
+		sb = sb.Where(fmt.Sprintf("NOT EXISTS (SELECT 1 FROM json_each(%slabels) WHERE value = ?)", prefix), label)
+	}
 	if filter.Keyword != "" {
 		kw := "%" + filter.Keyword + "%"
 		sb = sb.Where(sq.Or{

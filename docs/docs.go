@@ -2218,7 +2218,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取歌单列表，支持按类型过滤和分页",
+                "description": "获取歌单列表，支持按类型过滤和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部",
                 "consumes": [
                     "application/json"
                 ],
@@ -2238,6 +2238,13 @@ const docTemplate = `{
                         "type": "string",
                         "description": "歌单类型",
                         "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "hidden",
+                        "description": "要排除的标签(逗号分隔), 默认排除 hidden; 传 none 显示全部",
+                        "name": "exclude_labels",
                         "in": "query"
                     },
                     {
@@ -3179,6 +3186,79 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "更新失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/playlists/{id}/visibility": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "切换歌单的隐藏状态。内置歌单（收藏、电台收藏）不允许隐藏",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌单管理"
+                ],
+                "summary": "设置歌单可见性",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌单ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "可见性设置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.SetPlaylistVisibilityRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的歌单",
+                        "schema": {
+                            "$ref": "#/definitions/models.Playlist"
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误或内置歌单不可隐藏",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "歌单不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -5311,7 +5391,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据歌曲ID删除歌曲",
+                "description": "根据歌曲ID删除歌曲。设置 delete_files=true 时同步删除本地音频文件",
                 "consumes": [
                     "application/json"
                 ],
@@ -5329,6 +5409,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否同时删除本地音频文件",
+                        "name": "delete_files",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -7086,6 +7172,16 @@ const docTemplate = `{
                     "description": "撤销原因",
                     "type": "string",
                     "example": "用户主动登出"
+                }
+            }
+        },
+        "models.SetPlaylistVisibilityRequest": {
+            "type": "object",
+            "properties": {
+                "hidden": {
+                    "description": "是否隐藏歌单",
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },

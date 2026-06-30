@@ -596,6 +596,13 @@ definitions:
         example: 用户主动登出
         type: string
     type: object
+  models.SetPlaylistVisibilityRequest:
+    properties:
+      hidden:
+        description: 是否隐藏歌单
+        example: true
+        type: boolean
+    type: object
   models.Song:
     properties:
       added_at:
@@ -2481,7 +2488,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: 获取歌单列表，支持按类型过滤和分页
+      description: 获取歌单列表，支持按类型过滤和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部
       parameters:
       - description: 歌单类型
         enum:
@@ -2489,6 +2496,11 @@ paths:
         - radio
         in: query
         name: type
+        type: string
+      - default: hidden
+        description: 要排除的标签(逗号分隔), 默认排除 hidden; 传 none 显示全部
+        in: query
+        name: exclude_labels
         type: string
       - default: 20
         description: 每页数量
@@ -2968,6 +2980,53 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新歌单最后播放时间
+      tags:
+      - 歌单管理
+  /playlists/{id}/visibility:
+    put:
+      consumes:
+      - application/json
+      description: 切换歌单的隐藏状态。内置歌单（收藏、电台收藏）不允许隐藏
+      parameters:
+      - description: 歌单ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 可见性设置
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.SetPlaylistVisibilityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新后的歌单
+          schema:
+            $ref: '#/definitions/models.Playlist'
+        "400":
+          description: 请求错误或内置歌单不可隐藏
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 歌单不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 设置歌单可见性
       tags:
       - 歌单管理
   /playlists/batch-delete:
@@ -4066,13 +4125,17 @@ paths:
     delete:
       consumes:
       - application/json
-      description: 根据歌曲ID删除歌曲
+      description: 根据歌曲ID删除歌曲。设置 delete_files=true 时同步删除本地音频文件
       parameters:
       - description: 歌曲ID
         in: path
         name: id
         required: true
         type: integer
+      - description: 是否同时删除本地音频文件
+        in: query
+        name: delete_files
+        type: boolean
       produces:
       - application/json
       responses:

@@ -355,11 +355,12 @@ func (h *SongHandler) GetSong(w http.ResponseWriter, r *http.Request) {
 
 // DeleteSong 删除歌曲
 // @Summary 删除歌曲
-// @Description 根据歌曲ID删除歌曲
+// @Description 根据歌曲ID删除歌曲。设置 delete_files=true 时同步删除本地音频文件
 // @Tags 歌曲管理
 // @Accept json
 // @Produce json
 // @Param id path int true "歌曲ID"
+// @Param delete_files query bool false "是否同时删除本地音频文件"
 // @Success 200 {object} map[string]string "删除成功"
 // @Failure 400 {object} map[string]string "无效的歌曲ID"
 // @Failure 500 {object} map[string]string "删除失败"
@@ -375,7 +376,9 @@ func (h *SongHandler) DeleteSong(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.songService.Delete(ctx, id); err != nil {
+	deleteFiles := r.URL.Query().Get("delete_files") == "true"
+
+	if err := h.songService.Delete(ctx, id, deleteFiles); err != nil {
 		respondError(w, http.StatusInternalServerError, "删除歌曲失败", err)
 		return
 	}

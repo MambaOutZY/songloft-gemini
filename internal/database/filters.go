@@ -28,13 +28,14 @@ type SongFilter struct {
 
 // PlaylistFilter 歌单过滤条件
 type PlaylistFilter struct {
-	Type    string
-	Labels  []string
-	Keyword string
-	Limit   int
-	Offset  int
-	OrderBy string
-	Order   string
+	Type          string
+	Labels        []string
+	ExcludeLabels []string
+	Keyword       string
+	Limit         int
+	Offset        int
+	OrderBy       string
+	Order         string
 }
 
 // PlaylistSongFilter 歌单歌曲过滤/排序条件

@@ -841,7 +841,7 @@ func (h *BridgeHandler) handleSongs(action, data string) (string, error) {
 		if err := json.Unmarshal([]byte(data), &req); err != nil {
 			return "", fmt.Errorf("handleSongs: parse delete: %w", err)
 		}
-		if err := h.songService.Delete(ctx, req.ID); err != nil {
+		if err := h.songService.Delete(ctx, req.ID, false); err != nil {
 			return "", fmt.Errorf("handleSongs: delete: %w", err)
 		}
 		return "", nil
