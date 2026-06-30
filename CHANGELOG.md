@@ -1,3 +1,15 @@
+## [v2.9.3] - 2026-06-30
+### :bug: Bug Fixes
+- [`66a3453`](https://github.com/songloft-org/songloft/commit/66a3453b69ddef57049f7c5a356fdd33a90e9f55) - **tag**: update WAV metadata parser *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`c661b00`](https://github.com/songloft-org/songloft/commit/c661b004f655e0d900c7398c5a190af88f059073) - update CHANGELOG for v2.9.2 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`91e03e7`](https://github.com/songloft-org/songloft/commit/91e03e7d9184a27b747ab75f9ea36e2d7ff3df4f) - clarify issue references in commits *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`cbb1718`](https://github.com/songloft-org/songloft/commit/cbb17183a74a65a00fc7eb97cdd80a8c578f7507) - release version 2.9.3 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.9.2] - 2026-06-29
 ### :memo: Documentation Changes
 - [`be5455d`](https://github.com/songloft-org/songloft/commit/be5455df89a905bf2dee0bdb8a1e41ed7f3585c6) - update CHANGELOG for v2.9.1 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
@@ -1505,3 +1517,4 @@
 [v2.9.0]: https://github.com/songloft-org/songloft/compare/v2.8.10...v2.9.0
 [v2.9.1]: https://github.com/songloft-org/songloft/compare/v2.9.0...v2.9.1
 [v2.9.2]: https://github.com/songloft-org/songloft/compare/v2.9.1...v2.9.2
+[v2.9.3]: https://github.com/songloft-org/songloft/compare/v2.9.2...v2.9.3
