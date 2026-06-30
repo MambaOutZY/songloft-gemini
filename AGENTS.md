@@ -248,8 +248,9 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 - 公共资源：`/api/v1/jsplugin-assets/*` 提供嵌入在 Go 二进制中的 `common.css`/`common.js`/字体，`injectHTMLHead` 自动注入到所有插件 HTML 页面
 - 主题同步：`common.js` 内含 embed 检测 + 主题桥接（URL `?theme=` 参数 + `postMessage` 实时更新 + `data-theme` 属性 + `songloft-theme-change` 事件），暴露 `window.SongloftPlugin` 全局 API（`getTheme`/`onThemeChange`/`apiGet`/`apiPost` 等）
 - `common.css` 定义 `--md-*` CSS 变量（亮/暗双主题），所有使用这些变量的插件自动跟随主题切换
-- 权限：manifest 中 `permissions: ["network", "storage", "fs:music", ...]`，运行时由 `internal/jsplugin` 校验
+- 权限：manifest 中 `permissions: ["net", "storage", "fs:music", ...]`，运行时由 `internal/jsplugin` 校验
 - 健康检查 + 文件指纹热更新均自动进行
+- **UDP Socket API**（`songloft.net`，需 `net` 权限）：Go 侧托管 UDP socket + 消息推送模式。`udpBind` 创建 socket 并启动 reader goroutine，收到的 UDP 包通过 scheduler 队列异步推送到 JS 回调（`onData`）。支持多播组（`udpJoinMulticast/udpLeaveMulticast`），典型用途：SSDP 设备发现（DLNA/UPnP）。每插件最多 8 个 socket，有活跃 socket 的插件不会被空闲驱逐，插件卸载时自动清理。实现在 `internal/jsplugin/api_bridge_net.go`
 - **私有源认证**：`RegistryConfig` 支持 `token` 字段，拉取该源下所有资源时自动携带 `Authorization: Bearer <token>` 头，兼容 GitHub 私有仓库 PAT 和自托管私有源。详见 [插件源制作指南 · 私有源认证](docs/plugin_registry.md#私有源认证)
 
 ---
