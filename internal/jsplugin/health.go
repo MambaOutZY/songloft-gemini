@@ -318,6 +318,11 @@ func (hc *HealthChecker) checkIdle(svc *JSService) bool {
 		return false
 	}
 
+	// 常驻白名单中的插件不休眠
+	if hc.manager.IsPluginKeepAlive(entryPath) {
+		return false
+	}
+
 	// 有活跃 WebSocket 连接的插件不休眠
 	envID := svc.EnvID()
 	if envID != "" && hc.manager.jsManager.HasActiveWebSockets(envID) {

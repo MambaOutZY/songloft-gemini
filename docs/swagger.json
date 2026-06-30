@@ -4149,6 +4149,80 @@
                 }
             }
         },
+        "/settings/plugin-keep-alive": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取不会被自动休眠的插件 entryPath 列表。白名单中的插件即使空闲超过 10 分钟也不会被卸载。未配置时返回空列表。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "获取插件常驻白名单",
+                "responses": {
+                    "200": {
+                        "description": "常驻白名单",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginKeepAliveSetting"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "设置不会被自动休眠的插件 entryPath 列表。保存后即时生效，白名单中的插件将跳过空闲检查，始终保持运行。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "保存插件常驻白名单",
+                "parameters": [
+                    {
+                        "description": "常驻白名单",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginKeepAliveSetting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "保存后的白名单",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginKeepAliveSetting"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "保存配置失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/settings/plugin-registries": {
             "get": {
                 "security": [
@@ -6543,6 +6617,17 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/source.PluginHealthSnapshot"
+                    }
+                }
+            }
+        },
+        "handlers.pluginKeepAliveSetting": {
+            "type": "object",
+            "properties": {
+                "plugins": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
                     }
                 }
             }

@@ -515,3 +515,60 @@ func (h *JSPluginHandler) UpdateHttpProxySetting(w http.ResponseWriter, r *http.
 	slog.Info("HTTP 代理已更新", "proxy", req.Proxy)
 	respondJSON(w, http.StatusOK, req)
 }
+
+// --- Settings: GET/PUT /api/v1/settings/plugin-keep-alive ---
+
+const pluginKeepAliveConfigKey = "plugin_keep_alive"
+
+// pluginKeepAliveSetting 插件常驻白名单配置。
+type pluginKeepAliveSetting struct {
+	Plugins []string `json:"plugins"`
+}
+
+// GetPluginKeepAliveSetting 获取插件常驻白名单
+// @Summary 获取插件常驻白名单
+// @Description 获取不会被自动休眠的插件 entryPath 列表。白名单中的插件即使空闲超过 10 分钟也不会被卸载。未配置时返回空列表。
+// @Tags 设置
+// @Produce json
+// @Success 200 {object} pluginKeepAliveSetting "常驻白名单"
+// @Security BearerAuth
+// @Router /settings/plugin-keep-alive [get]
+func (h *JSPluginHandler) GetPluginKeepAliveSetting(w http.ResponseWriter, r *http.Request) {
+	var cfg pluginKeepAliveSetting
+	if err := h.configService.GetJSON(pluginKeepAliveConfigKey, &cfg); err != nil {
+		respondJSON(w, http.StatusOK, pluginKeepAliveSetting{Plugins: []string{}})
+		return
+	}
+	if cfg.Plugins == nil {
+		cfg.Plugins = []string{}
+	}
+	respondJSON(w, http.StatusOK, cfg)
+}
+
+// UpdatePluginKeepAliveSetting 保存插件常驻白名单
+// @Summary 保存插件常驻白名单
+// @Description 设置不会被自动休眠的插件 entryPath 列表。保存后即时生效，白名单中的插件将跳过空闲检查，始终保持运行。
+// @Tags 设置
+// @Accept json
+// @Produce json
+// @Param request body pluginKeepAliveSetting true "常驻白名单"
+// @Success 200 {object} pluginKeepAliveSetting "保存后的白名单"
+// @Failure 400 {object} models.ErrorResponse "请求格式错误"
+// @Failure 500 {object} models.ErrorResponse "保存配置失败"
+// @Security BearerAuth
+// @Router /settings/plugin-keep-alive [put]
+func (h *JSPluginHandler) UpdatePluginKeepAliveSetting(w http.ResponseWriter, r *http.Request) {
+	var req pluginKeepAliveSetting
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	if req.Plugins == nil {
+		req.Plugins = []string{}
+	}
+	if err := h.configService.SetJSON(pluginKeepAliveConfigKey, req); err != nil {
+		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
+		return
+	}
+	respondJSON(w, http.StatusOK, req)
+}

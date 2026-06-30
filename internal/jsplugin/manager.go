@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +52,7 @@ type Manager struct {
 	songDownloader  *services.SongDownloader  // 歌曲下载服务（bridge songs.download 用）
 	songService     *services.SongService     // 歌曲服务（bridge songs.create/update/delete 用）
 	playlistService *services.PlaylistService // 歌单服务（bridge playlists.* 写操作用）
+	configService   *services.ConfigService   // 配置服务（keep-alive 白名单等）
 	pluginToken     string                    // 插件专用的永久 JWT Token（启动时生成一次）
 	port            string                    // 服务器监听端口
 	healthChecker   *HealthChecker
@@ -152,6 +154,28 @@ func (m *Manager) SetSongDownloader(d *services.SongDownloader) {
 func (m *Manager) SetServices(songService *services.SongService, playlistService *services.PlaylistService) {
 	m.songService = songService
 	m.playlistService = playlistService
+}
+
+// SetConfigService 注入配置服务（keep-alive 白名单等）。
+func (m *Manager) SetConfigService(cs *services.ConfigService) {
+	m.configService = cs
+}
+
+// pluginKeepAliveSetting 是 plugin_keep_alive 配置的 JSON 结构。
+type pluginKeepAliveSetting struct {
+	Plugins []string `json:"plugins"`
+}
+
+// IsPluginKeepAlive 检查指定插件是否在常驻白名单中。
+func (m *Manager) IsPluginKeepAlive(entryPath string) bool {
+	if m.configService == nil {
+		return false
+	}
+	var cfg pluginKeepAliveSetting
+	if err := m.configService.GetJSON("plugin_keep_alive", &cfg); err != nil {
+		return false
+	}
+	return slices.Contains(cfg.Plugins, entryPath)
 }
 
 // Start 启动 JS 插件管理器（清理旧数据 → 重建 → 加载插件 → 健康检查 → 热更新监控）
