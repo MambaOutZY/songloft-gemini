@@ -195,6 +195,39 @@ func (q *Queries) ListAllPlaylistNames(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const listAutoCreatedPlaylists = `-- name: ListAutoCreatedPlaylists :many
+SELECT id, name FROM playlists
+WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'auto_created')
+`
+
+type ListAutoCreatedPlaylistsRow struct {
+	ID   int64
+	Name string
+}
+
+func (q *Queries) ListAutoCreatedPlaylists(ctx context.Context) ([]ListAutoCreatedPlaylistsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAutoCreatedPlaylists)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAutoCreatedPlaylistsRow{}
+	for rows.Next() {
+		var i ListAutoCreatedPlaylistsRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const touchPlaylist = `-- name: TouchPlaylist :execrows
 UPDATE playlists SET updated_at = ? WHERE id = ?
 `
@@ -206,6 +239,33 @@ type TouchPlaylistParams struct {
 
 func (q *Queries) TouchPlaylist(ctx context.Context, arg TouchPlaylistParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, touchPlaylist, arg.UpdatedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const updateAutoCreatedPlaylistMeta = `-- name: UpdateAutoCreatedPlaylistMeta :execrows
+UPDATE playlists SET name = ?, description = ?, cover_path = ?, cover_url = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+type UpdateAutoCreatedPlaylistMetaParams struct {
+	Name        string
+	Description string
+	CoverPath   string
+	CoverUrl    string
+	ID          int64
+}
+
+func (q *Queries) UpdateAutoCreatedPlaylistMeta(ctx context.Context, arg UpdateAutoCreatedPlaylistMetaParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateAutoCreatedPlaylistMeta,
+		arg.Name,
+		arg.Description,
+		arg.CoverPath,
+		arg.CoverUrl,
+		arg.ID,
+	)
 	if err != nil {
 		return 0, err
 	}

@@ -413,6 +413,7 @@ func TestAutoCreatePlaylistsAvoidsManualNameConflict(t *testing.T) {
 		t.Fatalf("expected 1 auto-created playlist, got %d", len(resp.Playlists))
 	}
 	autoName := resp.Playlists[0].Name
+	autoID := resp.Playlists[0].PlaylistID
 	if autoName == "Pop" {
 		t.Fatalf("auto-created playlist should not reuse manual name %q", autoName)
 	}
@@ -420,7 +421,8 @@ func TestAutoCreatePlaylistsAvoidsManualNameConflict(t *testing.T) {
 		t.Errorf("expected disambiguated name %q, got %q", "Pop (自动)", autoName)
 	}
 
-	// 再跑一次:旧的 auto_created 会被 DELETE,新建仍然应消歧成相同后缀,不应递增到 (自动 2)
+	// 再跑一次:相同目录结构下应复用同一歌单(名字与 ID 都稳定),
+	// 不应递增到 (自动 2),也不应因 DELETE+重建产生新 ID。
 	resp2, err := db.PlaylistRepository().AutoCreate(ctx, models.PlaylistModeDirectory, nil)
 	if err != nil {
 		t.Fatalf("second AutoCreatePlaylists error = %v", err)
@@ -430,6 +432,9 @@ func TestAutoCreatePlaylistsAvoidsManualNameConflict(t *testing.T) {
 	}
 	if resp2.Playlists[0].Name != "Pop (自动)" {
 		t.Errorf("rerun should produce stable name %q, got %q", "Pop (自动)", resp2.Playlists[0].Name)
+	}
+	if resp2.Playlists[0].PlaylistID != autoID {
+		t.Errorf("rerun should reuse playlist ID %d, got %d", autoID, resp2.Playlists[0].PlaylistID)
 	}
 
 	// 用户手动建的 "Pop" 仍然存在,且只有一条
@@ -445,6 +450,134 @@ func TestAutoCreatePlaylistsAvoidsManualNameConflict(t *testing.T) {
 	}
 	if popCount != 1 {
 		t.Errorf("expected exactly 1 playlist named %q, got %d", "Pop", popCount)
+	}
+}
+
+// nameToID 把 AutoCreate 响应转成 name->id 映射，方便断言 ID 稳定性。
+func nameToID(resp *models.AutoCreatePlaylistsResponse) map[string]int64 {
+	m := make(map[string]int64, len(resp.Playlists))
+	for _, p := range resp.Playlists {
+		m[p.Name] = p.PlaylistID
+	}
+	return m
+}
+
+// TestAutoCreatePreservesPlaylistIDs 验证重复扫描时歌单 ID 保持稳定，
+// 新增目录只新建对应歌单而不影响已有歌单 ID（外部消费者如 miot 插件依赖 ID 稳定）。
+func TestAutoCreatePreservesPlaylistIDs(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	repo := db.PlaylistRepository()
+
+	// 第一批：两个目录 Rock / Jazz
+	if err := db.SongRepository().BatchCreate(ctx, []*models.Song{
+		{Type: models.TypeLocal, Title: "r1", FilePath: "/music/Rock/1.mp3"},
+		{Type: models.TypeLocal, Title: "r2", FilePath: "/music/Rock/2.mp3"},
+		{Type: models.TypeLocal, Title: "j1", FilePath: "/music/Jazz/1.mp3"},
+	}); err != nil {
+		t.Fatalf("BatchCreate error = %v", err)
+	}
+
+	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	if err != nil {
+		t.Fatalf("AutoCreate #1 error = %v", err)
+	}
+	ids1 := nameToID(resp1)
+	if len(ids1) != 2 {
+		t.Fatalf("expected 2 playlists, got %d", len(ids1))
+	}
+
+	// 第二次扫描：目录结构不变，ID 应完全一致
+	resp2, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	if err != nil {
+		t.Fatalf("AutoCreate #2 error = %v", err)
+	}
+	ids2 := nameToID(resp2)
+	for name, id := range ids1 {
+		if ids2[name] != id {
+			t.Errorf("playlist %q ID changed: was %d, now %d", name, id, ids2[name])
+		}
+	}
+
+	// 第三次扫描：新增 Pop 目录。旧歌单 ID 不变，新歌单获得新 ID。
+	if err := db.SongRepository().BatchCreate(ctx, []*models.Song{
+		{Type: models.TypeLocal, Title: "p1", FilePath: "/music/Pop/1.mp3"},
+	}); err != nil {
+		t.Fatalf("BatchCreate Pop error = %v", err)
+	}
+	resp3, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	if err != nil {
+		t.Fatalf("AutoCreate #3 error = %v", err)
+	}
+	ids3 := nameToID(resp3)
+	if len(ids3) != 3 {
+		t.Fatalf("expected 3 playlists after adding Pop, got %d", len(ids3))
+	}
+	for name, id := range ids1 {
+		if ids3[name] != id {
+			t.Errorf("existing playlist %q ID changed after adding new dir: was %d, now %d", name, id, ids3[name])
+		}
+	}
+	if ids3["Pop"] == 0 {
+		t.Errorf("new Pop playlist should have a valid ID")
+	}
+}
+
+// TestAutoCreateDeletesStalePlaylist 验证某目录的歌曲全部消失后，
+// 对应的旧 auto_created 歌单被删除，其它歌单 ID 不受影响。
+func TestAutoCreateDeletesStalePlaylist(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	repo := db.PlaylistRepository()
+
+	rockSongs := []*models.Song{
+		{Type: models.TypeLocal, Title: "r1", FilePath: "/music/Rock/1.mp3"},
+		{Type: models.TypeLocal, Title: "r2", FilePath: "/music/Rock/2.mp3"},
+	}
+	jazzSongs := []*models.Song{
+		{Type: models.TypeLocal, Title: "j1", FilePath: "/music/Jazz/1.mp3"},
+	}
+	if err := db.SongRepository().BatchCreate(ctx, rockSongs); err != nil {
+		t.Fatalf("BatchCreate rock error = %v", err)
+	}
+	if err := db.SongRepository().BatchCreate(ctx, jazzSongs); err != nil {
+		t.Fatalf("BatchCreate jazz error = %v", err)
+	}
+
+	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	if err != nil {
+		t.Fatalf("AutoCreate #1 error = %v", err)
+	}
+	ids1 := nameToID(resp1)
+	rockID := ids1["Rock"]
+	jazzID := ids1["Jazz"]
+	if rockID == 0 || jazzID == 0 {
+		t.Fatalf("expected both Rock and Jazz playlists, got %+v", ids1)
+	}
+
+	// 删除 Jazz 目录的所有歌曲，重新 AutoCreate
+	if _, err := db.SongRepository().BatchDelete(ctx, []int64{jazzSongs[0].ID}); err != nil {
+		t.Fatalf("BatchDelete jazz error = %v", err)
+	}
+	resp2, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	if err != nil {
+		t.Fatalf("AutoCreate #2 error = %v", err)
+	}
+	ids2 := nameToID(resp2)
+	if len(ids2) != 1 {
+		t.Fatalf("expected only Rock playlist to remain, got %+v", ids2)
+	}
+	if ids2["Rock"] != rockID {
+		t.Errorf("Rock playlist ID changed: was %d, now %d", rockID, ids2["Rock"])
+	}
+
+	// Jazz 歌单应从数据库中彻底删除
+	if _, err := repo.GetByID(ctx, jazzID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected Jazz playlist %d to be deleted (ErrNotFound), got err = %v", jazzID, err)
 	}
 }
 

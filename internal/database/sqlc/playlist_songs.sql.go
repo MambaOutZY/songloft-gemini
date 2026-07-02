@@ -55,6 +55,15 @@ func (q *Queries) CountPlaylistSongs(ctx context.Context, playlistID int64) (int
 	return count, err
 }
 
+const deletePlaylistSongsByPlaylistID = `-- name: DeletePlaylistSongsByPlaylistID :exec
+DELETE FROM playlist_songs WHERE playlist_id = ?
+`
+
+func (q *Queries) DeletePlaylistSongsByPlaylistID(ctx context.Context, playlistID int64) error {
+	_, err := q.db.ExecContext(ctx, deletePlaylistSongsByPlaylistID, playlistID)
+	return err
+}
+
 const findSongPositionInPlaylist = `-- name: FindSongPositionInPlaylist :one
 SELECT position FROM playlist_songs WHERE playlist_id = ? AND song_id = ?
 `

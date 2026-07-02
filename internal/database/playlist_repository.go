@@ -319,9 +319,9 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 
 	// 分离 CUE 歌曲和普通歌曲
 	type cueAlbumInfo struct {
-		name     string // 专辑名
-		desc     string // 描述
-		songIDs  []int64
+		name    string // 专辑名
+		desc    string // 描述
+		songIDs []int64
 	}
 	cueAlbums := make(map[string]*cueAlbumInfo) // key: cue_source_path
 
@@ -386,6 +386,9 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 	for dir := range dirToSongs {
 		dirs = append(dirs, dir)
 	}
+	// 排序保证处理顺序确定：新歌单 ID 分配、以及重名时 resolveAutoCreatedName 的
+	// 后缀归属都不随 map 迭代顺序漂移（复用 ID 的正确性依赖跨扫描的稳定顺序）。
+	sort.Strings(dirs)
 	nameMap, descMap := generateSmartPlaylistNames(dirs)
 
 	labelsJSON, err := json.Marshal([]string{models.PlaylistLabelAutoCreated})
@@ -406,84 +409,69 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 	allPlaylistSongs := make([]playlistSongEntry, 0)
 
 	err = r.runInTx(ctx, func(dbtx sqlc.DBTX, q *sqlc.Queries) error {
-		// 单条 SQL 批量删除旧的自动创建歌单（CASCADE 自动删除关联的 playlist_songs）
-		if _, err := dbtx.ExecContext(ctx,
-			`DELETE FROM playlists WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = ?)`,
-			models.PlaylistLabelAutoCreated,
-		); err != nil {
-			return fmt.Errorf("delete old auto-created playlists: %w", err)
+		// 加载已有的 auto_created 歌单（name -> id），用于按名字复用歌单 ID，
+		// 避免每次扫描都 DELETE+重建导致 ID 变化（外部消费者如 miot 插件会缓存 ID）。
+		existingAutoList, err := q.ListAutoCreatedPlaylists(ctx)
+		if err != nil {
+			return fmt.Errorf("load existing auto-created playlists: %w", err)
+		}
+		existingAutoMap := make(map[string]int64, len(existingAutoList))
+		for _, p := range existingAutoList {
+			existingAutoMap[p.Name] = p.ID
 		}
 
-		// 收集剩余歌单的现有名字（非 auto_created：用户手动建/内置歌单），用于消歧。
+		// 收集非 auto_created 歌单的名字（用户手动建/内置歌单），用于消歧。
 		// 同名约束在 Create 里强制；auto-create 走直接 INSERT 绕过了检查，必须自己消歧。
-		existingNamesList, err := q.ListAllPlaylistNames(ctx)
+		// 注意：不把旧 auto_created 名字放进来——那些名字要么被本次复用（匹配），
+		// 要么被最后清理删除，不应参与新歌单的消歧。
+		allNamesList, err := q.ListAllPlaylistNames(ctx)
 		if err != nil {
 			return fmt.Errorf("load existing playlist names: %w", err)
 		}
-		existingNames := make(map[string]struct{}, len(existingNamesList))
-		for _, name := range existingNamesList {
+		existingNames := make(map[string]struct{}, len(allNamesList))
+		for _, name := range allNamesList {
+			if _, isAuto := existingAutoMap[name]; isAuto {
+				continue
+			}
 			existingNames[name] = struct{}{}
 		}
 
-		// CUE 专辑歌单：按 cue_track_index 排序
-		for _, album := range cueAlbums {
-			sort.SliceStable(album.songIDs, func(i, j int) bool {
-				si, sj := songIDToSong[album.songIDs[i]], songIDToSong[album.songIDs[j]]
-				return si.CueTrackIndex < sj.CueTrackIndex
-			})
+		// upsertPlaylist 复用或新建一个 auto_created 歌单：
+		// 若解析出的 name 命中已有 auto 歌单则 UPDATE 元数据 + 清空旧关联歌曲（保留 ID），
+		// 否则 INSERT 新歌单。两种情况都收集 playlist_songs 并写入 response。
+		upsertPlaylist := func(candidate, desc, coverPath, coverURL string, songIDs []int64) error {
+			name := resolveAutoCreatedName(candidate, existingNames)
+			existingNames[name] = struct{}{}
 
-			coverPath, coverURL := pickRandomSongCover(album.songIDs, songIDToSong)
-			playlistName := resolveAutoCreatedName(album.name, existingNames)
-			existingNames[playlistName] = struct{}{}
-
-			playlistID, err := q.InsertAutoCreatedPlaylist(ctx, sqlc.InsertAutoCreatedPlaylistParams{
-				Type:        models.PlaylistTypeNormal,
-				Name:        playlistName,
-				Description: album.desc,
-				CoverPath:   coverPath,
-				CoverUrl:    coverURL,
-				Labels:      labelsStr,
-			})
-			if err != nil {
-				return fmt.Errorf("create CUE playlist %s: %w", album.name, err)
-			}
-
-			for i, songID := range album.songIDs {
-				allPlaylistSongs = append(allPlaylistSongs, playlistSongEntry{
-					playlistID: playlistID,
-					songID:     songID,
-					position:   i + 1,
+			var playlistID int64
+			if id, ok := existingAutoMap[name]; ok {
+				if _, err := q.UpdateAutoCreatedPlaylistMeta(ctx, sqlc.UpdateAutoCreatedPlaylistMetaParams{
+					Name:        name,
+					Description: desc,
+					CoverPath:   coverPath,
+					CoverUrl:    coverURL,
+					ID:          id,
+				}); err != nil {
+					return fmt.Errorf("update auto-created playlist %s: %w", name, err)
+				}
+				if err := q.DeletePlaylistSongsByPlaylistID(ctx, id); err != nil {
+					return fmt.Errorf("clear playlist songs for %d: %w", id, err)
+				}
+				delete(existingAutoMap, name) // 标记已匹配，避免最后被误删
+				playlistID = id
+			} else {
+				newID, err := q.InsertAutoCreatedPlaylist(ctx, sqlc.InsertAutoCreatedPlaylistParams{
+					Type:        models.PlaylistTypeNormal,
+					Name:        name,
+					Description: desc,
+					CoverPath:   coverPath,
+					CoverUrl:    coverURL,
+					Labels:      labelsStr,
 				})
-			}
-
-			response.Playlists = append(response.Playlists, models.PlaylistInfo{
-				PlaylistID: playlistID,
-				Name:       playlistName,
-				SongCount:  len(album.songIDs),
-			})
-		}
-
-		// 目录歌单
-		for dir, songIDs := range dirToSongs {
-			// 按数字前缀排序歌曲，与 Flutter 端展示顺序一致。
-			sort.SliceStable(songIDs, func(i, j int) bool {
-				return lessSongByNumberThenTitle(songIDToSong[songIDs[i]], songIDToSong[songIDs[j]])
-			})
-
-			coverPath, coverURL := pickRandomSongCover(songIDs, songIDToSong)
-			playlistName := resolveAutoCreatedName(nameMap[dir], existingNames)
-			existingNames[playlistName] = struct{}{}
-
-			playlistID, err := q.InsertAutoCreatedPlaylist(ctx, sqlc.InsertAutoCreatedPlaylistParams{
-				Type:        models.PlaylistTypeNormal,
-				Name:        playlistName,
-				Description: descMap[dir],
-				CoverPath:   coverPath,
-				CoverUrl:    coverURL,
-				Labels:      labelsStr,
-			})
-			if err != nil {
-				return fmt.Errorf("create playlist %s: %w", dir, err)
+				if err != nil {
+					return fmt.Errorf("create playlist %s: %w", name, err)
+				}
+				playlistID = newID
 			}
 
 			for i, songID := range songIDs {
@@ -493,12 +481,52 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 					position:   i + 1,
 				})
 			}
-
 			response.Playlists = append(response.Playlists, models.PlaylistInfo{
 				PlaylistID: playlistID,
-				Name:       playlistName,
+				Name:       name,
 				SongCount:  len(songIDs),
 			})
+			return nil
+		}
+
+		// CUE 专辑歌单：按 cue_source_path 排序保证处理顺序确定（重名专辑的
+		// 后缀归属不随 map 迭代顺序漂移），组内歌曲按 cue_track_index 排序。
+		cuePaths := make([]string, 0, len(cueAlbums))
+		for cuePath := range cueAlbums {
+			cuePaths = append(cuePaths, cuePath)
+		}
+		sort.Strings(cuePaths)
+		for _, cuePath := range cuePaths {
+			album := cueAlbums[cuePath]
+			sort.SliceStable(album.songIDs, func(i, j int) bool {
+				si, sj := songIDToSong[album.songIDs[i]], songIDToSong[album.songIDs[j]]
+				return si.CueTrackIndex < sj.CueTrackIndex
+			})
+			coverPath, coverURL := pickRandomSongCover(album.songIDs, songIDToSong)
+			if err := upsertPlaylist(album.name, album.desc, coverPath, coverURL, album.songIDs); err != nil {
+				return err
+			}
+		}
+
+		// 目录歌单：按已排序的 dirs 顺序处理（确定性）
+		for _, dir := range dirs {
+			songIDs := dirToSongs[dir]
+			// 按数字前缀排序歌曲，与 Flutter 端展示顺序一致。
+			sort.SliceStable(songIDs, func(i, j int) bool {
+				return lessSongByNumberThenTitle(songIDToSong[songIDs[i]], songIDToSong[songIDs[j]])
+			})
+			coverPath, coverURL := pickRandomSongCover(songIDs, songIDToSong)
+			if err := upsertPlaylist(nameMap[dir], descMap[dir], coverPath, coverURL, songIDs); err != nil {
+				return err
+			}
+		}
+
+		// 清理未匹配的旧 auto_created 歌单（对应目录/专辑已不存在）。
+		// CASCADE 自动删除其 playlist_songs。
+		for _, staleID := range existingAutoMap {
+			if _, err := dbtx.ExecContext(ctx, `DELETE FROM playlists WHERE id = ?`, staleID); err != nil {
+				return fmt.Errorf("delete stale auto-created playlist %d: %w", staleID, err)
+			}
 		}
 
 		// 多行 INSERT，每批最多 500 行，避免单条语句过长。

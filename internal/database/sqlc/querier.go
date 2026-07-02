@@ -30,6 +30,7 @@ type Querier interface {
 	DeleteConfig(ctx context.Context, key string) (int64, error)
 	DeleteJSPlugin(ctx context.Context, id int64) error
 	DeletePlaylist(ctx context.Context, id int64) (int64, error)
+	DeletePlaylistSongsByPlaylistID(ctx context.Context, playlistID int64) error
 	DeletePluginStorage(ctx context.Context, arg DeletePluginStorageParams) (int64, error)
 	DeleteSong(ctx context.Context, id int64) (int64, error)
 	FindPlaylistByName(ctx context.Context, name string) (int64, error)
@@ -51,6 +52,7 @@ type Querier interface {
 	InsertAutoCreatedPlaylist(ctx context.Context, arg InsertAutoCreatedPlaylistParams) (int64, error)
 	IsTokenRevoked(ctx context.Context, arg IsTokenRevokedParams) (bool, error)
 	ListAllPlaylistNames(ctx context.Context) ([]string, error)
+	ListAutoCreatedPlaylists(ctx context.Context) ([]ListAutoCreatedPlaylistsRow, error)
 	ListCueAudioPaths(ctx context.Context, cueSourcePath string) ([]string, error)
 	ListCueSources(ctx context.Context) ([]string, error)
 	ListDuplicateFingerprints(ctx context.Context) ([]ListDuplicateFingerprintsRow, error)
@@ -69,6 +71,7 @@ type Querier interface {
 	SetConfig(ctx context.Context, arg SetConfigParams) error
 	SetPluginStorage(ctx context.Context, arg SetPluginStorageParams) error
 	TouchPlaylist(ctx context.Context, arg TouchPlaylistParams) (int64, error)
+	UpdateAutoCreatedPlaylistMeta(ctx context.Context, arg UpdateAutoCreatedPlaylistMetaParams) (int64, error)
 	UpdateCachePath(ctx context.Context, arg UpdateCachePathParams) error
 	UpdateJSPlugin(ctx context.Context, arg UpdateJSPluginParams) error
 	UpdateJSPluginHashes(ctx context.Context, arg UpdateJSPluginHashesParams) error

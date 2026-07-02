@@ -59,3 +59,6 @@ VALUES (?, ?, ?);
 
 -- name: MaxPositionInPlaylist :one
 SELECT CAST(COALESCE(MAX(position), 0) AS INTEGER) FROM playlist_songs WHERE playlist_id = ?;
+
+-- name: DeletePlaylistSongsByPlaylistID :exec
+DELETE FROM playlist_songs WHERE playlist_id = ?;
