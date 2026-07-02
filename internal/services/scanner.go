@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ScanConfig 扫描配置
@@ -414,6 +415,6 @@ type FileInfo struct {
 	Path    string
 	Name    string
 	Size    int64
-	ModTime interface{}
+	ModTime time.Time
 	Format  string
 }

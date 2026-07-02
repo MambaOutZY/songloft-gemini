@@ -64,6 +64,7 @@ var (
 	songOrderWhitelist = map[string]struct{}{
 		"id": {}, "title": {}, "artist": {}, "album": {},
 		"duration": {}, "added_at": {}, "updated_at": {},
+		"file_modified_at": {},
 	}
 	playlistOrderWhitelist = map[string]struct{}{
 		"id": {}, "name": {}, "position": {},
@@ -78,15 +79,17 @@ var (
 	playlistSongOrderWhitelist = map[string]struct{}{
 		"position": {}, "added_at": {}, "title": {},
 		"artist": {}, "album": {}, "duration": {}, "updated_at": {},
+		"file_modified_at": {},
 	}
 	playlistSongOrderColumn = map[string]string{
-		"position":   "ps.position",
-		"added_at":   "ps.added_at",
-		"title":      "s.title",
-		"artist":     "s.artist",
-		"album":      "s.album",
-		"duration":   "s.duration",
-		"updated_at": "s.updated_at",
+		"position":         "ps.position",
+		"added_at":         "ps.added_at",
+		"title":            "s.title",
+		"artist":           "s.artist",
+		"album":            "s.album",
+		"duration":         "s.duration",
+		"updated_at":       "s.updated_at",
+		"file_modified_at": "s.file_modified_at",
 	}
 )
 

@@ -632,6 +632,12 @@ definitions:
         description: 封面图片URL
         example: https://example.com/cover.jpg
         type: string
+      cue_source_path:
+        description: CUE 来源路径（非空表示 CUE 拆分歌曲）
+        type: string
+      cue_track_index:
+        description: CUE track 序号 (1-99)
+        type: integer
       dedup_key:
         description: 去重 key(由插件定义,典型形态 "<platform>:<platform_id>");与 PluginEntryPath
           组成 UNIQUE
@@ -640,6 +646,9 @@ definitions:
         description: 播放时长（秒）
         example: 253.5
         type: number
+      file_modified_at:
+        description: 文件修改时间(mtime，本地歌曲扫描时记录；未知为 nil)
+        type: string
       file_path:
         description: 本地文件路径
         example: /music/周杰伦/夜曲.mp3
@@ -2777,7 +2786,7 @@ paths:
         in: query
         name: offset
         type: integer
-      - description: '排序字段: position(默认)/added_at/title/artist/album/duration/updated_at'
+      - description: '排序字段: position(默认)/added_at/title/artist/album/duration/updated_at/file_modified_at'
         in: query
         name: sort
         type: string
@@ -4125,55 +4134,7 @@ paths:
       - 设置
   /songs:
     get:
-      consumes:
-      - application/json
-      description: 获取歌曲列表，支持按类型过滤、关键词搜索和分页
-      parameters:
-      - description: 歌曲类型
-        enum:
-        - local
-        - remote
-        - radio
-        in: query
-        name: type
-        type: string
-      - description: 搜索关键词
-        in: query
-        name: keyword
-        type: string
-      - description: 按 file_path 前缀过滤（如 music/Pop）
-        in: query
-        name: path_prefix
-        type: string
-      - default: 20
-        description: 每页数量
-        in: query
-        name: limit
-        type: integer
-      - default: 0
-        description: 偏移量
-        in: query
-        name: offset
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 成功返回歌曲列表
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务器错误
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取歌曲列表
-      tags:
-      - 歌曲管理
+      responses: {}
   /songs/{id}:
     delete:
       consumes:
@@ -4802,6 +4763,26 @@ paths:
       - description: 按 file_path 前缀过滤
         in: query
         name: path_prefix
+        type: string
+      - description: 排序字段，缺省 added_at
+        enum:
+        - id
+        - title
+        - artist
+        - album
+        - duration
+        - added_at
+        - updated_at
+        - file_modified_at
+        in: query
+        name: sort
+        type: string
+      - description: 排序方向，缺省 desc
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
         type: string
       produces:
       - application/json

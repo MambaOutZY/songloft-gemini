@@ -444,6 +444,7 @@ func songSelectBuilder() sq.SelectBuilder {
 		"fingerprint", "fingerprint_duration",
 		"isrc",
 		"cue_source_path", "cue_track_index", "cue_audio_path",
+		"file_modified_at",
 	).From("songs")
 }
 
@@ -476,6 +477,7 @@ func scanSongRow(scanner interface {
 	Scan(dest ...any) error
 }) (*models.Song, error) {
 	s := &models.Song{}
+	var fileModifiedAt sql.NullTime
 	if err := scanner.Scan(
 		&s.ID, &s.Type, &s.Title, &s.Artist, &s.Album, &s.Duration,
 		&s.FilePath, &s.URL, &s.CoverPath, &s.CoverURL,
@@ -487,8 +489,13 @@ func scanSongRow(scanner interface {
 		&s.Fingerprint, &s.FingerprintDuration,
 		&s.ISRC,
 		&s.CueSourcePath, &s.CueTrackIndex, &s.CueAudioPath,
+		&fileModifiedAt,
 	); err != nil {
 		return nil, fmt.Errorf("scan song: %w", err)
+	}
+	if fileModifiedAt.Valid {
+		t := fileModifiedAt.Time
+		s.FileModifiedAt = &t
 	}
 	return s, nil
 }
@@ -527,7 +534,25 @@ func songRowToModel(row sqlc.Song) *models.Song {
 		CueAudioPath:        row.CueAudioPath,
 		AddedAt:             row.AddedAt,
 		UpdatedAt:           row.UpdatedAt,
+		FileModifiedAt:      nullTimeToPtr(row.FileModifiedAt),
 	}
+}
+
+// nullTimeToPtr 把 sql.NullTime 转成 *time.Time（无效为 nil）。
+func nullTimeToPtr(t sql.NullTime) *time.Time {
+	if !t.Valid {
+		return nil
+	}
+	v := t.Time
+	return &v
+}
+
+// nullTimeFromPtr 把 *time.Time 转成 sql.NullTime（nil 为无效）。
+func nullTimeFromPtr(t *time.Time) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: *t, Valid: true}
 }
 
 func songCreateParams(s *models.Song) sqlc.CreateSongParams {
@@ -560,6 +585,7 @@ func songCreateParams(s *models.Song) sqlc.CreateSongParams {
 		CueSourcePath:       s.CueSourcePath,
 		CueTrackIndex:       int64(s.CueTrackIndex),
 		CueAudioPath:        s.CueAudioPath,
+		FileModifiedAt:      nullTimeFromPtr(s.FileModifiedAt),
 	}
 }
 
@@ -593,6 +619,7 @@ func songUpdateParams(s *models.Song) sqlc.UpdateSongParams {
 		CueSourcePath:       s.CueSourcePath,
 		CueTrackIndex:       int64(s.CueTrackIndex),
 		CueAudioPath:        s.CueAudioPath,
+		FileModifiedAt:      nullTimeFromPtr(s.FileModifiedAt),
 		ID:                  s.ID,
 	}
 }

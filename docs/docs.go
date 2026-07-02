@@ -2879,7 +2879,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "排序字段: position(默认)/added_at/title/artist/album/duration/updated_at",
+                        "description": "排序字段: position(默认)/added_at/title/artist/album/duration/updated_at/file_modified_at",
                         "name": "sort",
                         "in": "query"
                     },
@@ -4779,79 +4779,7 @@ const docTemplate = `{
         },
         "/songs": {
             "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "获取歌曲列表，支持按类型过滤、关键词搜索和分页",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "歌曲管理"
-                ],
-                "summary": "获取歌曲列表",
-                "parameters": [
-                    {
-                        "enum": [
-                            "local",
-                            "remote",
-                            "radio"
-                        ],
-                        "type": "string",
-                        "description": "歌曲类型",
-                        "name": "type",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "搜索关键词",
-                        "name": "keyword",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "按 file_path 前缀过滤（如 music/Pop）",
-                        "name": "path_prefix",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 20,
-                        "description": "每页数量",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 0,
-                        "description": "偏移量",
-                        "name": "offset",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "成功返回歌曲列表",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
+                "responses": {}
             }
         },
         "/songs/batch-delete": {
@@ -5010,6 +4938,32 @@ const docTemplate = `{
                         "type": "string",
                         "description": "按 file_path 前缀过滤",
                         "name": "path_prefix",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "title",
+                            "artist",
+                            "album",
+                            "duration",
+                            "added_at",
+                            "updated_at",
+                            "file_modified_at"
+                        ],
+                        "type": "string",
+                        "description": "排序字段，缺省 added_at",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "排序方向，缺省 desc",
+                        "name": "order",
                         "in": "query"
                     }
                 ],
@@ -7298,6 +7252,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "https://example.com/cover.jpg"
                 },
+                "cue_source_path": {
+                    "description": "CUE 来源路径（非空表示 CUE 拆分歌曲）",
+                    "type": "string"
+                },
+                "cue_track_index": {
+                    "description": "CUE track 序号 (1-99)",
+                    "type": "integer"
+                },
                 "dedup_key": {
                     "description": "去重 key(由插件定义,典型形态 \"\u003cplatform\u003e:\u003cplatform_id\u003e\");与 PluginEntryPath 组成 UNIQUE",
                     "type": "string"
@@ -7306,6 +7268,10 @@ const docTemplate = `{
                     "description": "播放时长（秒）",
                     "type": "number",
                     "example": 253.5
+                },
+                "file_modified_at": {
+                    "description": "文件修改时间(mtime，本地歌曲扫描时记录；未知为 nil)",
+                    "type": "string"
                 },
                 "file_path": {
                     "description": "本地文件路径",

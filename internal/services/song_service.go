@@ -330,6 +330,7 @@ type scanExtractResult struct {
 	item             scanProcessItem
 	metadata         *Metadata
 	fileSize         int64
+	fileModTime      time.Time
 	extractionFailed bool
 }
 
@@ -471,8 +472,10 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 				}
 
 				var fileSize int64
+				var fileModTime time.Time
 				if fileInfo, err := s.scanner.GetFileInfo(item.filePath); err == nil {
 					fileSize = fileInfo.Size
+					fileModTime = fileInfo.ModTime
 				}
 
 				select {
@@ -480,6 +483,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 					item:             item,
 					metadata:         metadata,
 					fileSize:         fileSize,
+					fileModTime:      fileModTime,
 					extractionFailed: extractionFailed,
 				}:
 				case <-cancelCh:
@@ -687,6 +691,10 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 				}
 				song.FileSize = r.fileSize
 				song.UpdatedAt = time.Now()
+				if !r.fileModTime.IsZero() {
+					mt := r.fileModTime
+					song.FileModifiedAt = &mt
+				}
 
 				if r.metadata.CoverPath != "" {
 					song.CoverPath = r.metadata.CoverPath
@@ -713,6 +721,10 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 					ISRC:       r.metadata.ISRC,
 					AddedAt:    time.Now(),
 					UpdatedAt:  time.Now(),
+				}
+				if !r.fileModTime.IsZero() {
+					mt := r.fileModTime
+					song.FileModifiedAt = &mt
 				}
 				models.ApplyLyricToSong(song, r.metadata.Lyric, r.metadata.LyricSource)
 

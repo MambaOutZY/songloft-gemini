@@ -15,7 +15,8 @@ SELECT s.id, s.type, s.title, s.artist, s.album, s.duration,
     s.year, s.genre,
     s.fingerprint, s.fingerprint_duration,
     s.isrc, s.cache_path,
-    s.cue_source_path, s.cue_track_index, s.cue_audio_path
+    s.cue_source_path, s.cue_track_index, s.cue_audio_path,
+    s.file_modified_at
 FROM songs s
 INNER JOIN playlist_songs ps ON s.id = ps.song_id
 WHERE ps.playlist_id = ?
@@ -31,7 +32,8 @@ SELECT s.id, s.type, s.title, s.artist, s.album, s.duration,
     s.year, s.genre,
     s.fingerprint, s.fingerprint_duration,
     s.isrc, s.cache_path,
-    s.cue_source_path, s.cue_track_index, s.cue_audio_path
+    s.cue_source_path, s.cue_track_index, s.cue_audio_path,
+    s.file_modified_at
 FROM songs s
 INNER JOIN playlist_songs ps ON s.id = ps.song_id
 WHERE ps.playlist_id = ?

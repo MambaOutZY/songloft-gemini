@@ -102,8 +102,9 @@ type Song struct {
 	CueTrackIndex       int     `json:"cue_track_index,omitempty"`                         // CUE track 序号 (1-99)
 	CueAudioPath        string  `json:"-"`                                                 // 原始整轨音频路径（内部使用）
 
-	AddedAt   time.Time `json:"added_at" example:"2024-01-01T12:00:00Z"`   // 添加时间
-	UpdatedAt time.Time `json:"updated_at" example:"2024-01-01T12:00:00Z"` // 最后更新时间
+	AddedAt        time.Time  `json:"added_at" example:"2024-01-01T12:00:00Z"`   // 添加时间
+	UpdatedAt      time.Time  `json:"updated_at" example:"2024-01-01T12:00:00Z"` // 最后更新时间
+	FileModifiedAt *time.Time `json:"file_modified_at,omitempty"`                // 文件修改时间(mtime，本地歌曲扫描时记录；未知为 nil)
 }
 
 // IsPluginSourced 判断是否插件来源的歌曲

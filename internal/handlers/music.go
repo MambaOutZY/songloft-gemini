@@ -228,9 +228,25 @@ func (h *SongHandler) CancelMetadataRefresh(w http.ResponseWriter, r *http.Reque
 // @Param path_prefix query string false "按 file_path 前缀过滤（如 music/Pop）"
 // @Param limit query int false "每页数量" default(20)
 // @Param offset query int false "偏移量" default(0)
+// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at)
+// @Param order query string false "排序方向，缺省 desc" Enums(asc, desc)
 // @Success 200 {object} map[string]any "成功返回歌曲列表"
 // @Failure 500 {object} map[string]string "服务器错误"
 // @Security BearerAuth
+// parseSongSort 解析歌曲列表排序参数，缺省按 added_at DESC。
+// 非法字段/方向由 repository 层白名单兜底，这里仅负责默认值。
+func parseSongSort(sort, order string) (orderBy, dir string) {
+	orderBy = sort
+	if orderBy == "" {
+		orderBy = "added_at"
+	}
+	dir = order
+	if dir == "" {
+		dir = "DESC"
+	}
+	return orderBy, dir
+}
+
 // @Router /songs [get]
 func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -241,6 +257,7 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 	pathPrefix := r.URL.Query().Get("path_prefix")
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
+	orderBy, order := parseSongSort(r.URL.Query().Get("sort"), r.URL.Query().Get("order"))
 
 	limit := models.DefaultPaginationLimit
 	offset := 0
@@ -269,8 +286,8 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 		PathPrefix: pathPrefix,
 		Limit:      limit,
 		Offset:     offset,
-		OrderBy:    "added_at",
-		Order:      "DESC",
+		OrderBy:    orderBy,
+		Order:      order,
 	}
 
 	// 获取歌曲列表
@@ -304,6 +321,8 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 // @Param type query string false "歌曲类型"
 // @Param keyword query string false "搜索关键词"
 // @Param path_prefix query string false "按 file_path 前缀过滤"
+// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at)
+// @Param order query string false "排序方向，缺省 desc" Enums(asc, desc)
 // @Success 200 {object} map[string]any "成功返回 ID 列表"
 // @Failure 500 {object} map[string]string "服务器错误"
 // @Security BearerAuth
@@ -311,12 +330,13 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 func (h *SongHandler) ListSongIDs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	orderBy, order := parseSongSort(r.URL.Query().Get("sort"), r.URL.Query().Get("order"))
 	filter := &database.SongFilter{
 		Type:       r.URL.Query().Get("type"),
 		Keyword:    r.URL.Query().Get("keyword"),
 		PathPrefix: r.URL.Query().Get("path_prefix"),
-		OrderBy:    "added_at",
-		Order:      "DESC",
+		OrderBy:    orderBy,
+		Order:      order,
 	}
 
 	ids, err := h.songService.ListIDs(ctx, filter)
