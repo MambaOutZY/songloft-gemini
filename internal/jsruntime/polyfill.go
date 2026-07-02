@@ -139,6 +139,15 @@ globalThis.__resolveAsync = function(id, ok, payload, type) {
             statusText: r.statusText || '',
             headers: r.headers || {},
             text: function() { return Promise.resolve(r.body || ''); },
+            arrayBuffer: function() {
+                var h = r.bodyHex || __go_buffer_from(r.body || '', 'utf8');
+                var len = h.length / 2;
+                var bytes = new Uint8Array(len);
+                for (var i = 0; i < len; i++) {
+                    bytes[i] = parseInt(h.substr(i * 2, 2), 16);
+                }
+                return Promise.resolve(bytes.buffer);
+            },
             json: function() {
                 try { return Promise.resolve(JSON.parse(r.body || '')); }
                 catch(e) { return Promise.reject(e); }
@@ -189,10 +198,10 @@ globalThis.fetch = function(url, opts) {
     opts = opts || {};
     var method = (opts.method || 'GET').toUpperCase();
     var headers = opts.headers ? JSON.stringify(opts.headers) : '{}';
-    var body = opts.body || '';
+    var bodyHex = __fetchBodyToHex(opts.body);
     return new Promise(function(resolve, reject) {
         // jsID 由 Go 侧分配（避免 JS 计数器跨 env 串扰，并保证 64bit 自增）。
-        var id = __go_fetch_async(String(url || ''), method, headers, body);
+        var id = __go_fetch_async(String(url || ''), method, headers, bodyHex);
         if (!id) {
             reject(new Error('fetch: __go_fetch_async returned empty id'));
             return;
@@ -200,6 +209,24 @@ globalThis.fetch = function(url, opts) {
         __asyncCallbacks.set(id, { resolve: resolve, reject: reject });
     });
 };
+
+function __fetchBodyToHex(body) {
+    if (body === undefined || body === null) return '';
+    if (typeof body === 'string') return __go_buffer_from(body, 'utf8');
+    if (body && typeof body._hex === 'string') return body._hex;
+    if (typeof Uint8Array !== 'undefined' && body instanceof Uint8Array) {
+        var h = '';
+        for (var i = 0; i < body.length; i++) h += ('0' + body[i].toString(16)).slice(-2);
+        return h;
+    }
+    if (typeof ArrayBuffer !== 'undefined' && body instanceof ArrayBuffer) {
+        var bytes = new Uint8Array(body);
+        var h = '';
+        for (var i = 0; i < bytes.length; i++) h += ('0' + bytes[i].toString(16)).slice(-2);
+        return h;
+    }
+    return __go_buffer_from(String(body), 'utf8');
+}
 
 // setTimeout/clearTimeout/setInterval/clearInterval polyfill
 var __timers = new Map();

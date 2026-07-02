@@ -3,6 +3,7 @@ package jsruntime
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -197,6 +198,59 @@ func TestProcessTimers_ReturnsFalse_WhenTimerNotYetExpired(t *testing.T) {
 
 	if didFire {
 		t.Error("Expected ProcessTimers to return false when timer hasn't expired yet")
+	}
+}
+
+func TestFetch_Uint8ArrayBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("ReadAll: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	manager := NewJSEnvManager()
+	defer manager.SignalShutdown()
+
+	envID := "test-fetch-uint8-body"
+	if err := manager.CreateEnv(envID, polyfillJS, 1); err != nil {
+		t.Fatalf("CreateEnv: %v", err)
+	}
+	defer manager.DestroyEnv(envID)
+
+	code := fmt.Sprintf(`
+		var fetchEcho = '';
+		fetch(%q, {
+			method: 'POST',
+			body: new Uint8Array([0x00, 0x01, 0x02, 0xff])
+		}).then(function(resp) {
+			return resp.arrayBuffer();
+		}).then(function(buf) {
+			var bytes = new Uint8Array(buf);
+			for (var i = 0; i < bytes.length; i++) {
+				fetchEcho += ('0' + bytes[i].toString(16)).slice(-2);
+			}
+		});
+	`, server.URL)
+	if _, err := manager.ExecuteJS(context.Background(), envID, code, 5000); err != nil {
+		t.Fatalf("ExecuteJS: %v", err)
+	}
+
+	for i := 0; i < 20; i++ {
+		res, _ := manager.ExecuteJS(context.Background(), envID, "fetchEcho", 1000)
+		if res != nil && res.Result == "000102ff" {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	res, _ := manager.ExecuteJS(context.Background(), envID, "fetchEcho", 1000)
+	if res == nil || res.Result != "000102ff" {
+		t.Fatalf("expected echoed hex 000102ff, got %#v", res)
 	}
 }
 

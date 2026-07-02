@@ -1356,17 +1356,17 @@ func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 		return fmt.Errorf("register __go_console: %w", err)
 	}
 
-	// __go_fetch_async(url, method, headersJSON, body) -> id string
+	// __go_fetch_async(url, method, headersJSON, bodyHex) -> id string
 	// 真异步 HTTP：立即返回 id（形如 "fetch:42"），后台 goroutine 跑 HTTP，
 	// 完成后把结果投递到 env.asyncResults，由事件循环 resolve 对应 Promise。
 	// 详见 polyfill.go 中的 fetch / __resolveAsync 设计说明。
-	if err := vm.RegisterFunc("__go_fetch_async", func(url, method, headersJSON, body string) string {
+	if err := vm.RegisterFunc("__go_fetch_async", func(url, method, headersJSON, bodyHex string) string {
 		seq := env.asyncSeq.Add(1)
 		id := fmt.Sprintf("fetch:%d", seq)
 		env.asyncInflight.Add(1)
 		go func() {
 			defer env.asyncInflight.Add(-1)
-			payload := doHTTPRequest(url, method, headersJSON, body)
+			payload := doHTTPRequest(url, method, headersJSON, bodyHex)
 			result := asyncResult{
 				ID:   id,
 				Type: "fetch",
@@ -1513,9 +1513,9 @@ func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 			dialer := websocket.Dialer{
 				HandshakeTimeout: 15 * time.Second,
 			}
-			conn, _, err := dialer.Dial(url, header)
+			conn, resp, err := dialer.Dial(url, header)
 			if err != nil {
-				env.asyncResults <- asyncResult{ID: id, Type: "ws_connect", OK: false, Data: err.Error()}
+				env.asyncResults <- asyncResult{ID: id, Type: "ws_connect", OK: false, Data: formatWebSocketDialError(err, resp)}
 				select {
 				case env.asyncSignal <- struct{}{}:
 				default:
@@ -1735,15 +1735,19 @@ func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 //
 // 支持 X-Fetch-No-Redirect 请求头：存在时不自动跟随重定向，让 JS 侧处理
 // 重定向链（如 xiaomi 登录流程的 Cookie 收集）。
-func doHTTPRequest(url, method, headersJSON, body string) string {
+func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
 	slog.Info("doHTTPRequest", "url", url, "method", method, "headers", headersJSON)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	var reqBody io.Reader
-	if body != "" {
-		reqBody = strings.NewReader(body)
+	if bodyHex != "" {
+		bodyBytes, err := hex.DecodeString(bodyHex)
+		if err != nil {
+			return marshalFetchError("request body hex decode error: " + err.Error())
+		}
+		reqBody = bytes.NewReader(bodyBytes)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
@@ -1819,6 +1823,7 @@ func doHTTPRequest(url, method, headersJSON, body string) string {
 		"statusText": resp.Status,
 		"headers":    respHeaders,
 		"body":       string(bodyBytes),
+		"bodyHex":    hex.EncodeToString(bodyBytes),
 	}
 
 	data, _ := json.Marshal(result)
@@ -1829,6 +1834,23 @@ func marshalFetchError(msg string) string {
 	result := map[string]string{"error": msg}
 	data, _ := json.Marshal(result)
 	return string(data)
+}
+
+func formatWebSocketDialError(err error, resp *http.Response) string {
+	if resp == nil {
+		return err.Error()
+	}
+	body := ""
+	if resp.Body != nil {
+		defer resp.Body.Close()
+		if b, readErr := io.ReadAll(io.LimitReader(resp.Body, 512)); readErr == nil {
+			body = strings.TrimSpace(string(b))
+		}
+	}
+	if body == "" {
+		return fmt.Sprintf("%s (HTTP %d %s)", err.Error(), resp.StatusCode, resp.Status)
+	}
+	return fmt.Sprintf("%s (HTTP %d %s): %s", err.Error(), resp.StatusCode, resp.Status, body)
 }
 
 // goBufferFrom 将数据按指定编码转为 hex 内部表示
