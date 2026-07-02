@@ -348,6 +348,14 @@ func (hc *HealthChecker) checkIdle(svc *JSService) bool {
 		return false
 	}
 
+	// 有活跃入站 WebSocket 连接的插件不休眠
+	if svc.HasActiveInboundWebSockets() {
+		slog.Debug("plugin has active inbound WebSocket connections, not idle",
+			"plugin", entryPath,
+		)
+		return false
+	}
+
 	var wakeupAt time.Time // 零值表示无需唤醒（无定时器）
 
 	if envID != "" {

@@ -57,6 +57,7 @@ func (h *BridgeHandler) Cleanup() {
 		return true
 	})
 	h.cleanupUDPSockets()
+	h.cleanupInboundWebSockets()
 }
 
 func (h *BridgeHandler) handleCommand(action, data string) (string, error) {

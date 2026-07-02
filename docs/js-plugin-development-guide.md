@@ -344,6 +344,39 @@ function onHTTPRequest(req) {
 }
 ```
 
+### onWebSocket(req, socket)
+
+客户端连接 `/api/v1/jsplugin/{entryPath}/...` 并发起 WebSocket upgrade 时调用。插件必须声明 `websocket` 权限。`onWebSocket` 应注册消息/关闭/错误回调后返回，连接生命周期由宿主托管。
+
+**参数 `req` 结构：**
+
+```javascript
+{
+    method: "GET",
+    path: "/api/inbound",
+    headers: {},
+    query: "access_token=...",
+    remoteAddr: "127.0.0.1:12345"
+}
+```
+
+**`socket` 常用方法：**
+
+- `socket.send(string | Uint8Array | ArrayBuffer)`：发送文本或二进制消息
+- `socket.close(code?, reason?)`：关闭连接
+- `socket.onMessage(fn)` / `socket.onClose(fn)` / `socket.onError(fn)`：注册事件回调
+- `socket.onmessage = fn` / `socket.addEventListener(...)`：兼容浏览器 WebSocket 风格
+
+**示例：Echo 服务**
+
+```javascript
+globalThis.onWebSocket = async function(req, socket) {
+    socket.onMessage(async function(event) {
+        await socket.send(event.data);
+    });
+};
+```
+
 ---
 
 ## 5. API 参考
@@ -352,7 +385,7 @@ function onHTTPRequest(req) {
 
 ### HTTP 请求（全局 fetch）
 
-使用标准全局 `fetch` 函数发起 HTTP 请求（由运行时 polyfill 提供，底层为同步实现并以 Promise 形式暴露）。**无需声明权限**。
+使用标准全局 `fetch` 函数发起 HTTP 请求（由运行时 polyfill 提供，返回 Promise）。**无需声明权限**。
 
 ```javascript
 // GET
@@ -376,7 +409,7 @@ const text = await resp.text();
 - `json()` — 返回 `Promise<unknown>`，解析 JSON
 - `text()` — 返回 `Promise<string>`，原始文本
 
-> **注意**：`onHTTPRequest` 目前以同步方式调用，若要在其中使用 `fetch` 的响应，建议在 `onInit` 阶段预取并写入 `songloft.storage`，或通过 `songloft.comm` 异步通信。
+`onHTTPRequest`、`onWebSocket` 和事件回调都可以是 `async function`，框架会等待 Promise settle。
 
 ### 定时器（全局 setTimeout / setInterval）
 
@@ -538,6 +571,12 @@ function getMusicUrl(songId) {
 | `inter-plugin` | 插件间通信 |
 | `command` | 执行外部命令/管理可执行文件 |
 | `jsenv` | 创建/执行子 JS 沙箱环境 |
+| `fs` | 读写插件数据目录内文件 |
+| `fs:music` | 访问 music_path 音乐目录 |
+| `fs:external` | 访问管理员配置的外部目录 |
+| `websocket` | 使用 `new WebSocket(...)` 主动连接外部服务，或处理入站 `onWebSocket` upgrade |
+| `persistent-storage` | 读写卸载插件后仍保留的持久化存储 |
+| `net` | 使用原始网络 socket（当前为 UDP） |
 
 > 注意：网络请求 (`fetch`)、定时器 (`setTimeout/setInterval`)、日志等能力**无需权限声明**，是默认宿主能力。
 

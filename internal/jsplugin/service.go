@@ -89,6 +89,36 @@ type NetDataEvent struct {
 	RemoteAddr string `json:"remoteAddr"` // "ip:port"
 }
 
+// WebSocketRequestData 是入站 WebSocket 握手请求的轻量表示。
+type WebSocketRequestData struct {
+	Method     string            `json:"method"`
+	Path       string            `json:"path"`
+	Headers    map[string]string `json:"headers"`
+	Query      string            `json:"query"`
+	RemoteAddr string            `json:"remoteAddr"`
+}
+
+// WebSocketOpenData 是 MsgWebSocketOpen 消息的 Data 类型。
+type WebSocketOpenData struct {
+	ConnID  string                `json:"connId"`
+	Request *WebSocketRequestData `json:"request"`
+}
+
+// WebSocketMessageData 是 MsgWebSocketMessage 消息的 Data 类型。
+type WebSocketMessageData struct {
+	ConnID   string `json:"connId"`
+	DataHex  string `json:"dataHex"` // 原始消息字节的 hex 编码
+	IsBinary bool   `json:"isBinary"`
+}
+
+// WebSocketCloseData 是 MsgWebSocketClose 消息的 Data 类型。
+type WebSocketCloseData struct {
+	ConnID   string `json:"connId"`
+	Code     int    `json:"code"`
+	Reason   string `json:"reason"`
+	WasClean bool   `json:"wasClean"`
+}
+
 // JSService 代表一个运行中的 JS 插件实例（Actor）
 type JSService struct {
 	plugin        *JSPlugin               // 插件元数据
@@ -389,6 +419,12 @@ func (s *JSService) HandleMessage(msg *Message) *Message {
 		return s.handlePlayEvent(msg)
 	case MsgNetData:
 		return s.handleNetData(msg)
+	case MsgWebSocketOpen:
+		return s.handleWebSocketOpen(msg)
+	case MsgWebSocketMessage:
+		return s.handleWebSocketMessage(msg)
+	case MsgWebSocketClose:
+		return s.handleWebSocketClose(msg)
 	default:
 		return nil
 	}
@@ -448,6 +484,19 @@ func (s *JSService) HasActiveUDPSockets() bool {
 	}
 	hasSocket := false
 	s.bridgeHandler.udpSockets.Range(func(_, _ any) bool {
+		hasSocket = true
+		return false
+	})
+	return hasSocket
+}
+
+// HasActiveInboundWebSockets 检查插件是否有活跃的入站 WebSocket 连接。
+func (s *JSService) HasActiveInboundWebSockets() bool {
+	if s.bridgeHandler == nil {
+		return false
+	}
+	hasSocket := false
+	s.bridgeHandler.inboundWebSockets.Range(func(_, _ any) bool {
 		hasSocket = true
 		return false
 	})
@@ -666,6 +715,70 @@ func (s *JSService) handleNetData(msg *Message) *Message {
 	_, err = s.jsManager.ExecuteJS(context.Background(), s.envID, code, 5000)
 	if err != nil {
 		slog.Debug("onNetData failed", "plugin", s.plugin.EntryPath, "socketId", eventData.SocketID, "error", err)
+	}
+	return nil
+}
+
+func (s *JSService) handleWebSocketOpen(msg *Message) *Message {
+	eventData, ok := msg.Data.(*WebSocketOpenData)
+	if !ok {
+		slog.Warn("websocket open: invalid data type", "plugin", s.plugin.EntryPath)
+		return &Message{ID: msg.ID, Session: msg.Session, Data: fmt.Errorf("invalid websocket open data")}
+	}
+
+	eventJSON, err := json.Marshal(eventData)
+	if err != nil {
+		return &Message{ID: msg.ID, Session: msg.Session, Data: fmt.Errorf("marshal websocket open: %w", err)}
+	}
+
+	code := fmt.Sprintf(`(async function(){await __handleInboundWebSocketOpen(%s);})()`, string(eventJSON))
+	_, err = s.jsManager.ExecuteJS(context.Background(), s.envID, code, 10000)
+	if err != nil {
+		slog.Warn("onWebSocket failed", "plugin", s.plugin.EntryPath, "connId", eventData.ConnID, "error", err)
+		return &Message{ID: msg.ID, Session: msg.Session, Data: err}
+	}
+
+	return &Message{ID: msg.ID, Session: msg.Session, Data: nil}
+}
+
+func (s *JSService) handleWebSocketMessage(msg *Message) *Message {
+	eventData, ok := msg.Data.(*WebSocketMessageData)
+	if !ok {
+		slog.Warn("websocket message: invalid data type", "plugin", s.plugin.EntryPath)
+		return nil
+	}
+
+	eventJSON, err := json.Marshal(eventData)
+	if err != nil {
+		slog.Warn("websocket message: marshal failed", "plugin", s.plugin.EntryPath, "error", err)
+		return nil
+	}
+
+	code := fmt.Sprintf(`(async function(){await __handleInboundWebSocketMessage(%s);})()`, string(eventJSON))
+	_, err = s.jsManager.ExecuteJS(context.Background(), s.envID, code, 30000)
+	if err != nil {
+		slog.Debug("onWebSocket message failed", "plugin", s.plugin.EntryPath, "connId", eventData.ConnID, "error", err)
+	}
+	return nil
+}
+
+func (s *JSService) handleWebSocketClose(msg *Message) *Message {
+	eventData, ok := msg.Data.(*WebSocketCloseData)
+	if !ok {
+		slog.Warn("websocket close: invalid data type", "plugin", s.plugin.EntryPath)
+		return nil
+	}
+
+	eventJSON, err := json.Marshal(eventData)
+	if err != nil {
+		slog.Warn("websocket close: marshal failed", "plugin", s.plugin.EntryPath, "error", err)
+		return nil
+	}
+
+	code := fmt.Sprintf(`(async function(){await __handleInboundWebSocketClose(%s);})()`, string(eventJSON))
+	_, err = s.jsManager.ExecuteJS(context.Background(), s.envID, code, 5000)
+	if err != nil {
+		slog.Debug("onWebSocket close failed", "plugin", s.plugin.EntryPath, "connId", eventData.ConnID, "error", err)
 	}
 	return nil
 }

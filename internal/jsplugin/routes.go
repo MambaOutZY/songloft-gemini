@@ -191,7 +191,7 @@ func (m *Manager) handlePluginStaticSubdirFiles(w http.ResponseWriter, r *http.R
 //   - 其他子路径 → 转发到 JS 运行时处理（API 路由）
 //
 // @Summary 插件 API 转发 catch-all（动态路由）
-// @Description 接受任意 HTTP 方法，分发到插件 static 兜底或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI 仅作占位。需要 BearerAuth。
+// @Description 接受任意 HTTP 方法，分发到插件 static 兜底、入站 WebSocket upgrade（调用 onWebSocket），或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI 仅作占位。需要 BearerAuth。
 // @Tags JS 插件
 // @Accept json
 // @Produce json
@@ -237,8 +237,14 @@ func (m *Manager) handlePluginAPIRequest(w http.ResponseWriter, r *http.Request)
 
 	// 非 static 路径 → 需要 JS 运行时，按需懒加载。
 	// 空闲驱逐场景下 service 不在内存但 DB status=active，EnsureLoaded 会自动重新加载。
-	if _, err := m.EnsureLoaded(r.Context(), entryPath); err != nil {
+	service, err := m.EnsureLoaded(r.Context(), entryPath)
+	if err != nil {
 		m.writePluginUnavailable(w, r, entryPath, err)
+		return
+	}
+
+	if isWebSocketUpgrade(r) {
+		m.handlePluginWebSocket(w, r, service, entryPath, subPath)
 		return
 	}
 

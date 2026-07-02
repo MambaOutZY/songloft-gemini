@@ -44,6 +44,125 @@ if (typeof globalThis.onHTTPRequest !== 'function') {
         return { statusCode: 404, headers: {}, body: 'not implemented' };
     };
 }
+if (typeof globalThis.onWebSocket !== 'function') {
+    globalThis.onWebSocket = async function(req, socket) {
+        await socket.close(1008, 'onWebSocket not implemented');
+    };
+}
+
+var __inboundWSRegistry = new Map();
+
+function __inboundWSDataToHex(data) {
+    if (typeof data === 'string') {
+        return { dataHex: __go_buffer_from(data, 'utf8'), isBinary: false };
+    }
+    if (data instanceof Uint8Array) {
+        var h = '';
+        for (var i = 0; i < data.length; i++) h += ('0' + data[i].toString(16)).slice(-2);
+        return { dataHex: h, isBinary: true };
+    }
+    if (data instanceof ArrayBuffer) {
+        return __inboundWSDataToHex(new Uint8Array(data));
+    }
+    if (data && typeof data._hex === 'string') {
+        return { dataHex: data._hex, isBinary: true };
+    }
+    return { dataHex: __go_buffer_from(String(data), 'utf8'), isBinary: false };
+}
+
+function __createInboundWebSocket(connId) {
+    var socket = {
+        id: connId,
+        readyState: 1,
+        CONNECTING: 0,
+        OPEN: 1,
+        CLOSING: 2,
+        CLOSED: 3,
+        onmessage: null,
+        onclose: null,
+        onerror: null,
+        _listeners: { message: [], close: [], error: [] },
+        send: function(data) {
+            if (this.readyState !== 1) throw new Error('WebSocket is not open');
+            var encoded = __inboundWSDataToHex(data);
+            return __callBridge('websocket.send', JSON.stringify({
+                connId: this.id,
+                dataHex: encoded.dataHex,
+                isBinary: encoded.isBinary
+            }));
+        },
+        close: function(code, reason) {
+            if (this.readyState >= 2) return Promise.resolve();
+            this.readyState = 2;
+            return __callBridge('websocket.close', JSON.stringify({
+                connId: this.id,
+                code: code || 1000,
+                reason: reason || ''
+            }));
+        },
+        onMessage: function(fn) {
+            this.addEventListener('message', fn);
+        },
+        onClose: function(fn) {
+            this.addEventListener('close', fn);
+        },
+        onError: function(fn) {
+            this.addEventListener('error', fn);
+        },
+        addEventListener: function(type, fn) {
+            if (this._listeners[type] && typeof fn === 'function') this._listeners[type].push(fn);
+        },
+        removeEventListener: function(type, fn) {
+            if (!this._listeners[type]) return;
+            this._listeners[type] = this._listeners[type].filter(function(f) { return f !== fn; });
+        },
+        _emit: async function(type, event) {
+            event.type = type;
+            event.target = this;
+            var handler = this['on' + type];
+            if (typeof handler === 'function') {
+                try { await handler.call(this, event); } catch(e) { console.error('Inbound WebSocket on' + type + ' error:', e); }
+            }
+            var listeners = this._listeners[type] || [];
+            for (var i = 0; i < listeners.length; i++) {
+                try { await listeners[i].call(this, event); } catch(e) { console.error('Inbound WebSocket listener error:', e); }
+            }
+        }
+    };
+    __inboundWSRegistry.set(connId, socket);
+    return socket;
+}
+
+async function __handleInboundWebSocketOpen(payload) {
+    var socket = __createInboundWebSocket(payload.connId);
+    await onWebSocket(payload.request, socket);
+}
+
+async function __handleInboundWebSocketMessage(payload) {
+    var socket = __inboundWSRegistry.get(payload.connId);
+    if (!socket || socket.readyState >= 3) return;
+    var data;
+    if (payload.isBinary) {
+        var h = payload.dataHex || '';
+        data = new Uint8Array(h.length / 2);
+        for (var i = 0; i < data.length; i++) data[i] = parseInt(h.substr(i * 2, 2), 16);
+    } else {
+        data = __go_buffer_to_string(payload.dataHex || '', 'utf8');
+    }
+    await socket._emit('message', { data: data, isBinary: !!payload.isBinary });
+}
+
+async function __handleInboundWebSocketClose(payload) {
+    var socket = __inboundWSRegistry.get(payload.connId);
+    if (!socket) return;
+    socket.readyState = 3;
+    __inboundWSRegistry.delete(payload.connId);
+    await socket._emit('close', {
+        code: payload.code || 1000,
+        reason: payload.reason || '',
+        wasClean: payload.wasClean !== false
+    });
+}
 
 // 事件订阅（动态注册/取消注册，可在任意时刻调用）
 songloft.events = {
@@ -369,6 +488,8 @@ type BridgeHandler struct {
 	processes                 sync.Map                  // map[name]*managedProcess — 后台进程跟踪
 	udpSockets                sync.Map                  // map[socketID]*managedUDPSocket — UDP socket 跟踪
 	socketIDSeq               atomic.Uint64             // UDP socket ID 递增序号
+	inboundWebSockets         sync.Map                  // map[connID]*managedInboundWebSocket — 入站 WebSocket 连接
+	inboundWebSocketIDSeq     atomic.Uint64             // 入站 WebSocket 连接 ID 递增序号
 	onPlayEventRegister       func(entryPath string)    // 播放事件订阅回调
 	onPlayEventUnregister     func(entryPath string)    // 播放事件取消订阅回调
 	onLyricProviderRegister   func(entryPath string)    // 歌词提供者注册回调
@@ -427,6 +548,8 @@ func (h *BridgeHandler) HandleBridgeCall(action, data string) (string, error) {
 		return h.handleFS(action, data)
 	case strings.HasPrefix(action, "net."):
 		return h.handleNet(action, data)
+	case strings.HasPrefix(action, "websocket."):
+		return h.handleWebSocket(action, data)
 	default:
 		return "", fmt.Errorf("unknown action: %s", action)
 	}
@@ -483,6 +606,11 @@ func extractPermFromAction(action string) string {
 	// 网络 socket 权限（songloft.net.*）
 	if strings.HasPrefix(action, "net.") {
 		return PermNet
+	}
+
+	// WebSocket 权限（入站 socket.send/close）
+	if strings.HasPrefix(action, "websocket.") {
+		return PermWebSocket
 	}
 
 	// 未明确分类的 action：返回原样，仅对应的通配符声明者能通过。

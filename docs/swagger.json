@@ -1238,7 +1238,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "接受任意 HTTP 方法，分发到插件 static 兜底或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI 仅作占位。需要 BearerAuth。",
+                "description": "接受任意 HTTP 方法，分发到插件 static 兜底、入站 WebSocket upgrade（调用 onWebSocket），或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI 仅作占位。需要 BearerAuth。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1310,7 +1310,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "接受任意 HTTP 方法，分发到插件 static 兜底或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI 仅作占位。需要 BearerAuth。",
+                "description": "接受任意 HTTP 方法，分发到插件 static 兜底、入站 WebSocket upgrade（调用 onWebSocket），或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI 仅作占位。需要 BearerAuth。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1382,7 +1382,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "接受任意 HTTP 方法，分发到插件 static 兜底或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI 仅作占位。需要 BearerAuth。",
+                "description": "接受任意 HTTP 方法，分发到插件 static 兜底、入站 WebSocket upgrade（调用 onWebSocket），或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI 仅作占位。需要 BearerAuth。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1454,7 +1454,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "接受任意 HTTP 方法，分发到插件 static 兜底或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI 仅作占位。需要 BearerAuth。",
+                "description": "接受任意 HTTP 方法，分发到插件 static 兜底、入站 WebSocket upgrade（调用 onWebSocket），或转发到 QuickJS 沙盒中的插件代码。{entryPath} 和子路径均由运行时决定，OpenAPI 仅作占位。需要 BearerAuth。",
                 "consumes": [
                     "application/json"
                 ],
