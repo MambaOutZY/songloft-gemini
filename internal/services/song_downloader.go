@@ -60,11 +60,11 @@ func NewSongDownloader(
 	lyricFetcher *LyricFetcher,
 ) *SongDownloader {
 	return &SongDownloader{
-		songService:   songService,
-		cacheService:  cacheService,
-		configService: configService,
-		getMusicPath:  getMusicPath,
-		lyricFetcher:  lyricFetcher,
+		songService:    songService,
+		cacheService:   cacheService,
+		configService:  configService,
+		getMusicPath:   getMusicPath,
+		lyricFetcher:   lyricFetcher,
 		downloadClient: httputil.NewClient(120 * time.Second),
 	}
 }

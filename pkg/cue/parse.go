@@ -269,4 +269,3 @@ func hasMojibakeHeuristic(data []byte) bool {
 	}
 	return maxConsecutive >= 3
 }
-
