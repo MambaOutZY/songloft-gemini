@@ -199,6 +199,41 @@ func BenchmarkMiotCrypto_NativeSHA256(b *testing.B) {
 	}
 }
 
+// BenchmarkMiotCrypto_NativeRC4SHA 用新增的原生宿主函数完成等价签名工作负载，
+// 与 BenchmarkMiotCrypto_PureJS 对照，量化 miot 采用原生 crypto 后的收益。
+func BenchmarkMiotCrypto_NativeRC4SHA(b *testing.B) {
+	m := NewJSEnvManager()
+	defer m.SignalShutdown()
+	envID := "bench-miot-native-crypto"
+	if err := m.CreateEnv(envID, polyfillJS, 1); err != nil {
+		b.Fatalf("CreateEnv: %v", err)
+	}
+	defer m.DestroyEnv(envID)
+
+	// 等价工作：sha256(key32+nonce16) + RC4(300B body)，全部走原生宿主函数，
+	// 且二进制↔文本转换全用原生 __go_buffer_*，hex 用字符串拼接——零 JS 字节循环。
+	// 这是 miot 采用原生 crypto 后应走的路径（输入为 base64 的 ssecurity/nonce）。
+	code := `(function(){
+		var ssecurityB64='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+		var nonceB64='AAAAAAAAAAAAAAAAAAAAAA==';
+		var keyHex=__go_buffer_from(ssecurityB64,'base64');
+		var nonceHex=__go_buffer_from(nonceB64,'base64');
+		var signedHex=__go_crypto_sha256_bytes(keyHex+nonceHex);
+		var signedB64=__go_buffer_to_string(signedHex,'base64');
+		var bodyHex=__go_buffer_from('body-payload-placeholder-repeated','utf8');
+		var encHex=__go_crypto_rc4(signedHex, bodyHex);
+		return __go_buffer_to_string(encHex,'base64').length;
+	})()`
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := m.ExecuteJS(context.Background(), envID, code, 5000); err != nil {
+			b.Fatalf("ExecuteJS: %v", err)
+		}
+	}
+}
+
 // makeLargeSongListJSON 构造一个近似 payloadBytes 大小的 JSON 数组字符串，
 // 模拟 subsonic 插件 songloft.songs.list({limit:100000}) 返回的整库列表。
 func makeLargeSongListJSON(payloadBytes int) string {

@@ -36,6 +36,7 @@ globalThis.console = {
     // Mark Go bridge functions as native
     var bridgeNames = ['__go_send', '__go_console', '__go_fetch_async', '__go_now_ms',
         '__go_buffer_from', '__go_buffer_to_string', '__go_crypto_md5', '__go_crypto_sha256',
+        '__go_crypto_sha256_bytes', '__go_crypto_rc4',
         '__go_crypto_random_bytes', '__go_crypto_aes_encrypt', '__go_crypto_rsa_encrypt',
         '__go_zlib_inflate', '__go_zlib_deflate', '__go_raw_inflate',
         '__go_pop_async_result',
@@ -451,6 +452,21 @@ globalThis.Buffer = {
 // crypto polyfill
 globalThis.crypto = {
     md5: function(str) { return __go_crypto_md5(str || ''); },
+    // sha256Bytes(buffer) — 对任意二进制做 SHA256（原生），返回 {_hex, toString}。
+    // buffer 可为 {_hex} 对象或字符串（按 utf8 编码）。用于替代插件的纯 JS sha256。
+    sha256Bytes: function(buffer) {
+        var dataHex = (buffer && buffer._hex) ? buffer._hex : __go_buffer_from(String(buffer), 'utf8');
+        return { _hex: __go_crypto_sha256_bytes(dataHex),
+                 toString: function(fmt) { return __go_buffer_to_string(this._hex, fmt || 'hex'); } };
+    },
+    // rc4(key, data) — RC4 流加密（原生），返回 {_hex, toString}。
+    // key/data 可为 {_hex} 对象或字符串（按 utf8 编码）。
+    rc4: function(key, data) {
+        var keyHex = (key && key._hex) ? key._hex : __go_buffer_from(String(key), 'utf8');
+        var dataHex = (data && data._hex) ? data._hex : __go_buffer_from(String(data), 'utf8');
+        return { _hex: __go_crypto_rc4(keyHex, dataHex),
+                 toString: function(fmt) { return __go_buffer_to_string(this._hex, fmt || 'base64'); } };
+    },
     aesEncrypt: function(buffer, mode, key, iv) {
         var dataHex = (buffer && buffer._hex) ? buffer._hex : __go_buffer_from(String(buffer), 'utf8');
         var keyHex = (key && key._hex) ? key._hex : __go_buffer_from(String(key), 'utf8');

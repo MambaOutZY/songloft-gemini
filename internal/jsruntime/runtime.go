@@ -9,6 +9,7 @@ import (
 	"crypto/cipher"
 	"crypto/md5"
 	"crypto/rand"
+	"crypto/rc4"
 	"crypto/rsa"
 	"crypto/sha256"
 
@@ -1502,12 +1503,53 @@ func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 		return fmt.Errorf("register __go_crypto_md5: %w", err)
 	}
 
-	// __go_crypto_sha256(str) — SHA256 hex
+	// __go_crypto_sha256(str) — SHA256 hex（输入按 UTF-8 字节）
 	if err := vm.RegisterFunc("__go_crypto_sha256", func(str string) string {
 		h := sha256.Sum256([]byte(str))
 		return hex.EncodeToString(h[:])
 	}, false); err != nil {
 		return fmt.Errorf("register __go_crypto_sha256: %w", err)
+	}
+
+	// __go_crypto_sha256_bytes(dataHex) — 对任意二进制做 SHA256（hex 入，hex 出）。
+	// 与 __go_crypto_sha256(str) 的区别：后者只能哈希 UTF-8 字符串，无法喂任意字节。
+	// 供需要哈希二进制的插件（如 miot 签名 sha256(key+nonce)）把纯 JS sha256 换成原生。
+	if err := vm.RegisterFunc("__go_crypto_sha256_bytes", func(dataHex string) string {
+		data, err := hex.DecodeString(dataHex)
+		if err != nil {
+			slog.Warn("__go_crypto_sha256_bytes: bad hex input", "error", err)
+			return ""
+		}
+		h := sha256.Sum256(data)
+		return hex.EncodeToString(h[:])
+	}, false); err != nil {
+		return fmt.Errorf("register __go_crypto_sha256_bytes: %w", err)
+	}
+
+	// __go_crypto_rc4(keyHex, dataHex) — RC4 流加密（hex 入，hex 出）。
+	// QuickJS 无 WebCrypto，插件（如 miot 的小米 API）以往在纯 JS 里实现 RC4
+	// （S 盒 256 轮 + 逐字节异或），在解释执行下极慢（~1.28ms/次）。原生仅 ~µs。
+	if err := vm.RegisterFunc("__go_crypto_rc4", func(keyHex, dataHex string) string {
+		key, err := hex.DecodeString(keyHex)
+		if err != nil || len(key) == 0 {
+			slog.Warn("__go_crypto_rc4: bad key hex", "error", err)
+			return ""
+		}
+		data, err := hex.DecodeString(dataHex)
+		if err != nil {
+			slog.Warn("__go_crypto_rc4: bad data hex", "error", err)
+			return ""
+		}
+		c, err := rc4.NewCipher(key)
+		if err != nil {
+			slog.Warn("__go_crypto_rc4: new cipher", "error", err)
+			return ""
+		}
+		out := make([]byte, len(data))
+		c.XORKeyStream(out, data)
+		return hex.EncodeToString(out)
+	}, false); err != nil {
+		return fmt.Errorf("register __go_crypto_rc4: %w", err)
 	}
 
 	// __go_crypto_random_bytes(size) — 随机字节 hex
