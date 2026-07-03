@@ -467,6 +467,26 @@ songloft.net = {
         songloft.net._handlers[socketId] = handler;
     }
 };
+
+// 事件分发 dispatcher：Go 侧通过 vm.CallValue("__dispatchXxx", jsonStr) 调用，
+// jsonStr 作为原生 JS 字符串传入（不经源码 parse），dispatcher 内用原生 JSON.parse。
+// 替代以前每个事件都把 JSON 内联进源码字符串再让引擎 parse/compile 的开销。
+globalThis.__dispatchPlayEvent = async function(s) {
+    if (typeof onPlayEvent === 'function') { await onPlayEvent(JSON.parse(s)); }
+};
+globalThis.__dispatchNetData = async function(socketId, s) {
+    var h = songloft.net._handlers[socketId];
+    if (typeof h === 'function') { await h(JSON.parse(s)); }
+};
+globalThis.__dispatchWSOpen = async function(s) {
+    await __handleInboundWebSocketOpen(JSON.parse(s));
+};
+globalThis.__dispatchWSMessage = async function(s) {
+    await __handleInboundWebSocketMessage(JSON.parse(s));
+};
+globalThis.__dispatchWSClose = async function(s) {
+    await __handleInboundWebSocketClose(JSON.parse(s));
+};
 `
 
 // GetBootstrapCode 返回插件引导 JS 代码（含通信 API）

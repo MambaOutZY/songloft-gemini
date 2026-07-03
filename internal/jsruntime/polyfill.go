@@ -166,18 +166,91 @@ globalThis.__resolveAsync = function(id, ok, payload, type) {
 globalThis.__pumpAsyncResults = function() {
     var n = 0;
     for (;;) {
-        var resultJSON = __go_pop_async_result();
-        if (!resultJSON) return n;
-        var r;
-        try { r = JSON.parse(resultJSON); }
-        catch(e) { console.error('__pumpAsyncResults: bad result JSON:', e); return n; }
+        var raw = __go_pop_async_result();
+        if (!raw) return n;
+        // 分帧格式："<id>\t<ok>\t<type>\n<raw data>"：只按第一个 '\n' 切出 header，
+        // data 部分原样取用（避免对大 payload 再做一次 JSON.parse）。
+        var nl = raw.indexOf('\n');
+        if (nl < 0) { console.error('__pumpAsyncResults: bad frame'); return n; }
+        var header = raw.substring(0, nl);
+        var data = raw.substring(nl + 1);
+        var t1 = header.indexOf('\t');
+        var t2 = header.indexOf('\t', t1 + 1);
+        var id = header.substring(0, t1);
+        var ok = header.charAt(t1 + 1) === '1';
+        var type = header.substring(t2 + 1);
         try {
-            globalThis.__resolveAsync(r.id, r.ok, r.data, r.type);
+            globalThis.__resolveAsync(id, ok, data, type);
         } catch(e) {
             console.error('__pumpAsyncResults: resolve error:', e);
         }
         n++;
     }
+};
+
+// ExecuteJS 事件循环用的持久 helper 函数。以前 Go 侧每次都 vm.EvalValue 一段
+// 内联源码（每 tick 重新 parse/compile 整段函数体），改为在此一次性定义为全局函数，
+// Go 侧用 vm.CallValue("__xxx") 按名调用，只需求值一个廉价的标识符，避免重复解析。
+
+// __isThenable 判断 globalThis.__execjs_probe 是否为 thenable（带 then 方法）。
+globalThis.__isThenable = function() {
+    var v = globalThis.__execjs_probe;
+    return !!(v && typeof v.then === 'function');
+};
+
+// __setupAwaitProbe 给 globalThis.__execjs_pending 挂 settle 钩子，结果回填到
+// __execjs_done / __execjs_value / __execjs_error。
+globalThis.__setupAwaitProbe = function() {
+    globalThis.__execjs_done = false;
+    globalThis.__execjs_value = undefined;
+    globalThis.__execjs_error = undefined;
+    Promise.resolve(globalThis.__execjs_pending).then(
+        function(v){ globalThis.__execjs_value = v; globalThis.__execjs_done = true; },
+        function(e){ globalThis.__execjs_error = (e && e.stack) ? String(e.stack) : String(e); globalThis.__execjs_done = true; }
+    );
+    globalThis.__execjs_pending = undefined;
+};
+
+// __isAwaitDone 返回 done flag。
+globalThis.__isAwaitDone = function() {
+    return globalThis.__execjs_done === true;
+};
+
+// __readAwaitError 返回 error 字符串（空表示无错误）。
+globalThis.__readAwaitError = function() {
+    return globalThis.__execjs_error === undefined ? '' : String(globalThis.__execjs_error);
+};
+
+// __readAwaitValue 返回 value 的字符串化结果。
+globalThis.__readAwaitValue = function() {
+    var v = globalThis.__execjs_value;
+    if (v === undefined) return '';
+    return typeof v === 'string' ? v : String(v);
+};
+
+// __cleanupAwaitProbe 清理 await probe 写入的全局变量。
+globalThis.__cleanupAwaitProbe = function() {
+    globalThis.__execjs_pending = undefined;
+    globalThis.__execjs_done = undefined;
+    globalThis.__execjs_value = undefined;
+    globalThis.__execjs_error = undefined;
+};
+
+// 事件分发 dispatcher：Go 侧通过 vm.CallValue("__dispatchXxx", jsonStr) 调用，
+// jsonStr 作为原生 JS 字符串传入（不经源码 parse），dispatcher 内用原生 JSON.parse。
+// 避免以前每请求把大 JSON 内联进源码字符串再让引擎 parse/compile 的开销。
+
+// __dispatchHTTP 处理普通 HTTP 请求：解析请求 JSON → await onHTTPRequest → 序列化响应。
+globalThis.__dispatchHTTP = async function(reqStr) {
+    return JSON.stringify(await onHTTPRequest(JSON.parse(reqStr)));
+};
+
+// __dispatchHTTPB64 处理 body 为 base64 编码的 HTTP 请求：先 atob 解码回二进制字符串。
+globalThis.__dispatchHTTPB64 = async function(reqStr) {
+    var _r = JSON.parse(reqStr);
+    _r.body = atob(_r.body);
+    delete _r.bodyEncoding;
+    return JSON.stringify(await onHTTPRequest(_r));
 };
 
 // __callBridge(action, dataString) -> Promise<string>

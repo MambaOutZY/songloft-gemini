@@ -25,6 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 
@@ -60,6 +61,49 @@ var noRedirectHTTPClient = &http.Client{
 
 // 默认 JS 执行超时时间
 const defaultJSTimeout = 30 * time.Second
+
+// maxFetchBodyBytes 限制单次 fetch 响应体读入内存的上限，防止异常/恶意大响应 OOM。
+const maxFetchBodyBytes = 64 << 20 // 64 MiB
+
+// polyfill 字节码缓存：polyfillJS 有 600+ 行，冷启动时约 48% 的时间花在解析它。
+// 首次编译为字节码后缓存，后续所有 env 冷启动直接 EvalBytecode 加载，跳过解析编译。
+// QuickJS 字节码经 WriteObject/ReadObject 序列化 atoms，可跨 runtime 复用（项目
+// 已用于 .jsc 插件缓存跨进程加载）。编译失败时回退到源码 eval。
+var (
+	polyfillBytecodeOnce sync.Once
+	polyfillBytecode     []byte
+)
+
+// loadPolyfill 在 vm 中注入 polyfill。优先用缓存的字节码，首次调用时用当前 vm
+// 编译并缓存。编译失败则回退到源码 eval（保证功能不受影响）。
+func loadPolyfill(vm *quickjs.VM) error {
+	polyfillBytecodeOnce.Do(func() {
+		bc, err := vm.Compile(polyfillJS, quickjs.EvalGlobal)
+		if err != nil {
+			slog.Warn("compile polyfill to bytecode failed, falling back to source eval", "error", err)
+			return // polyfillBytecode 保持 nil，走源码回退
+		}
+		polyfillBytecode = bc
+		slog.Debug("polyfill compiled to bytecode", "size", len(bc))
+	})
+
+	if polyfillBytecode != nil {
+		v, err := vm.EvalBytecodeValue(polyfillBytecode)
+		if err != nil {
+			return fmt.Errorf("eval polyfill bytecode: %w", err)
+		}
+		v.Free()
+		return nil
+	}
+
+	// 回退：源码 eval
+	v, err := vm.EvalValue(polyfillJS, quickjs.EvalGlobal)
+	if err != nil {
+		return fmt.Errorf("eval polyfill source: %w", err)
+	}
+	v.Free()
+	return nil
+}
 
 // BridgeCallback 是插件层注册的桥接回调函数类型
 // 当 JS 调用 __go_bridge(action, data) 时，由此回调处理
@@ -209,12 +253,10 @@ func (m *JSEnvManager) CreateEnv(envID, initCode string, pluginID int64) error {
 		return fmt.Errorf("register bridge functions for env %s: %w", envID, err)
 	}
 
-	// 注入 JS polyfill 代码
-	if v, err := vm.EvalValue(polyfillJS, quickjs.EvalGlobal); err != nil {
+	// 注入 JS polyfill 代码（优先字节码，跳过解析）
+	if err := loadPolyfill(vm); err != nil {
 		vm.Close()
 		return fmt.Errorf("inject polyfills for env %s: %w", envID, err)
-	} else {
-		v.Free()
 	}
 
 	// 执行初始化代码
@@ -271,12 +313,10 @@ func (m *JSEnvManager) CreateEnvWithBytecode(envID, bootstrapCode string, byteco
 		return fmt.Errorf("register bridge functions for env %s: %w", envID, err)
 	}
 
-	// 注入 JS polyfill 代码
-	if v, err := vm.EvalValue(polyfillJS, quickjs.EvalGlobal); err != nil {
+	// 注入 JS polyfill 代码（优先字节码，跳过解析）
+	if err := loadPolyfill(vm); err != nil {
 		vm.Close()
 		return fmt.Errorf("inject polyfills for env %s: %w", envID, err)
-	} else {
-		v.Free()
 	}
 
 	// 执行 bootstrap 源码（bridge 函数定义等）
@@ -332,6 +372,29 @@ func (m *JSEnvManager) CreateEnvWithBytecode(envID, bootstrapCode string, byteco
 //   - 调用方仍是同步语义（拿到最终值或错误），不需要改 service.go 的 handleHTTPRequest 契约。
 //   - 超时由 wall-clock 控制；vm.SetEvalTimeout 作为 JS 内死循环兜底。
 func (m *JSEnvManager) ExecuteJS(ctx context.Context, envID, code string, timeoutMs int64) (*ExecuteResult, error) {
+	return m.executeInEnv(ctx, envID, timeoutMs, func(vm *quickjs.VM) (quickjs.Value, error) {
+		return vm.EvalValue(code, quickjs.EvalGlobal)
+	})
+}
+
+// ExecuteJSCall 与 ExecuteJS 语义相同，但通过 vm.CallValue 按名调用一个预定义的
+// 全局函数并传入参数，而非把参数内联进源码字符串再解析。args 为 Go 值，会被
+// quickjs 转换为 JS 参数（string → 原生 JS 字符串，不经源码 parse）。
+//
+// 用于 HTTP 请求 / 事件分发等热路径：以前每次都拼接 `(async()=>...(<内联大JSON>))()`
+// 源码并让 QuickJS 重新 parse/compile（大 body 时开销随体积放大）。改为传入 JSON
+// 字符串给持久 dispatcher（如 __dispatchHTTP），dispatcher 内用原生 JSON.parse，
+// 避免每请求编译一个内联大对象字面量的匿名函数。
+func (m *JSEnvManager) ExecuteJSCall(ctx context.Context, envID, fnName string, timeoutMs int64, args ...any) (*ExecuteResult, error) {
+	return m.executeInEnv(ctx, envID, timeoutMs, func(vm *quickjs.VM) (quickjs.Value, error) {
+		return vm.CallValue(fnName, args...)
+	})
+}
+
+// executeInEnv 是 ExecuteJS / ExecuteJSCall 共享的执行核心：持锁执行 invoke 取得
+// 初始值后，复用同一套真异步事件循环等待 Promise 链 settled。invoke 负责产出初始
+// JS 值（eval 源码 或 CallValue 调用函数），其余逻辑完全一致。
+func (m *JSEnvManager) executeInEnv(ctx context.Context, envID string, timeoutMs int64, invoke func(vm *quickjs.VM) (quickjs.Value, error)) (*ExecuteResult, error) {
 	env, err := m.getEnv(envID)
 	if err != nil {
 		return nil, err
@@ -351,7 +414,7 @@ func (m *JSEnvManager) ExecuteJS(ctx context.Context, envID, code string, timeou
 	env.mu.Lock()
 	vm := env.vm
 	vm.SetEvalTimeout(timeout)
-	slog.Debug("ExecuteJS: eval start", "envID", envID, "codeLen", len(code))
+	slog.Debug("ExecuteJS: eval start", "envID", envID)
 
 	// 在 eval 前排空异步结果通道：WebSocket 读循环 goroutine 不计入 asyncInflight，
 	// 如果不在此处 pump，后续 quick path 会跳过事件分发，导致 WebSocket 回调永远不触发。
@@ -361,7 +424,7 @@ func (m *JSEnvManager) ExecuteJS(ctx context.Context, envID, code string, timeou
 		}
 	}
 
-	val, evalErr := vm.EvalValue(code, quickjs.EvalGlobal)
+	val, evalErr := invoke(vm)
 	ExecutePendingJobs(vm)
 
 	if evalErr != nil {
@@ -469,12 +532,14 @@ func (m *JSEnvManager) ExecuteJS(ctx context.Context, envID, code string, timeou
 	env.mu.Unlock()
 
 	slog.Debug("ExecuteJS: async done", "envID", envID, "eventsCount", len(events), "hasError", errMsg != "")
-	for i, evt := range events {
-		dataPreview := evt.Data
-		if len(dataPreview) > 300 {
-			dataPreview = dataPreview[:300] + "..."
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		for i, evt := range events {
+			dataPreview := evt.Data
+			if len(dataPreview) > 300 {
+				dataPreview = dataPreview[:300] + "..."
+			}
+			slog.Debug("ExecuteJS: event detail", "envID", envID, "index", i, "name", evt.Name, "dataLen", len(evt.Data), "dataPreview", dataPreview)
 		}
-		slog.Info("ExecuteJS: event detail", "envID", envID, "index", i, "name", evt.Name, "dataLen", len(evt.Data), "dataPreview", dataPreview)
 	}
 
 	if errMsg != "" {
@@ -484,11 +549,11 @@ func (m *JSEnvManager) ExecuteJS(ctx context.Context, envID, code string, timeou
 }
 
 // pumpAsyncResults 在持锁状态下调入 JS 的 __pumpAsyncResults() 排空 asyncResults。
-// 返回处理的结果数；0 表示通道当前为空。
+// 返回处理的结果数；0 表示通道当前为空。用 CallValue 按名调用，避免每次解析源码。
 func pumpAsyncResults(vm *quickjs.VM) int {
-	val, err := vm.EvalValue(`(typeof __pumpAsyncResults === 'function') ? __pumpAsyncResults() : 0`, quickjs.EvalGlobal)
+	val, err := vm.CallValue("__pumpAsyncResults")
 	if err != nil {
-		slog.Warn("pumpAsyncResults: eval failed", "error", err)
+		slog.Warn("pumpAsyncResults: call failed", "error", err)
 		return 0
 	}
 	defer val.Free()
@@ -499,7 +564,7 @@ func pumpAsyncResults(vm *quickjs.VM) int {
 }
 
 // valueIsThenable 用 JS 探测 val 是否带 then 函数。把 val 挂到 globalThis 临时槽
-// 调一次轻量 typeof 判断后清理。
+// 调一次预定义的 __isThenable 判断后清理。
 func valueIsThenable(vm *quickjs.VM, val quickjs.Value) bool {
 	if val.IsUndefined() {
 		return false
@@ -509,7 +574,7 @@ func valueIsThenable(vm *quickjs.VM, val quickjs.Value) bool {
 	}
 	defer unsetGlobalValue(vm, "__execjs_probe")
 
-	r, err := vm.EvalValue(`(function(){var v=globalThis.__execjs_probe;return v && typeof v.then === 'function';})()`, quickjs.EvalGlobal)
+	r, err := vm.CallValue("__isThenable")
 	if err != nil {
 		return false
 	}
@@ -528,16 +593,7 @@ func setupAwaitProbe(vm *quickjs.VM, val quickjs.Value) error {
 	if err := bindGlobalValue(vm, "__execjs_pending", val); err != nil {
 		return err
 	}
-	r, err := vm.EvalValue(`(function(){
-		globalThis.__execjs_done = false;
-		globalThis.__execjs_value = undefined;
-		globalThis.__execjs_error = undefined;
-		Promise.resolve(globalThis.__execjs_pending).then(
-			function(v){ globalThis.__execjs_value = v; globalThis.__execjs_done = true; },
-			function(e){ globalThis.__execjs_error = (e && e.stack) ? String(e.stack) : String(e); globalThis.__execjs_done = true; }
-		);
-		globalThis.__execjs_pending = undefined;
-	})()`, quickjs.EvalGlobal)
+	r, err := vm.CallValue("__setupAwaitProbe")
 	if err != nil {
 		return err
 	}
@@ -549,7 +605,7 @@ func setupAwaitProbe(vm *quickjs.VM, val quickjs.Value) error {
 
 // isAwaitDone 检查 setupAwaitProbe 设置的 done flag 是否为 true。
 func isAwaitDone(vm *quickjs.VM) bool {
-	v, err := vm.EvalValue(`globalThis.__execjs_done === true`, quickjs.EvalGlobal)
+	v, err := vm.CallValue("__isAwaitDone")
 	if err != nil {
 		return false
 	}
@@ -566,7 +622,7 @@ func isAwaitDone(vm *quickjs.VM) bool {
 // Promise rejected。value 经过 valueToString 处理，可能为 ""。
 func readAwaitResult(vm *quickjs.VM) (string, string) {
 	// 先读 error
-	errV, err := vm.EvalValue(`globalThis.__execjs_error === undefined ? "" : String(globalThis.__execjs_error)`, quickjs.EvalGlobal)
+	errV, err := vm.CallValue("__readAwaitError")
 	if err == nil {
 		errStr := valueToString(&errV)
 		errV.Free()
@@ -577,7 +633,7 @@ func readAwaitResult(vm *quickjs.VM) (string, string) {
 		errV.Free()
 	}
 	// 读 value：直接取字符串化值
-	valV, err := vm.EvalValue(`globalThis.__execjs_value === undefined ? "" : (typeof globalThis.__execjs_value === 'string' ? globalThis.__execjs_value : String(globalThis.__execjs_value))`, quickjs.EvalGlobal)
+	valV, err := vm.CallValue("__readAwaitValue")
 	if err != nil {
 		return "", ""
 	}
@@ -587,12 +643,7 @@ func readAwaitResult(vm *quickjs.VM) (string, string) {
 
 // cleanupAwaitProbe 清理 setupAwaitProbe 写入的全局变量，避免污染下一次调用。
 func cleanupAwaitProbe(vm *quickjs.VM) {
-	v, err := vm.EvalValue(`(function(){
-		globalThis.__execjs_pending = undefined;
-		globalThis.__execjs_done = undefined;
-		globalThis.__execjs_value = undefined;
-		globalThis.__execjs_error = undefined;
-	})()`, quickjs.EvalGlobal)
+	v, err := vm.CallValue("__cleanupAwaitProbe")
 	if err == nil {
 		v.Free()
 	}
@@ -1330,7 +1381,7 @@ func valToInt(val quickjs.Value) int {
 func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 	// __go_send(name, data) — 事件派发
 	if err := vm.RegisterFunc("__go_send", func(name, data string) {
-		slog.Info("__go_send called", "envID", env.envID, "name", name, "dataLen", len(data))
+		slog.Debug("__go_send called", "envID", env.envID, "name", name, "dataLen", len(data))
 		select {
 		case env.events <- JSEventResult{EnvID: env.envID, Name: name, Data: data}:
 		default:
@@ -1393,21 +1444,32 @@ func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 		return fmt.Errorf("register __go_fetch_async: %w", err)
 	}
 
-	// __go_pop_async_result() -> "" or JSON
+	// __go_pop_async_result() -> "" or framed result
 	// 由 JS 侧 __pumpAsyncResults 调用，非阻塞地从 asyncResults 通道弹出
 	// 一个就绪结果。空队列返回 ""；JS 侧据此结束 pump 循环。
-	// 返回的 JSON 形如：{"id":"fetch:42","ok":true,"data":"...","type":"fetch"}。
+	//
+	// 分隔符分帧："<id>\t<ok>\t<type>\n<raw data>"。不用 json.Marshal envelope，
+	// 因为 data 常是大 JSON 字符串（如 songs.list 整库），封装进 JSON 会把它整体
+	// 再转义一次（Go 侧），JS 侧还要多 JSON.parse 一遍 wrapper。分帧让 data 原样
+	// 透传，JS 只按第一个 '\n' 切出 header。id/type 均为受控字符串（"bridge:42"/
+	// "fetch"/"ws_msg" 等），不含 '\t'/'\n'，data 部分内容任意也不影响切分。
 	if err := vm.RegisterFunc("__go_pop_async_result", func() string {
 		select {
 		case r := <-env.asyncResults:
-			out := map[string]any{
-				"id":   r.ID,
-				"ok":   r.OK,
-				"data": r.Data,
-				"type": r.Type,
+			ok := byte('0')
+			if r.OK {
+				ok = '1'
 			}
-			b, _ := json.Marshal(out)
-			return string(b)
+			var sb strings.Builder
+			sb.Grow(len(r.ID) + len(r.Type) + len(r.Data) + 4)
+			sb.WriteString(r.ID)
+			sb.WriteByte('\t')
+			sb.WriteByte(ok)
+			sb.WriteByte('\t')
+			sb.WriteString(r.Type)
+			sb.WriteByte('\n')
+			sb.WriteString(r.Data)
+			return sb.String()
 		default:
 			return ""
 		}
@@ -1736,7 +1798,7 @@ func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 // 支持 X-Fetch-No-Redirect 请求头：存在时不自动跟随重定向，让 JS 侧处理
 // 重定向链（如 xiaomi 登录流程的 Cookie 收集）。
 func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
-	slog.Info("doHTTPRequest", "url", url, "method", method, "headers", headersJSON)
+	slog.Debug("doHTTPRequest", "url", url, "method", method, "headers", headersJSON)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -1779,13 +1841,16 @@ func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
 	url = req.URL.String()
 
 	// 诊断日志：记录实际发送的请求头（X-Fetch-No-Redirect 已剥离，默认头已补充）
-	actualHeaders := make(map[string]string)
-	for k, vals := range req.Header {
-		if len(vals) > 0 {
-			actualHeaders[k] = vals[0]
+	// header map 构造仅在 Debug 级别时进行，避免热路径无谓分配。
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
+		actualHeaders := make(map[string]string, len(req.Header))
+		for k, vals := range req.Header {
+			if len(vals) > 0 {
+				actualHeaders[k] = vals[0]
+			}
 		}
+		slog.Debug("doHTTPRequest actual request headers", "url", url, "noRedirect", noRedirect, "headers", actualHeaders)
 	}
-	slog.Info("doHTTPRequest actual request headers", "url", url, "noRedirect", noRedirect, "headers", actualHeaders)
 
 	// 根据是否需要跟随重定向选择客户端
 	client := sharedHTTPClient
@@ -1799,9 +1864,13 @@ func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(resp.Body)
+	// 限制读入内存的响应体大小，防止异常/恶意大响应 OOM。
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxFetchBodyBytes+1))
 	if err != nil {
 		return marshalFetchError(err.Error())
+	}
+	if int64(len(bodyBytes)) > maxFetchBodyBytes {
+		return marshalFetchError(fmt.Sprintf("response body exceeds limit of %d MiB", maxFetchBodyBytes>>20))
 	}
 
 	// 收集响应头
@@ -1813,7 +1882,7 @@ func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
 	}
 
 	// 诊断日志：记录响应状态和头信息
-	slog.Info("doHTTPRequest response", "url", url, "status", resp.StatusCode, "headers", respHeaders, "bodyLen", len(bodyBytes))
+	slog.Debug("doHTTPRequest response", "url", url, "status", resp.StatusCode, "headers", respHeaders, "bodyLen", len(bodyBytes))
 	if resp.StatusCode == 401 || resp.StatusCode >= 400 {
 		slog.Warn("doHTTPRequest error response", "url", url, "status", resp.StatusCode, "body", string(bodyBytes))
 	}
@@ -1822,8 +1891,15 @@ func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
 		"status":     resp.StatusCode,
 		"statusText": resp.Status,
 		"headers":    respHeaders,
-		"body":       string(bodyBytes),
-		"bodyHex":    hex.EncodeToString(bodyBytes),
+	}
+	// 文本（有效 UTF-8）响应：仅回 body 字符串。JS 侧 text()/json() 直接用 body，
+	// arrayBuffer() 通过 __go_buffer_from(body,'utf8') 回退无损还原字节，无需 bodyHex。
+	// 二进制响应：body 经 JSON 会损坏且无意义，仅通过 bodyHex 传递，避免冗余双份编码。
+	if utf8.Valid(bodyBytes) {
+		result["body"] = string(bodyBytes)
+	} else {
+		result["body"] = ""
+		result["bodyHex"] = hex.EncodeToString(bodyBytes)
 	}
 
 	data, _ := json.Marshal(result)

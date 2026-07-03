@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	text_template "text/template"
 	"time"
 
 	"songloft/internal/jsruntime"
@@ -529,26 +528,23 @@ func (s *JSService) handleHTTPRequest(msg *Message) *Message {
 		return errorHTTPResponse(msg, 500, "internal error", "marshal request: "+err.Error())
 	}
 
-	// 如果 body 使用了 base64 编码，在调用 onHTTPRequest 前用 atob 解码回二进制字符串。
-	// atob 将 base64 字符串解码为 latin1 字符串（每个 char 对应一个字节），
-	// 这正是 JS 侧 multipart/ZIP 解析器所期望的格式。
-	//
-	// 包装为 (async () => ...)()：onHTTPRequest 现在统一为 async function，
-	// 必须 await 才能拿到 HTTPResponse 对象再 JSON.stringify；
-	// ExecuteJS 的事件循环会等待最终 Promise settle 后返回结果字符串。
-	var code string
+	// 通过持久 dispatcher（__dispatchHTTP / __dispatchHTTPB64）传入请求 JSON 字符串，
+	// 而非把 JSON 内联进源码再让引擎 parse/compile（大 body 时开销随体积放大）。
+	// base64 body 场景由 __dispatchHTTPB64 内部用 atob 解码回二进制字符串
+	// （latin1，每 char 一字节），这正是 JS 侧 multipart/ZIP 解析器所期望的格式。
+	// onHTTPRequest 统一为 async function，dispatcher 内 await 后 JSON.stringify；
+	// ExecuteJSCall 的事件循环会等待最终 Promise settle 后返回结果字符串。
+	dispatcher := "__dispatchHTTP"
 	if reqData.BodyEncoding == "base64" {
-		slog.Info("jsplugin-http: using base64 body decoding via atob",
+		slog.Debug("jsplugin-http: using base64 body decoding via atob",
 			"envID", s.envID, "path", reqData.Path, "bodyBase64Len", len(reqData.Body))
-		code = fmt.Sprintf(`(async function(){var _r=%s;_r.body=atob(_r.body);delete _r.bodyEncoding;return JSON.stringify(await onHTTPRequest(_r));})()`, string(reqJSON))
-	} else {
-		code = fmt.Sprintf(`(async function(){return JSON.stringify(await onHTTPRequest(%s));})()`, string(reqJSON))
+		dispatcher = "__dispatchHTTPB64"
 	}
 
 	// 传 msg.Ctx：客户端 abort 旧切歌请求时，scheduler.Call 会 cancel 这个 ctx，
-	// ExecuteJS 的事件循环会立即退出，让 worker 处理下一条消息，避免被 30s
-	// 上限的 ExecuteJS 卡住，新切的歌排在它后面一直 pending（issue #79 的关键根因）。
-	result, err := s.jsManager.ExecuteJS(msg.Ctx, s.envID, code, 30000)
+	// ExecuteJSCall 的事件循环会立即退出，让 worker 处理下一条消息，避免被 30s
+	// 上限的执行卡住，新切的歌排在它后面一直 pending（issue #79 的关键根因）。
+	result, err := s.jsManager.ExecuteJSCall(msg.Ctx, s.envID, dispatcher, 30000, string(reqJSON))
 	if err != nil {
 		statusCode := 500
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -596,13 +592,11 @@ func (s *JSService) handleInterPlugin(msg *Message) *Message {
 		}
 	}
 
-	// 使用 template.JSEscapeString 防止 JSON 中的特殊字符破坏 JS 代码。
-	// __handleInterPluginMessage 现在是 async function（见 communication.go），
-	// 调用本身会返回 Promise；ExecuteJS 的事件循环会等待 settle 再取结果。
-	code := fmt.Sprintf(`__handleInterPluginMessage('%s')`, text_template.JSEscapeString(string(msgJSON)))
-
-	// 传 msg.Ctx：插件间同步调用同样应该感知调用方取消
-	result, err := s.jsManager.ExecuteJS(msg.Ctx, s.envID, code, 10000)
+	// __handleInterPluginMessage 是 async function（见 communication.go），本身接收
+	// JSON 字符串并内部 JSON.parse；通过 CallValue 直接传字符串参数，免去 JSEscapeString
+	// 拼接与源码 parse。ExecuteJSCall 的事件循环会等待 Promise settle 再取结果。
+	// 传 msg.Ctx：插件间同步调用同样应该感知调用方取消。
+	result, err := s.jsManager.ExecuteJSCall(msg.Ctx, s.envID, "__handleInterPluginMessage", 10000, string(msgJSON))
 	if err != nil {
 		slog.Warn("inter-plugin message error", "plugin", s.plugin.EntryPath, "error", err)
 		return &Message{
@@ -686,10 +680,7 @@ func (s *JSService) handlePlayEvent(msg *Message) *Message {
 		return nil
 	}
 
-	code := fmt.Sprintf(`(async function(){if(typeof onPlayEvent==='function'){await onPlayEvent(%s);}})()`,
-		string(eventJSON))
-
-	_, err = s.jsManager.ExecuteJS(context.Background(), s.envID, code, 5000)
+	_, err = s.jsManager.ExecuteJSCall(context.Background(), s.envID, "__dispatchPlayEvent", 5000, string(eventJSON))
 	if err != nil {
 		slog.Warn("onPlayEvent failed", "plugin", s.plugin.EntryPath, "error", err)
 	}
@@ -709,10 +700,7 @@ func (s *JSService) handleNetData(msg *Message) *Message {
 		return nil
 	}
 
-	code := fmt.Sprintf(`(async function(){var h=songloft.net._handlers['%s'];if(typeof h==='function'){await h(%s);}})()`,
-		eventData.SocketID, string(eventJSON))
-
-	_, err = s.jsManager.ExecuteJS(context.Background(), s.envID, code, 5000)
+	_, err = s.jsManager.ExecuteJSCall(context.Background(), s.envID, "__dispatchNetData", 5000, eventData.SocketID, string(eventJSON))
 	if err != nil {
 		slog.Debug("onNetData failed", "plugin", s.plugin.EntryPath, "socketId", eventData.SocketID, "error", err)
 	}
@@ -731,8 +719,7 @@ func (s *JSService) handleWebSocketOpen(msg *Message) *Message {
 		return &Message{ID: msg.ID, Session: msg.Session, Data: fmt.Errorf("marshal websocket open: %w", err)}
 	}
 
-	code := fmt.Sprintf(`(async function(){await __handleInboundWebSocketOpen(%s);})()`, string(eventJSON))
-	_, err = s.jsManager.ExecuteJS(context.Background(), s.envID, code, 10000)
+	_, err = s.jsManager.ExecuteJSCall(context.Background(), s.envID, "__dispatchWSOpen", 10000, string(eventJSON))
 	if err != nil {
 		slog.Warn("onWebSocket failed", "plugin", s.plugin.EntryPath, "connId", eventData.ConnID, "error", err)
 		return &Message{ID: msg.ID, Session: msg.Session, Data: err}
@@ -754,8 +741,7 @@ func (s *JSService) handleWebSocketMessage(msg *Message) *Message {
 		return nil
 	}
 
-	code := fmt.Sprintf(`(async function(){await __handleInboundWebSocketMessage(%s);})()`, string(eventJSON))
-	_, err = s.jsManager.ExecuteJS(context.Background(), s.envID, code, 30000)
+	_, err = s.jsManager.ExecuteJSCall(context.Background(), s.envID, "__dispatchWSMessage", 30000, string(eventJSON))
 	if err != nil {
 		slog.Debug("onWebSocket message failed", "plugin", s.plugin.EntryPath, "connId", eventData.ConnID, "error", err)
 	}
@@ -775,8 +761,7 @@ func (s *JSService) handleWebSocketClose(msg *Message) *Message {
 		return nil
 	}
 
-	code := fmt.Sprintf(`(async function(){await __handleInboundWebSocketClose(%s);})()`, string(eventJSON))
-	_, err = s.jsManager.ExecuteJS(context.Background(), s.envID, code, 5000)
+	_, err = s.jsManager.ExecuteJSCall(context.Background(), s.envID, "__dispatchWSClose", 5000, string(eventJSON))
 	if err != nil {
 		slog.Debug("onWebSocket close failed", "plugin", s.plugin.EntryPath, "connId", eventData.ConnID, "error", err)
 	}
