@@ -1,3 +1,34 @@
+## [v2.9.5] - 2026-07-03
+### :sparkles: New Features
+- [`836ddc7`](https://github.com/songloft-org/songloft/commit/836ddc76297e7e6b8641086b130090c8edd59c30) - CUE Sheet 整轨音乐支持 *(PR [#33](https://github.com/songloft-org/songloft/pull/33) by [@hanxi](https://github.com/hanxi))*
+- [`850c996`](https://github.com/songloft-org/songloft/commit/850c9963f7b03a1a89c029b1ebc6f92e9f516804) - 歌曲支持按文件修改时间排序 [#242](https://github.com/songloft-org/songloft/pull/242) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b29d052`](https://github.com/songloft-org/songloft/commit/b29d0521d6a446a35a5de24279fa428693631a1f) - **jsplugin**: support inbound websocket handlers *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e24c2e2`](https://github.com/songloft-org/songloft/commit/e24c2e2678c5e40b869950d8801cce95aa40ea13) - **jsruntime**: 新增原生 __go_crypto_sha256_bytes 与 __go_crypto_rc4 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`da9158f`](https://github.com/songloft-org/songloft/commit/da9158ff78edc10eba32bb4d26939e546591e24d) - **jsruntime**: 新增原生 __go_crypto_sha1 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e2e6206`](https://github.com/songloft-org/songloft/commit/e2e620644e3bb8b2b5068c416970734154f280cd) - **source**: 插件音源可返回自定义请求头并在代理/下载时应用 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`46c57dc`](https://github.com/songloft-org/songloft/commit/46c57dc7375c698c0cd2c4f1ff392dedce575895) - 修复内存泄漏和性能问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3ce474d`](https://github.com/songloft-org/songloft/commit/3ce474d77f1a278a4d8b91f98844c224c24ba64f) - auto-create 歌单按名复用 ID 避免每次扫描重建 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`0e2bfef`](https://github.com/songloft-org/songloft/commit/0e2bfef9efbc61446fcfeca8d24999c8ff15249b) - **jsruntime**: support binary fetch payloads *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :zap: Performance Improvements
+- [`4a55fc2`](https://github.com/songloft-org/songloft/commit/4a55fc2ad8cca8957446a9249c38d3b6e7e463c8) - **jsruntime**: 优化 JS 插件热路径与冷启动 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`e9d03e5`](https://github.com/songloft-org/songloft/commit/e9d03e57513903b96b8306ef2bf9184a286dbf5a) - update CHANGELOG for v2.9.4 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+
+### :wrench: Chores
+- [`95575d9`](https://github.com/songloft-org/songloft/commit/95575d92c24841d1371fad50cf662d8ce09e9d21) - update pkg/tag submodule (FLAC CUESHEET 支持) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`28bdb36`](https://github.com/songloft-org/songloft/commit/28bdb36b3a9c873952a754f4da1937879f0cf620) - update songloft-plugin-miot submodule (关闭口令修复) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`56d08d6`](https://github.com/songloft-org/songloft/commit/56d08d61dd19989eb07c2110bbd22665d16cbc74) - update songloft-plugin-miot submodule (搜索接口选项修复) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`6dd6cc6`](https://github.com/songloft-org/songloft/commit/6dd6cc6b20abe5635e1f8f82c11f72936a3a3006) - update songloft-plugin-miot submodule (歌单 ID 失效重试) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`7994aed`](https://github.com/songloft-org/songloft/commit/7994aed16662c01cdca10e7d0e444481c00d47d9) - update songloft-plugin-subsonic submodule (修复外部歌曲歌词 404) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`28614d1`](https://github.com/songloft-org/songloft/commit/28614d15377ba6a19a4a74905bbb46cb4d904c28) - update songloft-plugin-subsonic submodule (bump v2.2.1) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b5201ce`](https://github.com/songloft-org/songloft/commit/b5201cefd8baf67f028fda8d408f4ccd304a83ba) - update songloft-plugin-miot submodule (新增触屏歌词开关 [#239](https://github.com/songloft-org/songloft/pull/239)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`7b1e58a`](https://github.com/songloft-org/songloft/commit/7b1e58a717671ff86a32166ea9c6e76b05ab236c) - release version 2.9.5 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.9.4] - 2026-06-30
 ### :sparkles: New Features
 - [`7da4a96`](https://github.com/songloft-org/songloft/commit/7da4a9686545c7543ae4587ec02b664f842f47dc) - 删除歌曲支持删除本地文件、歌单隐藏功能 [#235](https://github.com/songloft-org/songloft/pull/235) *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1536,3 +1567,4 @@
 [v2.9.2]: https://github.com/songloft-org/songloft/compare/v2.9.1...v2.9.2
 [v2.9.3]: https://github.com/songloft-org/songloft/compare/v2.9.2...v2.9.3
 [v2.9.4]: https://github.com/songloft-org/songloft/compare/v2.9.3...v2.9.4
+[v2.9.5]: https://github.com/songloft-org/songloft/compare/v2.9.4...v2.9.5
