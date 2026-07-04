@@ -1,3 +1,22 @@
+## [v2.9.6] - 2026-07-04
+### :sparkles: New Features
+- [`8657599`](https://github.com/songloft-org/songloft/commit/865759926a5c7835a7ad9787ae3ee17b34422851) - **jsruntime**: add AES decrypt bridge *(PR [#248](https://github.com/songloft-org/songloft/pull/248) by [@fly818](https://github.com/fly818))*
+
+### :bug: Bug Fixes
+- [`846a19a`](https://github.com/songloft-org/songloft/commit/846a19a0cbad9731d19d3fb961cbb9ea9ae72087) - **miot**: update auto-next playback fix *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d2305ff`](https://github.com/songloft-org/songloft/commit/d2305ffa3a9ebb32687e54550b7cb611369a5963) - **player**: 更新 Windows 客户端退出修复 [#246](https://github.com/songloft-org/songloft/pull/246) *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`e2bcdcb`](https://github.com/songloft-org/songloft/commit/e2bcdcb4be69954011654acd4cff067889e13dfb) - update CHANGELOG for v2.9.5 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`349dfdb`](https://github.com/songloft-org/songloft/commit/349dfdb8654f762da7aa493a41d8e25755bf1aa5) - **jsruntime**: document AES decrypt follow-ups *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`0bd87dd`](https://github.com/songloft-org/songloft/commit/0bd87ddfbb0ab86ff3692e3e6e8fcefe4155f1da) - **submodules**: update miot plugin and toolchain *(commit by [@hanxi](https://github.com/hanxi))*
+- [`07e089b`](https://github.com/songloft-org/songloft/commit/07e089bbead0f1961ecf90dcbccc005ff5b85d78) - **submodules**: update miot plugin *(commit by [@hanxi](https://github.com/hanxi))*
+- [`2810ceb`](https://github.com/songloft-org/songloft/commit/2810ceb9ff7603ca57e72201fd0b8c18cc6b0b76) - **submodules**: update plugin-toolchain *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c3a3be6`](https://github.com/songloft-org/songloft/commit/c3a3be69de908d15ddb53bbe434e7fcc11a55da8) - release version 2.9.6 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.9.5] - 2026-07-03
 ### :sparkles: New Features
 - [`836ddc7`](https://github.com/songloft-org/songloft/commit/836ddc76297e7e6b8641086b130090c8edd59c30) - CUE Sheet 整轨音乐支持 *(PR [#33](https://github.com/songloft-org/songloft/pull/33) by [@hanxi](https://github.com/hanxi))*
@@ -1568,3 +1587,4 @@
 [v2.9.3]: https://github.com/songloft-org/songloft/compare/v2.9.2...v2.9.3
 [v2.9.4]: https://github.com/songloft-org/songloft/compare/v2.9.3...v2.9.4
 [v2.9.5]: https://github.com/songloft-org/songloft/compare/v2.9.4...v2.9.5
+[v2.9.6]: https://github.com/songloft-org/songloft/compare/v2.9.5...v2.9.6
