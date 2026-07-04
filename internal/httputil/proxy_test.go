@@ -87,3 +87,16 @@ func TestNewClientNotNil(t *testing.T) {
 		t.Fatal("expected shared transport")
 	}
 }
+
+func TestNewStreamingClientNotNil(t *testing.T) {
+	c := NewStreamingClient()
+	if c == nil {
+		t.Fatal("NewStreamingClient returned nil")
+	}
+	if c.Transport != streamingTransport {
+		t.Fatal("expected streaming transport")
+	}
+	if c.Timeout != 0 {
+		t.Fatalf("streaming client should not use whole-request timeout, got %v", c.Timeout)
+	}
+}

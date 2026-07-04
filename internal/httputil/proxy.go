@@ -1,6 +1,7 @@
 package httputil
 
 import (
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -51,12 +52,25 @@ func (pc *proxyConfig) proxyFunc(req *http.Request) (*url.URL, error) {
 	return pc.proxyURL, nil
 }
 
-var sharedTransport = &http.Transport{
-	Proxy:               globalProxy.proxyFunc,
-	MaxIdleConns:        100,
-	MaxIdleConnsPerHost: 10,
-	IdleConnTimeout:     90 * time.Second,
+func newProxyTransport(responseHeaderTimeout time.Duration) *http.Transport {
+	return &http.Transport{
+		Proxy: globalProxy.proxyFunc,
+		DialContext: (&net.Dialer{
+			Timeout:   15 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+	}
 }
+
+var sharedTransport = newProxyTransport(0)
+
+var streamingTransport = newProxyTransport(15 * time.Second)
 
 // SetGlobalProxy sets the global HTTP proxy used by all clients created via NewClient.
 // Pass an empty string to clear the proxy (direct connection).
@@ -65,6 +79,7 @@ func SetGlobalProxy(rawURL string) error {
 		return err
 	}
 	sharedTransport.CloseIdleConnections()
+	streamingTransport.CloseIdleConnections()
 	return nil
 }
 
@@ -79,5 +94,14 @@ func NewClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Transport: sharedTransport,
 		Timeout:   timeout,
+	}
+}
+
+// NewStreamingClient creates an http.Client for long-lived streaming responses.
+// It has no whole-request timeout, but it does time out while waiting for
+// response headers so dead radio/HLS endpoints do not hang forever.
+func NewStreamingClient() *http.Client {
+	return &http.Client{
+		Transport: streamingTransport,
 	}
 }

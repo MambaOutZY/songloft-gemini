@@ -29,6 +29,10 @@ const (
 
 	// hlsContentType m3u8 标准 MIME。
 	hlsContentType = "application/vnd.apple.mpegurl"
+
+	streamUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 Songloft/1.0"
+	streamAccept    = "*/*"
+	hlsAccept       = "application/vnd.apple.mpegurl, application/x-mpegURL, application/x-mpegurl, */*"
 )
 
 var (
@@ -188,6 +192,14 @@ func looksLikePlaylist(rawURL string) bool {
 	return ext == ".m3u8" || ext == ".m3u"
 }
 
+func refLooksLikePlaylist(ref string, base *url.URL) bool {
+	refURL, err := url.Parse(ref)
+	if err != nil {
+		return false
+	}
+	return looksLikePlaylist(base.ResolveReference(refURL).String())
+}
+
 // rewriteRef 解析 ref（可能是相对 URL）为绝对 URL，同源时调 rewrite 回调；
 // 非同源 / 解析失败时原样返回 ref。
 func rewriteRef(ref string, base *url.URL, rewrite func(absURL string, isPlaylist bool) string, isPlaylist bool) string {
@@ -312,8 +324,8 @@ func rewriteM3U8(content []byte, base *url.URL, rewrite func(absURL string, isPl
 			out.WriteByte('\n')
 
 		default:
-			// 裸 URL 行：媒体切片
-			out.WriteString(rewriteRef(trimmed, base, rewrite, false))
+			// 裸 URL 行：通常是媒体切片；少数源会不规范地把子 m3u8 直接放在裸行里。
+			out.WriteString(rewriteRef(trimmed, base, rewrite, refLooksLikePlaylist(trimmed, base)))
 			out.WriteByte('\n')
 		}
 	}
@@ -343,21 +355,17 @@ type HLSHandler struct {
 }
 
 // NewHLSHandler 构造 HLSHandler。
-// client 无 Timeout：直播切片可能持续数十秒至数分钟，timeout 会被客户端断连+r.Context() 取消接管。
+// client 无整请求 Timeout：直播切片可能持续数十秒至数分钟，传输过程由客户端断连+r.Context() 取消接管。
+// Transport 只设置 ResponseHeaderTimeout，避免坏源在建连后迟迟不回响应头导致播放协程一直挂起。
 // configService 可为 nil（测试场景下不走 IsEnabled 判定时），此时 IsEnabled 返回 false。
 func NewHLSHandler(songService *services.SongService, configService *services.ConfigService) *HLSHandler {
+	client := httputil.NewStreamingClient()
+	client.CheckRedirect = limitStreamRedirects
 	return &HLSHandler{
 		songService:   songService,
 		configService: configService,
-		client: &http.Client{
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 10 {
-					return http.ErrUseLastResponse
-				}
-				return nil
-			},
-		},
-		allowHost: services.IsHostnameAllowed,
+		client:        client,
+		allowHost:     services.IsHostnameAllowed,
 	}
 }
 
@@ -581,7 +589,7 @@ func (h *HLSHandler) servePlaylist(w http.ResponseWriter, r *http.Request, song 
 	w.Write(rewritten)
 }
 
-// serveSegment 透传上游切片字节。无 Timeout client，client 断连由 r.Context() 取消上游。
+// serveSegment 透传上游切片字节。无整请求 Timeout，client 断连由 r.Context() 取消上游。
 func (h *HLSHandler) serveSegment(w http.ResponseWriter, r *http.Request, song *models.Song, upstreamURL string) {
 	songOrigin, _, err := h.checkOrigin(song, upstreamURL)
 	if err != nil {
@@ -594,7 +602,8 @@ func (h *HLSHandler) serveSegment(w http.ResponseWriter, r *http.Request, song *
 		http.Error(w, "segment request build failed", http.StatusInternalServerError)
 		return
 	}
-	req.Header.Set("User-Agent", "Songloft/1.0")
+	req.Header.Set("User-Agent", streamUserAgent)
+	req.Header.Set("Accept", streamAccept)
 	req.Header.Set("Referer", songOrigin.Scheme+"://"+songOrigin.Host+"/")
 	if rangeHeader := r.Header.Get("Range"); rangeHeader != "" {
 		req.Header.Set("Range", rangeHeader)
@@ -683,13 +692,21 @@ func buildUpstreamRequest(ctx context.Context, upstreamURL string, songOrigin *u
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Songloft/1.0")
+	req.Header.Set("User-Agent", streamUserAgent)
+	req.Header.Set("Accept", hlsAccept)
 	req.Header.Set("Referer", songOrigin.Scheme+"://"+songOrigin.Host+"/")
 	if rangeHeader != "" {
 		req.Header.Set("Range", rangeHeader)
 	}
 	httputil.ApplyBasicAuthFromURL(req)
 	return req, nil
+}
+
+func limitStreamRedirects(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return http.ErrUseLastResponse
+	}
+	return nil
 }
 
 // splitLines 按 \r\n / \n / \r 三种行尾切分内容。返回的行不含行尾。

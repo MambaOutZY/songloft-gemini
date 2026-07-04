@@ -60,6 +60,8 @@ func NewSongHandler(
 	hlsHandler *HLSHandler,
 	playActivity *playactivity.Registry,
 ) *SongHandler {
+	radioClient := httputil.NewStreamingClient()
+	radioClient.CheckRedirect = limitStreamRedirects
 	return &SongHandler{
 		songService:  songService,
 		cacheService: cacheService,
@@ -67,14 +69,7 @@ func NewSongHandler(
 		lyricFetcher: lyricFetcher,
 		hlsHandler:   hlsHandler,
 		playActivity: playActivity,
-		radioClient: &http.Client{
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= 10 {
-					return http.ErrUseLastResponse
-				}
-				return nil
-			},
-		},
+		radioClient:  radioClient,
 	}
 }
 
@@ -1008,8 +1003,9 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 	http.ServeFile(w, r, srcPath)
 }
 
-// serveRadio 电台/直播流:专用代理，不设超时、不缓存。
+// serveRadio 电台/直播流:专用代理，不设整请求超时、不缓存。
 // 与 ServeRemoteResource 不同:客户端断开时由 r.Context() 取消上游请求，不受 60s 硬超时限制。
+// Transport 只限制等待响应头的时间，坏源不会让播放器永远转圈。
 // HLS (m3u8) 走 302 重定向给前端 player 自己解析:m3u8 内含相对路径 .ts 切片,
 // 服务端透传会导致客户端按本机 URL 错误解析切片路径。
 func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *models.Song) {
@@ -1034,7 +1030,12 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 		http.Error(w, "resource fetch failed", http.StatusInternalServerError)
 		return
 	}
-	upstreamReq.Header.Set("User-Agent", "Songloft/1.0")
+	upstreamReq.Header.Set("User-Agent", streamUserAgent)
+	upstreamReq.Header.Set("Accept", streamAccept)
+	upstreamReq.Header.Set("Icy-MetaData", "1")
+	if songURL, err := url.Parse(song.URL); err == nil && songURL.Scheme != "" && songURL.Host != "" {
+		upstreamReq.Header.Set("Referer", songURL.Scheme+"://"+songURL.Host+"/")
+	}
 	if accept := r.Header.Get("Accept"); accept != "" {
 		upstreamReq.Header.Set("Accept", accept)
 	}

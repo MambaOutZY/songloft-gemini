@@ -152,6 +152,28 @@ func TestRewriteM3U8_MasterPlaylist_StreamInf(t *testing.T) {
 	}
 }
 
+func TestRewriteM3U8_NakedPlaylistLine(t *testing.T) {
+	// 少数源会把子 playlist 作为裸 URL 行输出，但缺少 EXT-X-STREAM-INF。
+	// 这种情况下仍应走 playlist 端点，否则 player 会把返回的 m3u8 当成切片处理。
+	in := `#EXTM3U
+audio/index.m3u8
+#EXTINF:5.0,
+seg.ts
+`
+	base := mustURL(t, "http://up.example/live/master.m3u8")
+	out, err := rewriteM3U8([]byte(in), base, fakeRewrite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+	if !strings.Contains(got, "PL[http://up.example/live/audio/index.m3u8]") {
+		t.Errorf("naked m3u8 should be rewritten as playlist:\n%s", got)
+	}
+	if !strings.Contains(got, "SEG[http://up.example/live/seg.ts]") {
+		t.Errorf("normal segment should stay segment:\n%s", got)
+	}
+}
+
 func TestRewriteM3U8_MediaTag(t *testing.T) {
 	in := `#EXTM3U
 #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="en",DEFAULT=YES,URI="audio/en.m3u8"
