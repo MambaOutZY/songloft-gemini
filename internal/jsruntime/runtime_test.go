@@ -254,6 +254,46 @@ func TestFetch_Uint8ArrayBody(t *testing.T) {
 	}
 }
 
+func TestDoHTTPRequest_InternalFetchHeaders(t *testing.T) {
+	var gotTimeoutHeader, gotNoRedirectHeader, gotCustomHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTimeoutHeader = r.Header.Get("X-Fetch-Timeout-Ms")
+		gotNoRedirectHeader = r.Header.Get("X-Fetch-No-Redirect")
+		gotCustomHeader = r.Header.Get("X-Custom")
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	result := doHTTPRequest(server.URL, http.MethodGet, `{"X-Fetch-Timeout-Ms":"1000","X-Fetch-No-Redirect":"1","X-Custom":"kept"}`, "")
+	if strings.Contains(result, `"error"`) {
+		t.Fatalf("doHTTPRequest returned error: %s", result)
+	}
+	if gotTimeoutHeader != "" {
+		t.Errorf("X-Fetch-Timeout-Ms was forwarded to upstream: %q", gotTimeoutHeader)
+	}
+	if gotNoRedirectHeader != "" {
+		t.Errorf("X-Fetch-No-Redirect was forwarded to upstream: %q", gotNoRedirectHeader)
+	}
+	if gotCustomHeader != "kept" {
+		t.Errorf("X-Custom header = %q, want kept", gotCustomHeader)
+	}
+
+	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(250 * time.Millisecond)
+		_, _ = w.Write([]byte("late"))
+	}))
+	defer slowServer.Close()
+
+	start := time.Now()
+	result = doHTTPRequest(slowServer.URL, http.MethodGet, `{"X-Fetch-Timeout-Ms":"100"}`, "")
+	if !strings.Contains(result, `"error"`) {
+		t.Fatalf("expected timeout error, got: %s", result)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("custom fetch timeout was not applied quickly enough: %v", elapsed)
+	}
+}
+
 // TestExecuteJS_CtxCancel 验证客户端取消 ctx 时 ExecuteJS 立即返回（issue #79 的核心）。
 // 构造一个永不 resolve 的 Promise（依赖 setTimeout 但 ts 远大于测试时长），
 // 然后 cancel ctx，断言 ExecuteJS 在远小于 timeoutMs 的时间内返回 context.Canceled。

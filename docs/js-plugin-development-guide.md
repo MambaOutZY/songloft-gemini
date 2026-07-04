@@ -393,13 +393,15 @@ const resp = await fetch("https://example.com/api");
 const data = await resp.json();
 
 // POST
-const resp = await fetch("https://example.com/api", {
+const postResp = await fetch("https://example.com/api", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ hello: "world" })
 });
-const text = await resp.text();
+const text = await postResp.text();
 ```
+
+请求头里可以使用两个运行时内部控制头：`X-Fetch-No-Redirect` 禁止自动跟随重定向，`X-Fetch-Timeout-Ms` 设置单次请求超时（100-30000ms）。这两个头只影响运行时行为，不会转发给目标服务器。
 
 **`Response` 对象字段：**
 - `ok` — `status >= 200 && status < 300`
@@ -410,6 +412,22 @@ const text = await resp.text();
 - `text()` — 返回 `Promise<string>`，原始文本
 
 `onHTTPRequest`、`onWebSocket` 和事件回调都可以是 `async function`，框架会等待 Promise settle。
+
+### Crypto（全局 crypto）
+
+运行时提供轻量 `crypto` 工具对象。**无需声明权限**。
+
+```javascript
+const md5 = crypto.md5("data");
+const sha256 = crypto.sha256Bytes(Buffer.from("data", "utf8")).toString("hex");
+
+const key = Buffer.from("1234567890abcdef", "utf8");
+const iv = Buffer.from("abcdef1234567890", "utf8");
+const encrypted = crypto.aesEncrypt("hello", "cbc", key, iv).toString("base64");
+const decrypted = crypto.aesDecrypt(encrypted, "cbc", key, iv).toString("utf8");
+```
+
+常用方法：`md5(str)`、`sha1(str)`、`sha256Bytes(buffer)`、`rc4(key, data)`、`aesEncrypt(buffer, "cbc" | "ecb", key, iv?)`、`aesDecrypt(buffer, "cbc" | "ecb", key, iv?)`、`rsaEncrypt(buffer, publicKeyPEM)`、`randomBytes(size)`。AES 使用 PKCS7 padding；`aesDecrypt` 的字符串密文默认按 base64 解析，传入 `Buffer` 时按原始字节解析。
 
 ### 定时器（全局 setTimeout / setInterval）
 
