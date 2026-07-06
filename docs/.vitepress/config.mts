@@ -7,6 +7,46 @@ export default async () => {
     title: "Songloft",
     description: "Songloft - 自托管个人音乐服务器，支持 JS 插件扩展，跨平台 Flutter 客户端",
     srcExclude: ['repowiki/**'],
+    lang: 'zh-Hans',
+
+    // 中英双语：中文为根（/），英文在 /en/。目前仅落地页（index.md / en/index.md）
+    // 做了双语；文档正文暂保持中文，英文导航指向中文文档（后续再补译）。
+    locales: {
+      root: {
+        label: '简体中文',
+        lang: 'zh-Hans',
+      },
+      en: {
+        label: 'English',
+        lang: 'en',
+        link: '/en/',
+        themeConfig: {
+          nav: [
+            { text: 'Get Started', link: '/en/quick-start' },
+            { text: 'Client', link: 'https://github.com/songloft-org/songloft/releases/latest' },
+            {
+              text: 'Plugins',
+              items: [
+                { text: 'Plugin List', link: 'https://github.com/songloft-org/songloft/issues/4' },
+                { text: 'Plugin Dev Guide', link: '/en/js-plugin-development-guide' },
+                { text: 'Plugin Registry Guide', link: '/en/plugin_registry' },
+              ],
+            },
+            { text: 'FAQ', link: '/en/faq' },
+            { text: 'Changelog', link: 'https://github.com/songloft-org/songloft/releases' },
+            {
+              text: 'More',
+              items: [
+                { text: 'API Docs', link: 'https://petstore.swagger.io/?url=https://raw.githubusercontent.com/songloft-org/songloft/refs/heads/main/docs/swagger.json' },
+                { text: 'Docker Hub', link: 'https://hub.docker.com/r/songloft/songloft' },
+                { text: 'Privacy', link: '/en/PRIVACY' },
+                { text: 'NOTICE', link: '/en/NOTICE' },
+              ],
+            },
+          ],
+        },
+      },
+    },
 
     head: [
       ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
@@ -81,6 +121,7 @@ export default async () => {
           path: '.',
           collapsed: true,
           titleFromFile: true,
+          ignoreIndexItem: true, // 首页 index.md（落地页）不进侧边栏
           ignoreList: ['repowiki'],
         }),
       ],

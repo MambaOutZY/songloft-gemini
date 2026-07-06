@@ -1,0 +1,111 @@
+Songloft
+Copyright 2026 Songloft Team
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+================================================================================
+THIRD-PARTY COMPONENTS
+================================================================================
+
+This product includes software derived from or depending on the following
+third-party components. Their original copyright notices and license terms
+are reproduced below or referenced by path.
+
+--------------------------------------------------------------------------------
+1. github.com/dhowden/tag  (vendored as pkg/tag)
+--------------------------------------------------------------------------------
+License: BSD 2-Clause
+Copyright 2015 David Howden
+Notice : Songloft forks this library and adds MP3 (ID3v2.3) and FLAC
+         (Vorbis Comment + PICTURE) writers, plus encoding-detection
+         improvements. See pkg/tag/LICENSE for full text.
+
+--------------------------------------------------------------------------------
+2. Go module dependencies
+--------------------------------------------------------------------------------
+The Go backend bundles the following libraries. Each is distributed under
+its own permissive license (MIT / BSD / Apache-2.0). See `go.sum` for the
+complete list of indirect dependencies and the source repository of each
+module for the full license text.
+
+  - github.com/Masterminds/squirrel        (MIT)
+  - github.com/go-chi/chi/v5               (MIT)
+  - github.com/go-chi/cors                 (MIT)
+  - github.com/golang-jwt/jwt/v5           (MIT)
+  - github.com/pressly/goose/v3            (MIT)
+  - github.com/swaggo/http-swagger         (MIT)
+  - github.com/swaggo/swag                 (MIT)
+  - golang.org/x/sync                      (BSD-3-Clause)
+  - modernc.org/sqlite                     (BSD-3-Clause)
+  - modernc.org/libc                       (BSD-3-Clause)
+  - modernc.org/quickjs                    (BSD-3-Clause)
+  - modernc.org/libquickjs                 (BSD-3-Clause)
+  - github.com/gorilla/websocket             (BSD-2-Clause)
+  - github.com/hanxi/tracely/sdk/go/tracely (MIT)
+
+--------------------------------------------------------------------------------
+3. QuickJS  (bundled as modernc.org/libquickjs via cgo-free port)
+--------------------------------------------------------------------------------
+License: MIT
+Copyright (c) 2017-2024 Fabrice Bellard
+Copyright (c) 2017-2024 Charlie Gordon
+
+--------------------------------------------------------------------------------
+4. SQLite  (bundled as modernc.org/sqlite via cgo-free port)
+--------------------------------------------------------------------------------
+SQLite is in the Public Domain. The Go port modernc.org/sqlite is
+distributed under BSD-3-Clause.
+
+--------------------------------------------------------------------------------
+5. Flutter Client  (songloft-org/songloft-player, separate repository)
+--------------------------------------------------------------------------------
+The Flutter client embeds `just_audio_media_kit`, which in turn depends on
+libmpv / FFmpeg. libmpv is distributed under LGPL-2.1+ and FFmpeg is
+distributed under LGPL-2.1+ (with optional GPL components). If you
+distribute binaries that statically link any GPL-licensed component,
+your distribution is governed by the GPL. Check the upstream build flags
+and refer to the client repository for source-availability obligations
+under LGPL section 4 / GPL section 3.
+
+--------------------------------------------------------------------------------
+6. JS Plugin Toolchain  (songloft-org/plugin-toolchain, separate repository)
+--------------------------------------------------------------------------------
+The plugin SDK and builder bundle a number of TypeScript / Node.js
+libraries under MIT / BSD / Apache-2.0. See that repository's
+package.json and LICENSE files for details.
+
+--------------------------------------------------------------------------------
+7. Embedded Fonts  (internal/jsplugin/assets/fonts/)
+--------------------------------------------------------------------------------
+The following Google fonts are embedded in the Go binary for JS plugin
+pages:
+
+  Roboto (weights 400, 500, 700)
+    License: Apache License 2.0
+    Copyright 2011 Google Inc. All Rights Reserved.
+    Designer: Christian Robertson
+
+  Material Symbols Outlined
+    License: Apache License 2.0
+    Copyright 2016-2024 Google LLC
+
+See internal/jsplugin/assets/fonts/LICENSE for the full license text.
+
+================================================================================
+TRADEMARK NOTICE
+================================================================================
+
+All product names, trademarks, and registered trademarks mentioned in
+Songloft and its bundled plugins (including but not limited to "Xiaomi",
+"MIoT", "Mi", "Mina", "MiHome", "Bluetooth", "Android", "iOS", "macOS",
+"Windows", "Linux", "Docker") are property of their respective owners.
+Their use in source code, documentation, or user interfaces is for
+identification and interoperability purposes only and does not imply
+endorsement, sponsorship, or affiliation.
+
+Songloft and its authors are not affiliated with, endorsed by, or
+sponsored by any of the trademark holders mentioned above.

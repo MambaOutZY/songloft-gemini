@@ -24,3 +24,111 @@
 .VPImage.image-src {
   border-radius: 16px;
 }
+
+/* ==========================================================================
+   落地页（layout: page + pageClass: landing）
+   ========================================================================== */
+
+/* full-bleed：去掉 page 布局的内边距 / 最大宽度约束，由各区块自控容器宽度 */
+.landing .VPPage {
+  padding: 0 !important;
+}
+.landing .VPContent.is-home,
+.landing .VPContent {
+  padding: 0 !important;
+}
+.landing .vp-doc {
+  padding: 0;
+}
+.landing main {
+  width: 100%;
+}
+
+/* 落地页内容容器 */
+.landing-container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* 区块通用标题 */
+.section-eyebrow {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vp-c-brand-1);
+  margin: 0;
+}
+.section-title {
+  text-align: center;
+  font-size: clamp(1.7rem, 3.4vw, 2.5rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 10px 0 0;
+  border: none;
+  padding: 0;
+}
+.section-subtitle {
+  text-align: center;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: var(--vp-c-text-2);
+  margin: 12px auto 0;
+  max-width: 42em;
+}
+
+/* 通用按钮 */
+.landing-root .btn,
+.cta .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 650;
+  padding: 11px 22px;
+  border-radius: 999px;
+  transition: all 0.18s ease;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.landing-root .btn-primary {
+  background: var(--vp-c-brand-1);
+  color: #fff;
+}
+.landing-root .btn-primary:hover {
+  background: var(--vp-c-brand-2);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px -14px var(--vp-c-brand-1);
+}
+.landing-root .btn-ghost {
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  border-color: var(--vp-c-divider);
+}
+.landing-root .btn-ghost:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+  transform: translateY(-2px);
+}
+
+/* 滚动淡入：默认可见，仅挂载后（.reveal-ready）启用初始隐藏态 */
+.reveal-ready [data-reveal] {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.reveal-ready [data-reveal].revealed {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal-ready [data-reveal] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}

@@ -9,7 +9,12 @@ on:
       - 'docs/**'
       - 'scripts/**'
       - 'README.md'
+      - 'README.en.md'
       - 'CHANGELOG.md'
+      - 'PRIVACY.md'
+      - 'PRIVACY.en.md'
+      - 'NOTICE'
+      - 'NOTICE.en'
       - '.github/workflows/static.yml'
   # Runs on issue events
   issues:
@@ -62,6 +67,9 @@ jobs:
           node-version: '20'
       - name: Install dependencies
         working-directory: ./docs  # 指定工作目录为 docs
+        env:
+          # 截图脚本用系统 Chrome，CI 不跑截图，无需下载 Playwright 浏览器内核
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
         run: |
           npm install
 
