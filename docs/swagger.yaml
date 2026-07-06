@@ -4134,7 +4134,81 @@ paths:
       - 设置
   /songs:
     get:
-      responses: {}
+      consumes:
+      - application/json
+      description: 获取歌曲列表，支持按类型过滤、关键词搜索和分页。默认排除隐藏歌单里的歌，传 exclude_playlist_labels=none
+        显示全部
+      parameters:
+      - description: 歌曲类型
+        enum:
+        - local
+        - remote
+        - radio
+        in: query
+        name: type
+        type: string
+      - description: 搜索关键词
+        in: query
+        name: keyword
+        type: string
+      - description: 按 file_path 前缀过滤（如 music/Pop）
+        in: query
+        name: path_prefix
+        type: string
+      - default: hidden
+        description: 排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部
+        in: query
+        name: exclude_playlist_labels
+        type: string
+      - default: 20
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: 偏移量
+        in: query
+        name: offset
+        type: integer
+      - description: 排序字段，缺省 added_at
+        enum:
+        - id
+        - title
+        - artist
+        - album
+        - duration
+        - added_at
+        - updated_at
+        - file_modified_at
+        in: query
+        name: sort
+        type: string
+      - description: 排序方向，缺省 desc
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功返回歌曲列表
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取歌曲列表
+      tags:
+      - 歌曲管理
   /songs/{id}:
     delete:
       consumes:
@@ -4763,6 +4837,11 @@ paths:
       - description: 按 file_path 前缀过滤
         in: query
         name: path_prefix
+        type: string
+      - default: hidden
+        description: 排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部
+        in: query
+        name: exclude_playlist_labels
         type: string
       - description: 排序字段，缺省 added_at
         enum:

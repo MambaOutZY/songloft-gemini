@@ -20,10 +20,13 @@ type SongFilter struct {
 	Type       string
 	Keyword    string
 	PathPrefix string
-	Limit      int
-	Offset     int
-	OrderBy    string
-	Order      string
+	// ExcludePlaylistLabels 排除属于「带这些 label 的歌单」的歌曲。
+	// 典型用途：排除隐藏歌单（label=hidden）里的歌，让主歌曲列表不显示它们。
+	ExcludePlaylistLabels []string
+	Limit                 int
+	Offset                int
+	OrderBy               string
+	Order                 string
 }
 
 // PlaylistFilter 歌单过滤条件

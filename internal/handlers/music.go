@@ -212,22 +212,6 @@ func (h *SongHandler) CancelMetadataRefresh(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ListSongs 获取歌曲列表
-// @Summary 获取歌曲列表
-// @Description 获取歌曲列表，支持按类型过滤、关键词搜索和分页
-// @Tags 歌曲管理
-// @Accept json
-// @Produce json
-// @Param type query string false "歌曲类型" Enums(local, remote, radio)
-// @Param keyword query string false "搜索关键词"
-// @Param path_prefix query string false "按 file_path 前缀过滤（如 music/Pop）"
-// @Param limit query int false "每页数量" default(20)
-// @Param offset query int false "偏移量" default(0)
-// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at)
-// @Param order query string false "排序方向，缺省 desc" Enums(asc, desc)
-// @Success 200 {object} map[string]any "成功返回歌曲列表"
-// @Failure 500 {object} map[string]string "服务器错误"
-// @Security BearerAuth
 // parseSongSort 解析歌曲列表排序参数，缺省按 added_at DESC。
 // 非法字段/方向由 repository 层白名单兜底，这里仅负责默认值。
 func parseSongSort(sort, order string) (orderBy, dir string) {
@@ -242,6 +226,36 @@ func parseSongSort(sort, order string) (orderBy, dir string) {
 	return orderBy, dir
 }
 
+// parseExcludePlaylistLabels 解析歌曲列表的歌单 label 排除参数。
+// 缺省（空串）→ 排除隐藏歌单（hidden）；传 none → 不排除；否则按逗号拆分。
+// 与歌单列表 ListPlaylists 的 exclude_labels 约定保持一致。
+func parseExcludePlaylistLabels(raw string) []string {
+	if raw == "" {
+		return []string{models.PlaylistLabelHidden}
+	}
+	if raw == "none" {
+		return nil
+	}
+	return strings.Split(raw, ",")
+}
+
+// ListSongs 获取歌曲列表
+// @Summary 获取歌曲列表
+// @Description 获取歌曲列表，支持按类型过滤、关键词搜索和分页。默认排除隐藏歌单里的歌，传 exclude_playlist_labels=none 显示全部
+// @Tags 歌曲管理
+// @Accept json
+// @Produce json
+// @Param type query string false "歌曲类型" Enums(local, remote, radio)
+// @Param keyword query string false "搜索关键词"
+// @Param path_prefix query string false "按 file_path 前缀过滤（如 music/Pop）"
+// @Param exclude_playlist_labels query string false "排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部" default(hidden)
+// @Param limit query int false "每页数量" default(20)
+// @Param offset query int false "偏移量" default(0)
+// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at)
+// @Param order query string false "排序方向，缺省 desc" Enums(asc, desc)
+// @Success 200 {object} map[string]any "成功返回歌曲列表"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Security BearerAuth
 // @Router /songs [get]
 func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -276,13 +290,14 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 
 	// 构建过滤条件
 	filter := &database.SongFilter{
-		Type:       songType,
-		Keyword:    keyword,
-		PathPrefix: pathPrefix,
-		Limit:      limit,
-		Offset:     offset,
-		OrderBy:    orderBy,
-		Order:      order,
+		Type:                  songType,
+		Keyword:               keyword,
+		PathPrefix:            pathPrefix,
+		ExcludePlaylistLabels: parseExcludePlaylistLabels(r.URL.Query().Get("exclude_playlist_labels")),
+		Limit:                 limit,
+		Offset:                offset,
+		OrderBy:               orderBy,
+		Order:                 order,
 	}
 
 	// 获取歌曲列表
@@ -316,6 +331,7 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 // @Param type query string false "歌曲类型"
 // @Param keyword query string false "搜索关键词"
 // @Param path_prefix query string false "按 file_path 前缀过滤"
+// @Param exclude_playlist_labels query string false "排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部" default(hidden)
 // @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at)
 // @Param order query string false "排序方向，缺省 desc" Enums(asc, desc)
 // @Success 200 {object} map[string]any "成功返回 ID 列表"
@@ -327,11 +343,12 @@ func (h *SongHandler) ListSongIDs(w http.ResponseWriter, r *http.Request) {
 
 	orderBy, order := parseSongSort(r.URL.Query().Get("sort"), r.URL.Query().Get("order"))
 	filter := &database.SongFilter{
-		Type:       r.URL.Query().Get("type"),
-		Keyword:    r.URL.Query().Get("keyword"),
-		PathPrefix: r.URL.Query().Get("path_prefix"),
-		OrderBy:    orderBy,
-		Order:      order,
+		Type:                  r.URL.Query().Get("type"),
+		Keyword:               r.URL.Query().Get("keyword"),
+		PathPrefix:            r.URL.Query().Get("path_prefix"),
+		ExcludePlaylistLabels: parseExcludePlaylistLabels(r.URL.Query().Get("exclude_playlist_labels")),
+		OrderBy:               orderBy,
+		Order:                 order,
 	}
 
 	ids, err := h.songService.ListIDs(ctx, filter)

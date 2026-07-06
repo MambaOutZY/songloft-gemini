@@ -463,6 +463,13 @@ func applySongFilter(sb sq.SelectBuilder, filter *SongFilter) sq.SelectBuilder {
 	if filter.PathPrefix != "" {
 		sb = sb.Where(sq.Expr(`file_path LIKE ? ESCAPE '\'`, escapeLikeLiteral(filter.PathPrefix)+"%"))
 	}
+	// 排除属于「带指定 label 的歌单」的歌曲：只要歌在任一匹配歌单里就被过滤掉。
+	for _, label := range filter.ExcludePlaylistLabels {
+		sb = sb.Where(`id NOT IN (
+			SELECT ps.song_id FROM playlist_songs ps
+			JOIN playlists p ON p.id = ps.playlist_id
+			WHERE EXISTS (SELECT 1 FROM json_each(p.labels) WHERE value = ?))`, label)
+	}
 	return sb
 }
 

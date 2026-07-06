@@ -4779,7 +4779,112 @@ const docTemplate = `{
         },
         "/songs": {
             "get": {
-                "responses": {}
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取歌曲列表，支持按类型过滤、关键词搜索和分页。默认排除隐藏歌单里的歌，传 exclude_playlist_labels=none 显示全部",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "获取歌曲列表",
+                "parameters": [
+                    {
+                        "enum": [
+                            "local",
+                            "remote",
+                            "radio"
+                        ],
+                        "type": "string",
+                        "description": "歌曲类型",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按 file_path 前缀过滤（如 music/Pop）",
+                        "name": "path_prefix",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "hidden",
+                        "description": "排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部",
+                        "name": "exclude_playlist_labels",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "每页数量",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "偏移量",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "id",
+                            "title",
+                            "artist",
+                            "album",
+                            "duration",
+                            "added_at",
+                            "updated_at",
+                            "file_modified_at"
+                        ],
+                        "type": "string",
+                        "description": "排序字段，缺省 added_at",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "排序方向，缺省 desc",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功返回歌曲列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/songs/batch-delete": {
@@ -4938,6 +5043,13 @@ const docTemplate = `{
                         "type": "string",
                         "description": "按 file_path 前缀过滤",
                         "name": "path_prefix",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "hidden",
+                        "description": "排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部",
+                        "name": "exclude_playlist_labels",
                         "in": "query"
                     },
                     {
