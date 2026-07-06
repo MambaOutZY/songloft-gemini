@@ -12,9 +12,18 @@
 
 set -e
 
-# 插件列表
-#PLUGINS=("miot" "cloudflared" "hostc" "tag" "dav" "subsonic")
-PLUGINS=("miot" "cloudflared" "hostc" "downloader", "lyrics", "radio")
+# 脚本所在目录 / 仓库根目录 / 插件源目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PLUGINS_SRC_DIR="${REPO_ROOT}/jsplugins-src"
+
+# 插件列表：扫描 jsplugins-src/songloft-plugin-* 目录，去掉前缀得到插件名
+PLUGINS=()
+for dir in "${PLUGINS_SRC_DIR}"/songloft-plugin-*/; do
+    [ -d "$dir" ] || continue
+    name="$(basename "$dir")"
+    PLUGINS+=("${name#songloft-plugin-}")
+done
 
 # 颜色输出
 GREEN='\033[0;32m'
@@ -42,7 +51,17 @@ usage() {
 release_plugin() {
     local plugin_name="$1"
     local version="$2"
-    local repo="songloft-org/songloft-plugin-${plugin_name}"
+    local plugin_dir="${PLUGINS_SRC_DIR}/songloft-plugin-${plugin_name}"
+
+    # 从子目录 git remote 解析 owner/repo（兼容 git@github.com: 和 https:// 两种格式）
+    local remote_url
+    remote_url="$(git -C "${plugin_dir}" remote get-url origin 2>/dev/null)"
+    if [ -z "$remote_url" ]; then
+        echo -e "${RED}✗ ${plugin_name} 无法读取 git remote（${plugin_dir}）${NC}"
+        return 1
+    fi
+    local repo
+    repo="$(echo "$remote_url" | sed -E 's#^(git@[^:]+:|https?://[^/]+/)##; s#\.git$##')"
 
     echo -e "${YELLOW}触发 ${plugin_name} 插件发布...${NC}"
     echo "  仓库: ${repo}"
