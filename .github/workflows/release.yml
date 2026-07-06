@@ -725,16 +725,27 @@ jobs:
             --dart-define=HAS_BACKEND=true \
             --dart-define=FRONTEND_VERSION=${{ needs.prepare.outputs.version_tag }} \
             --dart-define=FRONTEND_BUILD_TIME=${{ needs.prepare.outputs.build_time }}
-          # build-frontend.sh 中已有逻辑：如果 macos/Runner/songloft-server 存在，自动拷贝到 .app/Contents/MacOS/
-          # 但 flutter build macos 不经过 build-frontend.sh，手动拷贝
+
+      - name: Finalize macOS app bundle
+        run: |
+          cd songloft-player
+          sign_identity="${MACOS_CODESIGN_IDENTITY:--}"
           for app_dir in build/macos/Build/Products/Release/*.app; do
-            cp macos/Runner/songloft-server "$app_dir/Contents/MacOS/" 2>/dev/null || true
+            if [ ! -x "$app_dir/Contents/MacOS/songloft-server" ]; then
+              cp macos/Runner/songloft-server "$app_dir/Contents/MacOS/songloft-server"
+              chmod +x "$app_dir/Contents/MacOS/songloft-server"
+              codesign --force --sign "$sign_identity" "$app_dir/Contents/MacOS/songloft-server"
+              codesign --force --deep --sign "$sign_identity" --entitlements macos/Runner/Release.entitlements "$app_dir"
+            fi
+            codesign --verify --deep --strict --verbose=2 "$app_dir"
           done
 
       - name: Package macOS .app as ZIP
         run: |
           cd songloft-player/build/macos/Build/Products/Release
-          zip -r -y "$GITHUB_WORKSPACE/songloft-bundled-macos.zip" *.app
+          app_dir=$(find . -maxdepth 1 -name "*.app" -type d -print -quit)
+          test -n "$app_dir"
+          ditto -c -k --sequesterRsrc --keepParent "${app_dir#./}" "$GITHUB_WORKSPACE/songloft-bundled-macos.zip"
 
       - name: Build Flutter iOS with embedded backend (no codesign)
         run: |
