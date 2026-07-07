@@ -1,6 +1,10 @@
 # 🎵 Songloft Quick Start Guide
 
 <p align="center">
+  <a href="README.md">简体中文</a> • <strong>English</strong>
+</p>
+
+<p align="center">
   <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/social-preview.png" alt="Songloft" width="640">
 </p>
 
@@ -51,7 +55,7 @@
   <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/player-mobile.png" alt="Immersive Player · Mobile" width="240">
 </p>
 
-> 📸 More screens (library, playlists, settings, etc. — desktop / mobile with light / dark themes) are in the **[Screenshot Gallery](docs/screenshots.md)**.
+> 📸 More screens (library, playlists, settings, etc. — desktop / mobile with light / dark themes) are in the **[Screenshot Gallery](docs/en/screenshots.md)**.
 
 ## ⚖️ Copyright and Disclaimer
 
