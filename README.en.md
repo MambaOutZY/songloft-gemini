@@ -40,6 +40,19 @@
 - 🔌 **Full REST API** — Built-in Swagger documentation for easy integration and further development
 - ⚡ **Lightweight and efficient** — Written in Go, CGO-free, with no external dependencies — ideal for low-power devices like NAS and Raspberry Pi
 
+<a id="screenshots"></a>
+
+## 🖼️ Screenshots
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/home-desktop.png" alt="Home · Desktop" width="600">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/player-mobile.png" alt="Immersive Player · Mobile" width="240">
+</p>
+
+> 📸 More screens (library, playlists, settings, etc. — desktop / mobile with light / dark themes) are in the **[Screenshot Gallery](docs/screenshots.md)**.
+
 ## ⚖️ Copyright and Disclaimer
 
 Songloft is a **self-hosted tool for personal use**, designed to help users manage the music files they legally own. Before using this project, please be sure to read and understand the following terms:

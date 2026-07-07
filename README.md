@@ -1,6 +1,10 @@
 # 🎵 Songloft 快速使用指南
 
 <p align="center">
+  <strong>简体中文</strong> • <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
   <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/social-preview.png" alt="Songloft" width="640">
 </p>
 
@@ -23,7 +27,7 @@
   <a href="https://songloft.hanxi.cc">📖 文档</a> •
   <a href="https://github.com/songloft-org/songloft/issues">💬 问题反馈</a> •
   <a href="https://github.com/songloft-org/songloft/issues/2">👥 微信群</a> •
-  <a href="https://github.com/songloft-org/songloft/issues/6">📸 截图</a>
+  <a href="#screenshots">📸 截图</a>
 </p>
 
 
@@ -39,6 +43,19 @@
 - 📡 **网络歌曲 & 电台** — 支持添加网络音频 URL 与电台流，播放时透明缓存到服务端
 - 🔌 **完整 REST API** — 内置 Swagger 文档，方便集成和二次开发
 - ⚡ **轻量高效** — Go 编写，CGO-free，无外部依赖，适合 NAS / 树莓派等低功耗设备
+
+<a id="screenshots"></a>
+
+## 🖼️ 界面截图
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/home-desktop.png" alt="首页 · 桌面端" width="600">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/player-mobile.png" alt="沉浸式播放器 · 移动端" width="240">
+</p>
+
+> 📸 更多界面（歌曲库、歌单、设置等，含桌面 / 移动端与亮 / 暗双主题）见 **[界面截图一览](docs/screenshots.md)**。
 
 ## ⚖️ 版权与免责声明
 
