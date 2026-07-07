@@ -80,10 +80,3 @@ Entry points for service configuration, account, cache, plugins and more.
 |:--|:--:|:--:|
 | **Desktop** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-desktop.png" alt="Settings · Desktop · Light" width="420"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-desktop-dark.png" alt="Settings · Desktop · Dark" width="420"> |
 | **Mobile** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-mobile.png" alt="Settings · Mobile · Light" width="220"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-mobile-dark.png" alt="Settings · Mobile · Dark" width="220"> |
-
----
-
-<p align="center">
-  <a href="../../README.en.md">← Back to English README</a> •
-  <a href="../screenshots.md">中文截图页 →</a>
-</p>

@@ -175,6 +175,20 @@ Some business modules come with an "action endpoint + config endpoint" combo (th
 
 ---
 
+## Bilingual Documentation Sync (Hard Rule)
+
+Project docs are **maintained in both Chinese and English**. When you change either language version, you **must** apply the corresponding change to the other version — never edit one side only and let the two drift apart.
+
+- **Mappings**:
+  - `README.md` ↔ `README.en.md`
+  - `AGENTS.md` ↔ `AGENTS.en.md`
+  - `docs/<name>.md` ↔ `docs/en/<name>.md` (same filename; English version lives under `docs/en/`)
+- **Criterion**: any add / modify / delete of documentation **content, structure, or links** (body text, sections, tables, navigation links, etc.) must land in both language versions; only the wording is localized, the structure stays consistent
+- **Check the counterpart exists first**: if a same-named file exists under `docs/en/`, sync it; README and AGENTS always have an `.en.md` counterpart
+- **Exception**: some content is inherently single-language (e.g. a community note only in the Chinese version) — no mirror is required, but make sure that is intentional rather than an omission
+
+---
+
 ## Git Commit Conventions
 
 - Commit messages **must not** include a `Co-Authored-By` trailer

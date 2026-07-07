@@ -80,10 +80,3 @@
 |:--|:--:|:--:|
 | **桌面端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-desktop.png" alt="设置 · 桌面 · 亮色" width="420"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-desktop-dark.png" alt="设置 · 桌面 · 暗色" width="420"> |
 | **移动端** | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-mobile.png" alt="设置 · 移动 · 亮色" width="220"> | <img src="https://raw.githubusercontent.com/songloft-org/songloft/main/docs/public/screenshots/settings-mobile-dark.png" alt="设置 · 移动 · 暗色" width="220"> |
-
----
-
-<p align="center">
-  <a href="../README.md">← 返回中文 README</a> •
-  <a href="../README.en.md">Back to English README →</a>
-</p>
