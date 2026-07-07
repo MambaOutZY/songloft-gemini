@@ -59,7 +59,7 @@ npm install   # or pnpm install / yarn install
 The scaffolder interactively guides you through the following configuration:
 
 1. **Basic info** — directory name, plugin display name, entryPath, description, author
-2. **Permission selection** (multi-select) — `storage`, `songs.read`, `songs.write`, `playlists.read`, `playlists.write`, `inter-plugin`, `command`, `jsenv`
+2. **Permission selection** (multi-select) — `storage`, `persistent-storage`, `songs.read`, `songs.write`, `playlists.read`, `playlists.write`, `inter-plugin`, `command`, `jsenv`, `fs`, `fs:music`, `fs:external`, `websocket`, `net`
 3. **Add-on feature templates** (multi-select, skippable) — static pages (`static/`), executable management (`bin/`)
 4. **Package manager** — npm / pnpm / yarn
 

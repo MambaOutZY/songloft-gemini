@@ -30,7 +30,7 @@ Songloft initiates **outbound** requests in the following scenarios:
 | Server panic (only when Tracely is enabled at compile time) | Maintainer's self-hosted Tracely service | Error stack trace, server version number, platform information. Does **not** include user data, music files, or account information |
 | Server first startup or startup after a version upgrade (only when Tracely is enabled at compile time) | Maintainer's self-hosted Tracely service | Install/upgrade event, current version number, pre-upgrade version number, platform information. Does **not** include user data |
 | User clicks "Check for Updates" in "Settings" | `github.com/songloft-org/songloft` | Only an HTTP GET of version.json, carrying no user identifiers |
-| User installs / enables a JS plugin and triggers its network permission | Determined by that plugin's code (constrained at runtime by the `permissions: ["network"]` sandbox permission) | Determined by the plugin's implementation |
+| User installs / enables a JS plugin and triggers its network capabilities | Determined by that plugin's code (plain HTTP requests are a default host capability; UDP sockets are constrained by the `permissions: ["net"]` sandbox permission) | Determined by the plugin's implementation |
 | User loads the badges from this repository's README in the Web UI (e.g. visitorbadge.io) | `api.visitorbadge.io` | Only proxied by GitHub's servers when rendering the GitHub README; not within the Songloft software |
 
 ## 3. Where Data Is Stored
@@ -47,9 +47,9 @@ Songloft initiates **outbound** requests in the following scenarios:
 
 ## 4. Data Collection by JS Plugins
 
-JS plugins **may** access the network, read the music library, write to storage, and use other capabilities through the `permissions` they declare. **The data-collection behavior of third-party plugins is entirely determined by the plugins themselves and is unrelated to the main Songloft project.**
+JS plugins **may** use host-provided network requests or their declared `permissions` to read the music library, write to storage, use UDP sockets, and access other capabilities. **The data-collection behavior of third-party plugins is entirely determined by the plugins themselves and is unrelated to the main Songloft project.**
 
-- A plugin's network access permission is explicitly declared via the manifest `permissions: ["network"]`, and is validated at runtime by the host within the QuickJS sandbox.
+- Plain HTTP network requests (`fetch`) are a default host capability; raw UDP sockets must be explicitly declared via `permissions: ["net"]` in the manifest and are validated at runtime by the host within the QuickJS sandbox.
 - Before installing a third-party plugin, read its source code or permission manifest to confirm that the scope of its network requests matches your expectations.
 - To block a particular plugin's network access, disable that plugin in the Songloft Web UI, or block the corresponding domains at the firewall layer during deployment.
 

@@ -59,7 +59,7 @@ npm install   # 或 pnpm install / yarn install
 脚手架会交互式引导你完成以下配置：
 
 1. **基本信息** — 目录名、插件显示名称、entryPath、简介、作者
-2. **权限选择**（多选） — `storage`、`songs.read`、`songs.write`、`playlists.read`、`playlists.write`、`inter-plugin`、`command`、`jsenv`
+2. **权限选择**（多选） — `storage`、`persistent-storage`、`songs.read`、`songs.write`、`playlists.read`、`playlists.write`、`inter-plugin`、`command`、`jsenv`、`fs`、`fs:music`、`fs:external`、`websocket`、`net`
 3. **附加功能模板**（多选，可跳过） — 静态页面 (`static/`)、可执行文件管理 (`bin/`)
 4. **包管理器** — npm / pnpm / yarn
 

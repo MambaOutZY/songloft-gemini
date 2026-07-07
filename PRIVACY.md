@@ -30,7 +30,7 @@ Songloft 在以下场景会发起**主动**出站请求：
 | 服务端发生 panic（仅编译时启用 Tracely 时） | 维护者自建的 Tracely 服务 | 错误堆栈、服务端版本号、平台信息。**不含**用户数据、音乐文件或账号信息 |
 | 服务端首次启动或版本升级后启动（仅编译时启用 Tracely 时） | 维护者自建的 Tracely 服务 | 安装/升级事件、当前版本号、升级前版本号、平台信息。**不含**用户数据 |
 | 用户在「设置」中点击「检查更新」 | `github.com/songloft-org/songloft` | 仅 HTTP GET version.json，不带任何用户标识 |
-| 用户安装 / 启用 JS 插件并触发其网络权限 | 由该插件的代码决定（运行时受 `permissions: ["network"]` 沙箱权限约束） | 由插件实现决定 |
+| 用户安装 / 启用 JS 插件并触发其网络能力 | 由该插件的代码决定（普通 HTTP 请求为默认宿主能力；UDP socket 受 `permissions: ["net"]` 沙箱权限约束） | 由插件实现决定 |
 | 用户在 Web UI 中加载本仓库 README 中的徽章（如 visitorbadge.io） | `api.visitorbadge.io` | 仅 GitHub README 渲染时由 GitHub 服务端代理，不在 Songloft 软件内 |
 
 ## 3. 数据存储位置
@@ -47,9 +47,9 @@ Songloft 在以下场景会发起**主动**出站请求：
 
 ## 4. JS 插件的数据收集
 
-JS 插件**可能**通过其声明的 `permissions` 调用网络、读取歌曲库、写入存储等能力。**第三方插件的数据收集行为完全由插件本身决定，与 Songloft 主项目无关。**
+JS 插件**可能**通过宿主网络请求能力或其声明的 `permissions` 读取歌曲库、写入存储、使用 UDP socket 等能力。**第三方插件的数据收集行为完全由插件本身决定，与 Songloft 主项目无关。**
 
-- 插件的网络访问权限由 manifest `permissions: ["network"]` 显式声明，运行时由宿主在 QuickJS 沙箱中校验。
+- 插件的普通 HTTP 网络请求（`fetch`）为默认宿主能力；原始 UDP socket 需在 manifest 中显式声明 `permissions: ["net"]`，运行时由宿主在 QuickJS 沙箱中校验。
 - 安装第三方插件前，请阅读其源码或权限清单，确认其网络请求范围是否符合你的预期。
 - 如需禁止某个插件的网络访问，可在 Songloft Web UI 中禁用该插件，或部署时在防火墙层屏蔽对应域名。
 
