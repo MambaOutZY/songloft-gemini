@@ -43,6 +43,12 @@ function rewriteLinks(content, { en = false } = {}) {
       path = path.slice(0, hash);
     }
 
+    // en 目标位于 docs/en/，源里的 docs/en/xxx.md 需先剥成 ./xxx.md，
+    // 否则会被下面的通用规则改写成 ./en/xxx.md，从 docs/en/quick-start.md 视角多出一层 en/ 导致死链。
+    if (en) {
+      path = path.replace(/^\.\/docs\/en\//, './');
+      path = path.replace(/^docs\/en\//, './');
+    }
     // ./docs/xxx.md → ./xxx.md
     path = path.replace(/^\.\/docs\//, './');
     // docs/xxx.md → ./xxx.md
