@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -415,9 +414,16 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 		if err != nil {
 			return fmt.Errorf("load existing auto-created playlists: %w", err)
 		}
-		existingAutoMap := make(map[string]int64, len(existingAutoList))
+		// 记录已有自动歌单的 ID 及其当前封面：重建时保留已有非空封面
+		// （含用户手动上传到自动歌单的封面），避免每次扫描覆盖导致封面跳变。
+		type existingAuto struct {
+			id        int64
+			coverPath string
+			coverURL  string
+		}
+		existingAutoMap := make(map[string]existingAuto, len(existingAutoList))
 		for _, p := range existingAutoList {
-			existingAutoMap[p.Name] = p.ID
+			existingAutoMap[p.Name] = existingAuto{id: p.ID, coverPath: p.CoverPath, coverURL: p.CoverUrl}
 		}
 
 		// 收集非 auto_created 歌单的名字（用户手动建/内置歌单），用于消歧。
@@ -444,21 +450,26 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 			existingNames[name] = struct{}{}
 
 			var playlistID int64
-			if id, ok := existingAutoMap[name]; ok {
+			if existing, ok := existingAutoMap[name]; ok {
+				// 保留已有非空封面（含用户手动上传的），仅在原封面为空时才用新挑的。
+				writeCoverPath, writeCoverURL := coverPath, coverURL
+				if existing.coverPath != "" || existing.coverURL != "" {
+					writeCoverPath, writeCoverURL = existing.coverPath, existing.coverURL
+				}
 				if _, err := q.UpdateAutoCreatedPlaylistMeta(ctx, sqlc.UpdateAutoCreatedPlaylistMetaParams{
 					Name:        name,
 					Description: desc,
-					CoverPath:   coverPath,
-					CoverUrl:    coverURL,
-					ID:          id,
+					CoverPath:   writeCoverPath,
+					CoverUrl:    writeCoverURL,
+					ID:          existing.id,
 				}); err != nil {
 					return fmt.Errorf("update auto-created playlist %s: %w", name, err)
 				}
-				if err := q.DeletePlaylistSongsByPlaylistID(ctx, id); err != nil {
-					return fmt.Errorf("clear playlist songs for %d: %w", id, err)
+				if err := q.DeletePlaylistSongsByPlaylistID(ctx, existing.id); err != nil {
+					return fmt.Errorf("clear playlist songs for %d: %w", existing.id, err)
 				}
 				delete(existingAutoMap, name) // 标记已匹配，避免最后被误删
-				playlistID = id
+				playlistID = existing.id
 			} else {
 				newID, err := q.InsertAutoCreatedPlaylist(ctx, sqlc.InsertAutoCreatedPlaylistParams{
 					Type:        models.PlaylistTypeNormal,
@@ -502,7 +513,7 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 				si, sj := songIDToSong[album.songIDs[i]], songIDToSong[album.songIDs[j]]
 				return si.CueTrackIndex < sj.CueTrackIndex
 			})
-			coverPath, coverURL := pickRandomSongCover(album.songIDs, songIDToSong)
+			coverPath, coverURL := pickSongCover(album.songIDs, songIDToSong)
 			if err := upsertPlaylist(album.name, album.desc, coverPath, coverURL, album.songIDs); err != nil {
 				return err
 			}
@@ -515,7 +526,7 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 			sort.SliceStable(songIDs, func(i, j int) bool {
 				return lessSongByNumberThenTitle(songIDToSong[songIDs[i]], songIDToSong[songIDs[j]])
 			})
-			coverPath, coverURL := pickRandomSongCover(songIDs, songIDToSong)
+			coverPath, coverURL := pickSongCover(songIDs, songIDToSong)
 			if err := upsertPlaylist(nameMap[dir], descMap[dir], coverPath, coverURL, songIDs); err != nil {
 				return err
 			}
@@ -523,9 +534,9 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 
 		// 清理未匹配的旧 auto_created 歌单（对应目录/专辑已不存在）。
 		// CASCADE 自动删除其 playlist_songs。
-		for _, staleID := range existingAutoMap {
-			if _, err := dbtx.ExecContext(ctx, `DELETE FROM playlists WHERE id = ?`, staleID); err != nil {
-				return fmt.Errorf("delete stale auto-created playlist %d: %w", staleID, err)
+		for _, stale := range existingAutoMap {
+			if _, err := dbtx.ExecContext(ctx, `DELETE FROM playlists WHERE id = ?`, stale.id); err != nil {
+				return fmt.Errorf("delete stale auto-created playlist %d: %w", stale.id, err)
 			}
 		}
 
@@ -827,24 +838,21 @@ func resolveAutoCreatedName(candidate string, existing map[string]struct{}) stri
 	}
 }
 
-// pickRandomSongCover 从歌曲 ID 列表中随机选一个有封面的，
+// pickSongCover 从歌曲 ID 列表中确定性地选第一首有封面的，
 // 返回 (CoverPath, CoverURL)，本地封面优先。
-func pickRandomSongCover(songIDs []int64, songIDToSong map[int64]*models.Song) (string, string) {
-	candidates := make([]int64, 0, len(songIDs))
+// 调用方在传入前已对 songIDs 做确定性排序（CUE 按 cue_track_index，
+// 目录按数字前缀/标题），因此跨扫描结果稳定，不会让自动歌单封面随机跳变。
+func pickSongCover(songIDs []int64, songIDToSong map[int64]*models.Song) (string, string) {
 	for _, id := range songIDs {
 		song, ok := songIDToSong[id]
 		if !ok {
 			continue
 		}
 		if song.CoverPath != "" || song.CoverURL != "" {
-			candidates = append(candidates, id)
+			return song.CoverPath, song.CoverURL
 		}
 	}
-	if len(candidates) == 0 {
-		return "", ""
-	}
-	s := songIDToSong[candidates[rand.Intn(len(candidates))]]
-	return s.CoverPath, s.CoverURL
+	return "", ""
 }
 
 // extractFirstNumber 提取字符串中第一段连续数字，

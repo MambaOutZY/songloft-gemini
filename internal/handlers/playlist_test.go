@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -637,5 +639,80 @@ func TestUpdatePlaylistWithCoverSongID_RemoteSong(t *testing.T) {
 	t.Logf("Response cover_url: %v", coverURL)
 	if coverURL == "" || coverURL == nil {
 		t.Errorf("expected cover_url to be set")
+	}
+}
+
+// TestGetPlaylistCoverStaleFileFallsBack 验证读路径防护：
+// 歌单 cover_path 指向的文件已丢失时，不直接 404，而是回退到歌曲封面。
+func TestGetPlaylistCoverStaleFileFallsBack(t *testing.T) {
+	env := newPlaylistHandlerEnv(t)
+	svc := env.newService()
+	handler := NewPlaylistHandler(svc, nil)
+	ctx := context.Background()
+
+	// 真实存在的歌曲封面文件（回退目标）。
+	dir := t.TempDir()
+	songCover := filepath.Join(dir, "song.jpg")
+	if err := os.WriteFile(songCover, []byte("SONG_COVER_BYTES"), 0o644); err != nil {
+		t.Fatalf("write song cover: %v", err)
+	}
+
+	song := &models.Song{Type: models.TypeLocal, Title: "s1", FilePath: "/music/s1.mp3", CoverPath: songCover}
+	if err := env.songs.Create(ctx, song); err != nil {
+		t.Fatalf("create song: %v", err)
+	}
+
+	// 歌单封面指向不存在的文件，且无 cover_url。
+	playlist := createTestPlaylist(t, svc, &models.Playlist{
+		Type:      models.PlaylistTypeNormal,
+		Name:      "Stale Cover",
+		CoverPath: filepath.Join(dir, "missing.jpg"),
+	})
+	if err := env.playlistSongs.AddSong(ctx, playlist.ID, song.ID, 1); err != nil {
+		t.Fatalf("add song: %v", err)
+	}
+
+	idStr := strconv.FormatInt(playlist.ID, 10)
+	req := newRouteRequest("GET", "/api/v1/playlists/"+idStr+"/cover", nil, map[string]string{"id": idStr})
+	rr := httptest.NewRecorder()
+	handler.GetPlaylistCover(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected fallback 200, got %d (body=%q)", rr.Code, rr.Body.String())
+	}
+	if rr.Body.String() != "SONG_COVER_BYTES" {
+		t.Errorf("expected fallback to song cover bytes, got %q", rr.Body.String())
+	}
+}
+
+// TestGetPlaylistCoverExistingFileServed 验证正常路径未被破坏：
+// cover_path 文件存在时直接返回该文件。
+func TestGetPlaylistCoverExistingFileServed(t *testing.T) {
+	env := newPlaylistHandlerEnv(t)
+	svc := env.newService()
+	handler := NewPlaylistHandler(svc, nil)
+
+	dir := t.TempDir()
+	coverFile := filepath.Join(dir, "cover.jpg")
+	if err := os.WriteFile(coverFile, []byte("PLAYLIST_COVER_BYTES"), 0o644); err != nil {
+		t.Fatalf("write cover: %v", err)
+	}
+
+	playlist := createTestPlaylist(t, svc, &models.Playlist{
+		Type:      models.PlaylistTypeNormal,
+		Name:      "Has Cover",
+		CoverPath: coverFile,
+	})
+
+	idStr := strconv.FormatInt(playlist.ID, 10)
+	req := newRouteRequest("GET", "/api/v1/playlists/"+idStr+"/cover", nil, map[string]string{"id": idStr})
+	rr := httptest.NewRecorder()
+	handler.GetPlaylistCover(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if rr.Body.String() != "PLAYLIST_COVER_BYTES" {
+		t.Errorf("expected playlist cover bytes, got %q", rr.Body.String())
 	}
 }

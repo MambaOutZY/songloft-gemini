@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -672,8 +673,9 @@ func (h *PlaylistHandler) GetPlaylistCover(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// 优先使用本地封面
-	if playlist.CoverPath != "" {
+	// 优先使用本地封面。文件缺失时（如源歌曲被移除、封面被引用计数清理）
+	// 不直接 404，而是继续回退到远程 URL / 歌曲封面。
+	if playlist.CoverPath != "" && coverFileExists(playlist.CoverPath) {
 		h.serveLocalCover(w, r, playlist)
 		return
 	}
@@ -693,7 +695,7 @@ func (h *PlaylistHandler) GetPlaylistCover(w http.ResponseWriter, r *http.Reques
 	songs, err := h.playlistService.GetSongs(r.Context(), id, database.PlaylistSongFilter{Limit: coverFallbackLimit})
 	if err == nil {
 		for _, s := range songs {
-			if s.CoverPath != "" {
+			if s.CoverPath != "" && coverFileExists(s.CoverPath) {
 				h.serveLocalCover(w, r, &models.Playlist{CoverPath: s.CoverPath})
 				return
 			}
@@ -707,6 +709,12 @@ func (h *PlaylistHandler) GetPlaylistCover(w http.ResponseWriter, r *http.Reques
 func (h *PlaylistHandler) serveLocalCover(w http.ResponseWriter, r *http.Request, playlist *models.Playlist) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000")
 	http.ServeFile(w, r, playlist.CoverPath)
+}
+
+// coverFileExists 判断封面文件是否存在（非目录），供读路径在封面丢失时回退。
+func coverFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // SetPlaylistVisibility 设置歌单可见性

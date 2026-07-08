@@ -196,13 +196,15 @@ func (q *Queries) ListAllPlaylistNames(ctx context.Context) ([]string, error) {
 }
 
 const listAutoCreatedPlaylists = `-- name: ListAutoCreatedPlaylists :many
-SELECT id, name FROM playlists
+SELECT id, name, cover_path, cover_url FROM playlists
 WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'auto_created')
 `
 
 type ListAutoCreatedPlaylistsRow struct {
-	ID   int64
-	Name string
+	ID        int64
+	Name      string
+	CoverPath string
+	CoverUrl  string
 }
 
 func (q *Queries) ListAutoCreatedPlaylists(ctx context.Context) ([]ListAutoCreatedPlaylistsRow, error) {
@@ -214,7 +216,12 @@ func (q *Queries) ListAutoCreatedPlaylists(ctx context.Context) ([]ListAutoCreat
 	items := []ListAutoCreatedPlaylistsRow{}
 	for rows.Next() {
 		var i ListAutoCreatedPlaylistsRow
-		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.CoverPath,
+			&i.CoverUrl,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

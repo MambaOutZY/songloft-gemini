@@ -581,6 +581,135 @@ func TestAutoCreateDeletesStalePlaylist(t *testing.T) {
 	}
 }
 
+// TestAutoCreatePreservesCover 验证自动歌单封面在多次扫描间稳定不变：
+// 早先该逻辑每次扫描随机重挑封面，导致重开客户端时封面偶尔跳变。
+func TestAutoCreatePreservesCover(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	repo := db.PlaylistRepository()
+
+	// 同目录多首歌，携带不同封面：随机实现下两次扫描很可能挑到不同封面。
+	if err := db.SongRepository().BatchCreate(ctx, []*models.Song{
+		{Type: models.TypeLocal, Title: "r1", FilePath: "/music/Rock/1.mp3", CoverPath: "/covers/a.jpg"},
+		{Type: models.TypeLocal, Title: "r2", FilePath: "/music/Rock/2.mp3", CoverPath: "/covers/b.jpg"},
+		{Type: models.TypeLocal, Title: "r3", FilePath: "/music/Rock/3.mp3", CoverPath: "/covers/c.jpg"},
+	}); err != nil {
+		t.Fatalf("BatchCreate error = %v", err)
+	}
+
+	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	if err != nil {
+		t.Fatalf("AutoCreate #1 error = %v", err)
+	}
+	rockID := nameToID(resp1)["Rock"]
+	if rockID == 0 {
+		t.Fatalf("expected Rock playlist, got %+v", resp1)
+	}
+	first, err := repo.GetByID(ctx, rockID)
+	if err != nil {
+		t.Fatalf("GetByID error = %v", err)
+	}
+	if first.CoverPath == "" {
+		t.Fatalf("expected a cover to be picked, got empty")
+	}
+
+	// 多次重扫，封面必须始终一致。
+	for i := 0; i < 5; i++ {
+		if _, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil); err != nil {
+			t.Fatalf("AutoCreate re-scan #%d error = %v", i, err)
+		}
+		again, err := repo.GetByID(ctx, rockID)
+		if err != nil {
+			t.Fatalf("GetByID re-scan #%d error = %v", i, err)
+		}
+		if again.CoverPath != first.CoverPath {
+			t.Fatalf("cover changed on re-scan #%d: was %q, now %q", i, first.CoverPath, again.CoverPath)
+		}
+	}
+}
+
+// TestAutoCreatePreservesManualCover 验证用户手动设到自动歌单的封面
+// 不会被后续扫描覆盖。
+func TestAutoCreatePreservesManualCover(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	repo := db.PlaylistRepository()
+
+	if err := db.SongRepository().BatchCreate(ctx, []*models.Song{
+		{Type: models.TypeLocal, Title: "r1", FilePath: "/music/Rock/1.mp3", CoverPath: "/covers/a.jpg"},
+		{Type: models.TypeLocal, Title: "r2", FilePath: "/music/Rock/2.mp3", CoverPath: "/covers/b.jpg"},
+	}); err != nil {
+		t.Fatalf("BatchCreate error = %v", err)
+	}
+
+	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	if err != nil {
+		t.Fatalf("AutoCreate #1 error = %v", err)
+	}
+	rockID := nameToID(resp1)["Rock"]
+	if rockID == 0 {
+		t.Fatalf("expected Rock playlist, got %+v", resp1)
+	}
+
+	// 用户手动上传自定义封面。
+	pl, err := repo.GetByID(ctx, rockID)
+	if err != nil {
+		t.Fatalf("GetByID error = %v", err)
+	}
+	pl.CoverPath = "/covers/manual.jpg"
+	pl.CoverURL = ""
+	if err := repo.Update(ctx, pl); err != nil {
+		t.Fatalf("Update error = %v", err)
+	}
+
+	// 再次扫描，手动封面必须保留。
+	if _, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil); err != nil {
+		t.Fatalf("AutoCreate #2 error = %v", err)
+	}
+	after, err := repo.GetByID(ctx, rockID)
+	if err != nil {
+		t.Fatalf("GetByID after re-scan error = %v", err)
+	}
+	if after.CoverPath != "/covers/manual.jpg" {
+		t.Errorf("manual cover overwritten by scan: got %q, want %q", after.CoverPath, "/covers/manual.jpg")
+	}
+}
+
+// TestPickSongCoverDeterministic 直接锁定 pickSongCover 的确定性：
+// 同一输入多次调用必须返回同一结果，且取排序后第一首有封面的歌。
+func TestPickSongCoverDeterministic(t *testing.T) {
+	songIDToSong := map[int64]*models.Song{
+		1: {ID: 1, Title: "no-cover"},
+		2: {ID: 2, Title: "first-with-cover", CoverPath: "/covers/2.jpg"},
+		3: {ID: 3, Title: "third", CoverPath: "/covers/3.jpg"},
+		4: {ID: 4, Title: "fourth", CoverURL: "https://x/4.jpg"},
+	}
+	songIDs := []int64{1, 2, 3, 4}
+
+	// 应跳过无封面的 id=1，返回第一首有封面的 id=2。
+	wantPath, wantURL := pickSongCover(songIDs, songIDToSong)
+	if wantPath != "/covers/2.jpg" || wantURL != "" {
+		t.Fatalf("pickSongCover = (%q,%q), want (/covers/2.jpg, \"\")", wantPath, wantURL)
+	}
+
+	// 多次调用必须完全一致（随机实现会在此偶发不同）。
+	for i := 0; i < 50; i++ {
+		p, u := pickSongCover(songIDs, songIDToSong)
+		if p != wantPath || u != wantURL {
+			t.Fatalf("pickSongCover not deterministic on call #%d: got (%q,%q), want (%q,%q)", i, p, u, wantPath, wantURL)
+		}
+	}
+
+	// 全部无封面时返回空。
+	if p, u := pickSongCover([]int64{1}, songIDToSong); p != "" || u != "" {
+		t.Errorf("expected empty cover, got (%q,%q)", p, u)
+	}
+}
+
 // TestAddAndRemoveSongToPlaylist 测试添加和移除歌曲到歌单
 func TestAddAndRemoveSongToPlaylist(t *testing.T) {
 	db := setupTestDB(t)

@@ -42,7 +42,7 @@ INSERT INTO playlists (type, name, description, cover_path, cover_url, labels)
 VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: ListAutoCreatedPlaylists :many
-SELECT id, name FROM playlists
+SELECT id, name, cover_path, cover_url FROM playlists
 WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = 'auto_created');
 
 -- name: UpdateAutoCreatedPlaylistMeta :execrows
