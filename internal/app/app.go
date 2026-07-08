@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -557,6 +558,25 @@ func (a *App) Start() error {
 		slog.Info("使用默认管理员账号密码启动")
 		slog.Info(fmt.Sprintf("默认管理员账号: %s，默认密码: %s", a.config.Username, a.config.Password))
 	}
+
+	// 显式创建 listener：支持 port=0（由系统自动分配空闲端口，本地/Bundle 模式用），
+	// 并能在监听后拿到真实端口。ListenAndServe 无法回报自动分配的端口。
+	ln, err := net.Listen("tcp", ":"+a.config.Port)
+	if err != nil {
+		return err
+	}
+	actualPort := strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
+	if actualPort != a.config.Port {
+		a.config.Port = actualPort
+		// 回写真实端口（server_port 供插件/调试读取；Init 阶段写的是请求值，可能为 0）
+		if a.configService != nil {
+			if err := a.configService.Set("server_port", actualPort); err != nil {
+				slog.Warn("回写监听端口配置失败", "error", err)
+			}
+		}
+	}
+
+	// 该行会被桌面端 DesktopBackendService 解析以获取实际端口，格式勿轻易变更
 	slog.Info(fmt.Sprintf("HTTP 访问地址: http://localhost:%s%s/", a.config.Port, a.config.BasePath))
 	slog.Info("服务器启动",
 		"version", version.GetVersion(),
@@ -566,10 +586,9 @@ func (a *App) Start() error {
 		"base_path", a.config.BasePath)
 
 	a.server = &http.Server{
-		Addr:    ":" + a.config.Port,
 		Handler: a.BuildHandler(),
 	}
-	return a.server.ListenAndServe()
+	return a.server.Serve(ln)
 }
 
 // initJWTSecret 初始化JWT密钥
