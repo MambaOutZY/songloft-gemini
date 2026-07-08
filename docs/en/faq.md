@@ -207,6 +207,14 @@ A:
 - **Embedded mode** (Web): Flutter Web is embedded in the Go backend and automatically uses the same-origin address — no configuration needed.
 - **Standalone deployment mode**: Enter the backend server address on the login page (e.g., `http://192.168.1.100:58091`); the address is saved automatically.
 
+### Q: On Firefox, small controls in the Web client aren't clickable / clicks are offset. What should I do?
+
+A: This is a **known click hit-test coordinate offset issue with Flutter Web (the CanvasKit rendering engine) on Firefox-family browsers** (see [flutter/flutter#182764](https://github.com/flutter/flutter/issues/182764), [flutter/flutter#117531](https://github.com/flutter/flutter/issues/117531)). It is rendering-engine/browser-layer behavior, not a Songloft resolution-adaptation problem. Typical symptoms: large settings items can be toggled but small controls can't be hit; JS plugin pages (native HTML) are unaffected.
+
+**Fix and workarounds:**
+- Prefer a **Chromium-based browser** (Chrome / Edge / Chromium) for the Web client to avoid the issue entirely.
+- If you must use Firefox, try adjusting the page zoom level (`Ctrl` + `+` / `-`) until small controls become clickable — the offset varies with zoom, so at some levels the coordinates align.
+
 ### Q: How do I install and use plugins?
 
 A:

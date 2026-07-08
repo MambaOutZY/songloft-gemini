@@ -207,6 +207,14 @@ A:
 - **嵌入模式**（Web）：Flutter Web 嵌入 Go 后端，自动使用同域地址，无需配置
 - **独立部署模式**：在登录页面输入后端服务器地址（如 `http://192.168.1.100:58091`），地址会自动保存
 
+### Q: 在 Firefox 下 Web 端小控件点不到、点击位置偏移怎么办？
+
+A: 这是 **Flutter Web（CanvasKit 渲染引擎）在 Firefox 系浏览器下已知的点击命中测试（hit-test）坐标偏移问题**（参见 [flutter/flutter#182764](https://github.com/flutter/flutter/issues/182764)、[flutter/flutter#117531](https://github.com/flutter/flutter/issues/117531)），属于渲染引擎/浏览器层行为，非 Songloft 分辨率适配问题。典型现象：设置大项能切换、细项小控件点不到；JS 插件页面（原生 HTML）不受影响。
+
+**解决与规避：**
+- 优先使用 **Chromium 系浏览器**（Chrome / Edge / Chromium）访问 Web 端，可完全规避。
+- 若必须用 Firefox，可尝试调整页面缩放比例（`Ctrl` + `+` / `-`）到能命中小控件的比例——偏移量随缩放变化，某些比例下坐标恰好对齐。
+
 ### Q: 如何安装和使用插件？
 
 A: 
