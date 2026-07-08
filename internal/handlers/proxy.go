@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,13 @@ import (
 	"songloft/internal/httputil"
 	"songloft/internal/services"
 )
+
+// RemoteResourceOptions controls the behavior of ServeRemoteResourceWithOptions.
+type RemoteResourceOptions struct {
+	Timeout      time.Duration
+	ErrorStatus  int
+	ErrorMessage string
+}
 
 // ProxyHandler 通用资源代理处理器
 // 用于代理外部资源（图片、音频、视频流等），解决浏览器 CORS 限制
@@ -117,11 +125,36 @@ func forwardResponseHeaders(w http.ResponseWriter, resp *http.Response) {
 //   - r: HTTP 请求(用于 context 和 Range/Accept 头透传)
 //   - resourceURL: 目标资源 URL
 func ServeRemoteResource(w http.ResponseWriter, r *http.Request, resourceURL string) {
+	ServeRemoteResourceWithOptions(w, r, resourceURL, RemoteResourceOptions{
+		Timeout:      60 * time.Second,
+		ErrorStatus:  http.StatusBadGateway,
+		ErrorMessage: "resource fetch failed",
+	})
+}
+
+// ServeRemoteResourceWithOptions 通用远程资源代理服务，支持按调用场景配置超时和错误状态。
+func ServeRemoteResourceWithOptions(w http.ResponseWriter, r *http.Request, resourceURL string, opts RemoteResourceOptions) {
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	errorStatus := opts.ErrorStatus
+	if errorStatus == 0 {
+		errorStatus = http.StatusBadGateway
+	}
+	errorMessage := opts.ErrorMessage
+	if errorMessage == "" {
+		errorMessage = "resource fetch failed"
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
 	// 构建上游请求
-	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, resourceURL, nil)
+	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
 	if err != nil {
 		slog.Warn("remote resource request creation failed", "url", resourceURL, "error", err)
-		http.Error(w, "resource fetch failed", http.StatusInternalServerError)
+		http.Error(w, errorMessage, http.StatusInternalServerError)
 		return
 	}
 
@@ -147,12 +180,12 @@ func ServeRemoteResource(w http.ResponseWriter, r *http.Request, resourceURL str
 	httputil.ApplyBasicAuthFromURL(upstreamReq)
 
 	// 发起请求（走全局 HTTP 代理）
-	client := httputil.NewClient(60 * time.Second)
+	client := httputil.NewClient(timeout)
 
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
 		slog.Warn("remote resource fetch failed", "url", resourceURL, "error", err)
-		http.Error(w, "resource fetch failed", http.StatusBadGateway)
+		http.Error(w, errorMessage, errorStatus)
 		return
 	}
 	defer resp.Body.Close()

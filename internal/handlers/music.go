@@ -104,6 +104,7 @@ func (h *SongHandler) SetURLResolver(r *services.InternalURLResolver) {
 }
 
 const remoteTitleSourceConfigKey = "remote_title_source"
+const songCoverProxyTimeout = 5 * time.Second
 
 // remoteTitleSourceRequest /settings/remote-title-source 请求/响应体
 type remoteTitleSourceRequest struct {
@@ -723,7 +724,11 @@ func (h *SongHandler) GetSongCover(w http.ResponseWriter, r *http.Request) {
 		if h.urlResolver != nil {
 			coverURL = h.urlResolver.Resolve(coverURL)
 		}
-		ServeRemoteResource(w, r, coverURL)
+		ServeRemoteResourceWithOptions(w, r, coverURL, RemoteResourceOptions{
+			Timeout:      songCoverProxyTimeout,
+			ErrorStatus:  http.StatusNotFound,
+			ErrorMessage: "cover fetch failed",
+		})
 		return
 	}
 

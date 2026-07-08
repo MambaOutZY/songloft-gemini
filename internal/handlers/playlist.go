@@ -680,7 +680,11 @@ func (h *PlaylistHandler) GetPlaylistCover(w http.ResponseWriter, r *http.Reques
 
 	// 本地封面不存在时,代理转发外部 URL
 	if playlist.CoverURL != "" {
-		ServeRemoteResource(w, r, playlist.CoverURL)
+		ServeRemoteResourceWithOptions(w, r, playlist.CoverURL, RemoteResourceOptions{
+			Timeout:      songCoverProxyTimeout,
+			ErrorStatus:  http.StatusNotFound,
+			ErrorMessage: "cover fetch failed",
+		})
 		return
 	}
 
