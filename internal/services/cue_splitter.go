@@ -90,14 +90,7 @@ func (s *CueSplitter) splitOne(ctx context.Context, subDir string, track cue.Res
 
 	outputPath := filepath.Join(subDir, fmt.Sprintf("track_%02d%s", track.TrackNumber, ext))
 
-	args := []string{"-i", track.AudioFilePath}
-	args = append(args, "-ss", fmt.Sprintf("%.3f", track.StartSeconds))
-
-	if track.EndSeconds > 0 {
-		args = append(args, "-to", fmt.Sprintf("%.3f", track.EndSeconds))
-	}
-
-	args = append(args, "-vn", "-codec:a", codec, "-y", outputPath)
+	args := buildSplitArgs(track, codec, outputPath)
 
 	cmd := exec.CommandContext(ctx, s.ffmpegPath, args...)
 	output, err := cmd.CombinedOutput()
@@ -124,6 +117,27 @@ func (s *CueSplitter) splitOne(ctx context.Context, subDir string, track cue.Res
 		FileSize:      fi.Size(),
 		Format:        format,
 	}, nil
+}
+
+// buildSplitArgs 构造单个 track 的 ffmpeg 切分参数。
+//
+// -ss 必须放在 -i 之前使用「输入快速 seek」：ffmpeg 直接跳到起点附近的帧再开始读，
+// 每个 track 近似常数时间。若放在 -i 之后（输出慢速 seek），ffmpeg 会从文件开头
+// demux/读取并丢弃数据直到 seek 点，对一整张 CD 镜像切成 N 个 track 会退化成
+// O(N²) 的全文件反复读取，CPU 高且极慢（songloft-org/songloft#260）。
+//
+// 输入 seek 后用 -t 时长裁剪（相对已 seek 到的起点），避免 input-seek 与 -to
+// （绝对时间戳）组合的语义歧义。EndSeconds 为 0（或不大于起点）表示最后一个 track，
+// 直接读到文件末尾。
+func buildSplitArgs(track cue.ResolvedTrack, codec, outputPath string) []string {
+	args := []string{"-ss", fmt.Sprintf("%.3f", track.StartSeconds), "-i", track.AudioFilePath}
+
+	if track.EndSeconds > track.StartSeconds {
+		args = append(args, "-t", fmt.Sprintf("%.3f", track.EndSeconds-track.StartSeconds))
+	}
+
+	args = append(args, "-vn", "-codec:a", codec, "-y", outputPath)
+	return args
 }
 
 func (s *CueSplitter) splitSubDir(cueSourcePath string) string {

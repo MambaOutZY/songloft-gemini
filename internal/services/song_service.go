@@ -348,6 +348,18 @@ const (
 func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 	cancelCh := s.scanProgressManager.GetCancelChannel()
 
+	// 派生可取消 ctx：用户取消时同步 cancel，使 CUE 切分阶段的 ffmpeg 子进程
+	// （exec.CommandContext）被及时杀掉，而非等其自然结束。
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-cancelCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
 	scanResult, err := s.scanner.ScanFilesWithCue(ctx, func(count int) {
 		s.scanProgressManager.SetDiscoveredFiles(count)
 	})
@@ -419,10 +431,12 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 	}
 
 	if len(toProcess) == 0 {
-		if s.cueSplitter != nil {
-			s.processCueFiles(ctx, scanResult.CueFiles, reimport)
-			s.processEmbeddedCueSheets(ctx, files, reimport)
-			s.cleanStaleCueRecords(ctx)
+		s.runCueProcessing(ctx, scanResult, files, reimport)
+		select {
+		case <-cancelCh:
+			s.scanProgressManager.SetCancelled()
+			return
+		default:
 		}
 		if s.configService != nil && s.configService.GetBool("scan_auto_create_playlists", true) {
 			s.runAutoCreatePlaylists(ctx)
@@ -541,10 +555,13 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 	}
 
 	// CUE 整轨处理
-	if s.cueSplitter != nil {
-		s.processCueFiles(ctx, scanResult.CueFiles, reimport)
-		s.processEmbeddedCueSheets(ctx, files, reimport)
-		s.cleanStaleCueRecords(ctx)
+	s.runCueProcessing(ctx, scanResult, files, reimport)
+
+	select {
+	case <-cancelCh:
+		s.scanProgressManager.SetCancelled()
+		return
+	default:
 	}
 
 	if s.configService != nil && s.configService.GetBool("scan_auto_create_playlists", true) {
@@ -565,6 +582,19 @@ func (s *SongService) setLocalSongCount(ctx context.Context) {
 		return
 	}
 	s.scanProgressManager.SetLocalSongCount(int(localCount))
+}
+
+// runCueProcessing 执行 CUE 整轨切分阶段（外部 .cue + FLAC 内嵌 CUESHEET），
+// 并清理失效的 CUE 记录。切换到 splitting_cue 状态以便前端展示独立进度，
+// 该阶段对大 CD 镜像可能较慢（逐个 track ffmpeg 切分）。
+func (s *SongService) runCueProcessing(ctx context.Context, scanResult *ScanResult, files []string, reimport bool) {
+	if s.cueSplitter == nil {
+		return
+	}
+	s.scanProgressManager.BeginSplittingCue()
+	s.processCueFiles(ctx, scanResult.CueFiles, reimport)
+	s.processEmbeddedCueSheets(ctx, files, reimport)
+	s.cleanStaleCueRecords(ctx)
 }
 
 // runAutoCreatePlaylists 扫描完成后按当前 playlistMode 配置重建 auto_created 歌单。

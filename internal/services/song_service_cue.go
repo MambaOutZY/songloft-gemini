@@ -25,6 +25,12 @@ func (s *SongService) processCueFiles(ctx context.Context, cueFiles []string, re
 	existingSources := s.listCueSourceSet(ctx)
 
 	for _, cuePath := range cueFiles {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		if !reimport {
 			if existingSources[cuePath] {
 				continue
@@ -46,6 +52,12 @@ func (s *SongService) processEmbeddedCueSheets(ctx context.Context, audioFiles [
 	existingSources := s.listCueSourceSet(ctx)
 
 	for _, filePath := range audioFiles {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		if !strings.HasSuffix(strings.ToLower(filePath), ".flac") {
 			continue
 		}
@@ -142,18 +154,25 @@ func secondsToCueTime(seconds float64) cue.CUETime {
 
 // processCueSheet 处理一个 CUE Sheet 的切片和入库。
 func (s *SongService) processCueSheet(ctx context.Context, cueSourcePath string, sheet *cue.CUESheet, reimport bool) {
+	s.scanProgressManager.UpdateCueProgress(cueSourcePath)
+
 	cueDir := filepath.Dir(cueSourcePath)
 
-	// 获取引用音频文件的时长
+	// 获取引用音频文件的时长。同时缓存整轨文件的元数据，
+	// 供后续提取封面复用，避免对大 CD 镜像重复 Extract（重复读取整个文件）。
 	totalDurations := make(map[string]float64)
+	metaCache := make(map[string]*Metadata)
 	for _, f := range sheet.Files {
 		audioPath := f.Filename
 		if !filepath.IsAbs(audioPath) {
 			audioPath = filepath.Join(cueDir, audioPath)
 		}
 		metadata, err := s.metadataExtractor.Extract(ctx, audioPath)
-		if err == nil && metadata.Duration > 0 {
-			totalDurations[audioPath] = metadata.Duration
+		if err == nil {
+			metaCache[audioPath] = metadata
+			if metadata.Duration > 0 {
+				totalDurations[audioPath] = metadata.Duration
+			}
 		}
 	}
 
@@ -183,8 +202,14 @@ func (s *SongService) processCueSheet(ctx context.Context, cueSourcePath string,
 		return
 	}
 
-	// 提取封面（从第一个整轨文件提取一次）
-	coverPath := s.extractCueCover(ctx, results[0].Track.AudioFilePath)
+	// 提取封面（从第一个整轨文件提取一次）；优先复用切分前已缓存的元数据。
+	firstAudioPath := results[0].Track.AudioFilePath
+	var coverPath string
+	if md, ok := metaCache[firstAudioPath]; ok {
+		coverPath = s.saveCueCover(firstAudioPath, md)
+	} else {
+		coverPath = s.extractCueCover(ctx, firstAudioPath)
+	}
 
 	// 入库
 	now := time.Now()
@@ -234,13 +259,20 @@ func (s *SongService) processCueSheet(ctx context.Context, cueSourcePath string,
 		"tracks", len(songs))
 }
 
-// extractCueCover 从整轨音频文件提取封面
+// extractCueCover 从整轨音频文件提取并保存封面（无缓存时的回退路径）。
 func (s *SongService) extractCueCover(ctx context.Context, audioPath string) string {
 	metadata, err := s.metadataExtractor.Extract(ctx, audioPath)
-	if err != nil || !metadata.HasCover || metadata.CoverData == nil {
+	if err != nil {
 		return ""
 	}
+	return s.saveCueCover(audioPath, metadata)
+}
 
+// saveCueCover 从已提取的元数据保存封面，返回封面路径（无封面时返回空串）。
+func (s *SongService) saveCueCover(audioPath string, metadata *Metadata) string {
+	if metadata == nil || !metadata.HasCover || metadata.CoverData == nil {
+		return ""
+	}
 	coverPath, err := s.metadataExtractor.SaveCover(0, metadata)
 	if err != nil {
 		slog.Warn("CUE 封面保存失败", "audio", audioPath, "error", err)

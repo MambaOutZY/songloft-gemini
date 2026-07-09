@@ -12,6 +12,7 @@ const (
 	ScanStatusIdle              ScanStatus = "idle"               // 空闲
 	ScanStatusScanning          ScanStatus = "scanning"           // 扫描文件中
 	ScanStatusImporting         ScanStatus = "importing"          // 导入中
+	ScanStatusSplittingCue      ScanStatus = "splitting_cue"      // CUE 整轨切分中
 	ScanStatusCreatingPlaylists ScanStatus = "creating_playlists" // 自动创建歌单中
 	ScanStatusCompleted         ScanStatus = "completed"          // 已完成
 	ScanStatusFailed            ScanStatus = "failed"             // 失败
@@ -30,19 +31,20 @@ const (
 
 // ScanProgress 扫描进度信息
 type ScanProgress struct {
-	Status          ScanStatus `json:"status"`           // 当前状态
-	DiscoveredFiles int        `json:"discovered_files"` // scanning 阶段已发现的音频文件数
-	TotalFiles      int        `json:"total_files"`      // 总文件数
-	ScannedFiles    int        `json:"scanned_files"`    // 已扫描文件数
-	ImportedFiles   int        `json:"imported_files"`   // 已导入文件数
-	SkippedFiles    int        `json:"skipped_files"`    // 跳过的文件数（已存在）
-	FailedFiles     int        `json:"failed_files"`     // 失败的文件数
-	CleanedFiles    int        `json:"cleaned_files"`    // 清理的过期文件数
-	LocalSongCount  int        `json:"local_song_count"` // 扫描完成后数据库中本地歌曲总数
-	CurrentFile     string     `json:"current_file"`     // 当前处理的文件
-	StartTime       *time.Time `json:"start_time"`       // 开始时间
-	EndTime         *time.Time `json:"end_time"`         // 结束时间
-	Error           string     `json:"error"`            // 错误信息
+	Status          ScanStatus `json:"status"`            // 当前状态
+	DiscoveredFiles int        `json:"discovered_files"`  // scanning 阶段已发现的音频文件数
+	TotalFiles      int        `json:"total_files"`       // 总文件数
+	ScannedFiles    int        `json:"scanned_files"`     // 已扫描文件数
+	ImportedFiles   int        `json:"imported_files"`    // 已导入文件数
+	SkippedFiles    int        `json:"skipped_files"`     // 跳过的文件数（已存在）
+	FailedFiles     int        `json:"failed_files"`      // 失败的文件数
+	CleanedFiles    int        `json:"cleaned_files"`     // 清理的过期文件数
+	CueSplitSources int        `json:"cue_split_sources"` // splitting_cue 阶段已处理的 CUE 来源数
+	LocalSongCount  int        `json:"local_song_count"`  // 扫描完成后数据库中本地歌曲总数
+	CurrentFile     string     `json:"current_file"`      // 当前处理的文件
+	StartTime       *time.Time `json:"start_time"`        // 开始时间
+	EndTime         *time.Time `json:"end_time"`          // 结束时间
+	Error           string     `json:"error"`             // 错误信息
 }
 
 // ScanProgressManager 扫描进度管理器
@@ -74,7 +76,26 @@ func (m *ScanProgressManager) IsScanning() bool {
 	defer m.mu.RUnlock()
 	return m.progress.Status == ScanStatusScanning ||
 		m.progress.Status == ScanStatusImporting ||
+		m.progress.Status == ScanStatusSplittingCue ||
 		m.progress.Status == ScanStatusCreatingPlaylists
+}
+
+// BeginSplittingCue 切换到 CUE 整轨切分阶段。
+// 该阶段对大 CD 镜像可能耗时较长，需单独上报进度，避免前端误判为卡死。
+func (m *ScanProgressManager) BeginSplittingCue() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.progress.Status = ScanStatusSplittingCue
+	m.progress.CurrentFile = ""
+	m.progress.CueSplitSources = 0
+}
+
+// UpdateCueProgress 上报正在切分的 CUE 来源，并累加已处理来源数。
+func (m *ScanProgressManager) UpdateCueProgress(currentSource string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.progress.CueSplitSources++
+	m.progress.CurrentFile = currentSource
 }
 
 // BeginCreatingPlaylists 切换到自动创建歌单阶段
@@ -179,8 +200,11 @@ func (m *ScanProgressManager) Cancel() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 只有在扫描中才能取消（自动创建歌单阶段已经在 commit 事务，不允许取消）
-	if m.progress.Status != ScanStatusScanning && m.progress.Status != ScanStatusImporting {
+	// 扫描 / 导入 / CUE 切分阶段可取消；
+	// 自动创建歌单阶段已在 commit 事务，不允许取消。
+	if m.progress.Status != ScanStatusScanning &&
+		m.progress.Status != ScanStatusImporting &&
+		m.progress.Status != ScanStatusSplittingCue {
 		return false
 	}
 

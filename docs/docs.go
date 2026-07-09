@@ -7756,6 +7756,10 @@ const docTemplate = `{
                     "description": "清理的过期文件数",
                     "type": "integer"
                 },
+                "cue_split_sources": {
+                    "description": "splitting_cue 阶段已处理的 CUE 来源数",
+                    "type": "integer"
+                },
                 "current_file": {
                     "description": "当前处理的文件",
                     "type": "string"
@@ -7816,6 +7820,7 @@ const docTemplate = `{
                 "idle",
                 "scanning",
                 "importing",
+                "splitting_cue",
                 "creating_playlists",
                 "completed",
                 "failed",
@@ -7830,12 +7835,14 @@ const docTemplate = `{
                 "ScanStatusFailed": "失败",
                 "ScanStatusIdle": "空闲",
                 "ScanStatusImporting": "导入中",
-                "ScanStatusScanning": "扫描文件中"
+                "ScanStatusScanning": "扫描文件中",
+                "ScanStatusSplittingCue": "CUE 整轨切分中"
             },
             "x-enum-descriptions": [
                 "空闲",
                 "扫描文件中",
                 "导入中",
+                "CUE 整轨切分中",
                 "自动创建歌单中",
                 "已完成",
                 "失败",
@@ -7846,6 +7853,7 @@ const docTemplate = `{
                 "ScanStatusIdle",
                 "ScanStatusScanning",
                 "ScanStatusImporting",
+                "ScanStatusSplittingCue",
                 "ScanStatusCreatingPlaylists",
                 "ScanStatusCompleted",
                 "ScanStatusFailed",
