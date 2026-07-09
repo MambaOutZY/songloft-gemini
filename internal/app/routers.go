@@ -133,6 +133,7 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/songs/{id}/lyrics", songHandler.UpdateSongLyrics)
 			r.Put("/songs/{id}/tags", songHandler.WriteTags)
 			r.Post("/songs/organize", songHandler.OrganizeSongs)
+			r.Post("/songs/organize/preview", songHandler.PreviewOrganizeSongs)
 			r.Post("/songs/{id}/activate", songHandler.ActivateSong)
 			r.Post("/songs/{id}/played", songHandler.SongPlayed)
 			r.Get("/settings/remote-title-source", songHandler.GetRemoteTitleSourceSetting)

@@ -1372,7 +1372,7 @@ func detectImageExt(data []byte) string {
 
 // OrganizeSongs 批量整理歌曲文件
 // @Summary 批量整理歌曲文件
-// @Description 批量移动/重命名本地歌曲文件到指定目录结构。target_path 为相对于 music_path 的路径（含目录和文件名），扩展名必须与原文件一致。
+// @Description 批量移动/重命名本地歌曲文件到指定目录结构。target_path 为相对于 music_path 的路径（含目录和文件名），扩展名必须与原文件一致。CUE 拆分歌曲会被跳过（status=skip）；目标文件已存在时拒绝覆盖（status=error）。music_path 由服务端自取。
 // @Tags 歌曲管理
 // @Accept json
 // @Produce json
@@ -1382,16 +1382,6 @@ func detectImageExt(data []byte) string {
 // @Security BearerAuth
 // @Router /api/v1/songs/organize [post]
 func (h *SongHandler) OrganizeSongs(w http.ResponseWriter, r *http.Request) {
-	if h.getMusicPath == nil {
-		respondError(w, http.StatusInternalServerError, "music path not configured", nil)
-		return
-	}
-	musicPath := h.getMusicPath()
-	if musicPath == "" {
-		respondError(w, http.StatusBadRequest, "music_path 未设置", nil)
-		return
-	}
-
 	var items []services.OrganizeItem
 	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
 		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
@@ -1402,7 +1392,33 @@ func (h *SongHandler) OrganizeSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := h.songService.OrganizeSongs(r.Context(), musicPath, items)
+	results := h.songService.OrganizeSongs(r.Context(), items)
+	respondJSON(w, http.StatusOK, results)
+}
+
+// PreviewOrganizeSongs 预览批量整理
+// @Summary 预览批量整理歌曲文件
+// @Description dry-run 预览目录整理变更，返回每项 old_path→new_path 与状态（ok/conflict/skip/error），不移动任何文件、不改数据库。target_path 为相对 music_path 的路径。CUE 歌曲 skip；目标已存在或批内撞名 conflict。music_path 由服务端自取。
+// @Tags 歌曲管理
+// @Accept json
+// @Produce json
+// @Param request body []services.OrganizeItem true "整理项目列表"
+// @Success 200 {array} services.OrganizePreviewResult "预览结果"
+// @Failure 400 {object} map[string]string "请求错误"
+// @Security BearerAuth
+// @Router /api/v1/songs/organize/preview [post]
+func (h *SongHandler) PreviewOrganizeSongs(w http.ResponseWriter, r *http.Request) {
+	var items []services.OrganizeItem
+	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
+		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
+		return
+	}
+	if len(items) == 0 {
+		respondError(w, http.StatusBadRequest, "列表不能为空", nil)
+		return
+	}
+
+	results := h.songService.PreviewOrganize(r.Context(), items)
 	respondJSON(w, http.StatusOK, results)
 }
 

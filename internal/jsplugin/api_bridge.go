@@ -260,6 +260,14 @@ songloft.songs = {
     },
     setAutoDownload: async function(options) {
         await __callBridge('songs.setAutoDownload', JSON.stringify(options || {}));
+    },
+    organizePreview: async function(items) {
+        var s = await __callBridge('songs.organizePreview', JSON.stringify({items: items || []}));
+        return s ? JSON.parse(s) : [];
+    },
+    organize: async function(items) {
+        var s = await __callBridge('songs.organize', JSON.stringify({items: items || []}));
+        return s ? JSON.parse(s) : [];
     }
 };
 
@@ -622,9 +630,9 @@ func extractPermFromAction(action string) string {
 
 	// 歌曲相关 action 映射到具体权限
 	switch action {
-	case "songs.list", "songs.getById", "songs.search":
+	case "songs.list", "songs.getById", "songs.search", "songs.organizePreview":
 		return PermSongsRead
-	case "songs.create", "songs.update", "songs.delete", "songs.download", "songs.setAutoDownload":
+	case "songs.create", "songs.update", "songs.delete", "songs.download", "songs.setAutoDownload", "songs.organize":
 		return PermSongsWrite
 	}
 
@@ -957,6 +965,40 @@ func (h *BridgeHandler) handleSongs(action, data string) (string, error) {
 		}
 		h.songDownloader.SetAutoDownloadConfig(&config)
 		return "", nil
+
+	case "songs.organizePreview":
+		if h.songService == nil {
+			return "", fmt.Errorf("handleSongs: song service not configured")
+		}
+		var req struct {
+			Items []services.OrganizeItem `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handleSongs: parse organizePreview: %w", err)
+		}
+		results := h.songService.PreviewOrganize(ctx, req.Items)
+		out, err := json.Marshal(results)
+		if err != nil {
+			return "", fmt.Errorf("handleSongs: marshal organizePreview: %w", err)
+		}
+		return string(out), nil
+
+	case "songs.organize":
+		if h.songService == nil {
+			return "", fmt.Errorf("handleSongs: song service not configured")
+		}
+		var req struct {
+			Items []services.OrganizeItem `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handleSongs: parse organize: %w", err)
+		}
+		results := h.songService.OrganizeSongs(ctx, req.Items)
+		out, err := json.Marshal(results)
+		if err != nil {
+			return "", fmt.Errorf("handleSongs: marshal organize: %w", err)
+		}
+		return string(out), nil
 
 	case "songs.create":
 		if h.songService == nil {

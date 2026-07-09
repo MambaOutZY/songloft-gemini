@@ -59,7 +59,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "批量移动/重命名本地歌曲文件到指定目录结构。target_path 为相对于 music_path 的路径（含目录和文件名），扩展名必须与原文件一致。",
+                "description": "批量移动/重命名本地歌曲文件到指定目录结构。target_path 为相对于 music_path 的路径（含目录和文件名），扩展名必须与原文件一致。CUE 拆分歌曲会被跳过（status=skip）；目标文件已存在时拒绝覆盖（status=error）。music_path 由服务端自取。",
                 "consumes": [
                     "application/json"
                 ],
@@ -91,6 +91,60 @@
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/services.OrganizeResult"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/songs/organize/preview": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "dry-run 预览目录整理变更，返回每项 old_path→new_path 与状态（ok/conflict/skip/error），不移动任何文件、不改数据库。target_path 为相对 music_path 的路径。CUE 歌曲 skip；目标已存在或批内撞名 conflict。music_path 由服务端自取。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "预览批量整理歌曲文件",
+                "parameters": [
+                    {
+                        "description": "整理项目列表",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.OrganizeItem"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "预览结果",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.OrganizePreviewResult"
                             }
                         }
                     },
@@ -7705,6 +7759,26 @@
                     "type": "integer"
                 },
                 "target_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.OrganizePreviewResult": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "new_path": {
+                    "type": "string"
+                },
+                "old_path": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }

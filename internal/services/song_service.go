@@ -1106,7 +1106,7 @@ type OrganizeItem struct {
 	TargetPath string `json:"target_path"`
 }
 
-// OrganizeResult 批量整理的单项结果。
+// OrganizeResult 批量整理的单项结果。Status ∈ ok | skip | error。
 type OrganizeResult struct {
 	ID       int64  `json:"id"`
 	Status   string `json:"status"`
@@ -1114,63 +1114,170 @@ type OrganizeResult struct {
 	Error    string `json:"error,omitempty"`
 }
 
-// OrganizeSongs 批量移动/重命名本地歌曲文件。
-func (s *SongService) OrganizeSongs(ctx context.Context, musicPath string, items []OrganizeItem) []OrganizeResult {
-	results := make([]OrganizeResult, 0, len(items))
+// OrganizePreviewResult 整理预览（dry-run）的单项结果。Status ∈ ok | conflict | skip | error。
+type OrganizePreviewResult struct {
+	ID      int64  `json:"id"`
+	OldPath string `json:"old_path,omitempty"`
+	NewPath string `json:"new_path,omitempty"`
+	Status  string `json:"status"`
+	Error   string `json:"error,omitempty"`
+}
+
+// organizePlan 是单项整理经校验后的计划。
+// 说明：song.FilePath 由扫描器存储为「以 music_path 为根的完整路径」（可直接用于 os 操作，
+// 见 BatchDelete 的 os.Remove(song.FilePath)）。因此 absSource 直接取 song.FilePath，
+// 而 newPath = Join(musicPath, target_path) 保持同一种根格式，写回 DB 后与扫描格式一致。
+type organizePlan struct {
+	song      *models.Song
+	newPath   string // 移动后写回 DB 的 file_path（Join(musicPath, target_path)，与扫描格式一致）
+	absSource string // 源文件路径（= song.FilePath，已是完整路径）
+	absTarget string // 目标文件路径（= newPath）
+	noop      bool   // 源与目标相同，无需移动
+}
+
+// resolveMusicPath 返回当前 music_path；未配置时报错。
+func (s *SongService) resolveMusicPath() (string, error) {
+	if s.scanner == nil {
+		return "", fmt.Errorf("music_path 未配置")
+	}
+	musicPath := s.scanner.GetMusicPath()
+	if musicPath == "" {
+		return "", fmt.Errorf("music_path 未设置")
+	}
+	return musicPath, nil
+}
+
+// resolveOrganizeTarget 校验单项并计算源/目标绝对路径，preview 与 execute 共用。
+// 返回的 *OrganizeResult 非 nil 时表示该项已有终态（skip / error），调用方直接采用。
+func (s *SongService) resolveOrganizeTarget(ctx context.Context, musicPath string, item OrganizeItem) (*organizePlan, *OrganizeResult) {
+	song, err := s.songs.GetByID(ctx, item.ID)
+	if err != nil {
+		return nil, &OrganizeResult{ID: item.ID, Status: "error", Error: "song not found"}
+	}
+	if song.Type != models.TypeLocal {
+		return nil, &OrganizeResult{ID: item.ID, Status: "error", Error: "not a local song"}
+	}
+	// CUE 拆分歌曲多条记录共享同一音频文件，搬动会导致其它轨路径失效，直接跳过。
+	if song.CueSourcePath != "" {
+		return nil, &OrganizeResult{ID: item.ID, Status: "skip", Error: "cue song skipped"}
+	}
+	if song.FilePath == "" {
+		return nil, &OrganizeResult{ID: item.ID, Status: "error", Error: "song has no file path"}
+	}
+
+	targetPath := filepath.Clean(item.TargetPath)
+	if strings.HasPrefix(targetPath, "..") {
+		return nil, &OrganizeResult{ID: item.ID, Status: "error", Error: "path traversal not allowed"}
+	}
+
+	// newPath 与扫描器存储格式一致（以 music_path 为根）；absSource 直接取已存储的完整路径。
+	newPath := filepath.Join(musicPath, targetPath)
+	absSource := song.FilePath
+
+	if !strings.HasPrefix(newPath, musicPath+string(filepath.Separator)) && newPath != musicPath {
+		return nil, &OrganizeResult{ID: item.ID, Status: "error", Error: "target path outside music directory"}
+	}
+
+	if filepath.Ext(absSource) != filepath.Ext(newPath) {
+		return nil, &OrganizeResult{ID: item.ID, Status: "error", Error: "file extension mismatch"}
+	}
+
+	return &organizePlan{
+		song:      song,
+		newPath:   newPath,
+		absSource: absSource,
+		absTarget: newPath,
+		noop:      filepath.Clean(absSource) == filepath.Clean(newPath),
+	}, nil
+}
+
+// PreviewOrganize 预览批量整理（dry-run，不落盘）。music_path 由 service 自取。
+func (s *SongService) PreviewOrganize(ctx context.Context, items []OrganizeItem) []OrganizePreviewResult {
+	results := make([]OrganizePreviewResult, 0, len(items))
+	musicPath, err := s.resolveMusicPath()
+	if err != nil {
+		for _, item := range items {
+			results = append(results, OrganizePreviewResult{ID: item.ID, Status: "error", Error: err.Error()})
+		}
+		return results
+	}
+
+	seen := make(map[string]int64) // absTarget → 首个占用该目标的 song id，检测批内撞名
 	for _, item := range items {
-		r := s.organizeOne(ctx, musicPath, item)
-		results = append(results, r)
+		plan, res := s.resolveOrganizeTarget(ctx, musicPath, item)
+		if res != nil {
+			results = append(results, OrganizePreviewResult{ID: res.ID, Status: res.Status, Error: res.Error})
+			continue
+		}
+
+		pr := OrganizePreviewResult{ID: item.ID, OldPath: plan.song.FilePath, NewPath: plan.newPath, Status: "ok"}
+		if !plan.noop {
+			if fileExists(plan.absTarget) {
+				pr.Status = "conflict"
+				pr.Error = "target already exists"
+			} else if prevID, ok := seen[plan.absTarget]; ok {
+				pr.Status = "conflict"
+				pr.Error = fmt.Sprintf("target conflicts with song %d in this batch", prevID)
+			} else {
+				seen[plan.absTarget] = item.ID
+			}
+		}
+		results = append(results, pr)
+	}
+	return results
+}
+
+// OrganizeSongs 批量移动/重命名本地歌曲文件。music_path 由 service 自取。
+func (s *SongService) OrganizeSongs(ctx context.Context, items []OrganizeItem) []OrganizeResult {
+	results := make([]OrganizeResult, 0, len(items))
+	musicPath, err := s.resolveMusicPath()
+	if err != nil {
+		for _, item := range items {
+			results = append(results, OrganizeResult{ID: item.ID, Status: "error", Error: err.Error()})
+		}
+		return results
+	}
+	for _, item := range items {
+		results = append(results, s.organizeOne(ctx, musicPath, item))
 	}
 	return results
 }
 
 func (s *SongService) organizeOne(ctx context.Context, musicPath string, item OrganizeItem) OrganizeResult {
-	song, err := s.songs.GetByID(ctx, item.ID)
-	if err != nil {
-		return OrganizeResult{ID: item.ID, Status: "error", Error: "song not found"}
+	plan, res := s.resolveOrganizeTarget(ctx, musicPath, item)
+	if res != nil {
+		return *res
 	}
-	if song.Type != models.TypeLocal {
-		return OrganizeResult{ID: item.ID, Status: "error", Error: "not a local song"}
-	}
-	if song.FilePath == "" {
-		return OrganizeResult{ID: item.ID, Status: "error", Error: "song has no file path"}
+	if plan.noop {
+		return OrganizeResult{ID: item.ID, Status: "ok", FilePath: plan.newPath}
 	}
 
-	targetPath := filepath.Clean(item.TargetPath)
-	if strings.HasPrefix(targetPath, "..") {
-		return OrganizeResult{ID: item.ID, Status: "error", Error: "path traversal not allowed"}
+	// 拒绝覆盖已存在的目标文件（moveFile 底层 os.Rename 会静默覆盖）。
+	if fileExists(plan.absTarget) {
+		return OrganizeResult{ID: item.ID, Status: "error", Error: "target already exists"}
 	}
 
-	absSource := filepath.Join(musicPath, song.FilePath)
-	absTarget := filepath.Join(musicPath, targetPath)
-
-	if !strings.HasPrefix(absTarget, musicPath+string(filepath.Separator)) && absTarget != musicPath {
-		return OrganizeResult{ID: item.ID, Status: "error", Error: "target path outside music directory"}
-	}
-
-	if filepath.Ext(absSource) != filepath.Ext(absTarget) {
-		return OrganizeResult{ID: item.ID, Status: "error", Error: "file extension mismatch"}
-	}
-
-	if absSource == absTarget {
-		return OrganizeResult{ID: item.ID, Status: "ok", FilePath: targetPath}
-	}
-
-	if err := os.MkdirAll(filepath.Dir(absTarget), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(plan.absTarget), 0755); err != nil {
 		return OrganizeResult{ID: item.ID, Status: "error", Error: fmt.Sprintf("create directory: %v", err)}
 	}
 
-	if err := moveFile(absSource, absTarget); err != nil {
+	if err := moveFile(plan.absSource, plan.absTarget); err != nil {
 		return OrganizeResult{ID: item.ID, Status: "error", Error: fmt.Sprintf("move file: %v", err)}
 	}
 
-	song.FilePath = targetPath
-	if err := s.songs.Update(ctx, song); err != nil {
-		_ = moveFile(absTarget, absSource)
+	plan.song.FilePath = plan.newPath
+	if err := s.songs.Update(ctx, plan.song); err != nil {
+		_ = moveFile(plan.absTarget, plan.absSource)
 		return OrganizeResult{ID: item.ID, Status: "error", Error: fmt.Sprintf("update database: %v", err)}
 	}
 
-	_ = os.Remove(filepath.Dir(absSource))
+	_ = os.Remove(filepath.Dir(plan.absSource))
 
-	return OrganizeResult{ID: item.ID, Status: "ok", FilePath: targetPath}
+	return OrganizeResult{ID: item.ID, Status: "ok", FilePath: plan.newPath}
+}
+
+// fileExists 判断路径是否存在。
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
