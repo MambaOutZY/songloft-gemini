@@ -23,6 +23,7 @@ Songloft 是自托管本地音乐服务器，支持**服务器部署**和**Bundl
 | `/plugin-toolchain` ([独立仓库](https://github.com/songloft-org/plugin-toolchain)) | TS + pnpm | JS 插件开发工具链（SDK / Builder / 脚手架） |
 | `/jsplugins-src` | TS | JS 插件源码（子模块集合，每个插件在自己仓库下分发 release） |
 | `/pkg/tag` | Go | 音频元数据**读写**库（基于上游 tag 库扩展 MP3/FLAC 写入） |
+| `/addon` | HA add-on | Home Assistant 加载项（薄层复用 Docker 镜像）。设计/踩坑/发版见 [addon/README.md](addon/README.md) |
 
 ---
 
@@ -186,6 +187,15 @@ func (h *XxxHandler) Method(w http.ResponseWriter, r *http.Request) { ... }
 - **判定准则**：凡是新增、修改、删除文档中的**内容/结构/链接**（正文、章节、表格、导航链接等），中英两版都要落地对应改动；仅英文表述本地化，结构保持一致
 - **改前先确认对应文件是否存在**：`docs/en/` 下有同名文件则必须同步；README 一律有 `.en.md` 对应
 - **例外**：某些内容天然只属于单一语言版本（如仅中文版的社区说明），无对应版本时不强制镜像，但应确保是有意为之，而非遗漏
+
+---
+
+## 文档站结构（docs/ — VitePress 自定义主题）
+
+Songloft 文档站（`docs/`）用 **VitePress + 自定义主题**（`docs/.vitepress/theme/`），**不是默认主题**。改文档站前必须先分清两类页面，改错地方会白改：
+
+- **自定义落地页（改数据，不改 markdown）**：首页 `docs/index.md` 仅一行 `<Landing />`，内容由结构化数据 `docs/.vitepress/data/*.ts`（安装方式 `downloads.ts`、功能 `features.ts`、文案 `landing-i18n.ts`）驱动，由 `docs/.vitepress/theme/components/landing/*.vue` 渲染。改落地页 → 改 `data/*.ts`（双语 `{zh,en}` 字段）；图标要对齐组件里的映射表（如 `LandingInstaller.vue` 的 `ICONS`）。
+- **自动生成页（禁止手改）**：`docs/quick-start.md`、`docs/en/quick-start.md`、`docs/changelog.md` 由 `scripts/sync-docs.mjs` 从根 `README.md` / `README.en.md` / `CHANGELOG.md` 生成，已被 `docs/.gitignore` 忽略。要改正文 → 改源 `README` / `CHANGELOG`，`docs:dev` / `docs:build` 会先跑 `sync` 重新生成。**手改会被覆盖且不入库**。
 
 ---
 
