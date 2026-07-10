@@ -3416,7 +3416,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "异步扫描音乐目录并导入新发现的音乐文件到数据库，立即返回，可通过进度接口查询状态",
+                "description": "异步扫描音乐目录并导入新发现的音乐文件到数据库，立即返回，可通过进度接口查询状态。\nreimport=true 时对已入库文件也重新提取元数据；默认 false 走增量（跳过已存在且时长有效的文件）。\npaths 为目录级定向扫描（Issue #262）：省略/为空时扫描整个音乐根目录；非空时只扫描给定目录（含子目录），\n且过期记录清理仅收敛到这些目录之内（不影响其余曲库）。每个目录必须位于音乐根目录之下，否则返回 400。",
                 "consumes": [
                     "application/json"
                 ],
@@ -3443,6 +3443,15 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "指定目录不在音乐目录下",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "409": {
@@ -6529,6 +6538,13 @@
         "handlers.ScanRequest": {
             "type": "object",
             "properties": {
+                "paths": {
+                    "description": "Paths 为目录级定向扫描（Issue #262）：为空时扫描整个音乐根目录（默认行为）；\n非空时只扫描给定目录（含子目录），过期记录清理也仅收敛到这些目录之内。\n每个目录必须位于音乐根目录之下，否则返回 400。",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "reimport": {
                     "type": "boolean"
                 }

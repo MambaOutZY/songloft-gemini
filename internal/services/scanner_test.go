@@ -584,3 +584,155 @@ func TestGetMusicPath(t *testing.T) {
 		t.Errorf("GetMusicPath() = %s, want /music", got)
 	}
 }
+
+// baseNames 收集扫描结果中的文件名（去路径），便于断言。
+func baseNames(files []string) map[string]bool {
+	m := make(map[string]bool, len(files))
+	for _, f := range files {
+		m[filepath.Base(f)] = true
+	}
+	return m
+}
+
+// TestScanFilesWithCueInDirs_EmptyRootsDegradesToFullScan 空 roots 退化为全库扫描。
+func TestScanFilesWithCueInDirs_EmptyRootsDegradesToFullScan(t *testing.T) {
+	tmpDir := setupTestMusicDir(t)
+	defer os.RemoveAll(tmpDir)
+
+	config := &ScanConfig{
+		MusicPath:        tmpDir,
+		ExcludeDirs:      []string{"@eaDir", "tmpdir"},
+		SupportedFormats: []string{"mp3", "flac", "wav", "m4a"},
+	}
+	scanner := NewScanner(config)
+
+	result, err := scanner.ScanFilesWithCueInDirs(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("ScanFilesWithCueInDirs(nil) error = %v", err)
+	}
+	// 与全库 ScanFiles 一致：5 个音频文件（排除 @eaDir、tmpdir）。
+	if len(result.AudioFiles) != 5 {
+		t.Errorf("empty roots found %d files, want 5", len(result.AudioFiles))
+	}
+}
+
+// TestScanFilesWithCueInDirs_ScopedToSubdir 只扫指定子目录。
+func TestScanFilesWithCueInDirs_ScopedToSubdir(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "scoped_scan_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	files := []string{
+		"A/a1.mp3",
+		"A/a2.mp3",
+		"B/b1.mp3",
+		"C/c1.mp3",
+	}
+	for _, f := range files {
+		full := filepath.Join(tmpDir, f)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(full, []byte("test"), 0644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	config := &ScanConfig{MusicPath: tmpDir, SupportedFormats: []string{"mp3"}}
+	scanner := NewScanner(config)
+
+	// 只扫 A 和 B，不该出现 C。
+	roots := []string{filepath.Join(tmpDir, "A"), filepath.Join(tmpDir, "B")}
+	result, err := scanner.ScanFilesWithCueInDirs(context.Background(), roots, nil)
+	if err != nil {
+		t.Fatalf("ScanFilesWithCueInDirs() error = %v", err)
+	}
+	names := baseNames(result.AudioFiles)
+	if len(result.AudioFiles) != 3 {
+		t.Errorf("scoped scan found %d files, want 3: %v", len(result.AudioFiles), result.AudioFiles)
+	}
+	for _, want := range []string{"a1.mp3", "a2.mp3", "b1.mp3"} {
+		if !names[want] {
+			t.Errorf("scoped scan missing %s", want)
+		}
+	}
+	if names["c1.mp3"] {
+		t.Error("scoped scan should not include c1.mp3 (outside scope)")
+	}
+}
+
+// TestScanFilesWithCueInDirs_OverlappingRootsNoDuplicates 重叠 roots 不重复计数（共用 visited）。
+func TestScanFilesWithCueInDirs_OverlappingRootsNoDuplicates(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "overlap_scan_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	full := filepath.Join(tmpDir, "A", "sub", "s.mp3")
+	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(full, []byte("test"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	config := &ScanConfig{MusicPath: tmpDir, SupportedFormats: []string{"mp3"}}
+	scanner := NewScanner(config)
+
+	// 同时传父目录 A 和其子目录 A/sub，s.mp3 只应出现一次。
+	roots := []string{filepath.Join(tmpDir, "A"), filepath.Join(tmpDir, "A", "sub")}
+	result, err := scanner.ScanFilesWithCueInDirs(context.Background(), roots, nil)
+	if err != nil {
+		t.Fatalf("ScanFilesWithCueInDirs() error = %v", err)
+	}
+	if len(result.AudioFiles) != 1 {
+		t.Errorf("overlapping roots found %d files, want 1 (no dup): %v", len(result.AudioFiles), result.AudioFiles)
+	}
+}
+
+// TestScanFilesWithCueInDirs_NonExistentRoot 全部 root 都不存在时返回错误。
+func TestScanFilesWithCueInDirs_NonExistentRoot(t *testing.T) {
+	tmpDir := setupTestMusicDir(t)
+	defer os.RemoveAll(tmpDir)
+
+	config := &ScanConfig{MusicPath: tmpDir, SupportedFormats: []string{"mp3"}}
+	scanner := NewScanner(config)
+
+	_, err := scanner.ScanFilesWithCueInDirs(context.Background(), []string{filepath.Join(tmpDir, "nope")}, nil)
+	if err == nil {
+		t.Error("ScanFilesWithCueInDirs() with all non-existent roots should return error")
+	}
+}
+
+// TestScanFilesWithCueInDirs_SkipsMissingRootScansRest 部分 root 缺失时跳过缺失、继续扫其余。
+func TestScanFilesWithCueInDirs_SkipsMissingRootScansRest(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "skip_missing_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	full := filepath.Join(tmpDir, "A", "a1.mp3")
+	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(full, []byte("test"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	config := &ScanConfig{MusicPath: tmpDir, SupportedFormats: []string{"mp3"}}
+	scanner := NewScanner(config)
+
+	// A 存在、B 不存在：应跳过 B、正常扫到 A 的文件，不报错。
+	roots := []string{filepath.Join(tmpDir, "A"), filepath.Join(tmpDir, "B")}
+	result, err := scanner.ScanFilesWithCueInDirs(context.Background(), roots, nil)
+	if err != nil {
+		t.Fatalf("ScanFilesWithCueInDirs() with one missing root should not error: %v", err)
+	}
+	if len(result.AudioFiles) != 1 || !baseNames(result.AudioFiles)["a1.mp3"] {
+		t.Errorf("expected a1.mp3 scanned from existing root, got %v", result.AudioFiles)
+	}
+}

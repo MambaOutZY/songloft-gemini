@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -63,18 +64,41 @@ type ScanResult struct {
 	CueFiles   []string // .cue 文件绝对路径
 }
 
-// ScanFilesWithCue 扫描音频文件和 .cue 文件。
+// ScanFilesWithCue 扫描音频文件和 .cue 文件（整个音乐根目录）。
 func (s *Scanner) ScanFilesWithCue(ctx context.Context, onProgress func(count int)) (*ScanResult, error) {
-	if _, err := os.Stat(s.config.MusicPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("music directory does not exist: %s", s.config.MusicPath)
+	return s.ScanFilesWithCueInDirs(ctx, nil, onProgress)
+}
+
+// ScanFilesWithCueInDirs 扫描音频文件和 .cue 文件，可限定扫描范围。
+// roots 为空时退化为扫描整个音乐根目录（保持 ScanFilesWithCue 的行为）；
+// 非空时只遍历给定的目录（含子目录），用于目录级定向扫描（Issue #262）。
+// 调用方需保证 roots 均在音乐根目录之下（由 handler 层做安全校验）。
+// 所有 root 共用同一个 visited map，避免勾选目录重叠或软链接互指导致的重复扫描。
+func (s *Scanner) ScanFilesWithCueInDirs(ctx context.Context, roots []string, onProgress func(count int)) (*ScanResult, error) {
+	if len(roots) == 0 {
+		roots = []string{s.config.MusicPath}
 	}
 
 	result := &ScanResult{}
 	visited := make(map[string]bool)
 
-	err := s.scanDirWithCue(ctx, s.config.MusicPath, visited, result, onProgress)
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan directory: %w", err)
+	scanned := 0
+	for _, root := range roots {
+		if _, err := os.Stat(root); os.IsNotExist(err) {
+			// 定向扫描时某个目录可能在"选择→点扫描"之间被删除。
+			// 跳过缺失目录并继续扫描其余目录，而非中断整次扫描；
+			// 仅当所有目录都无效时才报错（见下）。
+			slog.Warn("scan directory does not exist, skipping", "dir", root)
+			continue
+		}
+		if err := s.scanDirWithCue(ctx, root, visited, result, onProgress); err != nil {
+			return nil, fmt.Errorf("failed to scan directory %s: %w", root, err)
+		}
+		scanned++
+	}
+
+	if scanned == 0 {
+		return nil, fmt.Errorf("no valid scan directory: %v", roots)
 	}
 
 	return result, nil

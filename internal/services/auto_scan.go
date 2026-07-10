@@ -97,7 +97,7 @@ func (a *AutoScanner) run(ctx context.Context, interval time.Duration) {
 			slog.Info("自动扫描已停止")
 			return
 		case <-ticker.C:
-			if err := a.songService.ScanAndImportAsync(false); err != nil {
+			if err := a.songService.ScanAndImportAsync(false, nil); err != nil {
 				slog.Debug("自动扫描跳过：已有扫描在进行", "error", err)
 			} else {
 				slog.Info("自动扫描已触发")

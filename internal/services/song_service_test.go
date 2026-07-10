@@ -188,6 +188,81 @@ func TestRunAutoCreatePlaylistsSkipsWhenNil(t *testing.T) {
 	}
 }
 
+// TestIsUnderScope 验证作用域前缀判断（Issue #262 定向扫描核心）。
+func TestIsUnderScope(t *testing.T) {
+	sep := string(filepath.Separator)
+	roots := []string{filepath.Join("/music", "A"), filepath.Join("/music", "B")}
+	tests := []struct {
+		name       string
+		path       string
+		scopeRoots []string
+		want       bool
+	}{
+		{"empty scope means all", "/music/C/x.mp3", nil, true},
+		{"under root A", filepath.Join("/music", "A", "x.mp3"), roots, true},
+		{"root A itself", filepath.Join("/music", "A"), roots, true},
+		{"under root B nested", filepath.Join("/music", "B", "sub", "y.mp3"), roots, true},
+		{"outside scope", filepath.Join("/music", "C", "z.mp3"), roots, false},
+		// 前缀陷阱：/music/AB 不应被 /music/A 命中。
+		{"sibling prefix trap", "/music" + sep + "AB" + sep + "z.mp3", roots, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isUnderScope(tt.path, tt.scopeRoots); got != tt.want {
+				t.Errorf("isUnderScope(%q, %v) = %v, want %v", tt.path, tt.scopeRoots, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCleanStaleRecordsScoped 验证定向扫描时过期清理只作用于作用域内，作用域外记录保留。
+func TestCleanStaleRecordsScoped(t *testing.T) {
+	repo := newTestSongRepo(t)
+	service := NewSongService(repo, nil, nil, nil, nil, nil)
+	ctx := context.Background()
+
+	// 两条本地记录，其 file_path 均指向磁盘上不存在的文件（os.Stat 会失败→视为过期候选）。
+	root := t.TempDir()
+	inScope := filepath.Join(root, "A", "gone.mp3")  // 作用域内
+	outScope := filepath.Join(root, "B", "gone.mp3") // 作用域外
+	for _, p := range []string{inScope, outScope} {
+		s := &models.Song{Type: models.TypeLocal, Title: filepath.Base(p), FilePath: p}
+		if err := repo.Create(ctx, s); err != nil {
+			t.Fatalf("create song %s: %v", p, err)
+		}
+	}
+
+	existing, err := repo.ListLocalPaths(ctx)
+	if err != nil {
+		t.Fatalf("ListLocalPaths: %v", err)
+	}
+
+	// 定向扫描 A：scannedFiles 为空（A 下没扫到文件），scopeRoots 只含 A。
+	cleaned := service.cleanStaleRecords(ctx, nil, existing, []string{filepath.Join(root, "A")})
+	if cleaned != 1 {
+		t.Fatalf("scoped cleanStaleRecords cleaned = %d, want 1", cleaned)
+	}
+
+	// 作用域内记录应被删，作用域外记录应保留。
+	remaining, _ := repo.ListLocalPaths(ctx)
+	if _, ok := remaining[inScope]; ok {
+		t.Error("in-scope stale record should be deleted")
+	}
+	if _, ok := remaining[outScope]; !ok {
+		t.Error("out-of-scope record must be preserved by scoped scan")
+	}
+
+	// 全库清理（scopeRoots=nil）应把剩下的作用域外过期记录也清掉。
+	cleaned2 := service.cleanStaleRecords(ctx, nil, remaining, nil)
+	if cleaned2 != 1 {
+		t.Fatalf("full cleanStaleRecords cleaned = %d, want 1", cleaned2)
+	}
+	final, _ := repo.ListLocalPaths(ctx)
+	if len(final) != 0 {
+		t.Errorf("after full clean, remaining = %d, want 0", len(final))
+	}
+}
+
 // TestSongServiceDelete 测试删除歌曲
 func TestSongServiceDelete(t *testing.T) {
 	repo := newTestSongRepo(t)

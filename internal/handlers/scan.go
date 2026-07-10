@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -57,16 +58,24 @@ func (h *ScanHandler) SetOnAutoScanChanged(cb func(services.AutoScanConfig)) {
 // ScanRequest 扫描请求参数
 type ScanRequest struct {
 	Reimport bool `json:"reimport"`
+	// Paths 为目录级定向扫描（Issue #262）：为空时扫描整个音乐根目录（默认行为）；
+	// 非空时只扫描给定目录（含子目录），过期记录清理也仅收敛到这些目录之内。
+	// 每个目录必须位于音乐根目录之下，否则返回 400。
+	Paths []string `json:"paths,omitempty"`
 }
 
 // ScanAndImport 扫描并导入本地音乐（异步）
 // @Summary 扫描并导入本地音乐
-// @Description 异步扫描音乐目录并导入新发现的音乐文件到数据库，立即返回，可通过进度接口查询状态
+// @Description 异步扫描音乐目录并导入新发现的音乐文件到数据库，立即返回，可通过进度接口查询状态。
+// @Description reimport=true 时对已入库文件也重新提取元数据；默认 false 走增量（跳过已存在且时长有效的文件）。
+// @Description paths 为目录级定向扫描（Issue #262）：省略/为空时扫描整个音乐根目录；非空时只扫描给定目录（含子目录），
+// @Description 且过期记录清理仅收敛到这些目录之内（不影响其余曲库）。每个目录必须位于音乐根目录之下，否则返回 400。
 // @Tags 扫描管理
 // @Accept json
 // @Produce json
 // @Param request body ScanRequest false "扫描请求参数"
 // @Success 200 {object} map[string]interface{} "扫描任务已启动"
+// @Failure 400 {object} map[string]string "指定目录不在音乐目录下"
 // @Failure 409 {object} map[string]string "扫描正在进行中"
 // @Failure 500 {object} map[string]string "启动扫描失败"
 // @Security BearerAuth
@@ -81,8 +90,14 @@ func (h *ScanHandler) ScanAndImport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err := h.songService.ScanAndImportAsync(req.Reimport)
+	// 目录级定向扫描：校验每个目录都在音乐根目录之下，并去重、剔除互为父子的冗余目录。
+	scopePaths, err := h.sanitizeScanPaths(req.Paths)
 	if err != nil {
+		respondError(w, http.StatusBadRequest, "指定目录不在音乐目录下", err)
+		return
+	}
+
+	if err := h.songService.ScanAndImportAsync(req.Reimport, scopePaths); err != nil {
 		respondError(w, http.StatusConflict, "扫描正在进行中", err)
 		return
 	}
@@ -90,6 +105,63 @@ func (h *ScanHandler) ScanAndImport(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "扫描任务已启动",
 	})
+}
+
+// sanitizeScanPaths 校验并规整定向扫描的目录列表：
+//   - 每个路径 filepath.Clean 后必须等于音乐根目录或位于其下（防目录遍历）；
+//   - 去重，并剔除已被列表中某个祖先目录覆盖的冗余子目录。
+//
+// 返回的切片为空表示全库扫描（调用方据此退化为默认行为）。
+func (h *ScanHandler) sanitizeScanPaths(paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+
+	root := filepath.Clean(h.scanner.GetMusicPath())
+	seen := make(map[string]struct{}, len(paths))
+	cleaned := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		cp := filepath.Clean(p)
+		if !h.inMusicRoot(cp, root) {
+			return nil, fmt.Errorf("路径必须在音乐目录下: %s", p)
+		}
+		if _, ok := seen[cp]; ok {
+			continue
+		}
+		seen[cp] = struct{}{}
+		cleaned = append(cleaned, cp)
+	}
+
+	// 客户端明确传了 paths（意图定向扫描）但全部为空白 → 拒绝，
+	// 避免静默退化为"全库扫描 + 全库过期清理"这种危险的意外行为。
+	if len(cleaned) == 0 {
+		return nil, fmt.Errorf("未提供有效的目录")
+	}
+
+	// 剔除被列表中某个祖先目录覆盖的子目录（如同时选了 /m 与 /m/a，只保留 /m）。
+	result := make([]string, 0, len(cleaned))
+	for _, p := range cleaned {
+		covered := false
+		for _, other := range cleaned {
+			if other != p && strings.HasPrefix(p, other+string(filepath.Separator)) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			result = append(result, p)
+		}
+	}
+	return result, nil
+}
+
+// inMusicRoot 判断 cleanPath（已 filepath.Clean）是否等于音乐根目录或位于其下。
+// cleanRoot 需为已 filepath.Clean 的音乐根目录。用于防目录遍历攻击。
+func (h *ScanHandler) inMusicRoot(cleanPath, cleanRoot string) bool {
+	return cleanPath == cleanRoot || strings.HasPrefix(cleanPath, cleanRoot+string(filepath.Separator))
 }
 
 // GetScanProgress 获取扫描进度
@@ -152,7 +224,7 @@ func (h *ScanHandler) ListDirectories(w http.ResponseWriter, r *http.Request) {
 	// 安全校验：确保请求路径在音乐根目录下，防止目录遍历攻击
 	cleanTarget := filepath.Clean(targetPath)
 	cleanRoot := filepath.Clean(musicRoot)
-	if cleanTarget != cleanRoot && !strings.HasPrefix(cleanTarget, cleanRoot+string(filepath.Separator)) {
+	if !h.inMusicRoot(cleanTarget, cleanRoot) {
 		respondError(w, http.StatusBadRequest, "路径必须在音乐目录下", nil)
 		return
 	}

@@ -282,10 +282,15 @@ func (s *SongService) saveCueCover(audioPath string, metadata *Metadata) string 
 }
 
 // cleanStaleCueRecords 清理已删除 CUE 源文件对应的切片和 DB 记录。
-func (s *SongService) cleanStaleCueRecords(ctx context.Context) {
+func (s *SongService) cleanStaleCueRecords(ctx context.Context, scopeRoots []string) {
 	sources := s.listCueSourceSet(ctx)
 
 	for sourcePath := range sources {
+		// 定向扫描：只清理落在本次作用域内的 CUE 源，作用域外一律不动（Issue #262）。
+		if !isUnderScope(sourcePath, scopeRoots) {
+			continue
+		}
+
 		shouldClean := false
 
 		if _, err := os.Stat(sourcePath); os.IsNotExist(err) {

@@ -307,14 +307,16 @@ func (s *SongService) ListIDs(ctx context.Context, filter *database.SongFilter) 
 	return ids, nil
 }
 
-// ScanAndImportAsync 异步扫描并导入本地音乐文件
-func (s *SongService) ScanAndImportAsync(reimport bool) error {
+// ScanAndImportAsync 异步扫描并导入本地音乐文件。
+// paths 为空时扫描整个音乐根目录；非空时只扫描给定目录（含子目录），
+// 用于目录级定向扫描（Issue #262），此时过期记录清理也仅收敛到这些目录之内。
+func (s *SongService) ScanAndImportAsync(reimport bool, paths []string) error {
 	if !s.scanProgressManager.Start() {
 		return fmt.Errorf("scan already in progress")
 	}
 	go func() {
 		ctx := context.Background()
-		s.doScanAndImport(ctx, reimport)
+		s.doScanAndImport(ctx, reimport, paths)
 	}()
 	return nil
 }
@@ -345,7 +347,7 @@ const (
 //  1. 预过滤：快速跳过已存在的文件，减少不必要的处理
 //  2. 并发提取：使用worker池并行提取元数据，充分利用多核CPU
 //  3. 批量写入：通过事务批量提交数据库操作，减少磁盘IO和锁竞争
-func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
+func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeRoots []string) {
 	cancelCh := s.scanProgressManager.GetCancelChannel()
 
 	// 派生可取消 ctx：用户取消时同步 cancel，使 CUE 切分阶段的 ffmpeg 子进程
@@ -360,7 +362,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 		}
 	}()
 
-	scanResult, err := s.scanner.ScanFilesWithCue(ctx, func(count int) {
+	scanResult, err := s.scanner.ScanFilesWithCueInDirs(ctx, scopeRoots, func(count int) {
 		s.scanProgressManager.SetDiscoveredFiles(count)
 	})
 	if err != nil {
@@ -425,13 +427,13 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 		toProcess = append(toProcess, item)
 	}
 
-	cleanedCount := s.cleanStaleRecords(ctx, files, existingPaths)
+	cleanedCount := s.cleanStaleRecords(ctx, files, existingPaths, scopeRoots)
 	if cleanedCount > 0 {
 		s.scanProgressManager.SetCleanedFiles(cleanedCount)
 	}
 
 	if len(toProcess) == 0 {
-		s.runCueProcessing(ctx, scanResult, files, reimport)
+		s.runCueProcessing(ctx, scanResult, files, reimport, scopeRoots)
 		select {
 		case <-cancelCh:
 			s.scanProgressManager.SetCancelled()
@@ -555,7 +557,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool) {
 	}
 
 	// CUE 整轨处理
-	s.runCueProcessing(ctx, scanResult, files, reimport)
+	s.runCueProcessing(ctx, scanResult, files, reimport, scopeRoots)
 
 	select {
 	case <-cancelCh:
@@ -587,14 +589,14 @@ func (s *SongService) setLocalSongCount(ctx context.Context) {
 // runCueProcessing 执行 CUE 整轨切分阶段（外部 .cue + FLAC 内嵌 CUESHEET），
 // 并清理失效的 CUE 记录。切换到 splitting_cue 状态以便前端展示独立进度，
 // 该阶段对大 CD 镜像可能较慢（逐个 track ffmpeg 切分）。
-func (s *SongService) runCueProcessing(ctx context.Context, scanResult *ScanResult, files []string, reimport bool) {
+func (s *SongService) runCueProcessing(ctx context.Context, scanResult *ScanResult, files []string, reimport bool, scopeRoots []string) {
 	if s.cueSplitter == nil {
 		return
 	}
 	s.scanProgressManager.BeginSplittingCue()
 	s.processCueFiles(ctx, scanResult.CueFiles, reimport)
 	s.processEmbeddedCueSheets(ctx, files, reimport)
-	s.cleanStaleCueRecords(ctx)
+	s.cleanStaleCueRecords(ctx, scopeRoots)
 }
 
 // runAutoCreatePlaylists 扫描完成后按当前 playlistMode 配置重建 auto_created 歌单。
@@ -796,7 +798,21 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 
 // cleanStaleRecords 清理数据库中已不存在于磁盘的本地歌曲记录
 // 对比扫描得到的文件列表和数据库记录，删除文件不存在的记录
-func (s *SongService) cleanStaleRecords(ctx context.Context, scannedFiles []string, existingPaths map[string]database.LocalPathInfo) int {
+// isUnderScope 判断 path 是否落在 scopeRoots 中任一目录之下（含目录本身）。
+// scopeRoots 为空表示全库作用域（不做限制），返回 true。
+func isUnderScope(path string, scopeRoots []string) bool {
+	if len(scopeRoots) == 0 {
+		return true
+	}
+	for _, root := range scopeRoots {
+		if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SongService) cleanStaleRecords(ctx context.Context, scannedFiles []string, existingPaths map[string]database.LocalPathInfo, scopeRoots []string) int {
 	scannedPathSet := make(map[string]struct{}, len(scannedFiles))
 	for _, f := range scannedFiles {
 		scannedPathSet[f] = struct{}{}
@@ -804,6 +820,11 @@ func (s *SongService) cleanStaleRecords(ctx context.Context, scannedFiles []stri
 
 	var staleIDs []int64
 	for path, info := range existingPaths {
+		// 定向扫描：只清理落在本次作用域内的记录，作用域外的一律不动，
+		// 避免"只扫某目录"却误删其余曲库（Issue #262）。
+		if !isUnderScope(path, scopeRoots) {
+			continue
+		}
 		// CUE 来源的歌曲由 cleanStaleCueRecords 单独处理
 		if info.CueSourcePath != "" {
 			continue
