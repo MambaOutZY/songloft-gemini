@@ -76,7 +76,7 @@ func (a *App) setupAPIV1Router() {
 	})
 	versionHandler := handlers.NewVersionHandler()
 	healthHandler := handlers.NewHealthHandler()
-	upgradeHandler := handlers.NewUpgradeHandler(a.upgradeService)
+	upgradeHandler := handlers.NewUpgradeHandler(a.upgradeService, a.configService)
 	proxyHandler := handlers.NewProxyHandler()
 
 	// 创建缓存处理器（使用 App 的 cacheService 和 configService）
@@ -182,6 +182,8 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/settings/plugin-registries", jsPluginHandler.UpdateRegistriesSetting)
 			r.Get("/settings/http-proxy", jsPluginHandler.GetHttpProxySetting)
 			r.Put("/settings/http-proxy", jsPluginHandler.UpdateHttpProxySetting)
+			r.Get("/settings/github-proxy", upgradeHandler.GetGithubProxySetting)
+			r.Put("/settings/github-proxy", upgradeHandler.UpdateGithubProxySetting)
 			r.Get("/settings/plugin-keep-alive", jsPluginHandler.GetPluginKeepAliveSetting)
 			r.Put("/settings/plugin-keep-alive", jsPluginHandler.UpdatePluginKeepAliveSetting)
 			r.Get("/settings/tab-config", configHandler.GetTabConfigSetting)

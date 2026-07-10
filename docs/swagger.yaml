@@ -92,6 +92,11 @@ definitions:
       preset:
         type: string
     type: object
+  handlers.githubProxySetting:
+    properties:
+      proxy:
+        type: string
+    type: object
   handlers.hlsProxySettingRequest:
     properties:
       enabled:
@@ -3620,6 +3625,53 @@ paths:
       summary: 保存均衡器配置
       tags:
       - 设置
+  /settings/github-proxy:
+    get:
+      description: 获取检查更新 / 升级时使用的 GitHub 代理前缀（如 https://ghfast.top/）。前端会记住上次使用的代理并在检查更新时自动带上。未配置时返回空字符串（直连）。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: GitHub 更新代理配置
+          schema:
+            $ref: '#/definitions/handlers.githubProxySetting'
+      security:
+      - BearerAuth: []
+      summary: 获取 GitHub 更新代理配置
+      tags:
+      - 系统升级
+    put:
+      consumes:
+      - application/json
+      description: 设置检查更新 / 升级使用的 GitHub 代理前缀（如 https://ghfast.top/）。设为空字符串则直连。仅持久化，不影响其它模块的全局
+        HTTP 代理。
+      parameters:
+      - description: GitHub 更新代理配置
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.githubProxySetting'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 保存后的配置
+          schema:
+            $ref: '#/definitions/handlers.githubProxySetting'
+        "400":
+          description: 请求格式错误
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: 保存配置失败
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 保存 GitHub 更新代理配置
+      tags:
+      - 系统升级
   /settings/hls-proxy:
     get:
       description: 获取“HLS 电台流通过本机反代回客户端”开关的当前状态

@@ -3893,6 +3893,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/settings/github-proxy": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取检查更新 / 升级时使用的 GitHub 代理前缀（如 https://ghfast.top/）。前端会记住上次使用的代理并在检查更新时自动带上。未配置时返回空字符串（直连）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统升级"
+                ],
+                "summary": "获取 GitHub 更新代理配置",
+                "responses": {
+                    "200": {
+                        "description": "GitHub 更新代理配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.githubProxySetting"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "设置检查更新 / 升级使用的 GitHub 代理前缀（如 https://ghfast.top/）。设为空字符串则直连。仅持久化，不影响其它模块的全局 HTTP 代理。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统升级"
+                ],
+                "summary": "保存 GitHub 更新代理配置",
+                "parameters": [
+                    {
+                        "description": "GitHub 更新代理配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.githubProxySetting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "保存后的配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.githubProxySetting"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "保存配置失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/settings/hls-proxy": {
             "get": {
                 "security": [
@@ -6636,6 +6710,14 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "preset": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.githubProxySetting": {
+            "type": "object",
+            "properties": {
+                "proxy": {
                     "type": "string"
                 }
             }

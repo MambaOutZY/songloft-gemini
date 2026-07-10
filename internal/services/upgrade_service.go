@@ -88,7 +88,17 @@ func (s *UpgradeService) FetchVersionInfo(versionType string, proxyPrefix string
 
 	url := s.applyProxy(rawURL, proxyPrefix)
 
-	resp, err := s.httpClient.Get(url)
+	// 检查更新只拉取很小的 version.json，用独立的短超时避免网络不通时长时间转圈
+	// （下载二进制的 DownloadBinary 仍复用 httpClient 的 10 分钟超时）
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build version info request: %w", err)
+	}
+
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch version info: %w", err)
 	}
@@ -257,12 +267,16 @@ func (s *UpgradeService) isNewerVersion(versionType string, remoteInfo *models.R
 
 // CheckForUpdates 检查是否有可用更新
 // proxyPrefix 为 GitHub 代理前缀，为空则直连
+// 拉取失败（网络不通 / 超时 / 非 200）会返回错误，避免上层把失败误判为「已是最新」
 func (s *UpgradeService) CheckForUpdates(proxyPrefix string) (map[string]*models.RemoteVersionInfo, error) {
 	result := make(map[string]*models.RemoteVersionInfo)
 	versionType := s.CurrentVersionType()
 
 	versionInfo, err := s.FetchVersionInfo(versionType, proxyPrefix)
-	if err == nil && s.isNewerVersion(versionType, versionInfo) {
+	if err != nil {
+		return nil, err
+	}
+	if s.isNewerVersion(versionType, versionInfo) {
 		result[versionType] = versionInfo
 	}
 

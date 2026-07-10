@@ -10,15 +10,25 @@ import (
 	"songloft/internal/version"
 )
 
+// githubProxyConfigKey GitHub 更新代理配置的 config key
+const githubProxyConfigKey = "github_proxy"
+
+// githubProxySetting GitHub 更新代理配置。
+type githubProxySetting struct {
+	Proxy string `json:"proxy"`
+}
+
 // UpgradeHandler 升级处理器
 type UpgradeHandler struct {
 	upgradeService *services.UpgradeService
+	configService  *services.ConfigService
 }
 
 // NewUpgradeHandler 创建升级处理器
-func NewUpgradeHandler(upgradeService *services.UpgradeService) *UpgradeHandler {
+func NewUpgradeHandler(upgradeService *services.UpgradeService, configService *services.ConfigService) *UpgradeHandler {
 	return &UpgradeHandler{
 		upgradeService: upgradeService,
+		configService:  configService,
 	}
 }
 
@@ -239,4 +249,47 @@ func (h *UpgradeHandler) GetUpgradeProgress(w http.ResponseWriter, r *http.Reque
 
 	progress := h.upgradeService.GetProgress()
 	respondJSON(w, http.StatusOK, progress)
+}
+
+// GetGithubProxySetting 获取 GitHub 更新代理配置
+// @Summary 获取 GitHub 更新代理配置
+// @Description 获取检查更新 / 升级时使用的 GitHub 代理前缀（如 https://ghfast.top/）。前端会记住上次使用的代理并在检查更新时自动带上。未配置时返回空字符串（直连）。
+// @Tags 系统升级
+// @Produce json
+// @Success 200 {object} githubProxySetting "GitHub 更新代理配置"
+// @Security BearerAuth
+// @Router /settings/github-proxy [get]
+func (h *UpgradeHandler) GetGithubProxySetting(w http.ResponseWriter, r *http.Request) {
+	var cfg githubProxySetting
+	if err := h.configService.GetJSON(githubProxyConfigKey, &cfg); err != nil {
+		respondJSON(w, http.StatusOK, githubProxySetting{Proxy: ""})
+		return
+	}
+	respondJSON(w, http.StatusOK, cfg)
+}
+
+// UpdateGithubProxySetting 保存 GitHub 更新代理配置
+// @Summary 保存 GitHub 更新代理配置
+// @Description 设置检查更新 / 升级使用的 GitHub 代理前缀（如 https://ghfast.top/）。设为空字符串则直连。仅持久化，不影响其它模块的全局 HTTP 代理。
+// @Tags 系统升级
+// @Accept json
+// @Produce json
+// @Param request body githubProxySetting true "GitHub 更新代理配置"
+// @Success 200 {object} githubProxySetting "保存后的配置"
+// @Failure 400 {object} models.ErrorResponse "请求格式错误"
+// @Failure 500 {object} models.ErrorResponse "保存配置失败"
+// @Security BearerAuth
+// @Router /settings/github-proxy [put]
+func (h *UpgradeHandler) UpdateGithubProxySetting(w http.ResponseWriter, r *http.Request) {
+	var req githubProxySetting
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	if err := h.configService.SetJSON(githubProxyConfigKey, req); err != nil {
+		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
+		return
+	}
+	slog.Info("GitHub 更新代理已更新", "proxy", req.Proxy)
+	respondJSON(w, http.StatusOK, req)
 }
