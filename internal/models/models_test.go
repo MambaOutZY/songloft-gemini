@@ -72,6 +72,25 @@ func TestSongValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "plugin-sourced remote song without url is valid",
+			song: Song{
+				Type:            TypeRemote,
+				Title:           "插件歌曲",
+				PluginEntryPath: "subsonic",
+				SourceData:      `{"id":"x1"}`,
+			},
+			wantErr: false,
+		},
+		{
+			name: "remote song with plugin_entry_path but no source_data is invalid",
+			song: Song{
+				Type:            TypeRemote,
+				Title:           "缺 source_data",
+				PluginEntryPath: "subsonic",
+			},
+			wantErr: true,
+		},
+		{
 			name:    "radio",
 			song:    Song{Type: TypeRadio, Title: "测试电台", URL: "https://example.com/radio.m3u8"},
 			wantErr: false,

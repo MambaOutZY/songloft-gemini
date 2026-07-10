@@ -1302,3 +1302,62 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// RenameLocalSongFile 按 newTitle 重命名本地歌曲文件（保留原目录与扩展名），
+// 移动成功后连同 song 其余已修改字段一起写回 DB；DB 失败时回滚文件移动。
+// changed=false 表示清理后的文件名与原文件同名（未移动，但仍写回 DB）。
+// 仅适用于本地非 CUE 歌曲，其余情况返回 error 且不改动任何状态。
+func (s *SongService) RenameLocalSongFile(ctx context.Context, song *models.Song, newTitle string) (changed bool, err error) {
+	if song.Type != models.TypeLocal {
+		return false, fmt.Errorf("仅支持本地歌曲")
+	}
+	// CUE 拆分歌曲多条记录共享同一音频文件，改名会导致其它轨路径失效。
+	if song.CueSourcePath != "" {
+		return false, fmt.Errorf("CUE 歌曲不支持重命名")
+	}
+	if song.FilePath == "" {
+		return false, fmt.Errorf("歌曲无文件路径")
+	}
+
+	base := sanitizePathComponent(newTitle)
+	if base == "" {
+		return false, fmt.Errorf("标题不适合作为文件名")
+	}
+
+	oldPath := song.FilePath
+	newPath := filepath.Join(filepath.Dir(oldPath), base+filepath.Ext(oldPath))
+
+	// 同名：无需移动，仅写回 DB（承载 title/artist/album 等其它已改字段）。
+	if filepath.Clean(newPath) == filepath.Clean(oldPath) {
+		if err := s.songs.Update(ctx, song); err != nil {
+			return false, fmt.Errorf("更新数据库失败: %w", err)
+		}
+		return false, nil
+	}
+
+	// 拒绝覆盖已存在的目标文件（moveFile 底层 os.Rename 会静默覆盖）。
+	// 例外：大小写不敏感文件系统（macOS/Windows）上仅改标题大小写时，newPath 会命中原文件本身
+	// （os.Stat 解析到同一 inode），此时并非冲突，应放行让 os.Rename 完成大小写改名。
+	if oldInfo, statErr := os.Stat(oldPath); statErr == nil {
+		if newInfo, err := os.Stat(newPath); err == nil && !os.SameFile(oldInfo, newInfo) {
+			return false, fmt.Errorf("目标文件已存在: %s", filepath.Base(newPath))
+		}
+	} else if fileExists(newPath) {
+		// 源文件 stat 失败（异常），保守地按原逻辑拒绝已存在的目标。
+		return false, fmt.Errorf("目标文件已存在: %s", filepath.Base(newPath))
+	}
+
+	if err := moveFile(oldPath, newPath); err != nil {
+		return false, fmt.Errorf("移动文件失败: %w", err)
+	}
+
+	song.FilePath = newPath
+	if err := s.songs.Update(ctx, song); err != nil {
+		// 回滚文件移动，保持磁盘与 DB 一致。
+		_ = moveFile(newPath, oldPath)
+		song.FilePath = oldPath
+		return false, fmt.Errorf("更新数据库失败: %w", err)
+	}
+
+	return true, nil
+}

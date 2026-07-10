@@ -222,7 +222,9 @@ func (s *Song) Validate() error {
 			return ErrMissingFilePath
 		}
 	case TypeRemote, TypeRadio:
-		if s.URL == "" {
+		// 插件音源歌曲(plugin_entry_path + source_data)靠 source_data 播放，URL 合法为空；
+		// 其余 remote/radio 必须有直链 URL。
+		if s.URL == "" && !s.IsPluginSourced() {
 			return ErrMissingURL
 		}
 	}

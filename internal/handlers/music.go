@@ -519,20 +519,25 @@ func (h *SongHandler) UpdateSong(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "标题不能为空", nil)
 		return
 	}
-	// 非本地歌曲的URL不能为空
-	if req.URL == "" && existingSong.Type != models.TypeLocal {
-		respondError(w, http.StatusBadRequest, "URL不能为空", nil)
-		return
-	}
 
 	// 更新歌曲信息
 	existingSong.Title = req.Title
 	existingSong.Artist = req.Artist
 	existingSong.Album = req.Album
-	existingSong.URL = req.URL
+	// URL 仅在显式提供(非空)时更新：插件音源歌曲(URL 为空，靠 source_data 播放)没有可编辑的直链，
+	// 前端对这类歌曲不回传 url；此处保留原值(空)，避免被清空或被内部播放端点污染。
+	if req.URL != "" {
+		existingSong.URL = req.URL
+	}
 	existingSong.CoverURL = req.CoverURL
 	if req.IsLive != nil && existingSong.Type != models.TypeRadio {
 		existingSong.IsLive = *req.IsLive
+	}
+
+	// 非本地歌曲更新后必须仍有可用音源：直链 URL 或插件 source_data。
+	if existingSong.Type != models.TypeLocal && existingSong.URL == "" && !existingSong.IsPluginSourced() {
+		respondError(w, http.StatusBadRequest, "URL不能为空", nil)
+		return
 	}
 
 	if err := h.songService.Update(ctx, existingSong); err != nil {
@@ -1298,11 +1303,13 @@ type WriteSongTagsRequest struct {
 	CoverData  string `json:"cover_data"`
 	CoverURL   string `json:"cover_url"`
 	ClearCover bool   `json:"clear_cover"`
+	// RenameFile 为 true 时按新标题重命名本地音频文件（保留原目录与扩展名），仅对本地非 CUE 歌曲生效。
+	RenameFile bool `json:"rename_file"`
 }
 
 // WriteTags 写入歌曲标签
 // @Summary 写入歌曲标签
-// @Description 将元数据写入数据库和本地音频文件标签（仅本地歌曲）。cover_data(base64) 优先于 cover_url。非空字段覆盖，空值保留原值。设置 clear_cover=true 可显式清空封面。
+// @Description 将元数据写入数据库和本地音频文件标签（仅本地歌曲）。cover_data(base64) 优先于 cover_url。非空字段覆盖，空值保留原值。设置 clear_cover=true 可显式清空封面。rename_file=true 时按新标题重命名本地音频文件（保留原目录与扩展名，仅本地非 CUE 歌曲生效）；标题清理后为空或目标文件名已存在时返回 400，与原文件同名则不移动仅写库。
 // @Tags 歌曲管理
 // @Accept json
 // @Produce json
@@ -1389,7 +1396,14 @@ func (h *SongHandler) WriteTags(w http.ResponseWriter, r *http.Request) {
 		song.CoverURL = ""
 	}
 
-	if err := h.songService.Update(ctx, song); err != nil {
+	// rename_file=true 且为本地非 CUE 歌曲时，按新标题重命名文件（内部完成文件移动 + DB 写回）；
+	// 否则走普通 DB 更新。两种路径完成后都用最新 FilePath 写文件标签。
+	if req.RenameFile && song.Type == models.TypeLocal && song.CueSourcePath == "" {
+		if _, err := h.songService.RenameLocalSongFile(ctx, song, song.Title); err != nil {
+			respondError(w, http.StatusBadRequest, "重命名文件失败", err)
+			return
+		}
+	} else if err := h.songService.Update(ctx, song); err != nil {
 		respondError(w, http.StatusInternalServerError, "更新歌曲失败", err)
 		return
 	}
