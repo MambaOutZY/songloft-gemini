@@ -5053,7 +5053,8 @@ paths:
       - application/json
       description: 批量添加网络歌曲到数据库。cover_url 支持以 "/" 开头的相对路径（插件场景下由服务端自动解析为内部 URL，与歌词
         lyric_remote_url 的解析机制一致）。lyric_remote_url 为歌词远程 URL 直传字段，提供时优先于 lyric + lyric_source=url
-        的间接方式。
+        的间接方式。副作用：插入成功后，对缺失技术元数据（duration/bitrate/samplerate/format）的歌曲异步探测补齐（限并发后台执行，不阻塞响应），确保
+        WebDAV 等无法自带时长的音源在首次播放前就落库 duration，供音箱等仅依赖服务端时长的消费端自动切歌。
       parameters:
       - description: 网络歌曲列表
         in: body

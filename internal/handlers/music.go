@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"songloft/internal/database"
@@ -544,7 +545,7 @@ func (h *SongHandler) UpdateSong(w http.ResponseWriter, r *http.Request) {
 
 // AddRemoteSongs 批量添加网络歌曲
 // @Summary 批量添加网络歌曲
-// @Description 批量添加网络歌曲到数据库。cover_url 支持以 "/" 开头的相对路径（插件场景下由服务端自动解析为内部 URL，与歌词 lyric_remote_url 的解析机制一致）。lyric_remote_url 为歌词远程 URL 直传字段，提供时优先于 lyric + lyric_source=url 的间接方式。
+// @Description 批量添加网络歌曲到数据库。cover_url 支持以 "/" 开头的相对路径（插件场景下由服务端自动解析为内部 URL，与歌词 lyric_remote_url 的解析机制一致）。lyric_remote_url 为歌词远程 URL 直传字段，提供时优先于 lyric + lyric_source=url 的间接方式。副作用：插入成功后，对缺失技术元数据（duration/bitrate/samplerate/format）的歌曲异步探测补齐（限并发后台执行，不阻塞响应），确保 WebDAV 等无法自带时长的音源在首次播放前就落库 duration，供音箱等仅依赖服务端时长的消费端自动切歌。
 // @Tags 歌曲管理
 // @Accept json
 // @Produce json
@@ -617,10 +618,54 @@ func (h *SongHandler) AddRemoteSongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 导入即探测：对缺失技术元数据的歌曲异步补齐 duration 等字段。
+	// WebDAV 等音源无法自带时长，若等到首次播放才懒探测，音箱开播那一刻 duration 仍为 0，
+	// 无法注册切歌定时器。提前到导入时探测，确保播放前 duration 已落库。
+	h.probeRemoteSongsMetadata(songs)
+
 	respondJSON(w, http.StatusCreated, map[string]any{
 		"songs": songs,
 		"count": len(songs),
 	})
+}
+
+// probeRemoteSongsMetadata 对刚导入、缺失技术元数据的网络歌曲发起后台异步探测补齐。
+// 限并发（避免整目录导入时打爆服务端与上游音源），每首独立超时；RefreshSong 自带 inflight 去重。
+func (h *SongHandler) probeRemoteSongsMetadata(songs []*models.Song) {
+	if h.metadataRefresher == nil {
+		return
+	}
+
+	pending := make([]*models.Song, 0, len(songs))
+	for _, song := range songs {
+		if services.NeedsMetadata(song) {
+			// 复制一份，避免后台 goroutine 与调用方共享指针
+			copied := *song
+			pending = append(pending, &copied)
+		}
+	}
+	if len(pending) == 0 {
+		return
+	}
+
+	go func() {
+		const maxConcurrent = 4
+		sem := make(chan struct{}, maxConcurrent)
+		var wg sync.WaitGroup
+		for _, song := range pending {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(s *models.Song) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				h.metadataRefresher.RefreshSong(ctx, s, "")
+			}(song)
+		}
+		wg.Wait()
+		slog.Info("导入歌曲元数据探测完成", "count", len(pending))
+	}()
 }
 
 // AddRadios 批量添加电台/广播
