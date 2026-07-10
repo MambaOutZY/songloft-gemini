@@ -42,6 +42,7 @@ func WriteCacheSongTags(filePath string, song *models.Song, httpClient *http.Cli
 		Album:       song.Album,
 		Lyrics:      mainLyric,
 		Genre:       song.Genre,
+		Track:       song.Track,
 	}
 
 	if song.Year > 0 {

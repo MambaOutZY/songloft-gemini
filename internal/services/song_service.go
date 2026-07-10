@@ -718,6 +718,9 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 				song.BitRate = r.metadata.BitRate
 				song.SampleRate = r.metadata.SampleRate
 				song.ISRC = r.metadata.ISRC
+				if r.metadata.Track != "" {
+					song.Track = r.metadata.Track
+				}
 				if song.LyricSource != models.LyricSourceManual {
 					models.ApplyLyricToSong(song, r.metadata.Lyric, r.metadata.LyricSource)
 				}
@@ -751,6 +754,7 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 					SampleRate: r.metadata.SampleRate,
 					FileSize:   r.fileSize,
 					ISRC:       r.metadata.ISRC,
+					Track:      r.metadata.Track,
 					AddedAt:    time.Now(),
 					UpdatedAt:  time.Now(),
 				}

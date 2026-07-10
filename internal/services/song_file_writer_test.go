@@ -3,10 +3,23 @@ package services
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/hanxi/tag"
 )
+
+// trackFromMeta 把读回的 (number, total) 格式化为 WriteOptions.Track 形态。
+func trackFromMeta(m tag.Metadata) string {
+	num, total := m.Track()
+	if num <= 0 {
+		return ""
+	}
+	if total > 0 {
+		return strconv.Itoa(num) + "/" + strconv.Itoa(total)
+	}
+	return strconv.Itoa(num)
+}
 
 func copyTestFile(t *testing.T, src string) string {
 	t.Helper()
@@ -42,6 +55,7 @@ func TestTagsUnchanged_IdenticalTags(t *testing.T) {
 		Genre:       m.Genre(),
 		Lyrics:      m.Lyrics(),
 		Year:        m.Year(),
+		Track:       trackFromMeta(m),
 	}
 	if pic := m.Picture(); pic != nil {
 		opts.Picture = pic
@@ -174,6 +188,7 @@ func TestTagsUnchanged_FLAC(t *testing.T) {
 		Genre:       m.Genre(),
 		Lyrics:      m.Lyrics(),
 		Year:        m.Year(),
+		Track:       trackFromMeta(m),
 	}
 	if pic := m.Picture(); pic != nil {
 		opts.Picture = pic

@@ -1299,6 +1299,7 @@ type WriteSongTagsRequest struct {
 	Album      string `json:"album"`
 	Year       int    `json:"year"`
 	Genre      string `json:"genre"`
+	Track      string `json:"track"`
 	Lyrics     string `json:"lyrics"`
 	CoverData  string `json:"cover_data"`
 	CoverURL   string `json:"cover_url"`
@@ -1359,6 +1360,9 @@ func (h *SongHandler) WriteTags(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Genre != "" {
 		song.Genre = req.Genre
+	}
+	if req.Track != "" {
+		song.Track = req.Track
 	}
 	if req.Lyrics != "" {
 		song.Lyric = models.LyricPayloadFromLRC(req.Lyrics).MarshalString()

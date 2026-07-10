@@ -45,6 +45,8 @@ func TestCreateAndGetSong(t *testing.T) {
 		FilePath: "/music/test.mp3",
 		Format:   "mp3",
 		BitRate:  320,
+		ISRC:     "USABC1234567",
+		Track:    "3/12",
 	}
 
 	// 创建歌曲
@@ -68,6 +70,13 @@ func TestCreateAndGetSong(t *testing.T) {
 	}
 	if got.Artist != song.Artist {
 		t.Errorf("GetSongByID() Artist = %v, want %v", got.Artist, song.Artist)
+	}
+	// 锁定 isrc/track 列的落库读回顺序（squirrel scanSongRow 与 sqlc 均需正确映射）
+	if got.ISRC != song.ISRC {
+		t.Errorf("GetSongByID() ISRC = %v, want %v", got.ISRC, song.ISRC)
+	}
+	if got.Track != song.Track {
+		t.Errorf("GetSongByID() Track = %v, want %v", got.Track, song.Track)
 	}
 }
 
@@ -151,7 +160,7 @@ func TestListSongs(t *testing.T) {
 
 	// 创建多首歌曲
 	songs := []*models.Song{
-		{Type: models.TypeLocal, Title: "歌曲1", FilePath: "/music/1.mp3"},
+		{Type: models.TypeLocal, Title: "歌曲1", FilePath: "/music/1.mp3", Track: "5/10"},
 		{Type: models.TypeRemote, Title: "歌曲2", URL: "https://example.com/2.mp3"},
 		{Type: models.TypeRadio, Title: "电台1", URL: "https://example.com/radio.m3u8", IsLive: true},
 	}
@@ -179,6 +188,10 @@ func TestListSongs(t *testing.T) {
 	}
 	if len(list) != 1 {
 		t.Errorf("ListSongs() with type filter count = %v, want %v", len(list), 1)
+	}
+	// 锁定 squirrel scanSongRow 对 track 列的位置映射（List 走 songSelectBuilder + scanSongRow）
+	if len(list) == 1 && list[0].Track != "5/10" {
+		t.Errorf("ListSongs() Track = %q, want %q", list[0].Track, "5/10")
 	}
 
 	// 测试关键词搜索

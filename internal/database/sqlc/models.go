@@ -118,4 +118,5 @@ type Song struct {
 	CueTrackIndex       int64
 	CueAudioPath        string
 	FileModifiedAt      sql.NullTime
+	Track               string
 }

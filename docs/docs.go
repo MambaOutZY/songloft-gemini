@@ -6587,6 +6587,9 @@ const docTemplate = `{
                 "title": {
                     "type": "string"
                 },
+                "track": {
+                    "type": "string"
+                },
                 "year": {
                     "type": "integer"
                 }
@@ -7535,6 +7538,11 @@ const docTemplate = `{
                     "description": "标题",
                     "type": "string",
                     "example": "夜曲"
+                },
+                "track": {
+                    "description": "音轨号，可为 \"3\" 或 \"3/12\"（轨号/总数）",
+                    "type": "string",
+                    "example": "3/12"
                 },
                 "type": {
                     "description": "歌曲类型：local/remote/radio",

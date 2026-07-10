@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"songloft/internal/models"
 
@@ -57,6 +59,7 @@ func WriteSongTags(filePath string, song *models.Song) FileWriteStatus {
 		AlbumArtist: song.Artist, // 大多数情况下专辑艺术家与艺术家一致
 		Album:       song.Album,
 		Lyrics:      mainLyric,
+		Track:       song.Track,
 	}
 
 	if song.Year > 0 {
@@ -131,7 +134,36 @@ func tagsUnchanged(filePath string, opts tag.WriteOptions) bool {
 		return false
 	}
 
+	fileTrackNum, fileTrackTotal := m.Track()
+	if canonicalTrack(fileTrackNum, fileTrackTotal) != normalizeTrack(opts.Track) {
+		return false
+	}
+
 	return pictureEqual(m.Picture(), opts.Picture)
+}
+
+// canonicalTrack 把 (number, total) 规范化为 "3"/"3/12"/"" 形态。
+func canonicalTrack(number, total int) string {
+	if number <= 0 {
+		return ""
+	}
+	if total > 0 {
+		return strconv.Itoa(number) + "/" + strconv.Itoa(total)
+	}
+	return strconv.Itoa(number)
+}
+
+// normalizeTrack 把音轨号字符串（"3" 或 "3/12"）规范化到与 canonicalTrack 一致的形态，
+// 便于与文件读回的音轨号做等值比较。
+func normalizeTrack(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	numStr, totalStr, _ := strings.Cut(s, "/")
+	number, _ := strconv.Atoi(strings.TrimSpace(numStr))
+	total, _ := strconv.Atoi(strings.TrimSpace(totalStr))
+	return canonicalTrack(number, total)
 }
 
 func pictureEqual(a, b *tag.Picture) bool {

@@ -63,6 +63,7 @@ type Metadata struct {
 	CoverData   []byte  // 封面图片数据（用于保存）
 	CoverExt    string  // 封面图片扩展名
 	ISRC        string  // ISRC（国际标准录音编码）
+	Track       string  // 音轨号（"3" 或 "3/12"）
 }
 
 // FFProbeOutput ffprobe 输出结构
@@ -186,6 +187,13 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 			}
 
 			metadata.ISRC = extractISRC(tagMeta.Raw())
+			if num, total := tagMeta.Track(); num > 0 {
+				if total > 0 {
+					metadata.Track = strconv.Itoa(num) + "/" + strconv.Itoa(total)
+				} else {
+					metadata.Track = strconv.Itoa(num)
+				}
+			}
 
 			// 从 tag 库提取时长
 			if duration := tagMeta.Duration(); duration > 0 {

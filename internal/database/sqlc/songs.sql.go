@@ -98,10 +98,10 @@ INSERT INTO songs (
     plugin_entry_path, source_data, dedup_key,
     year, genre,
     fingerprint, fingerprint_duration,
-    isrc,
+    isrc, track,
     cue_source_path, cue_track_index, cue_audio_path,
     file_modified_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateSongParams struct {
@@ -130,6 +130,7 @@ type CreateSongParams struct {
 	Fingerprint         string
 	FingerprintDuration float64
 	Isrc                string
+	Track               string
 	CueSourcePath       string
 	CueTrackIndex       int64
 	CueAudioPath        string
@@ -163,6 +164,7 @@ func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (int64, 
 		arg.Fingerprint,
 		arg.FingerprintDuration,
 		arg.Isrc,
+		arg.Track,
 		arg.CueSourcePath,
 		arg.CueTrackIndex,
 		arg.CueAudioPath,
@@ -224,7 +226,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     fingerprint, fingerprint_duration,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at
+    file_modified_at, track
 FROM songs WHERE id = ?
 `
 
@@ -265,6 +267,7 @@ func (q *Queries) GetSongByID(ctx context.Context, id int64) (Song, error) {
 		&i.CueTrackIndex,
 		&i.CueAudioPath,
 		&i.FileModifiedAt,
+		&i.Track,
 	)
 	return i, err
 }
@@ -587,7 +590,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     fingerprint, fingerprint_duration,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at
+    file_modified_at, track
 FROM songs WHERE cache_path != ''
 `
 
@@ -634,6 +637,7 @@ func (q *Queries) ListSongsWithCache(ctx context.Context) ([]Song, error) {
 			&i.CueTrackIndex,
 			&i.CueAudioPath,
 			&i.FileModifiedAt,
+			&i.Track,
 		); err != nil {
 			return nil, err
 		}
@@ -732,7 +736,7 @@ UPDATE songs SET
     plugin_entry_path = ?, source_data = ?, dedup_key = ?,
     year = ?, genre = ?,
     fingerprint = ?, fingerprint_duration = ?,
-    isrc = ?,
+    isrc = ?, track = ?,
     cue_source_path = ?, cue_track_index = ?, cue_audio_path = ?,
     file_modified_at = ?
 WHERE id = ?
@@ -764,6 +768,7 @@ type UpdateSongParams struct {
 	Fingerprint         string
 	FingerprintDuration float64
 	Isrc                string
+	Track               string
 	CueSourcePath       string
 	CueTrackIndex       int64
 	CueAudioPath        string
@@ -798,6 +803,7 @@ func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (int64, 
 		arg.Fingerprint,
 		arg.FingerprintDuration,
 		arg.Isrc,
+		arg.Track,
 		arg.CueSourcePath,
 		arg.CueTrackIndex,
 		arg.CueAudioPath,
