@@ -125,7 +125,7 @@ function selectOS(os: string) {
             </div>
           </template>
 
-          <!-- 外链类：Flutter / Kodi -->
+          <!-- 外链类：Flutter / Kodi（可附带命令块，如 Flutter 的 Scoop 安装） -->
           <template v-else>
             <div class="ext-row">
               <a
@@ -139,6 +139,18 @@ function selectOS(os: string) {
               >
                 {{ pick(e.label, lang) }} ↗
               </a>
+            </div>
+            <div v-if="method.commands" class="cmd-list">
+              <template v-for="(c, i) in method.commands" :key="i">
+                <div
+                  v-if="c.group && pick(c.group, lang) !== (method.commands[i - 1] && method.commands[i - 1].group ? pick(method.commands[i - 1].group!, lang) : '')"
+                  class="cmd-group"
+                  :class="{ 'cmd-group--first': i === 0 }"
+                >
+                  {{ pick(c.group, lang) }}
+                </div>
+                <CodeBlock :title="pick(c.title, lang)" :code="c.code" />
+              </template>
             </div>
           </template>
 

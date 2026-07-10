@@ -161,6 +161,14 @@ Beyond the web interface, Songloft also offers a more powerful cross-platform Fl
 - **Standard edition** (requires connecting to a server): [songloft-player Releases](https://github.com/songloft-org/songloft-player/releases/latest)
 - **Bundle edition** (embedded backend, no server required): [songloft Releases](https://github.com/songloft-org/songloft/releases/latest) (download the `songloft-bundled-*` files)
 
+> 🪟 **Windows users**: install & update the Flutter client in one line via [Scoop](https://scoop.sh):
+> ```powershell
+> scoop bucket add songloft https://github.com/songloft-org/songloft-scoop
+> scoop install songloft-player
+> # Update:    scoop update songloft-player
+> # Uninstall: scoop uninstall songloft-player  (add --purge to also remove config data)
+> ```
+
 > 💡 **How to use the Bundle edition**: On first launch, tap "Use local mode" on the login page → select a music directory → done automatically. You can switch between local/remote mode at any time from the settings page.
 
 > 💡 When using the **Lite (-lite)** server, we recommend pairing it directly with the Flutter client (no need to deploy a separate web frontend). If you do need a standalone web frontend, refer to the `flutter build web` process in the [songloft-player](https://github.com/songloft-org/songloft-player) repository to build it yourself and serve the static files via a reverse proxy such as Nginx.

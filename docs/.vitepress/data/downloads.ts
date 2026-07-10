@@ -233,6 +233,10 @@ export const INSTALL: InstallMethod[] = [
     tagline: { zh: '六端原生 · 后台播放 / 媒体控制', en: 'Native on 6 platforms' },
     icon: 'smartphone',
     kind: 'external',
+    note: {
+      zh: 'Windows 用户也可用 Scoop 一键安装 / 更新，见下方命令。',
+      en: 'Windows users can install & update in one line via Scoop — see the commands below.',
+    },
     external: [
       {
         label: { zh: '标准版 Releases', en: 'Standalone releases' },
@@ -242,6 +246,20 @@ export const INSTALL: InstallMethod[] = [
       {
         label: { zh: '源码仓库', en: 'Source repo' },
         url: 'https://github.com/songloft-org/songloft-player',
+      },
+    ],
+    commands: [
+      {
+        group: { zh: 'Windows · Scoop', en: 'Windows · Scoop' },
+        title: { zh: '添加 Bucket 并安装', en: 'Add bucket and install' },
+        code:
+          'scoop bucket add songloft https://github.com/songloft-org/songloft-scoop\n' +
+          'scoop install songloft-player',
+      },
+      {
+        group: { zh: 'Windows · Scoop', en: 'Windows · Scoop' },
+        title: { zh: '更新 / 卸载', en: 'Update / uninstall' },
+        code: 'scoop update songloft-player\nscoop uninstall songloft-player',
       },
     ],
   },

@@ -161,6 +161,14 @@ Songloft 提供三种版本，满足不同使用场景：
 - **标准版**（需连接服务器）：[songloft-player Releases](https://github.com/songloft-org/songloft-player/releases/latest)
 - **Bundle 版**（内嵌后端，无需服务器）：[songloft Releases](https://github.com/songloft-org/songloft/releases/latest)（下载 `songloft-bundled-*` 文件）
 
+> 🪟 **Windows 用户**：可通过 [Scoop](https://scoop.sh) 一键安装 / 更新 Flutter 客户端：
+> ```powershell
+> scoop bucket add songloft https://github.com/songloft-org/songloft-scoop
+> scoop install songloft-player
+> # 更新：scoop update songloft-player
+> # 卸载：scoop uninstall songloft-player（加 --purge 一并删除配置数据）
+> ```
+
 > 💡 **Bundle 版使用方式**：首次启动在登录页点击「使用本地模式」→ 选择音乐目录 → 自动完成。支持随时在设置页切换本地/远程模式。
 
 > 💡 使用 **精简版（-lite）** 服务端时，推荐直接搭配 Flutter 客户端使用（无需额外部署 Web 前端）；如确实需要独立 Web 前端，可参考 [songloft-player](https://github.com/songloft-org/songloft-player) 仓库的 `flutter build web` 流程自行构建并由 Nginx 等反向代理静态托管。
