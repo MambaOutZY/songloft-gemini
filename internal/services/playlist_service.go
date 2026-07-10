@@ -307,14 +307,43 @@ func (s *PlaylistService) ReorderSongs(ctx context.Context, playlistID int64, so
 
 // ReorderPlaylists 重新排序歌单列表
 func (s *PlaylistService) ReorderPlaylists(ctx context.Context, playlistIDs []int64) error {
+	// allPlaylists 按 position 升序返回（含隐藏歌单）。
 	allPlaylists, err := s.playlists.List(ctx, &database.PlaylistFilter{Limit: 0})
 	if err != nil {
 		return fmt.Errorf("failed to list playlists: %w", err)
 	}
-	if len(playlistIDs) != len(allPlaylists) {
-		return fmt.Errorf("playlist count mismatch: expected %d, got %d", len(allPlaylists), len(playlistIDs))
+
+	// 校验请求的 ID 均存在且不重复。
+	existing := make(map[int64]bool, len(allPlaylists))
+	for _, p := range allPlaylists {
+		existing[p.ID] = true
 	}
-	if err := s.playlists.BatchUpdatePositions(ctx, playlistIDs); err != nil {
+	reorderSet := make(map[int64]bool, len(playlistIDs))
+	for _, id := range playlistIDs {
+		if reorderSet[id] {
+			return fmt.Errorf("duplicate playlist id: %d", id)
+		}
+		if !existing[id] {
+			return fmt.Errorf("playlist %d not found", id)
+		}
+		reorderSet[id] = true
+	}
+
+	// 前端列表默认排除隐藏歌单，因此这里可能只收到可见歌单的子集。
+	// 部分重排时：请求中的歌单按新顺序依次填充它们原先占据的槽位，
+	// 未纳入排序的歌单（如隐藏的总目录歌单）保持原位，避免 position 错乱。
+	finalOrder := make([]int64, 0, len(allPlaylists))
+	cursor := 0
+	for _, p := range allPlaylists {
+		if reorderSet[p.ID] {
+			finalOrder = append(finalOrder, playlistIDs[cursor])
+			cursor++
+		} else {
+			finalOrder = append(finalOrder, p.ID)
+		}
+	}
+
+	if err := s.playlists.BatchUpdatePositions(ctx, finalOrder); err != nil {
 		return fmt.Errorf("failed to batch update playlist positions: %w", err)
 	}
 	return nil

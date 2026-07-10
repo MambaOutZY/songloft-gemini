@@ -477,6 +477,85 @@ func TestPlaylistServiceAddSongsBatchEmpty(t *testing.T) {
 	}
 }
 
+// TestReorderPlaylistsPartial 覆盖 songloft#266：隐藏总目录歌单后，前端只发可见歌单子集，
+// 重排不应报「count mismatch」，且隐藏歌单应保持原位。
+func TestReorderPlaylistsPartial(t *testing.T) {
+	env := newPlaylistTestEnv(t)
+	service := env.newService()
+	ctx := context.Background()
+
+	// A(可见) → H(隐藏) → B(可见)，按创建顺序 position 递增。
+	pA := &models.Playlist{Type: models.PlaylistTypeNormal, Name: "A"}
+	pH := &models.Playlist{Type: models.PlaylistTypeNormal, Name: "H", Labels: []string{models.PlaylistLabelHidden}}
+	pB := &models.Playlist{Type: models.PlaylistTypeNormal, Name: "B"}
+	for _, p := range []*models.Playlist{pA, pH, pB} {
+		if err := service.Create(ctx, p); err != nil {
+			t.Fatalf("Create(%s) error = %v", p.Name, err)
+		}
+	}
+
+	// 记录重排前隐藏歌单 H 所处的槽位下标（全量列表按 position 升序）。
+	slotOf := func(id int64) int {
+		all, err := env.playlists.List(ctx, &database.PlaylistFilter{Limit: 0})
+		if err != nil {
+			t.Fatalf("List(all) error = %v", err)
+		}
+		for i, p := range all {
+			if p.ID == id {
+				return i
+			}
+		}
+		t.Fatalf("playlist %d not found in list", id)
+		return -1
+	}
+	hSlotBefore := slotOf(pH.ID)
+
+	// 模拟前端：拿到排除隐藏后的可见歌单（按 position 升序），再反转发给后端。
+	visible, err := env.playlists.List(ctx, &database.PlaylistFilter{
+		ExcludeLabels: []string{models.PlaylistLabelHidden},
+		Limit:         0,
+	})
+	if err != nil {
+		t.Fatalf("List(visible) error = %v", err)
+	}
+	reversed := make([]int64, len(visible))
+	for i, p := range visible {
+		reversed[len(visible)-1-i] = p.ID
+	}
+
+	// 修复前这里会因 count mismatch 报错（可见子集数量 != 全量歌单数）。
+	if err := service.ReorderPlaylists(ctx, reversed); err != nil {
+		t.Fatalf("ReorderPlaylists() error = %v", err)
+	}
+
+	all, err := env.playlists.List(ctx, &database.PlaylistFilter{Limit: 0})
+	if err != nil {
+		t.Fatalf("List(all) error = %v", err)
+	}
+	posOf := make(map[int64]int, len(all))
+	for i, p := range all {
+		posOf[p.ID] = i
+	}
+	// 可见歌单按新顺序排列：B 现在排在 A 之前。
+	if posOf[pB.ID] >= posOf[pA.ID] {
+		t.Errorf("expected B before A after reorder, got B=%d A=%d", posOf[pB.ID], posOf[pA.ID])
+	}
+	// 隐藏歌单 H 保持原槽位下标，不受可见歌单重排影响。
+	if got := posOf[pH.ID]; got != hSlotBefore {
+		t.Errorf("hidden playlist H should keep its slot, before=%d after=%d", hSlotBefore, got)
+	}
+}
+
+func TestReorderPlaylistsRejectsUnknownID(t *testing.T) {
+	env := newPlaylistTestEnv(t)
+	service := env.newService()
+	ctx := context.Background()
+
+	if err := service.ReorderPlaylists(ctx, []int64{999999}); err == nil {
+		t.Error("ReorderPlaylists() should reject unknown playlist id")
+	}
+}
+
 func TestPlaylistServiceAddSongPlaylistNotFound(t *testing.T) {
 	env := newPlaylistTestEnv(t)
 	service := env.newService()
