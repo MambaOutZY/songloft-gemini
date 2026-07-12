@@ -88,6 +88,19 @@ type NetDataEvent struct {
 	RemoteAddr string `json:"remoteAddr"` // "ip:port"
 }
 
+// TcpDataEvent 是 TCP readLoop 推送给 JS 的数据事件。
+// Data 为 base64 编码的原始字节（同 UDP）：TCP 字节流可在多字节 UTF-8 字符
+// 中间截断，raw string 会被 json.Marshal 替换为 U+FFFD 而损坏，故必须编码。
+type TcpDataEvent struct {
+	SocketID string `json:"socketId"`
+	Data     string `json:"data"`
+}
+
+// TcpCloseEvent 是 TCP 连接被对端关闭 / 读错误时推送给 JS 的断连事件。
+type TcpCloseEvent struct {
+	SocketID string `json:"socketId"`
+}
+
 // WebSocketRequestData 是入站 WebSocket 握手请求的轻量表示。
 type WebSocketRequestData struct {
 	Method     string            `json:"method"`
@@ -483,6 +496,20 @@ func (s *JSService) HasActiveUDPSockets() bool {
 	}
 	hasSocket := false
 	s.bridgeHandler.udpSockets.Range(func(_, _ any) bool {
+		hasSocket = true
+		return false
+	})
+	return hasSocket
+}
+
+// HasActiveTCPSockets 检查插件是否有活跃的出站 TCP 连接。
+// 由 HealthChecker.checkIdle 调用，防止挂着 MPD idle 等长连接的插件被休眠。
+func (s *JSService) HasActiveTCPSockets() bool {
+	if s.bridgeHandler == nil {
+		return false
+	}
+	hasSocket := false
+	s.bridgeHandler.tcpSockets.Range(func(_, _ any) bool {
 		hasSocket = true
 		return false
 	})

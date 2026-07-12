@@ -40,6 +40,8 @@ func (h *BridgeHandler) handleNet(action, data string) (string, error) {
 		return h.netUDPLeaveMulticast(data)
 	case "net.udpGetLocalAddr":
 		return h.netUDPGetLocalAddr(data)
+	case "net.tcpConnect", "net.tcpSend", "net.tcpClose":
+		return h.handleTCP(action, data)
 	default:
 		return "", fmt.Errorf("unknown net action: %s", action)
 	}

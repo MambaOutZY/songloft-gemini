@@ -453,9 +453,10 @@ songloft.lyrics = {
     }
 };
 
-// === songloft.net — 网络 socket（UDP）===
+// === songloft.net — 网络 socket（UDP / TCP）===
 songloft.net = {
-    _handlers: {},
+    _handlers: {},      // UDP: socketId -> onData 回调
+    _tcpSockets: {},    // TCP: socketId -> { _dataHandler, _closeHandler, closed }
     udpBind: async function(options) {
         var s = await __callBridge('net.udpBind', JSON.stringify(options || {}));
         return s ? JSON.parse(s) : {};
@@ -479,6 +480,37 @@ songloft.net = {
     },
     onData: function(socketId, handler) {
         songloft.net._handlers[socketId] = handler;
+    },
+    // tcpConnect(host, port, options?) → { send, onData, onClose, close }
+    // 建立出站 TCP 连接（仅允许私有 / 回环地址）。数据接收复用 UDP 的
+    // Go readLoop + host event 队列推送模式，通过 __dispatchHostEvent 派发。
+    tcpConnect: async function(host, port, options) {
+        var opts = options || {};
+        var s = await __callBridge('net.tcpConnect', JSON.stringify({
+            host: host, port: port, timeout: opts.timeout || 0
+        }));
+        var info = s ? JSON.parse(s) : {};
+        var socketId = info.socketId;
+        var state = { _dataHandler: null, _closeHandler: null, closed: false };
+        songloft.net._tcpSockets[socketId] = state;
+        return {
+            socketId: socketId,
+            localAddr: info.localAddr,
+            remoteAddr: info.remoteAddr,
+            send: async function(data) {
+                if (state.closed) throw new Error('TCP socket is closed');
+                // btoa 编码原始字节传输（同 UDP），保证二进制安全
+                await __callBridge('net.tcpSend', JSON.stringify({socketId: socketId, data: btoa(data)}));
+            },
+            onData: function(handler) { state._dataHandler = handler; },
+            onClose: function(handler) { state._closeHandler = handler; },
+            close: async function() {
+                if (state.closed) return;
+                state.closed = true;
+                delete songloft.net._tcpSockets[socketId];
+                await __callBridge('net.tcpClose', JSON.stringify({socketId: socketId}));
+            }
+        };
     }
 };
 
@@ -497,6 +529,24 @@ globalThis.__dispatchHostEvent = function(type, id, s) {
         if (type === 'net_data') {
             var h = songloft.net._handlers[id];
             if (typeof h === 'function') { __fireAndForgetHostPromise('net_data', h(JSON.parse(s))); }
+            return;
+        }
+        if (type === 'tcp_data') {
+            var ts = songloft.net._tcpSockets[id];
+            if (ts && typeof ts._dataHandler === 'function') {
+                __fireAndForgetHostPromise('tcp_data', ts._dataHandler(JSON.parse(s).data));
+            }
+            return;
+        }
+        if (type === 'tcp_close') {
+            var tc = songloft.net._tcpSockets[id];
+            if (tc) {
+                delete songloft.net._tcpSockets[id];
+                tc.closed = true;
+                if (typeof tc._closeHandler === 'function') {
+                    __fireAndForgetHostPromise('tcp_close', tc._closeHandler());
+                }
+            }
             return;
         }
         if (type === 'inbound_ws_message') {
@@ -541,7 +591,8 @@ type BridgeHandler struct {
 	port                      string                    // 服务器监听端口（用于构造宿主 URL）
 	processes                 sync.Map                  // map[name]*managedProcess — 后台进程跟踪
 	udpSockets                sync.Map                  // map[socketID]*managedUDPSocket — UDP socket 跟踪
-	socketIDSeq               atomic.Uint64             // UDP socket ID 递增序号
+	tcpSockets                sync.Map                  // map[socketID]*managedTCPSocket — 出站 TCP 连接跟踪
+	socketIDSeq               atomic.Uint64             // UDP/TCP socket ID 共享的递增序号
 	inboundWebSockets         sync.Map                  // map[connID]*managedInboundWebSocket — 入站 WebSocket 连接
 	inboundWebSocketIDSeq     atomic.Uint64             // 入站 WebSocket 连接 ID 递增序号
 	onPlayEventRegister       func(entryPath string)    // 播放事件订阅回调

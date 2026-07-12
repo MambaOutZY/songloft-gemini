@@ -348,6 +348,14 @@ func (hc *HealthChecker) checkIdle(svc *JSService) bool {
 		return false
 	}
 
+	// 有活跃出站 TCP 连接的插件不休眠（如 MPD idle 长连接）
+	if svc.HasActiveTCPSockets() {
+		slog.Debug("plugin has active TCP sockets, not idle",
+			"plugin", entryPath,
+		)
+		return false
+	}
+
 	// 有活跃入站 WebSocket 连接的插件不休眠
 	if svc.HasActiveInboundWebSockets() {
 		slog.Debug("plugin has active inbound WebSocket connections, not idle",
