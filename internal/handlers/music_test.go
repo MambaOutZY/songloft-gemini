@@ -450,3 +450,60 @@ func TestListSongsInvalidPagination(t *testing.T) {
 		t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, http.StatusOK)
 	}
 }
+
+// TestServeRadioICYPassthrough 验证电台代理对 ICY 元数据的透传:
+//   - 客户端未请求 Icy-MetaData(浏览器 <audio>)→ 上游不应收到该头,响应也不应带 icy-metaint,
+//     否则交织的元数据块会污染音频流,播放约 1 秒后中断(#275 回归)。
+//   - 客户端显式请求 Icy-MetaData(原生播放器)→ 透传给上游,并回传 icy-metaint 以便定位元数据块。
+func TestServeRadioICYPassthrough(t *testing.T) {
+	repo := newTestSongRepo(t)
+	songService := services.NewSongService(repo, nil, nil, nil, nil, nil)
+	handler := NewSongHandler(songService, nil, nil, nil, nil, nil)
+
+	var gotIcyReq string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotIcyReq = r.Header.Get("Icy-MetaData")
+		if gotIcyReq == "1" {
+			w.Header().Set("icy-metaint", "16000")
+		}
+		w.Header().Set("Content-Type", "audio/aac")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("audio-bytes"))
+	}))
+	defer upstream.Close()
+
+	id := seedSong(t, repo, &models.Song{Type: models.TypeRemote, Title: "电台", URL: upstream.URL + "/live"})
+	song, err := songService.GetByID(context.Background(), id)
+	if err != nil {
+		t.Fatalf("get song: %v", err)
+	}
+
+	t.Run("浏览器不请求元数据", func(t *testing.T) {
+		gotIcyReq = ""
+		req := httptest.NewRequest("GET", "/api/v1/songs/"+strconv.FormatInt(id, 10)+"/play", nil)
+		rr := httptest.NewRecorder()
+		handler.serveRadio(rr, req, song)
+
+		if gotIcyReq != "" {
+			t.Errorf("上游收到了 Icy-MetaData=%q,期望不发送", gotIcyReq)
+		}
+		if v := rr.Header().Get("icy-metaint"); v != "" {
+			t.Errorf("响应带了 icy-metaint=%q,期望不透传", v)
+		}
+	})
+
+	t.Run("原生播放器请求元数据", func(t *testing.T) {
+		gotIcyReq = ""
+		req := httptest.NewRequest("GET", "/api/v1/songs/"+strconv.FormatInt(id, 10)+"/play", nil)
+		req.Header.Set("Icy-MetaData", "1")
+		rr := httptest.NewRecorder()
+		handler.serveRadio(rr, req, song)
+
+		if gotIcyReq != "1" {
+			t.Errorf("上游 Icy-MetaData=%q,期望透传为 1", gotIcyReq)
+		}
+		if v := rr.Header().Get("icy-metaint"); v != "16000" {
+			t.Errorf("响应 icy-metaint=%q,期望回传 16000", v)
+		}
+	})
+}
