@@ -80,7 +80,9 @@ func NewCacheService(defaultCacheDir string, configService *ConfigService) *Cach
 		configService:   configService,
 		lruIndex:        make(map[string]time.Time),
 		transcodeSem:    make(chan struct{}, 1),
-		downloadClient:  httputil.NewClient(120 * time.Second),
+		// download client(无整请求超时);停滞检测交给 downloadExternalToTemp 里的
+		// StallReader,避免慢速大文件被固定超时掐断。(issue #265)
+		downloadClient: httputil.NewDownloadClient(),
 	}
 	var cfg CacheConfig
 	if err := configService.GetJSON(cacheConfigKey, &cfg); err == nil && cfg.CacheDir != "" {

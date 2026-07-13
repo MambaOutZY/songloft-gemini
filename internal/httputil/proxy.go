@@ -72,6 +72,11 @@ var sharedTransport = newProxyTransport(0)
 
 var streamingTransport = newProxyTransport(15 * time.Second)
 
+// downloadTransport 用于「下载到本地」的大文件传输:无整请求超时(慢但持续的
+// 下载靠 StallReader 做停滞检测),响应头超时给到 60s——比电台 streaming 的 15s
+// 宽松,避免慢速代理/梯子下首字节偏慢时被误判死。(issue #265)
+var downloadTransport = newProxyTransport(60 * time.Second)
+
 // SetGlobalProxy sets the global HTTP proxy used by all clients created via NewClient.
 // Pass an empty string to clear the proxy (direct connection).
 func SetGlobalProxy(rawURL string) error {
@@ -80,6 +85,7 @@ func SetGlobalProxy(rawURL string) error {
 	}
 	sharedTransport.CloseIdleConnections()
 	streamingTransport.CloseIdleConnections()
+	downloadTransport.CloseIdleConnections()
 	return nil
 }
 
@@ -103,5 +109,15 @@ func NewClient(timeout time.Duration) *http.Client {
 func NewStreamingClient() *http.Client {
 	return &http.Client{
 		Transport: streamingTransport,
+	}
+}
+
+// NewDownloadClient creates an http.Client for downloading large files to local
+// storage. It has no whole-request timeout (slow-but-steady transfers must not
+// be killed mid-body — pair it with StallReader for stall detection) and a
+// generous 60s response-header timeout to tolerate slow proxies/VPNs. (issue #265)
+func NewDownloadClient() *http.Client {
+	return &http.Client{
+		Transport: downloadTransport,
 	}
 }

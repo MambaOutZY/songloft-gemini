@@ -73,8 +73,9 @@ type FetcherOpts struct {
 	Metrics            *SourceMetrics
 	HTTPClient         *http.Client
 	LoadValidationOpts func() ValidationOpts // 每次 Fetch 时读最新配置,允许运维热改
-	// HTTPTimeout 单次下载的总超时
-	HTTPTimeout time.Duration
+	// StallTimeout 下载的「停滞空闲超时」：连续该时长内读不到任何字节才判死。
+	// 不限制下载总时长,故慢但持续推进的下载(慢速代理/梯子)不会被误掐。(issue #265)
+	StallTimeout time.Duration
 }
 
 // SourceFetcher 通过 (plugin_entry_path, source_data) 拉取一个临时文件并完成校验。
@@ -85,10 +86,12 @@ type SourceFetcher struct {
 
 func NewSourceFetcher(opts FetcherOpts) *SourceFetcher {
 	if opts.HTTPClient == nil {
-		opts.HTTPClient = &http.Client{Timeout: 120 * time.Second}
+		// 无整请求超时的 download client:整段硬超时会掐断慢速大文件下载,
+		// 停滞检测由 StallReader 兜底。(issue #265)
+		opts.HTTPClient = httputil.NewDownloadClient()
 	}
-	if opts.HTTPTimeout == 0 {
-		opts.HTTPTimeout = 120 * time.Second
+	if opts.StallTimeout == 0 {
+		opts.StallTimeout = 120 * time.Second
 	}
 	if opts.LoadValidationOpts == nil {
 		def := DefaultValidationOpts()
@@ -228,10 +231,8 @@ func (f *SourceFetcher) Fetch(
 		return nil, err
 	}
 
-	// 2. HTTP 下载到临时文件
-	dlCtx, cancel := context.WithTimeout(ctx, f.opts.HTTPTimeout)
-	defer cancel()
-	tmpPath, size, err := f.downloadToTemp(dlCtx, resp.URL, resp.Headers)
+	// 2. HTTP 下载到临时文件(停滞检测,不限总时长)
+	tmpPath, size, err := f.downloadToTemp(ctx, resp.URL, resp.Headers)
 	if err != nil {
 		report(OutcomeNetworkFail, err.Error(), 0)
 		return nil, &NetworkError{Op: "get", URL: resp.URL, Err: err}
@@ -286,7 +287,11 @@ func (f *SourceFetcher) Fetch(
 // 不做 Content-Type 校验,所有内容审计由后续 Probe + Validate 兜底,
 // 因为部分 CDN 返回 application/octet-stream 是正常的。
 func (f *SourceFetcher) downloadToTemp(ctx context.Context, url string, headers map[string]string) (string, int64, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	// 可取消的子 ctx:StallReader 在停滞超时到达时 cancel,掐断阻塞中的 body Read。
+	dlCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(dlCtx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", 0, fmt.Errorf("new request: %w", err)
 	}
@@ -313,7 +318,9 @@ func (f *SourceFetcher) downloadToTemp(ctx context.Context, url string, headers 
 	}
 	tmpPath := tmp.Name()
 
-	written, err := io.Copy(tmp, resp.Body)
+	sr := httputil.NewStallReader(resp.Body, cancel, f.opts.StallTimeout)
+	defer sr.Stop()
+	written, err := io.Copy(tmp, sr)
 	closeErr := tmp.Close()
 	if err != nil {
 		_ = os.Remove(tmpPath)

@@ -348,8 +348,8 @@ func (a *App) Init() error {
 		Prober:        proberAdapter,
 		PluginInvoker: invokerAdapter,
 		Metrics:       a.sourceMetrics,
-		HTTPClient:    httputil.NewClient(120 * time.Second),
-		HTTPTimeout:   120 * time.Second,
+		HTTPClient:    httputil.NewDownloadClient(),
+		StallTimeout:  120 * time.Second,
 		LoadValidationOpts: func() source.ValidationOpts {
 			opts := source.DefaultValidationOpts()
 			// 读 source_validation 配置;失败则用默认值(灰度降级安全)

@@ -190,12 +190,14 @@ func (d *SongDownloader) resolveTargetDir(targetDir string) (string, error) {
 	return absTarget, nil
 }
 
-// downloadAcquireTimeout 是下载路径「获取音频」整体预算。
+// downloadAcquireTimeout 是下载路径「获取音频」整体预算,仅作极端情况的总时长兜底。
 // 主要意义是给 music/url 解析腾出等待空间——issue #265 里解析走 ytdlp 插件唯一 worker，
 // 与导入探测撞车时会排队；bridge 用的是无 deadline 的 background ctx，若不显式放宽，
-// InvokeHTTP 会落到调度器默认 30s 而被判死。音频拉取本身另有 HTTP client 超时兜底，
-// 故这个较宽的整体预算不会缩短正常大文件下载。
-const downloadAcquireTimeout = 5 * time.Minute
+// InvokeHTTP 会落到调度器默认 30s 而被判死。
+//
+// 音频拉取本身的防线是 StallReader 停滞检测(持续推进即不掐),而非固定总超时;
+// 故此处放得很宽(30min),避免慢速梯子下的大文件在下载完成前被整体预算掐断。(issue #265)
+const downloadAcquireTimeout = 30 * time.Minute
 
 // acquireAudio 获取音频文件路径（缓存命中或同步下载）。
 func (d *SongDownloader) acquireAudio(ctx context.Context, song *models.Song) (string, error) {

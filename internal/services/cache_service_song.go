@@ -401,10 +401,18 @@ func (c *CacheService) ClearStaleCachePath(songID int64) {
 	}
 }
 
+// externalDownloadStallTimeout 纯外链下载的停滞空闲超时:连续该时长读不到字节才判死。
+// 不限制总时长,慢但持续的下载不会被误掐。(issue #265)
+const externalDownloadStallTimeout = 120 * time.Second
+
 // downloadExternalToTemp 纯外链歌曲的简化下载:直接 HTTP GET,无 fallback、无元数据校验。
 // 因为纯外链没有"插件源"概念,Orchestrator 也无能为力。
 func (c *CacheService) downloadExternalToTemp(ctx context.Context, url string, headers map[string]string) (string, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	// 可取消的子 ctx:StallReader 在停滞超时到达时 cancel,掐断阻塞中的 body Read。
+	dlCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(dlCtx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("new request: %w", err)
 	}
@@ -431,7 +439,9 @@ func (c *CacheService) downloadExternalToTemp(ctx context.Context, url string, h
 		return "", "", fmt.Errorf("create temp: %w", err)
 	}
 	tmpPath := tmp.Name()
-	written, err := io.Copy(tmp, resp.Body)
+	sr := httputil.NewStallReader(resp.Body, cancel, externalDownloadStallTimeout)
+	defer sr.Stop()
+	written, err := io.Copy(tmp, sr)
 	closeErr := tmp.Close()
 	if err != nil {
 		_ = os.Remove(tmpPath)
