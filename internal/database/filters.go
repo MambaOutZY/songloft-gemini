@@ -20,6 +20,15 @@ type SongFilter struct {
 	Type       string
 	Keyword    string
 	PathPrefix string
+	// 标签分类精确过滤（空字符串表示不过滤该维度）。
+	Genre    string
+	Artist   string
+	Album    string
+	Language string
+	Style    string
+	Year     int // 精确年份，0 表示不过滤
+	// DecadeStart 年代起始年（如 1990 表示 1990-1999）；0 表示不过滤。
+	DecadeStart int
 	// ExcludePlaylistLabels 排除属于「带这些 label 的歌单」的歌曲。
 	// 典型用途：排除隐藏歌单（label=hidden）里的歌，让主歌曲列表不显示它们。
 	ExcludePlaylistLabels []string
@@ -67,7 +76,7 @@ var (
 	songOrderWhitelist = map[string]struct{}{
 		"id": {}, "title": {}, "artist": {}, "album": {},
 		"duration": {}, "added_at": {}, "updated_at": {},
-		"file_modified_at": {},
+		"file_modified_at": {}, "year": {}, "genre": {},
 	}
 	playlistOrderWhitelist = map[string]struct{}{
 		"id": {}, "name": {}, "position": {},

@@ -75,6 +75,8 @@ type Song struct {
 	Album               string  `json:"album" example:"十一月的萧邦"`                            // 专辑名称
 	Year                int     `json:"year" example:"2005"`                               // 发行年份
 	Genre               string  `json:"genre" example:"Pop"`                               // 流派
+	Language            string  `json:"language,omitempty" example:"国语"`                   // 语种
+	Style               string  `json:"style,omitempty" example:"抒情"`                      // 风格
 	Duration            float64 `json:"duration" example:"253.5"`                          // 播放时长（秒）
 	FilePath            string  `json:"file_path" example:"/music/周杰伦/夜曲.mp3"`             // 本地文件路径
 	CachePath           string  `json:"-"`                                                 // 缓存文件路径（内部使用，不暴露给客户端）

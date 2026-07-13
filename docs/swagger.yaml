@@ -51,11 +51,15 @@ definitions:
         type: string
       genre:
         type: string
+      language:
+        type: string
       lyrics:
         type: string
       rename_file:
         description: RenameFile 为 true 时按新标题重命名本地音频文件（保留原目录与扩展名），仅对本地非 CUE 歌曲生效。
         type: boolean
+      style:
+        type: string
       title:
         type: string
       track:
@@ -717,6 +721,10 @@ definitions:
       isrc:
         description: ISRC(国际标准录音编码)
         type: string
+      language:
+        description: 语种
+        example: 国语
+        type: string
       lyric_remote_url:
         description: lyric_source=url 时的原始 URL(运行时由 LyricFetcher 拉取)
         type: string
@@ -739,6 +747,10 @@ definitions:
         type: string
       source_url:
         description: 原始音源 URL(仅 JSON 输出,radio/remote 类型返回原始流地址供编辑使用)
+        type: string
+      style:
+        description: 风格
+        example: 抒情
         type: string
       title:
         description: 标题
@@ -4356,6 +4368,34 @@ paths:
         in: query
         name: path_prefix
         type: string
+      - description: 按流派精确过滤
+        in: query
+        name: genre
+        type: string
+      - description: 按歌手精确过滤
+        in: query
+        name: artist
+        type: string
+      - description: 按专辑精确过滤
+        in: query
+        name: album
+        type: string
+      - description: 按语种精确过滤
+        in: query
+        name: language
+        type: string
+      - description: 按风格精确过滤
+        in: query
+        name: style
+        type: string
+      - description: 按发行年份精确过滤
+        in: query
+        name: year
+        type: integer
+      - description: 按年代过滤（起始年，如 1990 匹配 1990-1999）
+        in: query
+        name: decade
+        type: integer
       - default: hidden
         description: 排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部
         in: query
@@ -4381,6 +4421,8 @@ paths:
         - added_at
         - updated_at
         - file_modified_at
+        - year
+        - genre
         in: query
         name: sort
         type: string
@@ -5021,6 +5063,51 @@ paths:
       summary: 获取重复歌曲组
       tags:
       - 歌曲管理
+  /songs/facets:
+    get:
+      description: |-
+        按指定维度聚合曲库，返回该维度下所有非空取值及各自的歌曲数量，用于「分类浏览」的清单页。
+        支持维度：genre(流派)/artist(歌手)/album(专辑)/language(语种)/style(风格)/year(年份)/decade(年代)。
+        year/decade 的 value 为数字字符串（年代如 "1990" 表示 1990-1999）。取到某取值后可用 /songs?<field>=<value> 拉取该分类下歌曲。
+      parameters:
+      - description: 聚合维度
+        enum:
+        - genre
+        - artist
+        - album
+        - language
+        - style
+        - year
+        - decade
+        in: query
+        name: field
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功返回聚合结果 {field, facets:[{value,count}]}
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 缺少或不支持的 field
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 曲库标签分类聚合
+      tags:
+      - 歌曲管理
   /songs/ids:
     get:
       consumes:
@@ -5039,6 +5126,34 @@ paths:
         in: query
         name: path_prefix
         type: string
+      - description: 按流派精确过滤
+        in: query
+        name: genre
+        type: string
+      - description: 按歌手精确过滤
+        in: query
+        name: artist
+        type: string
+      - description: 按专辑精确过滤
+        in: query
+        name: album
+        type: string
+      - description: 按语种精确过滤
+        in: query
+        name: language
+        type: string
+      - description: 按风格精确过滤
+        in: query
+        name: style
+        type: string
+      - description: 按发行年份精确过滤
+        in: query
+        name: year
+        type: integer
+      - description: 按年代过滤（起始年，如 1990 匹配 1990-1999）
+        in: query
+        name: decade
+        type: integer
       - default: hidden
         description: 排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部
         in: query
@@ -5054,6 +5169,8 @@ paths:
         - added_at
         - updated_at
         - file_modified_at
+        - year
+        - genre
         in: query
         name: sort
         type: string

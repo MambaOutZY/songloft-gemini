@@ -8,7 +8,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     fingerprint, fingerprint_duration,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at, track
+    file_modified_at, track, language, style
 FROM songs WHERE id = ?;
 
 -- name: CreateSong :execlastid
@@ -17,12 +17,12 @@ INSERT INTO songs (
     cover_path, cover_url, lyric, lyric_source, lyric_remote_url,
     file_size, format, bit_rate, sample_rate, is_live,
     plugin_entry_path, source_data, dedup_key,
-    year, genre,
+    year, genre, language, style,
     fingerprint, fingerprint_duration,
     isrc, track,
     cue_source_path, cue_track_index, cue_audio_path,
     file_modified_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateSong :execrows
 UPDATE songs SET
@@ -31,7 +31,7 @@ UPDATE songs SET
     lyric = ?, lyric_source = ?, lyric_remote_url = ?,
     file_size = ?, format = ?, bit_rate = ?, sample_rate = ?, is_live = ?,
     plugin_entry_path = ?, source_data = ?, dedup_key = ?,
-    year = ?, genre = ?,
+    year = ?, genre = ?, language = ?, style = ?,
     fingerprint = ?, fingerprint_duration = ?,
     isrc = ?, track = ?,
     cue_source_path = ?, cue_track_index = ?, cue_audio_path = ?,
@@ -133,7 +133,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     fingerprint, fingerprint_duration,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at, track
+    file_modified_at, track, language, style
 FROM songs WHERE cache_path != '';
 
 -- name: ListSongsNeedingMetadata :many
@@ -177,3 +177,38 @@ FROM songs WHERE cue_source_path = ? AND cue_audio_path != '';
 
 -- name: DeleteByCueSource :execrows
 DELETE FROM songs WHERE cue_source_path = ?;
+
+-- name: ListSongFacetGenre :many
+SELECT genre AS value, COUNT(*) AS count
+FROM songs WHERE genre != ''
+GROUP BY genre ORDER BY count DESC, value ASC;
+
+-- name: ListSongFacetArtist :many
+SELECT artist AS value, COUNT(*) AS count
+FROM songs WHERE artist != ''
+GROUP BY artist ORDER BY count DESC, value ASC;
+
+-- name: ListSongFacetAlbum :many
+SELECT album AS value, COUNT(*) AS count
+FROM songs WHERE album != ''
+GROUP BY album ORDER BY count DESC, value ASC;
+
+-- name: ListSongFacetLanguage :many
+SELECT language AS value, COUNT(*) AS count
+FROM songs WHERE language != ''
+GROUP BY language ORDER BY count DESC, value ASC;
+
+-- name: ListSongFacetStyle :many
+SELECT style AS value, COUNT(*) AS count
+FROM songs WHERE style != ''
+GROUP BY style ORDER BY count DESC, value ASC;
+
+-- name: ListSongFacetYear :many
+SELECT CAST(year AS INTEGER) AS value, COUNT(*) AS count
+FROM songs WHERE year > 0
+GROUP BY year ORDER BY value DESC;
+
+-- name: ListSongFacetDecade :many
+SELECT CAST((year / 10) * 10 AS INTEGER) AS value, COUNT(*) AS count
+FROM songs WHERE year > 0
+GROUP BY value ORDER BY value DESC;

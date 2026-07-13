@@ -96,12 +96,12 @@ INSERT INTO songs (
     cover_path, cover_url, lyric, lyric_source, lyric_remote_url,
     file_size, format, bit_rate, sample_rate, is_live,
     plugin_entry_path, source_data, dedup_key,
-    year, genre,
+    year, genre, language, style,
     fingerprint, fingerprint_duration,
     isrc, track,
     cue_source_path, cue_track_index, cue_audio_path,
     file_modified_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateSongParams struct {
@@ -127,6 +127,8 @@ type CreateSongParams struct {
 	DedupKey            string
 	Year                int64
 	Genre               string
+	Language            string
+	Style               string
 	Fingerprint         string
 	FingerprintDuration float64
 	Isrc                string
@@ -161,6 +163,8 @@ func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (int64, 
 		arg.DedupKey,
 		arg.Year,
 		arg.Genre,
+		arg.Language,
+		arg.Style,
 		arg.Fingerprint,
 		arg.FingerprintDuration,
 		arg.Isrc,
@@ -226,7 +230,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     fingerprint, fingerprint_duration,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at, track
+    file_modified_at, track, language, style
 FROM songs WHERE id = ?
 `
 
@@ -268,6 +272,8 @@ func (q *Queries) GetSongByID(ctx context.Context, id int64) (Song, error) {
 		&i.CueAudioPath,
 		&i.FileModifiedAt,
 		&i.Track,
+		&i.Language,
+		&i.Style,
 	)
 	return i, err
 }
@@ -451,6 +457,244 @@ func (q *Queries) ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalW
 	return items, nil
 }
 
+const listSongFacetAlbum = `-- name: ListSongFacetAlbum :many
+SELECT album AS value, COUNT(*) AS count
+FROM songs WHERE album != ''
+GROUP BY album ORDER BY count DESC, value ASC
+`
+
+type ListSongFacetAlbumRow struct {
+	Value string
+	Count int64
+}
+
+func (q *Queries) ListSongFacetAlbum(ctx context.Context) ([]ListSongFacetAlbumRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSongFacetAlbum)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSongFacetAlbumRow{}
+	for rows.Next() {
+		var i ListSongFacetAlbumRow
+		if err := rows.Scan(&i.Value, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSongFacetArtist = `-- name: ListSongFacetArtist :many
+SELECT artist AS value, COUNT(*) AS count
+FROM songs WHERE artist != ''
+GROUP BY artist ORDER BY count DESC, value ASC
+`
+
+type ListSongFacetArtistRow struct {
+	Value string
+	Count int64
+}
+
+func (q *Queries) ListSongFacetArtist(ctx context.Context) ([]ListSongFacetArtistRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSongFacetArtist)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSongFacetArtistRow{}
+	for rows.Next() {
+		var i ListSongFacetArtistRow
+		if err := rows.Scan(&i.Value, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSongFacetDecade = `-- name: ListSongFacetDecade :many
+SELECT CAST((year / 10) * 10 AS INTEGER) AS value, COUNT(*) AS count
+FROM songs WHERE year > 0
+GROUP BY value ORDER BY value DESC
+`
+
+type ListSongFacetDecadeRow struct {
+	Value int64
+	Count int64
+}
+
+func (q *Queries) ListSongFacetDecade(ctx context.Context) ([]ListSongFacetDecadeRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSongFacetDecade)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSongFacetDecadeRow{}
+	for rows.Next() {
+		var i ListSongFacetDecadeRow
+		if err := rows.Scan(&i.Value, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSongFacetGenre = `-- name: ListSongFacetGenre :many
+SELECT genre AS value, COUNT(*) AS count
+FROM songs WHERE genre != ''
+GROUP BY genre ORDER BY count DESC, value ASC
+`
+
+type ListSongFacetGenreRow struct {
+	Value string
+	Count int64
+}
+
+func (q *Queries) ListSongFacetGenre(ctx context.Context) ([]ListSongFacetGenreRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSongFacetGenre)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSongFacetGenreRow{}
+	for rows.Next() {
+		var i ListSongFacetGenreRow
+		if err := rows.Scan(&i.Value, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSongFacetLanguage = `-- name: ListSongFacetLanguage :many
+SELECT language AS value, COUNT(*) AS count
+FROM songs WHERE language != ''
+GROUP BY language ORDER BY count DESC, value ASC
+`
+
+type ListSongFacetLanguageRow struct {
+	Value string
+	Count int64
+}
+
+func (q *Queries) ListSongFacetLanguage(ctx context.Context) ([]ListSongFacetLanguageRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSongFacetLanguage)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSongFacetLanguageRow{}
+	for rows.Next() {
+		var i ListSongFacetLanguageRow
+		if err := rows.Scan(&i.Value, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSongFacetStyle = `-- name: ListSongFacetStyle :many
+SELECT style AS value, COUNT(*) AS count
+FROM songs WHERE style != ''
+GROUP BY style ORDER BY count DESC, value ASC
+`
+
+type ListSongFacetStyleRow struct {
+	Value string
+	Count int64
+}
+
+func (q *Queries) ListSongFacetStyle(ctx context.Context) ([]ListSongFacetStyleRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSongFacetStyle)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSongFacetStyleRow{}
+	for rows.Next() {
+		var i ListSongFacetStyleRow
+		if err := rows.Scan(&i.Value, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSongFacetYear = `-- name: ListSongFacetYear :many
+SELECT CAST(year AS INTEGER) AS value, COUNT(*) AS count
+FROM songs WHERE year > 0
+GROUP BY year ORDER BY value DESC
+`
+
+type ListSongFacetYearRow struct {
+	Value int64
+	Count int64
+}
+
+func (q *Queries) ListSongFacetYear(ctx context.Context) ([]ListSongFacetYearRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSongFacetYear)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSongFacetYearRow{}
+	for rows.Next() {
+		var i ListSongFacetYearRow
+		if err := rows.Scan(&i.Value, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSongsByFingerprint = `-- name: ListSongsByFingerprint :many
 SELECT id, type, title, artist, album, duration, file_path,
     format, bit_rate, sample_rate, file_size, fingerprint_duration,
@@ -590,7 +834,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     fingerprint, fingerprint_duration,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at, track
+    file_modified_at, track, language, style
 FROM songs WHERE cache_path != ''
 `
 
@@ -638,6 +882,8 @@ func (q *Queries) ListSongsWithCache(ctx context.Context) ([]Song, error) {
 			&i.CueAudioPath,
 			&i.FileModifiedAt,
 			&i.Track,
+			&i.Language,
+			&i.Style,
 		); err != nil {
 			return nil, err
 		}
@@ -734,7 +980,7 @@ UPDATE songs SET
     lyric = ?, lyric_source = ?, lyric_remote_url = ?,
     file_size = ?, format = ?, bit_rate = ?, sample_rate = ?, is_live = ?,
     plugin_entry_path = ?, source_data = ?, dedup_key = ?,
-    year = ?, genre = ?,
+    year = ?, genre = ?, language = ?, style = ?,
     fingerprint = ?, fingerprint_duration = ?,
     isrc = ?, track = ?,
     cue_source_path = ?, cue_track_index = ?, cue_audio_path = ?,
@@ -765,6 +1011,8 @@ type UpdateSongParams struct {
 	DedupKey            string
 	Year                int64
 	Genre               string
+	Language            string
+	Style               string
 	Fingerprint         string
 	FingerprintDuration float64
 	Isrc                string
@@ -800,6 +1048,8 @@ func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (int64, 
 		arg.DedupKey,
 		arg.Year,
 		arg.Genre,
+		arg.Language,
+		arg.Style,
 		arg.Fingerprint,
 		arg.FingerprintDuration,
 		arg.Isrc,

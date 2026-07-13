@@ -64,6 +64,10 @@ type Metadata struct {
 	CoverExt    string  // 封面图片扩展名
 	ISRC        string  // ISRC（国际标准录音编码）
 	Track       string  // 音轨号（"3" 或 "3/12"）
+	Year        int     // 发行年份
+	Genre       string  // 流派
+	Language    string  // 语种
+	Style       string  // 风格
 }
 
 // FFProbeOutput ffprobe 输出结构
@@ -195,6 +199,12 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 				}
 			}
 
+			// 标签分类维度：流派/年份为标准字段，语种/风格来自 pkg/tag 扩展（部分格式尽力读，读不到为空）
+			metadata.Year = tagMeta.Year()
+			metadata.Genre = tagMeta.Genre()
+			metadata.Language = tagMeta.Language()
+			metadata.Style = tagMeta.Style()
+
 			// 从 tag 库提取时长
 			if duration := tagMeta.Duration(); duration > 0 {
 				metadata.Duration = duration.Seconds()
@@ -256,6 +266,18 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 					if lyric := pickTag(tags, "lyrics", "LYRICS", "unsynced_lyrics"); lyric != "" {
 						metadata.Lyric = lyric
 						metadata.LyricSource = "embedded"
+					}
+				}
+				// 标签分类维度兜底（tag 库不支持的格式如 WMA/APE 走这里）
+				if metadata.Genre == "" {
+					metadata.Genre = pickTag(tags, "genre", "GENRE")
+				}
+				if metadata.Language == "" {
+					metadata.Language = pickTag(tags, "language", "LANGUAGE")
+				}
+				if metadata.Year == 0 {
+					if y := parseYear(pickTag(tags, "date", "DATE", "year", "YEAR", "TYER")); y > 0 {
+						metadata.Year = y
 					}
 				}
 			}
@@ -788,6 +810,18 @@ func pickTag(tags map[string]string, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// parseYear 从形如 "2005"、"2005-11-01"、"2005/11" 的日期字符串提取 4 位年份，无法解析返回 0。
+func parseYear(s string) int {
+	s = strings.TrimSpace(s)
+	if len(s) < 4 {
+		return 0
+	}
+	if y, err := strconv.Atoi(s[:4]); err == nil && y > 0 {
+		return y
+	}
+	return 0
 }
 
 // extractISRC 从 Raw() 标签数据中提取 ISRC。

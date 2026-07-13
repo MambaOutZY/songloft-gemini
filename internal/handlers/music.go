@@ -256,10 +256,17 @@ func parseExcludePlaylistLabels(raw string) []string {
 // @Param type query string false "歌曲类型" Enums(local, remote, radio)
 // @Param keyword query string false "搜索关键词"
 // @Param path_prefix query string false "按 file_path 前缀过滤（如 music/Pop）"
+// @Param genre query string false "按流派精确过滤"
+// @Param artist query string false "按歌手精确过滤"
+// @Param album query string false "按专辑精确过滤"
+// @Param language query string false "按语种精确过滤"
+// @Param style query string false "按风格精确过滤"
+// @Param year query int false "按发行年份精确过滤"
+// @Param decade query int false "按年代过滤（起始年，如 1990 匹配 1990-1999）"
 // @Param exclude_playlist_labels query string false "排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部" default(hidden)
 // @Param limit query int false "每页数量" default(20)
 // @Param offset query int false "偏移量" default(0)
-// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at)
+// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at, year, genre)
 // @Param order query string false "排序方向，缺省 desc" Enums(asc, desc)
 // @Success 200 {object} map[string]any "成功返回歌曲列表"
 // @Failure 500 {object} map[string]string "服务器错误"
@@ -307,6 +314,7 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 		OrderBy:               orderBy,
 		Order:                 order,
 	}
+	applySongTagFilters(filter, r.URL.Query())
 
 	// 获取歌曲列表
 	songs, err := h.songService.List(ctx, filter)
@@ -339,8 +347,15 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 // @Param type query string false "歌曲类型"
 // @Param keyword query string false "搜索关键词"
 // @Param path_prefix query string false "按 file_path 前缀过滤"
+// @Param genre query string false "按流派精确过滤"
+// @Param artist query string false "按歌手精确过滤"
+// @Param album query string false "按专辑精确过滤"
+// @Param language query string false "按语种精确过滤"
+// @Param style query string false "按风格精确过滤"
+// @Param year query int false "按发行年份精确过滤"
+// @Param decade query int false "按年代过滤（起始年，如 1990 匹配 1990-1999）"
 // @Param exclude_playlist_labels query string false "排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部" default(hidden)
-// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at)
+// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at, year, genre)
 // @Param order query string false "排序方向，缺省 desc" Enums(asc, desc)
 // @Success 200 {object} map[string]any "成功返回 ID 列表"
 // @Failure 500 {object} map[string]string "服务器错误"
@@ -358,6 +373,7 @@ func (h *SongHandler) ListSongIDs(w http.ResponseWriter, r *http.Request) {
 		OrderBy:               orderBy,
 		Order:                 order,
 	}
+	applySongTagFilters(filter, r.URL.Query())
 
 	ids, err := h.songService.ListIDs(ctx, filter)
 	if err != nil {
@@ -368,6 +384,64 @@ func (h *SongHandler) ListSongIDs(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]any{
 		"ids":   ids,
 		"total": len(ids),
+	})
+}
+
+// applySongTagFilters 从 query 解析标签分类过滤参数（流派/歌手/专辑/语种/风格/年份/年代）并写入 filter。
+func applySongTagFilters(filter *database.SongFilter, q url.Values) {
+	filter.Genre = q.Get("genre")
+	filter.Artist = q.Get("artist")
+	filter.Album = q.Get("album")
+	filter.Language = q.Get("language")
+	filter.Style = q.Get("style")
+	if y, err := strconv.Atoi(q.Get("year")); err == nil && y > 0 {
+		filter.Year = y
+	}
+	if d, err := strconv.Atoi(q.Get("decade")); err == nil && d > 0 {
+		filter.DecadeStart = d
+	}
+}
+
+// songFacetFields 是 /songs/facets 支持的维度白名单。
+var songFacetFields = map[string]struct{}{
+	"genre": {}, "artist": {}, "album": {},
+	"language": {}, "style": {}, "year": {}, "decade": {},
+}
+
+// ListSongFacets 按维度聚合曲库标签，返回该维度下所有取值及计数（按计数降序）。
+// @Summary 曲库标签分类聚合
+// @Description 按指定维度聚合曲库，返回该维度下所有非空取值及各自的歌曲数量，用于「分类浏览」的清单页。
+// @Description 支持维度：genre(流派)/artist(歌手)/album(专辑)/language(语种)/style(风格)/year(年份)/decade(年代)。
+// @Description year/decade 的 value 为数字字符串（年代如 "1990" 表示 1990-1999）。取到某取值后可用 /songs?<field>=<value> 拉取该分类下歌曲。
+// @Tags 歌曲管理
+// @Produce json
+// @Param field query string true "聚合维度" Enums(genre, artist, album, language, style, year, decade)
+// @Success 200 {object} map[string]any "成功返回聚合结果 {field, facets:[{value,count}]}"
+// @Failure 400 {object} map[string]string "缺少或不支持的 field"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Security BearerAuth
+// @Router /songs/facets [get]
+func (h *SongHandler) ListSongFacets(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	field := r.URL.Query().Get("field")
+	if _, ok := songFacetFields[field]; !ok {
+		respondError(w, http.StatusBadRequest, "不支持的聚合维度 field", nil)
+		return
+	}
+
+	facets, err := h.songService.ListFacet(ctx, field)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取标签分类聚合失败", err)
+		return
+	}
+	if facets == nil {
+		facets = []database.Facet{}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"field":  field,
+		"facets": facets,
 	})
 }
 
@@ -1341,6 +1415,8 @@ type WriteSongTagsRequest struct {
 	Album      string `json:"album"`
 	Year       int    `json:"year"`
 	Genre      string `json:"genre"`
+	Language   string `json:"language"`
+	Style      string `json:"style"`
 	Track      string `json:"track"`
 	Lyrics     string `json:"lyrics"`
 	CoverData  string `json:"cover_data"`
@@ -1402,6 +1478,12 @@ func (h *SongHandler) WriteTags(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Genre != "" {
 		song.Genre = req.Genre
+	}
+	if req.Language != "" {
+		song.Language = req.Language
+	}
+	if req.Style != "" {
+		song.Style = req.Style
 	}
 	if req.Track != "" {
 		song.Track = req.Track

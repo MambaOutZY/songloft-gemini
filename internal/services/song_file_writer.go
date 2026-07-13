@@ -68,6 +68,8 @@ func WriteSongTags(filePath string, song *models.Song) FileWriteStatus {
 		opts.Year = song.AddedAt.Year()
 	}
 	opts.Genre = song.Genre
+	opts.Language = song.Language
+	opts.Style = song.Style
 
 	// 防御性处理：lyric_source=url 不应该被回写到文件
 	if song.LyricSource == models.LyricSourceURL {
@@ -129,6 +131,8 @@ func tagsUnchanged(filePath string, opts tag.WriteOptions) bool {
 		m.AlbumArtist() != opts.AlbumArtist ||
 		m.Album() != opts.Album ||
 		m.Genre() != opts.Genre ||
+		m.Language() != opts.Language ||
+		m.Style() != opts.Style ||
 		m.Lyrics() != opts.Lyrics ||
 		m.Year() != opts.Year {
 		return false

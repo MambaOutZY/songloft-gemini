@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -45,6 +46,7 @@ type SongRepository interface {
 	ListLocalWithoutFingerprint(ctx context.Context) ([]database.SongIDPath, error)
 	CountLocalFingerprints(ctx context.Context) (total, computed int64, err error)
 	ListDuplicateGroups(ctx context.Context) ([]database.DuplicateGroup, error)
+	ListFacet(ctx context.Context, field string) ([]database.Facet, error)
 }
 
 // Transactor 提供 UnitOfWork 事务执行入口，
@@ -273,6 +275,19 @@ func (s *SongService) List(ctx context.Context, filter *database.SongFilter) ([]
 		return nil, fmt.Errorf("failed to list songs: %w", err)
 	}
 	return songs, nil
+}
+
+// ListFacet 按维度聚合曲库标签，返回该维度下所有取值及计数。
+// field 支持 genre/artist/album/language/style/year/decade；未知 field 返回 database.ErrNotFound。
+func (s *SongService) ListFacet(ctx context.Context, field string) ([]database.Facet, error) {
+	facets, err := s.songs.ListFacet(ctx, field)
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("failed to list facet %q: %w", field, err)
+	}
+	return facets, nil
 }
 
 // Search 搜索歌曲
@@ -718,6 +733,15 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 				song.BitRate = r.metadata.BitRate
 				song.SampleRate = r.metadata.SampleRate
 				song.ISRC = r.metadata.ISRC
+				song.Year = r.metadata.Year
+				song.Genre = r.metadata.Genre
+				// 语种/风格多数格式无标准标签，读到才更新，避免重扫抹掉用户手填值
+				if r.metadata.Language != "" {
+					song.Language = r.metadata.Language
+				}
+				if r.metadata.Style != "" {
+					song.Style = r.metadata.Style
+				}
 				if r.metadata.Track != "" {
 					song.Track = r.metadata.Track
 				}
@@ -755,6 +779,10 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 					FileSize:   r.fileSize,
 					ISRC:       r.metadata.ISRC,
 					Track:      r.metadata.Track,
+					Year:       r.metadata.Year,
+					Genre:      r.metadata.Genre,
+					Language:   r.metadata.Language,
+					Style:      r.metadata.Style,
 					AddedAt:    time.Now(),
 					UpdatedAt:  time.Now(),
 				}

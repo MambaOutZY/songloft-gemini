@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -440,7 +441,7 @@ func songSelectBuilder() sq.SelectBuilder {
 		"COALESCE(source_data, '')",
 		"COALESCE(dedup_key, '')",
 		"added_at", "updated_at",
-		"year", "genre",
+		"year", "genre", "language", "style",
 		"fingerprint", "fingerprint_duration",
 		"isrc", "track",
 		"cue_source_path", "cue_track_index", "cue_audio_path",
@@ -462,6 +463,31 @@ func applySongFilter(sb sq.SelectBuilder, filter *SongFilter) sq.SelectBuilder {
 	}
 	if filter.PathPrefix != "" {
 		sb = sb.Where(sq.Expr(`file_path LIKE ? ESCAPE '\'`, escapeLikeLiteral(filter.PathPrefix)+"%"))
+	}
+	// 标签分类精确过滤
+	if filter.Genre != "" {
+		sb = sb.Where(sq.Eq{"genre": filter.Genre})
+	}
+	if filter.Artist != "" {
+		sb = sb.Where(sq.Eq{"artist": filter.Artist})
+	}
+	if filter.Album != "" {
+		sb = sb.Where(sq.Eq{"album": filter.Album})
+	}
+	if filter.Language != "" {
+		sb = sb.Where(sq.Eq{"language": filter.Language})
+	}
+	if filter.Style != "" {
+		sb = sb.Where(sq.Eq{"style": filter.Style})
+	}
+	if filter.Year > 0 {
+		sb = sb.Where(sq.Eq{"year": filter.Year})
+	}
+	if filter.DecadeStart > 0 {
+		sb = sb.Where(sq.And{
+			sq.GtOrEq{"year": filter.DecadeStart},
+			sq.Lt{"year": filter.DecadeStart + 10},
+		})
 	}
 	// 排除属于「带指定 label 的歌单」的歌曲：只要歌在任一匹配歌单里就被过滤掉。
 	for _, label := range filter.ExcludePlaylistLabels {
@@ -492,7 +518,7 @@ func scanSongRow(scanner interface {
 		&s.Format, &s.BitRate, &s.SampleRate, &s.IsLive,
 		&s.PluginEntryPath, &s.SourceData, &s.DedupKey,
 		&s.AddedAt, &s.UpdatedAt,
-		&s.Year, &s.Genre,
+		&s.Year, &s.Genre, &s.Language, &s.Style,
 		&s.Fingerprint, &s.FingerprintDuration,
 		&s.ISRC, &s.Track,
 		&s.CueSourcePath, &s.CueTrackIndex, &s.CueAudioPath,
@@ -516,6 +542,8 @@ func songRowToModel(row sqlc.Song) *models.Song {
 		Album:               row.Album,
 		Year:                int(row.Year),
 		Genre:               row.Genre,
+		Language:            row.Language,
+		Style:               row.Style,
 		Duration:            row.Duration,
 		FilePath:            row.FilePath,
 		CachePath:           row.CachePath,
@@ -587,6 +615,8 @@ func songCreateParams(s *models.Song) sqlc.CreateSongParams {
 		DedupKey:            s.DedupKey,
 		Year:                int64(s.Year),
 		Genre:               s.Genre,
+		Language:            s.Language,
+		Style:               s.Style,
 		Fingerprint:         s.Fingerprint,
 		FingerprintDuration: s.FingerprintDuration,
 		Isrc:                s.ISRC,
@@ -622,6 +652,8 @@ func songUpdateParams(s *models.Song) sqlc.UpdateSongParams {
 		DedupKey:            s.DedupKey,
 		Year:                int64(s.Year),
 		Genre:               s.Genre,
+		Language:            s.Language,
+		Style:               s.Style,
 		Fingerprint:         s.Fingerprint,
 		FingerprintDuration: s.FingerprintDuration,
 		Isrc:                s.ISRC,
@@ -748,6 +780,92 @@ func (r *SongRepository) ListDuplicateGroups(ctx context.Context) ([]DuplicateGr
 		groups = append(groups, DuplicateGroup{Fingerprint: fp.Fingerprint, Songs: songs})
 	}
 	return groups, nil
+}
+
+// Facet 标签分类的一个取值及其歌曲数量（如 genre="Rock", count=42）。
+type Facet struct {
+	Value string `json:"value"`
+	Count int64  `json:"count"`
+}
+
+// ListFacet 按维度聚合曲库标签，返回该维度下所有非空取值及计数（按计数降序）。
+// field 支持：genre / artist / album / language / style / year / decade。
+// 未知 field 返回 ErrNotFound，交由 handler 转 400。
+func (r *SongRepository) ListFacet(ctx context.Context, field string) ([]Facet, error) {
+	switch field {
+	case "genre":
+		rows, err := r.queries.ListSongFacetGenre(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("facet genre: %w", err)
+		}
+		out := make([]Facet, len(rows))
+		for i, row := range rows {
+			out[i] = Facet{Value: row.Value, Count: row.Count}
+		}
+		return out, nil
+	case "artist":
+		rows, err := r.queries.ListSongFacetArtist(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("facet artist: %w", err)
+		}
+		out := make([]Facet, len(rows))
+		for i, row := range rows {
+			out[i] = Facet{Value: row.Value, Count: row.Count}
+		}
+		return out, nil
+	case "album":
+		rows, err := r.queries.ListSongFacetAlbum(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("facet album: %w", err)
+		}
+		out := make([]Facet, len(rows))
+		for i, row := range rows {
+			out[i] = Facet{Value: row.Value, Count: row.Count}
+		}
+		return out, nil
+	case "language":
+		rows, err := r.queries.ListSongFacetLanguage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("facet language: %w", err)
+		}
+		out := make([]Facet, len(rows))
+		for i, row := range rows {
+			out[i] = Facet{Value: row.Value, Count: row.Count}
+		}
+		return out, nil
+	case "style":
+		rows, err := r.queries.ListSongFacetStyle(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("facet style: %w", err)
+		}
+		out := make([]Facet, len(rows))
+		for i, row := range rows {
+			out[i] = Facet{Value: row.Value, Count: row.Count}
+		}
+		return out, nil
+	case "year":
+		rows, err := r.queries.ListSongFacetYear(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("facet year: %w", err)
+		}
+		out := make([]Facet, len(rows))
+		for i, row := range rows {
+			out[i] = Facet{Value: strconv.FormatInt(row.Value, 10), Count: row.Count}
+		}
+		return out, nil
+	case "decade":
+		rows, err := r.queries.ListSongFacetDecade(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("facet decade: %w", err)
+		}
+		out := make([]Facet, len(rows))
+		for i, row := range rows {
+			out[i] = Facet{Value: strconv.FormatInt(row.Value, 10), Count: row.Count}
+		}
+		return out, nil
+	default:
+		return nil, ErrNotFound
+	}
 }
 
 // UpdateCachePath 更新歌曲的缓存文件路径。
