@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -68,7 +69,17 @@ func (m *Manager) InvokeHTTP(
 		}
 	}
 
-	resp, err := m.scheduler.Call(ctx, entryPath, "", MsgHTTPRequest, reqData, 0)
+	// 调度器 Call 超时：默认 0（→ scheduler 内部 30s）。但当调用方在 ctx 上显式设了更长的
+	// deadline 时（如下载路径的 acquireAudio 用 5min 预算等待 music/url 解析排队，issue #265），
+	// 把剩余时间作为 Call 超时传入，让调用方意图生效，而不是被硬编码的 30s 判死。
+	// 无 deadline 的调用（普通播放解析、探测等）仍走 30s 默认，行为不变。
+	callTimeout := time.Duration(0)
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > defaultCallTimeout {
+			callTimeout = remaining
+		}
+	}
+	resp, err := m.scheduler.Call(ctx, entryPath, "", MsgHTTPRequest, reqData, callTimeout)
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("plugin %s call failed: %w", entryPath, err)
 	}

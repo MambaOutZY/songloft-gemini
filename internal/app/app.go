@@ -53,7 +53,8 @@ type App struct {
 	sourceMetrics      *source.SourceMetrics
 	sourceOrchestrator *source.SourceOrchestrator
 	metadataRefresher  *services.MetadataRefresher
-	playActivity       *playactivity.Registry // 跨 song/会话 cancel 的全局表，处理快速切歌时旧请求的让位（issue #79）
+	downloadActivity   *services.DownloadActivity // 下载活动闸门，导入探测据此让路（issue #265）
+	playActivity       *playactivity.Registry     // 跨 song/会话 cancel 的全局表，处理快速切歌时旧请求的让位（issue #79）
 	webDist            embed.FS
 	tracelyClient      *tracely.Client
 	logLevelVar        *slog.LevelVar // 全局 slog 等级动态切换；由 /settings/log-level 即时 Set
@@ -329,7 +330,8 @@ func (a *App) Init() error {
 	a.jsPluginManager.SetAuthService(a.authService, a.config.Port)
 
 	// 创建歌曲下载服务并注入到 JS 插件管理器（bridge songs.download 调用）
-	songDownloader := services.NewSongDownloader(a.songService, a.cacheService, a.configService, a.scanner.GetMusicPath, a.lyricFetcher)
+	a.downloadActivity = &services.DownloadActivity{}
+	songDownloader := services.NewSongDownloader(a.songService, a.cacheService, a.configService, a.scanner.GetMusicPath, a.lyricFetcher, a.downloadActivity)
 	a.jsPluginManager.SetSongDownloader(songDownloader)
 	a.jsPluginManager.SetServices(a.songService, a.playlistService)
 	a.jsPluginManager.SetConfigService(a.configService)

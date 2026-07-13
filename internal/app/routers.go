@@ -49,6 +49,7 @@ func (a *App) setupAPIV1Router() {
 	songHandler.SetPlayBroadcaster(&playEventBroadcastAdapter{m: a.jsPluginManager})
 	songHandler.SetLyricSearcher(a.jsPluginManager)
 	songHandler.SetMetadataRefresher(a.metadataRefresher)
+	songHandler.SetDownloadActivity(a.downloadActivity)
 	songHandler.SetConfigService(a.configService)
 	songHandler.SetURLResolver(a.urlResolver)
 	playlistHandler := handlers.NewPlaylistHandler(a.playlistService, a.songService)

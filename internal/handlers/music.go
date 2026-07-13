@@ -50,6 +50,7 @@ type SongHandler struct {
 	configService     *services.ConfigService
 	urlResolver       *services.InternalURLResolver // 把插件相对路径解析为本机绝对 URL + access_token（封面代理用）
 	radioClient       *http.Client
+	downloadActivity  *services.DownloadActivity // 下载活动闸门，导入探测据此让路（issue #265）
 }
 
 // NewSongHandler 创建歌曲处理器
@@ -92,6 +93,11 @@ func (h *SongHandler) SetLyricSearcher(s LyricSearcher) {
 // SetMetadataRefresher 注入元数据刷新器。
 func (h *SongHandler) SetMetadataRefresher(d *services.MetadataRefresher) {
 	h.metadataRefresher = d
+}
+
+// SetDownloadActivity 注入下载活动闸门，导入探测据此为下载让路。
+func (h *SongHandler) SetDownloadActivity(a *services.DownloadActivity) {
+	h.downloadActivity = a
 }
 
 // SetConfigService 注入配置服务（远程标题来源设置用）。
@@ -654,10 +660,14 @@ func (h *SongHandler) probeRemoteSongsMetadata(songs []*models.Song) {
 	}
 
 	go func() {
-		const maxConcurrent = 4
+		// issue #265：探测走 ffprobe + ytdlp 插件唯一 worker，与批量下载撞车会打满 CPU 并把
+		// 下载解析挤到 30s 超时判死。故 (1) 降并发 4→2 从源头收敛占用；(2) 每首探测前若有活跃
+		// 下载则退避让路，把 worker 让给下载解析。探测是尽力而为的后台补齐，让路/延后无副作用。
+		const maxConcurrent = 2
 		sem := make(chan struct{}, maxConcurrent)
 		var wg sync.WaitGroup
 		for _, song := range pending {
+			h.waitForDownloadIdle()
 			wg.Add(1)
 			sem <- struct{}{}
 			go func(s *models.Song) {
@@ -671,6 +681,24 @@ func (h *SongHandler) probeRemoteSongsMetadata(songs []*models.Song) {
 		wg.Wait()
 		slog.Info("导入歌曲元数据探测完成", "count", len(pending))
 	}()
+}
+
+// waitForDownloadIdle 在有活跃下载时退避，把插件 worker 让给下载解析（issue #265）。
+// 探测是后台尽力而为的任务，可以等；但设总上限防止下载长时间不停导致探测无限饥饿——
+// 到上限后仍继续探测（此时 A 的下载重试 + C 的更长解析超时会兜底瞬时争用）。
+func (h *SongHandler) waitForDownloadIdle() {
+	if h.downloadActivity == nil {
+		return
+	}
+	const (
+		pollInterval = 500 * time.Millisecond
+		maxWait      = 5 * time.Minute
+	)
+	waited := time.Duration(0)
+	for h.downloadActivity.Active() && waited < maxWait {
+		time.Sleep(pollInterval)
+		waited += pollInterval
+	}
 }
 
 // AddRadios 批量添加电台/广播

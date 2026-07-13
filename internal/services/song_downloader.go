@@ -46,6 +46,7 @@ type SongDownloader struct {
 	getMusicPath   func() string
 	lyricFetcher   *LyricFetcher
 	downloadClient *http.Client
+	activity       *DownloadActivity // 下载活动闸门，供后台探测让路（issue #265）
 
 	autoDownloadMu     sync.RWMutex
 	autoDownloadConfig *AutoDownloadConfig
@@ -58,6 +59,7 @@ func NewSongDownloader(
 	configService *ConfigService,
 	getMusicPath func() string,
 	lyricFetcher *LyricFetcher,
+	activity *DownloadActivity,
 ) *SongDownloader {
 	return &SongDownloader{
 		songService:    songService,
@@ -65,6 +67,7 @@ func NewSongDownloader(
 		configService:  configService,
 		getMusicPath:   getMusicPath,
 		lyricFetcher:   lyricFetcher,
+		activity:       activity,
 		downloadClient: httputil.NewClient(120 * time.Second),
 	}
 }
@@ -79,6 +82,10 @@ func NewSongDownloader(
 //  5. 可选嵌入元数据
 //  6. 更新 DB：type=local, file_path=目标路径
 func (d *SongDownloader) Download(ctx context.Context, songID int64, opts SongDownloadOptions) (*SongDownloadResult, error) {
+	// 标记下载进行中，让后台元数据探测让路（issue #265：探测与下载撞车打满 CPU）。
+	d.activity.Begin()
+	defer d.activity.End()
+
 	song, err := d.songService.GetByID(ctx, songID)
 	if err != nil {
 		return nil, fmt.Errorf("song not found: %w", err)
@@ -183,11 +190,20 @@ func (d *SongDownloader) resolveTargetDir(targetDir string) (string, error) {
 	return absTarget, nil
 }
 
+// downloadAcquireTimeout 是下载路径「获取音频」整体预算。
+// 主要意义是给 music/url 解析腾出等待空间——issue #265 里解析走 ytdlp 插件唯一 worker，
+// 与导入探测撞车时会排队；bridge 用的是无 deadline 的 background ctx，若不显式放宽，
+// InvokeHTTP 会落到调度器默认 30s 而被判死。音频拉取本身另有 HTTP client 超时兜底，
+// 故这个较宽的整体预算不会缩短正常大文件下载。
+const downloadAcquireTimeout = 5 * time.Minute
+
 // acquireAudio 获取音频文件路径（缓存命中或同步下载）。
 func (d *SongDownloader) acquireAudio(ctx context.Context, song *models.Song) (string, error) {
 	if p, ok := d.cacheService.FindCachedFileBySong(song); ok {
 		return p, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, downloadAcquireTimeout)
+	defer cancel()
 	return d.cacheService.Get(ctx, song)
 }
 
