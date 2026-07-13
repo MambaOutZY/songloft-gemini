@@ -57,6 +57,7 @@ type Manager struct {
 	port            string                    // 服务器监听端口
 	healthChecker   *HealthChecker
 	hotReloader     *HotReloader
+	autoUpdater     *AutoUpdater
 	cancelFunc      context.CancelFunc
 	mu              sync.RWMutex
 	// loadGroup 对懒加载/恢复加载按 entryPath 去重并发，
@@ -183,6 +184,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	// 创建 HealthChecker 和 HotReloader
 	m.healthChecker = NewHealthChecker(m)
 	m.hotReloader = NewHotReloader(m)
+	m.autoUpdater = NewAutoUpdater(m)
 
 	// 创建内部 context
 	internalCtx, cancel := context.WithCancel(ctx)
@@ -216,6 +218,9 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	// 启动热更新文件监控
 	go m.hotReloader.WatchForChanges(internalCtx)
+
+	// 启动后台自动更新（开关默认关闭，运行时读取 plugin_auto_update 配置）
+	go m.autoUpdater.Run(internalCtx)
 
 	return nil
 }

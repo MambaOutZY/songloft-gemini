@@ -1629,7 +1629,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理。可选传入 token 字段，用于从需要认证的私有源下载插件。",
+                "description": "从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理。可选传入 token 字段用于从需要认证的私有源下载；若未提供 token 但提供了 source_url（「全部」聚合模式），后端会自动从 plugin_registries 配置解析该源存储的 token。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1686,7 +1686,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "拉取指定订阅源 URL（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。可选传入 token 字段，用于访问需要认证的私有插件源（如 GitHub 私有仓库 PAT）。",
+                "description": "拉取订阅源（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。默认拉取单个 registry_url，可选传入 token 字段访问需要认证的私有源（如 GitHub 私有仓库 PAT）。当 all_sources=true 时忽略 registry_url/token，改为聚合已保存的所有启用订阅源（各源用自身存储的 token），跨源按 entry_path 去重、高版本优先。",
                 "consumes": [
                     "application/json"
                 ],
@@ -4292,6 +4292,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/settings/plugin-auto-update": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取“后台自动更新已安装插件”开关的当前状态。开启后，服务会在启动后延迟数分钟检查一次、之后每 6 小时定时检查所有具有远程更新源的插件并自动更新。默认关闭。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "获取插件自动更新开关",
+                "responses": {
+                    "200": {
+                        "description": "返回 enabled 字段表示开关状态",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginAutoUpdateSetting"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "开启/关闭插件后台自动更新。开启后后台 ticker 会定时对有更新源的插件执行“检查更新 + 下载安装 + 热重载”。开关即时生效，无需重启。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "保存插件自动更新开关",
+                "parameters": [
+                    {
+                        "description": "开关请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginAutoUpdateSetting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回 enabled 字段表示更新后的开关状态",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginAutoUpdateSetting"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "保存配置失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/settings/plugin-keep-alive": {
             "get": {
                 "security": [
@@ -6841,6 +6915,14 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.pluginAutoUpdateSetting": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
         "handlers.pluginHealthResponse": {
             "type": "object",
             "properties": {
@@ -6897,6 +6979,10 @@ const docTemplate = `{
                 "github_proxy": {
                     "type": "string"
                 },
+                "source_url": {
+                    "description": "SourceURL 插件所属订阅源 URL。「全部」聚合模式安装时回传：\n当未显式提供 token 时，后端据此从 plugin_registries 配置解析该源的 token。",
+                    "type": "string"
+                },
                 "token": {
                     "type": "string"
                 }
@@ -6935,6 +7021,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "source_url": {
+                    "description": "SourceURL 该插件所属订阅源 URL（仅「全部」聚合模式返回），\n安装时回传给后端以按源解析私有源 token。",
+                    "type": "string"
+                },
                 "version": {
                     "type": "string"
                 }
@@ -6943,6 +7033,9 @@ const docTemplate = `{
         "handlers.registryRefreshRequest": {
             "type": "object",
             "properties": {
+                "all_sources": {
+                    "type": "boolean"
+                },
                 "github_proxy": {
                     "type": "string"
                 },

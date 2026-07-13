@@ -600,72 +600,38 @@ func (h *JSPluginHandler) handleBatchUpdate(w http.ResponseWriter, r *http.Reque
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	plugins, err := h.repo.GetAll(r.Context())
+	if h.manager == nil {
+		respondError(w, http.StatusInternalServerError, "插件管理器未就绪", nil)
+		return
+	}
+
+	updateResult, err := h.manager.RunUpdateAll(r.Context(), req.GithubProxy, req.Force)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "获取插件列表失败", err)
 		return
 	}
 
-	var results []jsPluginBatchUpdateResult
-	updated, failed, skipped := 0, 0, 0
-
-	for _, plugin := range plugins {
-		result := jsPluginBatchUpdateResult{
-			PluginID:       plugin.ID,
-			PluginName:     plugin.Name,
-			EntryPath:      plugin.EntryPath,
-			CurrentVersion: plugin.Version,
-		}
-
-		if plugin.UpdateURL == "" {
-			skipped++
-			results = append(results, result)
-			continue
-		}
-
-		updateInfo, err := h.packageMgr.CheckUpdate(plugin.ID, req.GithubProxy)
-		if err != nil {
-			result.Error = fmt.Sprintf("检查更新失败: %v", err)
-			failed++
-			results = append(results, result)
-			continue
-		}
-
-		if !req.Force && !updateInfo.HasUpdate {
-			skipped++
-			results = append(results, result)
-			continue
-		}
-
-		result.HasUpdate = true
-
-		updatedPlugin, err := h.packageMgr.DownloadUpdate(plugin.ID, req.GithubProxy, req.Force)
-		if err != nil {
-			result.Error = fmt.Sprintf("下载更新失败: %v", err)
-			failed++
-			results = append(results, result)
-			continue
-		}
-
-		if updatedPlugin.Status == jsplugin.JSPluginStatusActive && h.manager != nil {
-			if reloadErr := h.manager.ReloadPlugin(r.Context(), updatedPlugin.EntryPath); reloadErr != nil {
-				slog.Warn("reload plugin after batch update failed", "entryPath", updatedPlugin.EntryPath, "error", reloadErr)
-			}
-		}
-
-		result.Success = true
-		result.NewVersion = updatedPlugin.Version
-		updated++
-		results = append(results, result)
+	results := make([]jsPluginBatchUpdateResult, 0, len(updateResult.Results))
+	for _, item := range updateResult.Results {
+		results = append(results, jsPluginBatchUpdateResult{
+			PluginID:       item.PluginID,
+			PluginName:     item.PluginName,
+			EntryPath:      item.EntryPath,
+			Success:        item.Success,
+			HasUpdate:      item.HasUpdate,
+			CurrentVersion: item.CurrentVersion,
+			NewVersion:     item.NewVersion,
+			Error:          item.Error,
+		})
 	}
 
 	respondJSON(w, http.StatusOK, jsPluginBatchUpdateResponse{
-		Total:   len(plugins),
-		Updated: updated,
-		Failed:  failed,
-		Skipped: skipped,
+		Total:   updateResult.Total,
+		Updated: updateResult.Updated,
+		Failed:  updateResult.Failed,
+		Skipped: updateResult.Skipped,
 		Results: results,
-		Message: fmt.Sprintf("批量更新完成：%d 已更新，%d 失败，%d 无需更新", updated, failed, skipped),
+		Message: fmt.Sprintf("批量更新完成：%d 已更新，%d 失败，%d 无需更新", updateResult.Updated, updateResult.Failed, updateResult.Skipped),
 	})
 }
 

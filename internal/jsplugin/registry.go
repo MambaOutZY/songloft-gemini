@@ -44,6 +44,9 @@ type RegistryEntry struct {
 	DownloadURL    string `json:"download_url,omitempty"`
 	UpdateURL      string `json:"update_url,omitempty"`
 	MinHostVersion string `json:"min_host_version,omitempty"`
+	// SourceURL 记录该条目来自哪个订阅源（配置中的顶层源 URL）。
+	// 仅在多源聚合（FetchAndMergeMulti）时填充，用于安装时按源解析 token。
+	SourceURL string `json:"source_url,omitempty"`
 }
 
 // RegistryJSON 注册表 JSON 顶层结构。
@@ -107,6 +110,43 @@ func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string,
 	}
 
 	return result, warnings, nil
+}
+
+// FetchAndMergeMulti 依次拉取多个订阅源并跨源合并去重（高版本优先）。
+// 每个源使用其自身的 Token 认证；单个源失败不中断其他源，错误并入 warnings。
+// 典型用于「全部」聚合模式：一次展示所有启用源的插件。
+func (s *RegistryService) FetchAndMergeMulti(ctx context.Context, sources []RegistryConfig, githubProxy string) ([]RegistryEntry, []string) {
+	merged := make(map[string]RegistryEntry)
+	var warnings []string
+
+	for _, src := range sources {
+		if src.URL == "" {
+			continue
+		}
+		entries, srcWarnings, err := s.FetchAndMerge(ctx, src.URL, githubProxy, src.Token)
+		warnings = append(warnings, srcWarnings...)
+		if err != nil {
+			label := src.Name
+			if label == "" {
+				label = src.URL
+			}
+			warnings = append(warnings, fmt.Sprintf("源 %q 拉取失败: %v", label, err))
+			continue
+		}
+		for _, entry := range entries {
+			entry.SourceURL = src.URL // 标记来源，供安装时按源解析 token
+			existing, exists := merged[entry.EntryPath]
+			if !exists || compareVersion(entry.Version, existing.Version) > 0 {
+				merged[entry.EntryPath] = entry
+			}
+		}
+	}
+
+	result := make([]RegistryEntry, 0, len(merged))
+	for _, entry := range merged {
+		result = append(result, entry)
+	}
+	return result, warnings
 }
 
 func (s *RegistryService) fetchRecursive(

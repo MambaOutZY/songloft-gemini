@@ -174,6 +174,11 @@ definitions:
       level:
         type: string
     type: object
+  handlers.pluginAutoUpdateSetting:
+    properties:
+      enabled:
+        type: boolean
+    type: object
   handlers.pluginHealthResponse:
     properties:
       plugins:
@@ -210,6 +215,11 @@ definitions:
         type: string
       github_proxy:
         type: string
+      source_url:
+        description: |-
+          SourceURL 插件所属订阅源 URL。「全部」聚合模式安装时回传：
+          当未显式提供 token 时，后端据此从 plugin_registries 配置解析该源的 token。
+        type: string
       token:
         type: string
     type: object
@@ -235,11 +245,18 @@ definitions:
         type: string
       name:
         type: string
+      source_url:
+        description: |-
+          SourceURL 该插件所属订阅源 URL（仅「全部」聚合模式返回），
+          安装时回传给后端以按源解析私有源 token。
+        type: string
       version:
         type: string
     type: object
   handlers.registryRefreshRequest:
     properties:
+      all_sources:
+        type: boolean
       github_proxy:
         type: string
       page:
@@ -2429,7 +2446,8 @@ paths:
       consumes:
       - application/json
       description: 从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub
-        代理。可选传入 token 字段，用于从需要认证的私有源下载插件。
+        代理。可选传入 token 字段用于从需要认证的私有源下载；若未提供 token 但提供了 source_url（「全部」聚合模式），后端会自动从
+        plugin_registries 配置解析该源存储的 token。
       parameters:
       - description: 安装请求
         in: body
@@ -2465,8 +2483,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: 拉取指定订阅源 URL（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。可选传入
-        token 字段，用于访问需要认证的私有插件源（如 GitHub 私有仓库 PAT）。
+      description: 拉取订阅源（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。默认拉取单个 registry_url，可选传入
+        token 字段访问需要认证的私有源（如 GitHub 私有仓库 PAT）。当 all_sources=true 时忽略 registry_url/token，改为聚合已保存的所有启用订阅源（各源用自身存储的
+        token），跨源按 entry_path 去重、高版本优先。
       parameters:
       - description: 刷新请求
         in: body
@@ -3877,6 +3896,52 @@ paths:
       summary: 更新音乐路径与扫描排除配置
       tags:
       - 扫描管理
+  /settings/plugin-auto-update:
+    get:
+      description: 获取“后台自动更新已安装插件”开关的当前状态。开启后，服务会在启动后延迟数分钟检查一次、之后每 6 小时定时检查所有具有远程更新源的插件并自动更新。默认关闭。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 返回 enabled 字段表示开关状态
+          schema:
+            $ref: '#/definitions/handlers.pluginAutoUpdateSetting'
+      security:
+      - BearerAuth: []
+      summary: 获取插件自动更新开关
+      tags:
+      - 设置
+    put:
+      consumes:
+      - application/json
+      description: 开启/关闭插件后台自动更新。开启后后台 ticker 会定时对有更新源的插件执行“检查更新 + 下载安装 + 热重载”。开关即时生效，无需重启。
+      parameters:
+      - description: 开关请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.pluginAutoUpdateSetting'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 返回 enabled 字段表示更新后的开关状态
+          schema:
+            $ref: '#/definitions/handlers.pluginAutoUpdateSetting'
+        "400":
+          description: 请求格式错误
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: 保存配置失败
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 保存插件自动更新开关
+      tags:
+      - 设置
   /settings/plugin-keep-alive:
     get:
       description: 获取不会被自动休眠的插件 entryPath 列表。白名单中的插件即使空闲超过 10 分钟也不会被卸载。未配置时返回空列表。

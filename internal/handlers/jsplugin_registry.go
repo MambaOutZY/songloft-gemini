@@ -17,6 +17,10 @@ import (
 
 const pluginRegistriesConfigKey = "plugin_registries"
 
+// pluginAutoUpdateConfigKey 自动更新开关配置键。
+// 与 jsplugin 包内后台 ticker 读取的键保持一致。
+const pluginAutoUpdateConfigKey = "plugin_auto_update"
+
 var defaultPluginRegistries = pluginRegistriesSetting{
 	Registries: []jsplugin.RegistryConfig{
 		{
@@ -82,11 +86,62 @@ func (h *JSPluginHandler) UpdateRegistriesSetting(w http.ResponseWriter, r *http
 	respondJSON(w, http.StatusOK, req)
 }
 
+// --- Settings: GET/PUT /api/v1/settings/plugin-auto-update ---
+
+// pluginAutoUpdateSetting 插件自动更新开关配置。
+type pluginAutoUpdateSetting struct {
+	Enabled bool `json:"enabled"`
+}
+
+// GetPluginAutoUpdateSetting 获取插件自动更新开关
+// @Summary 获取插件自动更新开关
+// @Description 获取“后台自动更新已安装插件”开关的当前状态。开启后，服务会在启动后延迟数分钟检查一次、之后每 6 小时定时检查所有具有远程更新源的插件并自动更新。默认关闭。
+// @Tags 设置
+// @Produce json
+// @Success 200 {object} pluginAutoUpdateSetting "返回 enabled 字段表示开关状态"
+// @Security BearerAuth
+// @Router /settings/plugin-auto-update [get]
+func (h *JSPluginHandler) GetPluginAutoUpdateSetting(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, pluginAutoUpdateSetting{
+		Enabled: h.configService.GetBool(pluginAutoUpdateConfigKey, false),
+	})
+}
+
+// UpdatePluginAutoUpdateSetting 保存插件自动更新开关
+// @Summary 保存插件自动更新开关
+// @Description 开启/关闭插件后台自动更新。开启后后台 ticker 会定时对有更新源的插件执行“检查更新 + 下载安装 + 热重载”。开关即时生效，无需重启。
+// @Tags 设置
+// @Accept json
+// @Produce json
+// @Param request body pluginAutoUpdateSetting true "开关请求"
+// @Success 200 {object} pluginAutoUpdateSetting "返回 enabled 字段表示更新后的开关状态"
+// @Failure 400 {object} models.ErrorResponse "请求格式错误"
+// @Failure 500 {object} models.ErrorResponse "保存配置失败"
+// @Security BearerAuth
+// @Router /settings/plugin-auto-update [put]
+func (h *JSPluginHandler) UpdatePluginAutoUpdateSetting(w http.ResponseWriter, r *http.Request) {
+	var req pluginAutoUpdateSetting
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	value := "false"
+	if req.Enabled {
+		value = "true"
+	}
+	if err := h.configService.Set(pluginAutoUpdateConfigKey, value); err != nil {
+		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
+		return
+	}
+	respondJSON(w, http.StatusOK, req)
+}
+
 // --- Registry: POST /api/v1/jsplugins/registry/refresh ---
 
 // registryRefreshRequest 刷新注册表请求。
 type registryRefreshRequest struct {
 	RegistryURL string `json:"registry_url"`
+	AllSources  bool   `json:"all_sources"`
 	Page        int    `json:"page"`
 	PageSize    int    `json:"page_size"`
 	Search      string `json:"search"`
@@ -107,6 +162,9 @@ type registryPluginEntry struct {
 	Installed        bool   `json:"installed"`
 	InstalledVersion string `json:"installed_version,omitempty"`
 	HasUpdate        bool   `json:"has_update"`
+	// SourceURL 该插件所属订阅源 URL（仅「全部」聚合模式返回），
+	// 安装时回传给后端以按源解析私有源 token。
+	SourceURL string `json:"source_url,omitempty"`
 }
 
 // registryRefreshResponse 刷新注册表响应。
@@ -118,9 +176,9 @@ type registryRefreshResponse struct {
 	Warnings []string              `json:"warnings,omitempty"`
 }
 
-// handleRegistryRefresh 拉取指定订阅源的插件列表
+// handleRegistryRefresh 拉取订阅源的插件列表
 // @Summary 刷新插件注册表
-// @Description 拉取指定订阅源 URL（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。可选传入 token 字段，用于访问需要认证的私有插件源（如 GitHub 私有仓库 PAT）。
+// @Description 拉取订阅源（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。默认拉取单个 registry_url，可选传入 token 字段访问需要认证的私有源（如 GitHub 私有仓库 PAT）。当 all_sources=true 时忽略 registry_url/token，改为聚合已保存的所有启用订阅源（各源用自身存储的 token），跨源按 entry_path 去重、高版本优先。
 // @Tags JS插件管理
 // @Accept json
 // @Produce json
@@ -136,7 +194,7 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
 	}
-	if req.RegistryURL == "" {
+	if !req.AllSources && req.RegistryURL == "" {
 		respondError(w, http.StatusBadRequest, "registry_url 不能为空", nil)
 		return
 	}
@@ -148,10 +206,30 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 	}
 
 	svc := jsplugin.NewRegistryService()
-	entries, warnings, err := svc.FetchAndMerge(r.Context(), req.RegistryURL, req.GithubProxy, req.Token)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "拉取注册表失败", err)
-		return
+	var (
+		entries  []jsplugin.RegistryEntry
+		warnings []string
+	)
+	if req.AllSources {
+		// 聚合所有启用源：读配置 → 过滤 enabled → 逐源拉取合并去重
+		var cfg pluginRegistriesSetting
+		if err := h.configService.GetJSON(pluginRegistriesConfigKey, &cfg); err != nil {
+			cfg = defaultPluginRegistries
+		}
+		enabled := make([]jsplugin.RegistryConfig, 0, len(cfg.Registries))
+		for _, src := range cfg.Registries {
+			if src.Enabled {
+				enabled = append(enabled, src)
+			}
+		}
+		entries, warnings = svc.FetchAndMergeMulti(r.Context(), enabled, req.GithubProxy)
+	} else {
+		var err error
+		entries, warnings, err = svc.FetchAndMerge(r.Context(), req.RegistryURL, req.GithubProxy, req.Token)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "拉取注册表失败", err)
+			return
+		}
 	}
 
 	// 获取已安装插件，构建 entryPath -> version 映射
@@ -178,6 +256,7 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 			Homepage:    entry.Homepage,
 			Icon:        entry.Icon,
 			DownloadURL: entry.DownloadURL,
+			SourceURL:   entry.SourceURL,
 		}
 		if installedVer, ok := installedMap[entry.EntryPath]; ok {
 			p.Installed = true
@@ -228,11 +307,32 @@ type registryInstallRequest struct {
 	DownloadURL string `json:"download_url"`
 	GithubProxy string `json:"github_proxy"`
 	Token       string `json:"token,omitempty"`
+	// SourceURL 插件所属订阅源 URL。「全部」聚合模式安装时回传：
+	// 当未显式提供 token 时，后端据此从 plugin_registries 配置解析该源的 token。
+	SourceURL string `json:"source_url,omitempty"`
+}
+
+// resolveSourceToken 根据订阅源 URL 从配置中查出其存储的 token。
+// 找不到匹配源时返回空字符串。
+func (h *JSPluginHandler) resolveSourceToken(sourceURL string) string {
+	if sourceURL == "" {
+		return ""
+	}
+	var cfg pluginRegistriesSetting
+	if err := h.configService.GetJSON(pluginRegistriesConfigKey, &cfg); err != nil {
+		cfg = defaultPluginRegistries
+	}
+	for _, src := range cfg.Registries {
+		if src.URL == sourceURL {
+			return src.Token
+		}
+	}
+	return ""
 }
 
 // handleRegistryInstall 从注册表 download_url 安装插件
 // @Summary 从注册表安装插件
-// @Description 从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理。可选传入 token 字段，用于从需要认证的私有源下载插件。
+// @Description 从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理。可选传入 token 字段用于从需要认证的私有源下载；若未提供 token 但提供了 source_url（「全部」聚合模式），后端会自动从 plugin_registries 配置解析该源存储的 token。
 // @Tags JS插件管理
 // @Accept json
 // @Produce json
@@ -252,6 +352,11 @@ func (h *JSPluginHandler) handleRegistryInstall(w http.ResponseWriter, r *http.R
 	if req.DownloadURL == "" {
 		respondError(w, http.StatusBadRequest, "download_url 不能为空", nil)
 		return
+	}
+
+	// 「全部」聚合模式：未显式给 token 时，按来源源 URL 从配置解析 token
+	if req.Token == "" && req.SourceURL != "" {
+		req.Token = h.resolveSourceToken(req.SourceURL)
 	}
 
 	var zipData []byte
