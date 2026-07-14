@@ -507,3 +507,75 @@ func TestServeRadioICYPassthrough(t *testing.T) {
 		}
 	})
 }
+
+// TestServeRadioICYDeinterleave 验证:当上游**无条件**交织 ICY 元数据(Shoutcast v1)时,
+//   - 浏览器路径(未请求 Icy-MetaData)→ 代理去交织,body 为纯音频,且不转发 icy-metaint;
+//   - 原生路径(请求 Icy-MetaData)→ body 原样透传交织字节,并回传 icy-metaint。(#275)
+func TestServeRadioICYDeinterleave(t *testing.T) {
+	repo := newTestSongRepo(t)
+	songService := services.NewSongService(repo, nil, nil, nil, nil, nil)
+	handler := NewSongHandler(songService, nil, nil, nil, nil, nil)
+
+	const metaint = 16
+	// 交织流: [16A][len=1][16B 元数据][16C]
+	metaBlock := []byte("StreamTitle='x';") // 恰 16 字节
+	interleaved := bytes.Join([][]byte{
+		bytes.Repeat([]byte("A"), metaint),
+		{byte(len(metaBlock) / 16)},
+		metaBlock,
+		bytes.Repeat([]byte("C"), metaint),
+	}, nil)
+	pureAudio := append(bytes.Repeat([]byte("A"), metaint), bytes.Repeat([]byte("C"), metaint)...)
+
+	var gotIcyReq string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotIcyReq = r.Header.Get("Icy-MetaData")
+		// 无条件交织:不管客户端是否请求都设 icy-metaint 并写交织字节。
+		w.Header().Set("icy-metaint", strconv.Itoa(metaint))
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.WriteHeader(http.StatusOK)
+		w.Write(interleaved)
+	}))
+	defer upstream.Close()
+
+	id := seedSong(t, repo, &models.Song{Type: models.TypeRadio, Title: "电台", URL: upstream.URL + "/live"})
+	song, err := songService.GetByID(context.Background(), id)
+	if err != nil {
+		t.Fatalf("get song: %v", err)
+	}
+
+	t.Run("浏览器去交织", func(t *testing.T) {
+		gotIcyReq = ""
+		req := httptest.NewRequest("GET", "/api/v1/songs/"+strconv.FormatInt(id, 10)+"/play", nil)
+		rr := httptest.NewRecorder()
+		handler.serveRadio(rr, req, song)
+
+		if gotIcyReq != "" {
+			t.Errorf("上游收到 Icy-MetaData=%q,期望不发送", gotIcyReq)
+		}
+		if v := rr.Header().Get("icy-metaint"); v != "" {
+			t.Errorf("响应带了 icy-metaint=%q,期望去交织后不透传", v)
+		}
+		if !bytes.Equal(rr.Body.Bytes(), pureAudio) {
+			t.Errorf("body=%q,期望去交织后纯音频=%q", rr.Body.Bytes(), pureAudio)
+		}
+	})
+
+	t.Run("原生透传交织流", func(t *testing.T) {
+		gotIcyReq = ""
+		req := httptest.NewRequest("GET", "/api/v1/songs/"+strconv.FormatInt(id, 10)+"/play", nil)
+		req.Header.Set("Icy-MetaData", "1")
+		rr := httptest.NewRecorder()
+		handler.serveRadio(rr, req, song)
+
+		if gotIcyReq != "1" {
+			t.Errorf("上游 Icy-MetaData=%q,期望透传为 1", gotIcyReq)
+		}
+		if v := rr.Header().Get("icy-metaint"); v != strconv.Itoa(metaint) {
+			t.Errorf("响应 icy-metaint=%q,期望回传 %d", v, metaint)
+		}
+		if !bytes.Equal(rr.Body.Bytes(), interleaved) {
+			t.Errorf("body=%q,期望原样透传交织字节=%q", rr.Body.Bytes(), interleaved)
+		}
+	})
+}

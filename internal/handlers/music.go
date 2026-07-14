@@ -1208,11 +1208,12 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 	upstreamReq.Header.Set("Accept", streamAccept)
 	// Icy-MetaData 透传:仅在客户端显式请求时才向上游要 ICY 元数据。
 	// 浏览器 <audio> 既不发此头也不解析交织在音频里的元数据块;若无条件强制 Icy-MetaData:1,
-	// 上游会按 icy-metaint 每隔 N 字节插入一段元数据,而本代理又不回传 icy-metaint,
-	// 这些字节被浏览器当作音频解码,播放约 1 秒(16000 字节 ≈ 1.4s@88kbps)后即崩断(#275)。
+	// 上游会按 icy-metaint 每隔 N 字节插入一段元数据,这些字节被浏览器当作音频解码,
+	// 播放约 1 秒(16000 字节 ≈ 1.4s@88kbps)后即崩断(#275)。
 	// 原生播放器(mpv/ExoPlayer 等)需要元数据时会自带此头,由下面的 icy-* 头透传闭环。
-	if icyMeta := r.Header.Get("Icy-MetaData"); icyMeta != "" {
-		upstreamReq.Header.Set("Icy-MetaData", icyMeta)
+	clientWantsMeta := r.Header.Get("Icy-MetaData") != ""
+	if clientWantsMeta {
+		upstreamReq.Header.Set("Icy-MetaData", r.Header.Get("Icy-MetaData"))
 	}
 	if songURL, err := url.Parse(song.URL); err == nil && songURL.Scheme != "" && songURL.Host != "" {
 		upstreamReq.Header.Set("Referer", songURL.Scheme+"://"+songURL.Host+"/")
@@ -1233,16 +1234,32 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		w.Header().Set("Content-Type", ct)
 	}
-	// 透传 ICY 元数据头:只有请求了 Icy-MetaData 的原生客户端才拿到 icy-metaint,
-	// 从而正确定位交织的元数据块;浏览器没请求则上游本就不交织,这里也不会出现 icy-metaint。
+
+	// body 与 icy-metaint 头的处理分三种情况:
+	//   - 客户端请求了 Icy-MetaData(原生播放器)→ 原样透传交织流 + icy-metaint,原生自己解析。
+	//   - 客户端没请求但上游仍无条件交织(icy-metaint>0)→ 代理侧去交织,只吐纯音频,
+	//     且不转发 icy-metaint;否则浏览器 <audio> 会把元数据块当音频解码而崩断(#275)。
+	//   - 客户端没请求且上游也没交织 → 纯 copy。
+	var body io.Reader = resp.Body
+	forwardMetaint := clientWantsMeta
+	if !clientWantsMeta {
+		if metaint, err := strconv.Atoi(resp.Header.Get("icy-metaint")); err == nil && metaint > 0 {
+			body = httputil.NewICYDeinterleaveReader(resp.Body, metaint)
+		}
+	}
+	// 透传 ICY 头:icy-metaint 仅在原生路径转发(浏览器路径已去交织,转发反而误导);
+	// 其余 icy-* 是纯 HTTP 头,对浏览器无害,一律透传。
 	for _, hdr := range []string{"icy-metaint", "icy-name", "icy-genre", "icy-br", "icy-description", "icy-url", "icy-pub", "icy-audio-info"} {
+		if hdr == "icy-metaint" && !forwardMetaint {
+			continue
+		}
 		if v := resp.Header.Get(hdr); v != "" {
 			w.Header().Set(hdr, v)
 		}
 	}
 	w.Header().Set("Cache-Control", "no-cache, no-store")
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	io.Copy(w, body)
 }
 
 // isHLSURL 判断 URL 是否指向 HLS 播放列表(.m3u8/.m3u),忽略大小写与查询串。
