@@ -81,12 +81,18 @@ func (a *App) registerWebStatic() {
 			return
 		}
 
-		// 分路径缓存策略：canvaskit/fonts 基本不随版本变化，设更长缓存
+		// 分路径缓存策略。
+		// Flutter Web 用固定文件名（main.dart.js / flutter.js / assets/* 均无内容哈希），
+		// 且本项目 index.html 未注册 service worker，长 max-age 会导致服务端升级后浏览器
+		// 仍用缓存里的旧 main.dart.js（普通刷新不失效，最长扛满 max-age），看起来就是
+		// “新版功能失效”。故 app shell 一律 no-cache：配合上面 precompressedFS 设置的 ETag
+		// 走 304 校验，代价极小却保证每次拿到最新版。只有基本不随版本变化的 canvaskit
+		// 引擎与字体资源保留长缓存。
 		switch {
 		case strings.HasPrefix(urlPath, "canvaskit/") || strings.HasPrefix(urlPath, "fonts/"):
-			w.Header().Set("Cache-Control", "public, max-age=2592000")
+			w.Header().Set("Cache-Control", "public, max-age=2592000, immutable")
 		default:
-			w.Header().Set("Cache-Control", "public, max-age=604800")
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 
 		// 优先从预压缩缓存返回，未命中（如 woff2 字体）fallback 到 http.FileServer
