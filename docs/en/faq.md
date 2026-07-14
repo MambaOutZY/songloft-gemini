@@ -197,6 +197,13 @@ A: Check the following:
 4. Optionally install `ffprobe` to obtain more complete audio technical parameters
 5. For network songs, check that the URL is accessible
 
+### Q: What should I do if a radio station (HLS stream) won't play?
+
+A: Some radio source sites use Referer / User-Agent hotlink protection, or are blocked by CORS in Web embedded mode, causing the client's direct stream pull to fail. Turn on the switch under **Settings → HLS Proxy** in the client:
+
+- When enabled, the server fetches and rewrites the `.m3u8` and proxies all segments / keys / init segments, bypassing source-site hotlink protection and browser cross-origin restrictions.
+- Trade-off: **all segments go through the server's bandwidth**, so mind the traffic cost. Turn it off when not needed (it's off by default, in which case the radio `.m3u8` is pulled directly from the source by the client).
+
 ### Q: How do I scan the music library?
 
 A: After adding or modifying music files, you **must manually trigger a scan** for them to appear in the song library. In the client, go to **Settings → Scan Management** and click the scan button (note: it's a long bar-shaped button, not a dialog). Scanning runs asynchronously; you can check the status via the progress endpoint, and you can also cancel an in-progress scan.
