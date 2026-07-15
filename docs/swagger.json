@@ -6386,6 +6386,12 @@
                         "description": "传 1 时异步预热缓存/转码，立即返回 202",
                         "name": "prefetch",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "传 video 时按视频播放：直出原容器（忽略 format/quality 转码，避免 -vn 丢画面），并按容器真实类型返回 Content-Type（如 video/mp4）。用于应用内视频画面渲染与 DLNA 视频投屏",
+                        "name": "media",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -6461,6 +6467,12 @@
                         "type": "string",
                         "description": "传 1 时异步预热缓存/转码，立即返回 202",
                         "name": "prefetch",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "传 video 时按视频播放：直出原容器（忽略 format/quality 转码，避免 -vn 丢画面），并按容器真实类型返回 Content-Type（如 video/mp4）。用于应用内视频画面渲染与 DLNA 视频投屏",
+                        "name": "media",
                         "in": "query"
                     }
                 ],
@@ -7822,6 +7834,11 @@
                 },
                 "is_live": {
                     "description": "是否为直播流",
+                    "type": "boolean",
+                    "example": false
+                },
+                "is_video": {
+                    "description": "是否含真实视频轨(扫描时 ffprobe 探测,排除封面);客户端据此渲染画面/选择投屏 mime",
                     "type": "boolean",
                     "example": false
                 },

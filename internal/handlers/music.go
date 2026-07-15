@@ -1010,6 +1010,7 @@ func (h *SongHandler) UpdateSongLyrics(w http.ResponseWriter, r *http.Request) {
 // @Param format query string false "目标转码格式（如 mp3、ogg），用于平台兼容性转码"
 // @Param quality query string false "目标音质码率（128/192/320），不传或不合法值表示原始音质。指定后默认转码为 mp3（除非同时指定了 format）"
 // @Param prefetch query string false "传 1 时异步预热缓存/转码，立即返回 202"
+// @Param media query string false "传 video 时按视频播放：直出原容器（忽略 format/quality 转码，避免 -vn 丢画面），并按容器真实类型返回 Content-Type（如 video/mp4）。用于应用内视频画面渲染与 DLNA 视频投屏"
 // @Success 200 {file} binary "音频文件"
 // @Success 202 {string} string "预拉取已触发"
 // @Success 302 {string} string "电台流重定向"
@@ -1048,6 +1049,14 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 		targetFormat = "mp3"
 	}
 
+	// media=video：按视频画面播放。强制直出原容器——忽略 format/quality 转码，
+	// 因为转码走 ffmpeg -vn 会把视频轨丢掉；同时让 serveLocal 按容器真实类型给 Content-Type。
+	videoIntent := r.URL.Query().Get("media") == "video"
+	if videoIntent {
+		targetFormat = ""
+		bitrate = 0
+	}
+
 	// 预拉取模式：异步触发缓存 + 转码预热，立即返回 202。
 	// 不能用 r.Context()，否则 202 发出后客户端断开会 Kill ffmpeg，预热失败。
 	// 但通过 playActivity.Track 让 prefetch 能在下一次 Activate 时被 cancel，
@@ -1064,7 +1073,7 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 
 	switch song.Type {
 	case models.TypeLocal:
-		h.serveLocal(w, r, song, targetFormat, bitrate)
+		h.serveLocal(w, r, song, targetFormat, bitrate, videoIntent)
 	case models.TypeRadio:
 		h.serveRadio(w, r, song)
 	case models.TypeRemote:
@@ -1154,7 +1163,8 @@ func (h *SongHandler) prepareSongPlayback(ctx context.Context, song *models.Song
 
 // serveLocal 本地歌曲:直接 ServeFile(支持 Range,客户端 seek 可用)。
 // targetFormat 非空且与原格式不同时，或 bitrate > 0 时，走 ffmpeg 转码后返回。
-func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string, bitrate int) {
+// videoIntent=true（media=video）时上游已清空 targetFormat/bitrate，此处按容器真实类型给 video mime。
+func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string, bitrate int, videoIntent bool) {
 	if song.FilePath == "" {
 		http.NotFound(w, r)
 		return
@@ -1174,15 +1184,42 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 		}
 	}
 	w.Header().Set("Cache-Control", "public, max-age=31536000")
-	// ISO-BMFF 音频容器（mp4/mov/m4a/m4b）显式声明为音频类型:
-	// stdlib http.ServeFile 会按扩展名把 .mp4 标成 video/mp4、.mov 标成 video/quicktime,
-	// 我们只播放其中的音频轨,显式设 audio/mp4 可提升 Web <audio> 及部分客户端按音频处理的稳健性。
-	// 基于最终 srcPath 判断:若已转码为 .mp3 等,则不覆盖,交由 http.ServeFile 给出正确类型。
-	switch strings.ToLower(filepath.Ext(srcPath)) {
-	case ".mp4", ".mov", ".m4a", ".m4b":
-		w.Header().Set("Content-Type", "audio/mp4")
+	if videoIntent {
+		// 视频画面播放:按容器真实类型给 Content-Type(如 video/mp4),供 Web <video> 与 DLNA 正确识别;
+		// videoIntent 下上游已禁用转码,srcPath 一定是原容器。未知扩展名交由 http.ServeFile 决定。
+		if ct := videoContentType(srcPath); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
+	} else {
+		// ISO-BMFF 音频容器（mp4/mov/m4a/m4b）显式声明为音频类型:
+		// stdlib http.ServeFile 会按扩展名把 .mp4 标成 video/mp4、.mov 标成 video/quicktime,
+		// 音频播放路径只取其中的音频轨,显式设 audio/mp4 可提升 Web <audio> 及部分客户端按音频处理的稳健性。
+		// 基于最终 srcPath 判断:若已转码为 .mp3 等,则不覆盖,交由 http.ServeFile 给出正确类型。
+		switch strings.ToLower(filepath.Ext(srcPath)) {
+		case ".mp4", ".mov", ".m4a", ".m4b":
+			w.Header().Set("Content-Type", "audio/mp4")
+		}
 	}
 	http.ServeFile(w, r, srcPath)
+}
+
+// videoContentType 按视频容器扩展名返回对应的 MIME 类型;非视频容器返回空字符串。
+func videoContentType(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".mp4", ".m4v":
+		return "video/mp4"
+	case ".mov":
+		return "video/quicktime"
+	case ".mkv":
+		return "video/x-matroska"
+	case ".webm":
+		return "video/webm"
+	case ".avi":
+		return "video/x-msvideo"
+	case ".ts":
+		return "video/mp2t"
+	}
+	return ""
 }
 
 // serveRadio 电台/直播流:专用代理，不设整请求超时、不缓存。

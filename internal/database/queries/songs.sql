@@ -8,7 +8,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     fingerprint, fingerprint_duration,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at, track, language, style
+    file_modified_at, track, language, style, is_video
 FROM songs WHERE id = ?;
 
 -- name: CreateSong :execlastid
@@ -21,8 +21,8 @@ INSERT INTO songs (
     fingerprint, fingerprint_duration,
     isrc, track,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    file_modified_at, is_video
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateSong :execrows
 UPDATE songs SET
@@ -35,7 +35,7 @@ UPDATE songs SET
     fingerprint = ?, fingerprint_duration = ?,
     isrc = ?, track = ?,
     cue_source_path = ?, cue_track_index = ?, cue_audio_path = ?,
-    file_modified_at = ?
+    file_modified_at = ?, is_video = ?
 WHERE id = ?;
 
 -- name: DeleteSong :execrows
@@ -133,7 +133,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     fingerprint, fingerprint_duration,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at, track, language, style
+    file_modified_at, track, language, style, is_video
 FROM songs WHERE cache_path != '';
 
 -- name: ListSongsNeedingMetadata :many

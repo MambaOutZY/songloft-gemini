@@ -279,6 +279,15 @@ func NormalizeFormat(f string) string {
 		return "ape"
 	case "aif", "aiff":
 		return "aiff"
+	// 视频容器（songloft-org/songloft#76）：归一化 ffprobe 返回的容器名，使抽音频转码判定稳定。
+	case "mkv", "matroska":
+		return "mkv"
+	case "webm":
+		return "webm"
+	case "avi":
+		return "avi"
+	case "ts", "mpegts", "mp2t":
+		return "ts"
 	}
 	return f
 }

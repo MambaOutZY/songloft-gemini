@@ -178,7 +178,14 @@ Then double-click `songloft.bat` to start (note: not `songloft.exe`).
 
 ### Q: Which music file formats are supported?
 
-A: Mainstream audio formats are supported: **MP3, FLAC, WAV, APE, OGG, M4A, MP4, MOV, WMA, AIF/AIFF**, and more (MP4/MOV are ISO-BMFF/QuickTime containers handled the same as the M4A family—only the audio track is played—common in audiobooks, online courses, and other mixed audio/video content or some download sources). You can customize the list of supported formats via the `scan_config` database configuration.
+A: Mainstream audio formats are supported: **MP3, FLAC, WAV, APE, OGG, M4A, MP4, MOV, WMA, AIF/AIFF**, and more (MP4/MOV are ISO-BMFF/QuickTime containers handled the same as the M4A family).
+
+Common **video containers** are also scanned: **MKV, WEBM, AVI, TS** (along with MP4/MOV that carry a picture). During scanning the backend uses ffprobe to detect whether a file has a real video track and marks it as `is_video` (an embedded cover image does not count as video). Such files are common in audiobooks, online courses, and other listening-focused mixed audio/video content:
+
+- The **audio track** can always be played;
+- Files with a picture can be **cast to a DLNA TV / box** to watch the video (the real container MIME is declared when casting).
+
+You can customize the list of supported formats via the `scan_config` database configuration.
 
 ### Q: How do I check the current version?
 

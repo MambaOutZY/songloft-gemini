@@ -92,6 +92,7 @@ type Song struct {
 	BitRate             int     `json:"bit_rate" example:"320"`                            // 比特率（kbps）
 	SampleRate          int     `json:"sample_rate" example:"44100"`                       // 采样率（Hz）
 	IsLive              bool    `json:"is_live" example:"false"`                           // 是否为直播流
+	IsVideo             bool    `json:"is_video" example:"false"`                          // 是否含真实视频轨(扫描时 ffprobe 探测,排除封面);客户端据此渲染画面/选择投屏 mime
 	PluginEntryPath     string  `json:"plugin_entry_path,omitempty" example:"my-source"`   // 音源插件 entryPath(网络歌曲)
 	SourceData          string  `json:"source_data,omitempty"`                             // 音源元数据 JSON(给插件 music/url 接口用,opaque)
 	DedupKey            string  `json:"dedup_key,omitempty"`                               // 去重 key(由插件定义,典型形态 "<platform>:<platform_id>");与 PluginEntryPath 组成 UNIQUE

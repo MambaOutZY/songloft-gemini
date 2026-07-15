@@ -121,4 +121,5 @@ type Song struct {
 	Track               string
 	Language            string
 	Style               string
+	IsVideo             int64
 }

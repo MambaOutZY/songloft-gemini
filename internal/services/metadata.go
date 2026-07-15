@@ -68,6 +68,7 @@ type Metadata struct {
 	Genre       string  // 流派
 	Language    string  // 语种
 	Style       string  // 风格
+	IsVideo     bool    // 是否含真实视频轨（ffprobe 探测，排除封面 attached_pic）
 }
 
 // FFProbeOutput ffprobe 输出结构
@@ -86,10 +87,11 @@ type FFProbeFormat struct {
 
 // FFProbeStream 流信息
 type FFProbeStream struct {
-	CodecType  string            `json:"codec_type"`
-	CodecName  string            `json:"codec_name"`
-	SampleRate string            `json:"sample_rate"`
-	Tags       map[string]string `json:"tags"`
+	CodecType   string            `json:"codec_type"`
+	CodecName   string            `json:"codec_name"`
+	SampleRate  string            `json:"sample_rate"`
+	Tags        map[string]string `json:"tags"`
+	Disposition map[string]int    `json:"disposition"` // 流处置标志，attached_pic=1 表示封面图而非真实视频轨
 }
 
 // safeLookPath finds an executable by name in PATH using os.Stat.
@@ -218,11 +220,13 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 	slog.Info("Extract title", "fileName", fileName, "title", metadata.Title)
 
 	// 仅在 tag 库未能获取时长时，回退到 ffprobe 补充技术参数
+	var probe *FFProbeOutput
 	if metadata.Duration == 0 && m.config.FFProbePath != "" {
 		probeOutput, err := m.runFFProbe(ctx, filePath)
 		if err != nil {
 			slog.Warn("ffprobe failed, continuing without probe data", "filePath", filePath, "err", err)
 		} else {
+			probe = probeOutput
 			if probeOutput.Format.Duration != "" {
 				if duration, err := parseDuration(probeOutput.Format.Duration); err == nil {
 					metadata.Duration = duration
@@ -282,6 +286,22 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 				}
 			}
 			slog.Info("Extract format", "format", metadata.Format, "bitRate", metadata.BitRate, "sampleRate", metadata.SampleRate, "duration", metadata.Duration)
+		}
+	}
+
+	// 视频轨探测：对可能含视频画面的容器（mp4/mov/mkv/webm/avi/ts 等）用 ffprobe 判定是否含真实视频流。
+	// 注意：含视频轨的 mp4/mov 会被 tag 库成功读取（拿到时长），不会进入上面的 ffprobe 分支，
+	// 故这里必须对视频容器候选独立探测；已探测过（mkv 等无 tag 的容器）则复用 probe，避免重复调用。
+	if m.config.FFProbePath != "" && isVideoContainerCandidate(filePath) {
+		if probe == nil {
+			if p, err := m.runFFProbe(ctx, filePath); err == nil {
+				probe = p
+			} else {
+				slog.Debug("ffprobe video-track probe failed", "filePath", filePath, "err", err)
+			}
+		}
+		if probe != nil {
+			metadata.IsVideo = hasRealVideoStream(probe)
 		}
 	}
 
@@ -630,6 +650,42 @@ func (m *MetadataExtractor) runFFProbe(ctx context.Context, filePath string) (*F
 	}
 
 	return &probeOutput, nil
+}
+
+// videoContainerExts 可能含视频画面的容器扩展名。
+// mp4/mov/m4v 属 ISO-BMFF，既可能纯音频（m4a 同族）也可能带画面，需 ffprobe 实探；
+// mkv/webm/avi/ts 是典型视频容器。webm 亦可纯音频，故一律以实探结果为准。
+var videoContainerExts = map[string]bool{
+	".mp4": true, ".mov": true, ".m4v": true,
+	".mkv": true, ".webm": true, ".avi": true, ".ts": true,
+}
+
+// isVideoContainerCandidate 判断扩展名是否可能含视频画面（需进一步 ffprobe 实探）。
+func isVideoContainerCandidate(filePath string) bool {
+	return videoContainerExts[strings.ToLower(filepath.Ext(filePath))]
+}
+
+// hasRealVideoStream 判断 ffprobe 结果是否含"真实"视频流。
+// 排除仅作封面的 attached_pic 流（音频文件内嵌封面会以 codec_type=video + disposition.attached_pic=1 出现）。
+func hasRealVideoStream(probe *FFProbeOutput) bool {
+	if probe == nil {
+		return false
+	}
+	for _, s := range probe.Streams {
+		if s.CodecType != "video" {
+			continue
+		}
+		if s.Disposition["attached_pic"] == 1 {
+			continue // 封面图，非视频画面
+		}
+		// 部分静态图/MJPEG 封面即便无 attached_pic 标志也非真实视频，按编解码器名再兜底排除。
+		switch strings.ToLower(s.CodecName) {
+		case "mjpeg", "png", "bmp", "gif":
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // SaveCover 保存封面图片到分层目录

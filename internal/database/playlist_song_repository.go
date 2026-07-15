@@ -104,7 +104,7 @@ func (r *PlaylistSongRepository) GetSongsFiltered(ctx context.Context, playlistI
 		"s.fingerprint", "s.fingerprint_duration",
 		"s.isrc", "s.track",
 		"s.cue_source_path", "s.cue_track_index", "s.cue_audio_path",
-		"s.file_modified_at",
+		"s.file_modified_at", "s.is_video",
 	).From("songs s").
 		InnerJoin("playlist_songs ps ON s.id = ps.song_id").
 		Where(sq.Eq{"ps.playlist_id": playlistID})

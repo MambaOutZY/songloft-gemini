@@ -445,7 +445,7 @@ func songSelectBuilder() sq.SelectBuilder {
 		"fingerprint", "fingerprint_duration",
 		"isrc", "track",
 		"cue_source_path", "cue_track_index", "cue_audio_path",
-		"file_modified_at",
+		"file_modified_at", "is_video",
 	).From("songs")
 }
 
@@ -511,6 +511,7 @@ func scanSongRow(scanner interface {
 }) (*models.Song, error) {
 	s := &models.Song{}
 	var fileModifiedAt sql.NullTime
+	var isVideo int64
 	if err := scanner.Scan(
 		&s.ID, &s.Type, &s.Title, &s.Artist, &s.Album, &s.Duration,
 		&s.FilePath, &s.URL, &s.CoverPath, &s.CoverURL,
@@ -522,7 +523,7 @@ func scanSongRow(scanner interface {
 		&s.Fingerprint, &s.FingerprintDuration,
 		&s.ISRC, &s.Track,
 		&s.CueSourcePath, &s.CueTrackIndex, &s.CueAudioPath,
-		&fileModifiedAt,
+		&fileModifiedAt, &isVideo,
 	); err != nil {
 		return nil, fmt.Errorf("scan song: %w", err)
 	}
@@ -530,6 +531,7 @@ func scanSongRow(scanner interface {
 		t := fileModifiedAt.Time
 		s.FileModifiedAt = &t
 	}
+	s.IsVideo = isVideo != 0
 	return s, nil
 }
 
@@ -558,6 +560,7 @@ func songRowToModel(row sqlc.Song) *models.Song {
 		BitRate:             int(row.BitRate),
 		SampleRate:          int(row.SampleRate),
 		IsLive:              row.IsLive != 0,
+		IsVideo:             row.IsVideo != 0,
 		PluginEntryPath:     row.PluginEntryPath,
 		SourceData:          row.SourceData,
 		DedupKey:            row.DedupKey,
@@ -610,6 +613,7 @@ func songCreateParams(s *models.Song) sqlc.CreateSongParams {
 		BitRate:             int64(s.BitRate),
 		SampleRate:          int64(s.SampleRate),
 		IsLive:              boolToInt64(s.IsLive),
+		IsVideo:             boolToInt64(s.IsVideo),
 		PluginEntryPath:     s.PluginEntryPath,
 		SourceData:          s.SourceData,
 		DedupKey:            s.DedupKey,
@@ -647,6 +651,7 @@ func songUpdateParams(s *models.Song) sqlc.UpdateSongParams {
 		BitRate:             int64(s.BitRate),
 		SampleRate:          int64(s.SampleRate),
 		IsLive:              boolToInt64(s.IsLive),
+		IsVideo:             boolToInt64(s.IsVideo),
 		PluginEntryPath:     s.PluginEntryPath,
 		SourceData:          s.SourceData,
 		DedupKey:            s.DedupKey,

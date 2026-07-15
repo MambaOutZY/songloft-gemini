@@ -732,6 +732,7 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 				song.Format = r.metadata.Format
 				song.BitRate = r.metadata.BitRate
 				song.SampleRate = r.metadata.SampleRate
+				song.IsVideo = r.metadata.IsVideo
 				song.ISRC = r.metadata.ISRC
 				song.Year = r.metadata.Year
 				song.Genre = r.metadata.Genre
@@ -776,6 +777,7 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 					Format:     r.metadata.Format,
 					BitRate:    r.metadata.BitRate,
 					SampleRate: r.metadata.SampleRate,
+					IsVideo:    r.metadata.IsVideo,
 					FileSize:   r.fileSize,
 					ISRC:       r.metadata.ISRC,
 					Track:      r.metadata.Track,

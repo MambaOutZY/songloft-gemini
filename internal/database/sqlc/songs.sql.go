@@ -100,8 +100,8 @@ INSERT INTO songs (
     fingerprint, fingerprint_duration,
     isrc, track,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    file_modified_at, is_video
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateSongParams struct {
@@ -137,6 +137,7 @@ type CreateSongParams struct {
 	CueTrackIndex       int64
 	CueAudioPath        string
 	FileModifiedAt      sql.NullTime
+	IsVideo             int64
 }
 
 func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (int64, error) {
@@ -173,6 +174,7 @@ func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (int64, 
 		arg.CueTrackIndex,
 		arg.CueAudioPath,
 		arg.FileModifiedAt,
+		arg.IsVideo,
 	)
 	if err != nil {
 		return 0, err
@@ -230,7 +232,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     fingerprint, fingerprint_duration,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at, track, language, style
+    file_modified_at, track, language, style, is_video
 FROM songs WHERE id = ?
 `
 
@@ -274,6 +276,7 @@ func (q *Queries) GetSongByID(ctx context.Context, id int64) (Song, error) {
 		&i.Track,
 		&i.Language,
 		&i.Style,
+		&i.IsVideo,
 	)
 	return i, err
 }
@@ -834,7 +837,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     fingerprint, fingerprint_duration,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
-    file_modified_at, track, language, style
+    file_modified_at, track, language, style, is_video
 FROM songs WHERE cache_path != ''
 `
 
@@ -884,6 +887,7 @@ func (q *Queries) ListSongsWithCache(ctx context.Context) ([]Song, error) {
 			&i.Track,
 			&i.Language,
 			&i.Style,
+			&i.IsVideo,
 		); err != nil {
 			return nil, err
 		}
@@ -984,7 +988,7 @@ UPDATE songs SET
     fingerprint = ?, fingerprint_duration = ?,
     isrc = ?, track = ?,
     cue_source_path = ?, cue_track_index = ?, cue_audio_path = ?,
-    file_modified_at = ?
+    file_modified_at = ?, is_video = ?
 WHERE id = ?
 `
 
@@ -1021,6 +1025,7 @@ type UpdateSongParams struct {
 	CueTrackIndex       int64
 	CueAudioPath        string
 	FileModifiedAt      sql.NullTime
+	IsVideo             int64
 	ID                  int64
 }
 
@@ -1058,6 +1063,7 @@ func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (int64, 
 		arg.CueTrackIndex,
 		arg.CueAudioPath,
 		arg.FileModifiedAt,
+		arg.IsVideo,
 		arg.ID,
 	)
 	if err != nil {

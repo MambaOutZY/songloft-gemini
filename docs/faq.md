@@ -178,7 +178,14 @@ songloft.exe -password your_secure_password
 
 ### Q: 支持哪些音乐文件格式？
 
-A: 支持主流音频格式：**MP3、FLAC、WAV、APE、OGG、M4A、MP4、MOV、WMA、AIF/AIFF** 等（MP4/MOV 为 ISO-BMFF/QuickTime 容器，按 M4A 同族处理，仅播放其中的音频轨，常见于电子书、网课等音视频混合内容或部分下载源）。可通过数据库配置 `scan_config` 自定义支持的格式列表。
+A: 支持主流音频格式：**MP3、FLAC、WAV、APE、OGG、M4A、MP4、MOV、WMA、AIF/AIFF** 等（MP4/MOV 为 ISO-BMFF/QuickTime 容器，按 M4A 同族处理）。
+
+此外也支持扫描常见**视频容器**：**MKV、WEBM、AVI、TS**（连同带画面的 MP4/MOV）。扫描时后端会用 ffprobe 探测文件是否含真实视频轨并标记 `is_video`（内嵌封面图不算视频）。这类文件常见于电子书、网课等以"听"为主的音视频混合内容：
+
+- 始终可播放其中的**音频轨**；
+- 含画面的文件可**投屏到 DLNA 电视/盒子**观看画面（投屏时按真实容器类型声明 mime）。
+
+可通过数据库配置 `scan_config` 自定义支持的格式列表。
 
 ### Q: 如何查看当前版本？
 
