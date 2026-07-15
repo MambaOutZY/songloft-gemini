@@ -184,7 +184,7 @@ Common **video containers** are also scanned: **MKV, WEBM, AVI, TS** (along with
 
 - The **audio track** can always be played;
 - Files with a picture can be **cast to a DLNA TV / box** to watch the video (the real container MIME is declared when casting);
-- The **video picture can also be shown in-app**: enabled by default on desktop (Windows/Linux) and Web; on macOS/Android/iOS it requires a dedicated build to turn on (audio-only by default, with the picture falling back to the cover).
+- The **video picture can also be shown in-app**: enabled by default on all platforms (desktop Windows/Linux, macOS, Android/iOS, Web), falling back to the cover when video is unavailable.
 
 You can customize the list of supported formats via the `scan_config` database configuration.
 
