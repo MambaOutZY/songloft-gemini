@@ -201,6 +201,7 @@ Songloft 文档站（`docs/`）用 **VitePress + 自定义主题**（`docs/.vite
 
 ## Git 提交约定
 
+- **直接提交到 `main` 分支**，不新建功能分支、不走 PR 流程（本仓库约定）
 - 提交信息**禁止**添加 `Co-Authored-By` 尾部标记
 - 遵循 Conventional Commits 格式：`type(scope): description`
 - 关联 GitHub issue 的提交信息必须带 issue 引用

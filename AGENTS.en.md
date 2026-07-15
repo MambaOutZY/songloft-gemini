@@ -201,6 +201,7 @@ The Songloft docs site (`docs/`) uses **VitePress + a custom theme** (`docs/.vit
 
 ## Git Commit Conventions
 
+- **Commit directly to the `main` branch** — do not create feature branches or open PRs (this repo's convention)
 - Commit messages **must not** include a `Co-Authored-By` trailer
 - Follow the Conventional Commits format: `type(scope): description`
 - Commit messages that reference a GitHub issue must include the issue reference
