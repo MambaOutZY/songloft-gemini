@@ -192,6 +192,8 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/settings/plugin-auto-update", jsPluginHandler.UpdatePluginAutoUpdateSetting)
 			r.Get("/settings/tab-config", configHandler.GetTabConfigSetting)
 			r.Put("/settings/tab-config", configHandler.UpdateTabConfigSetting)
+			r.Get("/settings/library-browse", configHandler.GetLibraryBrowseSetting)
+			r.Put("/settings/library-browse", configHandler.UpdateLibraryBrowseSetting)
 			r.Get("/settings/user-preferences", configHandler.GetUserPreferencesSetting)
 			r.Put("/settings/user-preferences", configHandler.UpdateUserPreferencesSetting)
 			r.Get("/settings/equalizer", configHandler.GetEqualizerSetting)

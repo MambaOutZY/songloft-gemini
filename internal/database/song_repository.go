@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -788,89 +787,93 @@ func (r *SongRepository) ListDuplicateGroups(ctx context.Context) ([]DuplicateGr
 }
 
 // Facet 标签分类的一个取值及其歌曲数量（如 genre="Rock", count=42）。
+// CoverURL 为该取值下一首带封面歌曲的封面端点（无则为空，前端回退占位图标）。
 type Facet struct {
-	Value string `json:"value"`
-	Count int64  `json:"count"`
+	Value    string `json:"value"`
+	Count    int64  `json:"count"`
+	CoverURL string `json:"cover_url"`
 }
 
-// ListFacet 按维度聚合曲库标签，返回该维度下所有非空取值及计数（按计数降序）。
+// ListFacet 按维度聚合曲库标签，返回该维度下的取值 + 计数 + 代表封面（支持搜索/排序/分页）。
 // field 支持：genre / artist / album / language / style / year / decade。
 // 未知 field 返回 ErrNotFound，交由 handler 转 400。
-func (r *SongRepository) ListFacet(ctx context.Context, field string) ([]Facet, error) {
-	switch field {
-	case "genre":
-		rows, err := r.queries.ListSongFacetGenre(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("facet genre: %w", err)
-		}
-		out := make([]Facet, len(rows))
-		for i, row := range rows {
-			out[i] = Facet{Value: row.Value, Count: row.Count}
-		}
-		return out, nil
-	case "artist":
-		rows, err := r.queries.ListSongFacetArtist(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("facet artist: %w", err)
-		}
-		out := make([]Facet, len(rows))
-		for i, row := range rows {
-			out[i] = Facet{Value: row.Value, Count: row.Count}
-		}
-		return out, nil
-	case "album":
-		rows, err := r.queries.ListSongFacetAlbum(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("facet album: %w", err)
-		}
-		out := make([]Facet, len(rows))
-		for i, row := range rows {
-			out[i] = Facet{Value: row.Value, Count: row.Count}
-		}
-		return out, nil
-	case "language":
-		rows, err := r.queries.ListSongFacetLanguage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("facet language: %w", err)
-		}
-		out := make([]Facet, len(rows))
-		for i, row := range rows {
-			out[i] = Facet{Value: row.Value, Count: row.Count}
-		}
-		return out, nil
-	case "style":
-		rows, err := r.queries.ListSongFacetStyle(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("facet style: %w", err)
-		}
-		out := make([]Facet, len(rows))
-		for i, row := range rows {
-			out[i] = Facet{Value: row.Value, Count: row.Count}
-		}
-		return out, nil
-	case "year":
-		rows, err := r.queries.ListSongFacetYear(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("facet year: %w", err)
-		}
-		out := make([]Facet, len(rows))
-		for i, row := range rows {
-			out[i] = Facet{Value: strconv.FormatInt(row.Value, 10), Count: row.Count}
-		}
-		return out, nil
-	case "decade":
-		rows, err := r.queries.ListSongFacetDecade(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("facet decade: %w", err)
-		}
-		out := make([]Facet, len(rows))
-		for i, row := range rows {
-			out[i] = Facet{Value: strconv.FormatInt(row.Value, 10), Count: row.Count}
-		}
-		return out, nil
-	default:
+//
+// 说明：这是本项目首个用 squirrel 编写的聚合（GROUP BY）查询——因为 facet 需要
+// 可选 keyword（变长 WHERE）+ 动态排序 + 分页，sqlc 固定查询无法表达，按铁律「动态 SQL→squirrel」实现。
+func (r *SongRepository) ListFacet(ctx context.Context, field string, f *FacetFilter) ([]Facet, error) {
+	col, ok := songFacetColumn[field]
+	if !ok {
 		return nil, ErrNotFound
 	}
+
+	// CAST(... AS TEXT) 让文本/数字维度都统一以字符串取回，year/decade 得到如 "1990"。
+	// cover_song_id 取组内任意一首「有封面」（本地 cover_path 或远程 cover_url 非空）的歌曲。
+	sb := sq.Select(
+		"CAST("+col+" AS TEXT) AS value",
+		"COUNT(*) AS count",
+		"MAX(CASE WHEN cover_path != '' OR cover_url != '' THEN id END) AS cover_song_id",
+	).From("songs").Where(facetBaseCond(field, col))
+
+	if f != nil && f.Keyword != "" {
+		sb = sb.Where(sq.Expr("CAST("+col+" AS TEXT) LIKE ?", "%"+f.Keyword+"%"))
+	}
+	sb = sb.GroupBy(col)
+	sb = applyFacetOrder(sb, f)
+	if f != nil {
+		sb = applyPagination(sb, f.Limit, f.Offset)
+	}
+
+	query, args, err := sb.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build facet %s sql: %w", field, err)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("facet %s: %w", field, err)
+	}
+	defer rows.Close()
+
+	out := []Facet{}
+	for rows.Next() {
+		var value string
+		var count int64
+		var coverID sql.NullInt64
+		if err := rows.Scan(&value, &count, &coverID); err != nil {
+			return nil, fmt.Errorf("scan facet %s: %w", field, err)
+		}
+		facet := Facet{Value: value, Count: count}
+		if coverID.Valid && coverID.Int64 > 0 {
+			facet.CoverURL = fmt.Sprintf("/api/v1/songs/%d/cover", coverID.Int64)
+		}
+		out = append(out, facet)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate facet %s: %w", field, err)
+	}
+	return out, nil
+}
+
+// CountFacet 返回某维度去重取值的总数（用于前端分页判断），与 ListFacet 共享 keyword 过滤。
+func (r *SongRepository) CountFacet(ctx context.Context, field, keyword string) (int64, error) {
+	col, ok := songFacetColumn[field]
+	if !ok {
+		return 0, ErrNotFound
+	}
+	inner := sq.Select("1").From("songs").Where(facetBaseCond(field, col))
+	if keyword != "" {
+		inner = inner.Where(sq.Expr("CAST("+col+" AS TEXT) LIKE ?", "%"+keyword+"%"))
+	}
+	inner = inner.GroupBy(col)
+
+	innerSQL, innerArgs, err := inner.ToSql()
+	if err != nil {
+		return 0, fmt.Errorf("build count facet %s sql: %w", field, err)
+	}
+	var n int64
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ("+innerSQL+")", innerArgs...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count facet %s: %w", field, err)
+	}
+	return n, nil
 }
 
 // UpdateCachePath 更新歌曲的缓存文件路径。

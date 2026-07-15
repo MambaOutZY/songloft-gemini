@@ -46,7 +46,8 @@ type SongRepository interface {
 	ListLocalWithoutFingerprint(ctx context.Context) ([]database.SongIDPath, error)
 	CountLocalFingerprints(ctx context.Context) (total, computed int64, err error)
 	ListDuplicateGroups(ctx context.Context) ([]database.DuplicateGroup, error)
-	ListFacet(ctx context.Context, field string) ([]database.Facet, error)
+	ListFacet(ctx context.Context, field string, f *database.FacetFilter) ([]database.Facet, error)
+	CountFacet(ctx context.Context, field, keyword string) (int64, error)
 }
 
 // Transactor 提供 UnitOfWork 事务执行入口，
@@ -277,10 +278,10 @@ func (s *SongService) List(ctx context.Context, filter *database.SongFilter) ([]
 	return songs, nil
 }
 
-// ListFacet 按维度聚合曲库标签，返回该维度下所有取值及计数。
+// ListFacet 按维度聚合曲库标签，返回该维度下的取值 + 计数 + 代表封面（支持搜索/排序/分页）。
 // field 支持 genre/artist/album/language/style/year/decade；未知 field 返回 database.ErrNotFound。
-func (s *SongService) ListFacet(ctx context.Context, field string) ([]database.Facet, error) {
-	facets, err := s.songs.ListFacet(ctx, field)
+func (s *SongService) ListFacet(ctx context.Context, field string, f *database.FacetFilter) ([]database.Facet, error) {
+	facets, err := s.songs.ListFacet(ctx, field, f)
 	if err != nil {
 		if errors.Is(err, database.ErrNotFound) {
 			return nil, err
@@ -288,6 +289,18 @@ func (s *SongService) ListFacet(ctx context.Context, field string) ([]database.F
 		return nil, fmt.Errorf("failed to list facet %q: %w", field, err)
 	}
 	return facets, nil
+}
+
+// CountFacet 返回某维度去重取值的总数（供分页判断），与 ListFacet 共享 keyword 过滤。
+func (s *SongService) CountFacet(ctx context.Context, field, keyword string) (int64, error) {
+	total, err := s.songs.CountFacet(ctx, field, keyword)
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			return 0, err
+		}
+		return 0, fmt.Errorf("failed to count facet %q: %w", field, err)
+	}
+	return total, nil
 }
 
 // Search 搜索歌曲

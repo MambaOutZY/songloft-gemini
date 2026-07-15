@@ -59,6 +59,18 @@ type PlaylistSongFilter struct {
 	Offset  int
 }
 
+// FacetFilter 标签分类聚合（facet）的过滤/排序/分页条件。
+type FacetFilter struct {
+	// Keyword 对取值做模糊搜索（空表示不过滤）。
+	Keyword string
+	// OrderBy 排序维度："count"（按歌曲数，默认）或 "name"（按取值名）。
+	OrderBy string
+	// Order 排序方向 asc/desc；为空时按 OrderBy 取默认（count→desc，name→asc）。
+	Order  string
+	Limit  int
+	Offset int
+}
+
 // TokenFilter Token 过滤条件
 type TokenFilter struct {
 	TokenType string
@@ -103,7 +115,53 @@ var (
 		"updated_at":       "s.updated_at",
 		"file_modified_at": "s.file_modified_at",
 	}
+	// songFacetColumn 把 facet 维度映射到固定的 SQL 列名/表达式。
+	// 仅使用映射值拼接列名（绝不拼用户输入），防 SQL 注入 —— 同 playlistSongOrderColumn 范式。
+	songFacetColumn = map[string]string{
+		"genre":    "genre",
+		"artist":   "artist",
+		"album":    "album",
+		"language": "language",
+		"style":    "style",
+		"year":     "year",
+		"decade":   "(year / 10) * 10",
+	}
 )
+
+// facetBaseCond 返回某 facet 维度「取值非空」的基础过滤条件。
+// year/decade 用 year>0；文本维度用 <col> != ”。
+func facetBaseCond(field, col string) sq.Sqlizer {
+	if field == "year" || field == "decade" {
+		return sq.Gt{"year": 0}
+	}
+	return sq.NotEq{col: ""}
+}
+
+// applyFacetOrder 对 facet 聚合结果应用排序。
+// count→按歌曲数（默认 DESC，附带 value ASC 稳定次序）；name→按取值名（默认 ASC）。
+func applyFacetOrder(sb sq.SelectBuilder, f *FacetFilter) sq.SelectBuilder {
+	orderBy := "count"
+	order := ""
+	if f != nil {
+		if f.OrderBy != "" {
+			orderBy = f.OrderBy
+		}
+		order = f.Order
+	}
+	if orderBy == "name" {
+		dir := "ASC"
+		if strings.EqualFold(order, "DESC") {
+			dir = "DESC"
+		}
+		return sb.OrderBy("value " + dir)
+	}
+	// 默认按 count
+	dir := "DESC"
+	if strings.EqualFold(order, "ASC") {
+		dir = "ASC"
+	}
+	return sb.OrderBy("count "+dir, "value ASC")
+}
 
 // applyOrder 把 orderBy/order 加到 squirrel SELECT 上。
 // orderBy 不在白名单时退化到 defaultOrder（已含 ASC/DESC）。

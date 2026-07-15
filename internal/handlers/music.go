@@ -408,15 +408,21 @@ var songFacetFields = map[string]struct{}{
 	"language": {}, "style": {}, "year": {}, "decade": {},
 }
 
-// ListSongFacets 按维度聚合曲库标签，返回该维度下所有取值及计数（按计数降序）。
+// ListSongFacets 按维度聚合曲库标签，返回该维度下的取值 + 计数 + 代表封面（支持搜索/排序/分页）。
 // @Summary 曲库标签分类聚合
-// @Description 按指定维度聚合曲库，返回该维度下所有非空取值及各自的歌曲数量，用于「分类浏览」的清单页。
+// @Description 按指定维度聚合曲库，返回该维度下非空取值、各自的歌曲数量及一首代表歌曲的封面 URL，用于「分类浏览」的卡片网格。
 // @Description 支持维度：genre(流派)/artist(歌手)/album(专辑)/language(语种)/style(风格)/year(年份)/decade(年代)。
 // @Description year/decade 的 value 为数字字符串（年代如 "1990" 表示 1990-1999）。取到某取值后可用 /songs?<field>=<value> 拉取该分类下歌曲。
+// @Description 支持 keyword 模糊搜索取值、limit/offset 分页、sort(count|name)/order 排序；返回 total 为该维度去重取值总数。
 // @Tags 歌曲管理
 // @Produce json
 // @Param field query string true "聚合维度" Enums(genre, artist, album, language, style, year, decade)
-// @Success 200 {object} map[string]any "成功返回聚合结果 {field, facets:[{value,count}]}"
+// @Param keyword query string false "对取值模糊搜索"
+// @Param limit query int false "分页大小，缺省 20，上限 100000"
+// @Param offset query int false "分页偏移，缺省 0"
+// @Param sort query string false "排序维度，缺省 count" Enums(count, name)
+// @Param order query string false "排序方向；count 缺省 desc，name 缺省 asc" Enums(asc, desc)
+// @Success 200 {object} map[string]any "成功返回聚合结果 {field, facets:[{value,count,cover_url}], total, limit, offset}"
 // @Failure 400 {object} map[string]string "缺少或不支持的 field"
 // @Failure 500 {object} map[string]string "服务器错误"
 // @Security BearerAuth
@@ -430,7 +436,28 @@ func (h *SongHandler) ListSongFacets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	facets, err := h.songService.ListFacet(ctx, field)
+	keyword := r.URL.Query().Get("keyword")
+	limit := models.DefaultPaginationLimit
+	offset := 0
+	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 {
+		limit = l
+	}
+	if limit > models.MaxPaginationLimit {
+		limit = models.MaxPaginationLimit
+	}
+	if o, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && o > 0 {
+		offset = o
+	}
+
+	filter := &database.FacetFilter{
+		Keyword: keyword,
+		OrderBy: r.URL.Query().Get("sort"),
+		Order:   r.URL.Query().Get("order"),
+		Limit:   limit,
+		Offset:  offset,
+	}
+
+	facets, err := h.songService.ListFacet(ctx, field, filter)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "获取标签分类聚合失败", err)
 		return
@@ -439,9 +466,18 @@ func (h *SongHandler) ListSongFacets(w http.ResponseWriter, r *http.Request) {
 		facets = []database.Facet{}
 	}
 
+	total, err := h.songService.CountFacet(ctx, field, keyword)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取标签分类总数失败", err)
+		return
+	}
+
 	respondJSON(w, http.StatusOK, map[string]any{
 		"field":  field,
 		"facets": facets,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
 	})
 }
 

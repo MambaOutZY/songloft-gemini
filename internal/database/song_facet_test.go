@@ -31,7 +31,7 @@ func TestListFacet(t *testing.T) {
 	ctx := context.Background()
 
 	// genre：Pop=3, Rock=1，空值不计入；按计数降序。
-	genres, err := repo.ListFacet(ctx, "genre")
+	genres, err := repo.ListFacet(ctx, "genre", nil)
 	if err != nil {
 		t.Fatalf("facet genre: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestListFacet(t *testing.T) {
 	}
 
 	// language：国语=2, 粤语=1, 英语=1
-	langs, err := repo.ListFacet(ctx, "language")
+	langs, err := repo.ListFacet(ctx, "language", nil)
 	if err != nil {
 		t.Fatalf("facet language: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestListFacet(t *testing.T) {
 	}
 
 	// style：R&B=1, 抒情=1（空值不计）
-	styles, err := repo.ListFacet(ctx, "style")
+	styles, err := repo.ListFacet(ctx, "style", nil)
 	if err != nil {
 		t.Fatalf("facet style: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestListFacet(t *testing.T) {
 	}
 
 	// year：2001=2, 1993=1, 2011=1（0 不计）
-	years, err := repo.ListFacet(ctx, "year")
+	years, err := repo.ListFacet(ctx, "year", nil)
 	if err != nil {
 		t.Fatalf("facet year: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestListFacet(t *testing.T) {
 	}
 
 	// decade：2000=2, 1990=1, 2010=1
-	decades, err := repo.ListFacet(ctx, "decade")
+	decades, err := repo.ListFacet(ctx, "decade", nil)
 	if err != nil {
 		t.Fatalf("facet decade: %v", err)
 	}
@@ -92,8 +92,69 @@ func TestListFacet(t *testing.T) {
 	}
 
 	// 未知维度返回 ErrNotFound
-	if _, err := repo.ListFacet(ctx, "bogus"); err != ErrNotFound {
+	if _, err := repo.ListFacet(ctx, "bogus", nil); err != ErrNotFound {
 		t.Fatalf("expected ErrNotFound for unknown field, got %v", err)
+	}
+}
+
+func TestListFacetSearchSortPaginate(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedFacetSongs(t, db)
+	repo := db.SongRepository()
+	ctx := context.Background()
+
+	// keyword 搜索：artist 含 "周" 只命中周杰伦
+	got, err := repo.ListFacet(ctx, "artist", &FacetFilter{Keyword: "周"})
+	if err != nil {
+		t.Fatalf("facet artist keyword: %v", err)
+	}
+	if len(got) != 1 || got[0].Value != "周杰伦" || got[0].Count != 2 {
+		t.Fatalf("expected only 周杰伦=2, got %+v", got)
+	}
+
+	// sort=name asc：artist 按名称升序（Adele/Beyond 在中文前）
+	byName, err := repo.ListFacet(ctx, "artist", &FacetFilter{OrderBy: "name", Order: "asc"})
+	if err != nil {
+		t.Fatalf("facet artist by name: %v", err)
+	}
+	if len(byName) != 4 || byName[0].Value != "Adele" || byName[1].Value != "Beyond" {
+		t.Fatalf("unexpected name-sorted artists: %+v", byName)
+	}
+
+	// 分页：limit=1 offset=0 → 只 1 条；CountFacet 返回去重总数 4
+	page, err := repo.ListFacet(ctx, "artist", &FacetFilter{Limit: 1, Offset: 0})
+	if err != nil {
+		t.Fatalf("facet artist page: %v", err)
+	}
+	if len(page) != 1 {
+		t.Fatalf("expected 1 paged artist, got %d", len(page))
+	}
+	total, err := repo.CountFacet(ctx, "artist", "")
+	if err != nil {
+		t.Fatalf("count facet artist: %v", err)
+	}
+	if total != 4 {
+		t.Fatalf("expected 4 distinct artists, got %d", total)
+	}
+
+	// CountFacet 带 keyword
+	total, err = repo.CountFacet(ctx, "artist", "周")
+	if err != nil {
+		t.Fatalf("count facet artist keyword: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected 1 distinct artist matching 周, got %d", total)
+	}
+
+	// 代表封面：本 seed 无封面 → cover_url 为空
+	if page[0].CoverURL != "" {
+		t.Fatalf("expected empty cover_url without cover, got %q", page[0].CoverURL)
+	}
+
+	// 未知维度
+	if _, err := repo.CountFacet(ctx, "bogus", ""); err != ErrNotFound {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
 

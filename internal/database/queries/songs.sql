@@ -178,37 +178,5 @@ FROM songs WHERE cue_source_path = ? AND cue_audio_path != '';
 -- name: DeleteByCueSource :execrows
 DELETE FROM songs WHERE cue_source_path = ?;
 
--- name: ListSongFacetGenre :many
-SELECT genre AS value, COUNT(*) AS count
-FROM songs WHERE genre != ''
-GROUP BY genre ORDER BY count DESC, value ASC;
-
--- name: ListSongFacetArtist :many
-SELECT artist AS value, COUNT(*) AS count
-FROM songs WHERE artist != ''
-GROUP BY artist ORDER BY count DESC, value ASC;
-
--- name: ListSongFacetAlbum :many
-SELECT album AS value, COUNT(*) AS count
-FROM songs WHERE album != ''
-GROUP BY album ORDER BY count DESC, value ASC;
-
--- name: ListSongFacetLanguage :many
-SELECT language AS value, COUNT(*) AS count
-FROM songs WHERE language != ''
-GROUP BY language ORDER BY count DESC, value ASC;
-
--- name: ListSongFacetStyle :many
-SELECT style AS value, COUNT(*) AS count
-FROM songs WHERE style != ''
-GROUP BY style ORDER BY count DESC, value ASC;
-
--- name: ListSongFacetYear :many
-SELECT CAST(year AS INTEGER) AS value, COUNT(*) AS count
-FROM songs WHERE year > 0
-GROUP BY year ORDER BY value DESC;
-
--- name: ListSongFacetDecade :many
-SELECT CAST((year / 10) * 10 AS INTEGER) AS value, COUNT(*) AS count
-FROM songs WHERE year > 0
-GROUP BY value ORDER BY value DESC;
+-- 标签分类聚合（facet）已改为 song_repository.go 内的 squirrel 动态查询，
+-- 以支持可选 keyword / 动态排序 / 分页 / 代表封面。sqlc 固定查询无法表达故此处不再定义。

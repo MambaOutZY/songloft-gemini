@@ -4133,6 +4133,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/settings/library-browse": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取用户自定义的曲库统一浏览页视图显示与顺序。共 11 个视图：all(全部)/artist(歌手)/album(专辑)/genre(流派)/year(年份)/decade(年代)/language(语种)/style(风格)/local(本地)/remote(网络)/radio(电台)。未配置时返回默认（全部可见、默认顺序）。返回始终包含完整 11 项。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "获取曲库浏览视图配置",
+                "responses": {
+                    "200": {
+                        "description": "曲库浏览视图配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.libraryBrowseSetting"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存用户自定义的曲库浏览页视图显示与顺序。每个 view 的 key 必须属于合法的 11 个 key 且不能重复；未出现的 key 会按默认顺序补到末尾（visible=true），保证返回完整 11 项。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "保存曲库浏览视图配置",
+                "parameters": [
+                    {
+                        "description": "曲库浏览视图配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.libraryBrowseSetting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "保存后的配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.libraryBrowseSetting"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误或校验失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "保存配置失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/settings/log-level": {
             "get": {
                 "security": [
@@ -5276,7 +5350,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按指定维度聚合曲库，返回该维度下所有非空取值及各自的歌曲数量，用于「分类浏览」的清单页。\n支持维度：genre(流派)/artist(歌手)/album(专辑)/language(语种)/style(风格)/year(年份)/decade(年代)。\nyear/decade 的 value 为数字字符串（年代如 \"1990\" 表示 1990-1999）。取到某取值后可用 /songs?\u003cfield\u003e=\u003cvalue\u003e 拉取该分类下歌曲。",
+                "description": "按指定维度聚合曲库，返回该维度下非空取值、各自的歌曲数量及一首代表歌曲的封面 URL，用于「分类浏览」的卡片网格。\n支持维度：genre(流派)/artist(歌手)/album(专辑)/language(语种)/style(风格)/year(年份)/decade(年代)。\nyear/decade 的 value 为数字字符串（年代如 \"1990\" 表示 1990-1999）。取到某取值后可用 /songs?\u003cfield\u003e=\u003cvalue\u003e 拉取该分类下歌曲。\n支持 keyword 模糊搜索取值、limit/offset 分页、sort(count|name)/order 排序；返回 total 为该维度去重取值总数。",
                 "produces": [
                     "application/json"
                 ],
@@ -5300,11 +5374,49 @@ const docTemplate = `{
                         "name": "field",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "对取值模糊搜索",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "分页大小，缺省 20，上限 100000",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "分页偏移，缺省 0",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "count",
+                            "name"
+                        ],
+                        "type": "string",
+                        "description": "排序维度，缺省 count",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "排序方向；count 缺省 desc，name 缺省 asc",
+                        "name": "order",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "成功返回聚合结果 {field, facets:[{value,count}]}",
+                        "description": "成功返回聚合结果 {field, facets:[{value,count,cover_url}], total, limit, offset}",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7089,6 +7201,28 @@ const docTemplate = `{
                     "$ref": "#/definitions/jsplugin.JSPlugin"
                 },
                 "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handlers.libraryBrowseSetting": {
+            "type": "object",
+            "properties": {
+                "views": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handlers.libraryBrowseView"
+                    }
+                }
+            }
+        },
+        "handlers.libraryBrowseView": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "visible": {
                     "type": "boolean"
                 }
             }
