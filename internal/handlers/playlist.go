@@ -33,11 +33,12 @@ func NewPlaylistHandler(playlistService *services.PlaylistService, songService *
 
 // ListPlaylists 获取歌单列表
 // @Summary 获取歌单列表
-// @Description 获取歌单列表，支持按类型过滤和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部
+// @Description 获取歌单列表，支持按类型过滤、关键词搜索和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部
 // @Tags 歌单管理
 // @Accept json
 // @Produce json
 // @Param type query string false "歌单类型" Enums(normal, radio)
+// @Param keyword query string false "搜索关键词（模糊匹配歌单名称/描述）"
 // @Param exclude_labels query string false "要排除的标签(逗号分隔), 默认排除 hidden; 传 none 显示全部" default(hidden)
 // @Param limit query int false "每页数量" default(20)
 // @Param offset query int false "偏移量" default(0)
@@ -49,6 +50,7 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 
 	playlistType := r.URL.Query().Get("type")
+	keyword := r.URL.Query().Get("keyword")
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
 
@@ -77,6 +79,7 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 
 	filter := &database.PlaylistFilter{
 		Type:          playlistType,
+		Keyword:       keyword,
 		ExcludeLabels: excludeLabels,
 		Limit:         limit,
 		Offset:        offset,
@@ -90,6 +93,7 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 
 	countFilter := &database.PlaylistFilter{
 		Type:          filter.Type,
+		Keyword:       keyword,
 		ExcludeLabels: excludeLabels,
 	}
 	total, err := h.playlistService.Count(ctx, countFilter)

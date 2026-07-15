@@ -2272,7 +2272,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取歌单列表，支持按类型过滤和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部",
+                "description": "获取歌单列表，支持按类型过滤、关键词搜索和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部",
                 "consumes": [
                     "application/json"
                 ],
@@ -2292,6 +2292,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "歌单类型",
                         "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索关键词（模糊匹配歌单名称/描述）",
+                        "name": "keyword",
                         "in": "query"
                     },
                     {
