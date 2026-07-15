@@ -555,7 +555,7 @@ func (h *SongHandler) BatchDeleteSongs(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Param id path int true "歌曲ID"
-// @Param request body object{title=string,artist=string,album=string,url=string,cover_url=string} true "歌曲信息"
+// @Param request body object{title=string,artist=string,album=string,url=string,cover_url=string,is_live=boolean,is_video=boolean} true "歌曲信息"
 // @Success 200 {object} models.Song "更新成功"
 // @Failure 400 {object} map[string]string "请求数据错误"
 // @Failure 404 {object} map[string]string "歌曲不存在"
@@ -587,6 +587,7 @@ func (h *SongHandler) UpdateSong(w http.ResponseWriter, r *http.Request) {
 		URL      string `json:"url"`
 		CoverURL string `json:"cover_url"`
 		IsLive   *bool  `json:"is_live"`
+		IsVideo  *bool  `json:"is_video"` // 是否含视频画面;仅在显式提供时更新
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -613,6 +614,10 @@ func (h *SongHandler) UpdateSong(w http.ResponseWriter, r *http.Request) {
 	if req.IsLive != nil && existingSong.Type != models.TypeRadio {
 		existingSong.IsLive = *req.IsLive
 	}
+	// is_video 适用于网络歌曲与电台(视频画面/视频电台),仅在显式提供时更新。
+	if req.IsVideo != nil {
+		existingSong.IsVideo = *req.IsVideo
+	}
 
 	// 非本地歌曲更新后必须仍有可用音源：直链 URL 或插件 source_data。
 	if existingSong.Type != models.TypeLocal && existingSong.URL == "" && !existingSong.IsPluginSourced() {
@@ -634,7 +639,7 @@ func (h *SongHandler) UpdateSong(w http.ResponseWriter, r *http.Request) {
 // @Tags 歌曲管理
 // @Accept json
 // @Produce json
-// @Param request body []object{url=string,title=string,artist=string,album=string,cover_url=string,duration=number,plugin_entry_path=string,source_data=string,dedup_key=string,lyric=string,lyric_source=string,lyric_remote_url=string} true "网络歌曲列表"
+// @Param request body []object{url=string,title=string,artist=string,album=string,cover_url=string,duration=number,plugin_entry_path=string,source_data=string,dedup_key=string,lyric=string,lyric_source=string,lyric_remote_url=string,is_video=boolean} true "网络歌曲列表"
 // @Success 201 {object} object{songs=[]models.Song,count=int} "添加成功"
 // @Failure 400 {object} map[string]string "请求数据错误"
 // @Failure 500 {object} map[string]string "添加失败"
@@ -656,6 +661,7 @@ func (h *SongHandler) AddRemoteSongs(w http.ResponseWriter, r *http.Request) {
 		Lyric           string  `json:"lyric"`
 		LyricSource     string  `json:"lyric_source"`
 		LyricRemoteURL  string  `json:"lyric_remote_url"`
+		IsVideo         bool    `json:"is_video"` // 是否含视频画面;网络歌曲不走扫描 ffprobe,由调用方(客户端开关)显式声明
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
@@ -693,6 +699,7 @@ func (h *SongHandler) AddRemoteSongs(w http.ResponseWriter, r *http.Request) {
 			Lyric:           req.Lyric,
 			LyricSource:     req.LyricSource,
 			LyricRemoteURL:  req.LyricRemoteURL,
+			IsVideo:         req.IsVideo,
 		})
 	}
 
@@ -781,7 +788,7 @@ func (h *SongHandler) waitForDownloadIdle() {
 // @Tags 歌曲管理
 // @Accept json
 // @Produce json
-// @Param request body []object{url=string,title=string,cover_url=string} true "电台/广播列表"
+// @Param request body []object{url=string,title=string,cover_url=string,is_video=boolean} true "电台/广播列表"
 // @Success 201 {object} object{songs=[]models.Song,count=int} "添加成功"
 // @Failure 400 {object} map[string]string "请求数据错误"
 // @Failure 500 {object} map[string]string "添加失败"
@@ -795,6 +802,7 @@ func (h *SongHandler) AddRadios(w http.ResponseWriter, r *http.Request) {
 		Title    string `json:"title"`
 		Artist   string `json:"artist"`
 		CoverURL string `json:"cover_url"`
+		IsVideo  bool   `json:"is_video"` // 是否为视频电台(直播画面);由调用方(客户端开关)显式声明
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
@@ -818,6 +826,7 @@ func (h *SongHandler) AddRadios(w http.ResponseWriter, r *http.Request) {
 			Title:    req.Title,
 			Artist:   req.Artist,
 			CoverURL: req.CoverURL,
+			IsVideo:  req.IsVideo,
 		})
 	}
 

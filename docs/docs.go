@@ -5492,6 +5492,9 @@ const docTemplate = `{
                                     "cover_url": {
                                         "type": "string"
                                     },
+                                    "is_video": {
+                                        "type": "boolean"
+                                    },
                                     "title": {
                                         "type": "string"
                                     },
@@ -5679,6 +5682,9 @@ const docTemplate = `{
                                     "duration": {
                                         "type": "number"
                                     },
+                                    "is_video": {
+                                        "type": "boolean"
+                                    },
                                     "lyric": {
                                         "type": "string"
                                     },
@@ -5839,6 +5845,12 @@ const docTemplate = `{
                                 },
                                 "cover_url": {
                                     "type": "string"
+                                },
+                                "is_live": {
+                                    "type": "boolean"
+                                },
+                                "is_video": {
+                                    "type": "boolean"
                                 },
                                 "title": {
                                     "type": "string"

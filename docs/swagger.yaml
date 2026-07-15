@@ -4553,6 +4553,10 @@ paths:
               type: string
             cover_url:
               type: string
+            is_live:
+              type: boolean
+            is_video:
+              type: boolean
             title:
               type: string
             url:
@@ -5229,6 +5233,8 @@ paths:
             properties:
               cover_url:
                 type: string
+              is_video:
+                type: boolean
               title:
                 type: string
               url:
@@ -5349,6 +5355,8 @@ paths:
                 type: string
               duration:
                 type: number
+              is_video:
+                type: boolean
               lyric:
                 type: string
               lyric_remote_url:

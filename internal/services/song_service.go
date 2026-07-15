@@ -899,6 +899,7 @@ type RemoteSongInput struct {
 	Lyric           string // 歌词内容或歌词获取 URL
 	LyricSource     string // 歌词来源类型
 	LyricRemoteURL  string // 歌词远程 URL(直传,优先于 Lyric+LyricSource=url 间接方式)
+	IsVideo         bool   // 是否含视频画面(网络歌曲不走扫描 ffprobe,由客户端开关声明)
 }
 
 // RadioInput 批量添加电台的单条输入
@@ -907,6 +908,7 @@ type RadioInput struct {
 	Title    string
 	Artist   string
 	CoverURL string
+	IsVideo  bool // 是否为视频电台(直播画面)
 }
 
 // AddRemoteSongs 批量添加网络歌曲
@@ -926,6 +928,7 @@ func (s *SongService) AddRemoteSongs(ctx context.Context, inputs []RemoteSongInp
 			PluginEntryPath: input.PluginEntryPath,
 			SourceData:      input.SourceData,
 			DedupKey:        input.DedupKey,
+			IsVideo:         input.IsVideo,
 			AddedAt:         now,
 			UpdatedAt:       now,
 		}
@@ -958,6 +961,7 @@ func (s *SongService) AddRadios(ctx context.Context, inputs []RadioInput) ([]*mo
 			URL:       input.URL,
 			CoverURL:  input.CoverURL,
 			IsLive:    true,
+			IsVideo:   input.IsVideo,
 			AddedAt:   now,
 			UpdatedAt: now,
 		}
