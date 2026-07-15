@@ -4,12 +4,25 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"songloft/internal/database/sqlc"
 	"songloft/internal/models"
 )
+
+// dropFilenameFallbackTitle 拦截 Extract 对无标题标签文件的「用文件名当 title」回退结果。
+// 缓存回填时 filePath 是缓存文件（名为 `{songID}.{plugin_entry_path}_{dedup_key}`），
+// 该文件名绝不是真实歌名；若 title 恰好等于其去扩展名 base，说明是回退产物，返回 ""，
+// 避免把缓存文件名写进 songs.title（songloft-org/songloft#286）。真实 tag 标题不受影响。
+func dropFilenameFallbackTitle(title, filePath string) string {
+	if title == strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath)) {
+		return ""
+	}
+	return title
+}
 
 // NeedsMetadata 判断歌曲是否缺少技术元数据（与 ListSongsNeedingMetadata SQL 条件一致）。
 func NeedsMetadata(song *models.Song) bool {
@@ -335,6 +348,13 @@ func (d *MetadataRefresher) RefreshSongFromFile(ctx context.Context, song *model
 		slog.Warn("cache backfill: extract failed", "songID", song.ID, "error", err)
 		return
 	}
+
+	// 缓存文件名是 `{songID}.{plugin_entry_path}_{dedup_key}`，不是真实歌名。
+	// 远程音频流通常无内嵌标题标签，Extract 会回退用文件名当 title——若不拦下，
+	// 会经 updateMeta/updateTags 把缓存文件名写进 songs.title（songloft-org/songloft#286）。
+	// 此处识别出「title 恰好等于缓存文件名 base」的回退结果并清空，只保留技术元数据
+	// 与真实 tag 的 artist/album/cover 回填；本地扫描与 URL 探测路径不受影响。
+	metadata.Title = dropFilenameFallbackTitle(metadata.Title, filePath)
 
 	coverPath := ""
 	if metadata.HasCover && song.CoverPath == "" && song.CoverURL == "" {

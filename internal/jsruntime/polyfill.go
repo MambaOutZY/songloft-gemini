@@ -201,15 +201,24 @@ globalThis.__isThenable = function() {
 
 // __setupAwaitProbe 给 globalThis.__execjs_pending 挂 settle 钩子，结果回填到
 // __execjs_done / __execjs_value / __execjs_error。
-globalThis.__setupAwaitProbe = function() {
+//
+// gen 是本次调用的代号：每次 ExecuteJS 慢路径都传入一个单调递增的唯一值。
+// .then 闭包捕获这个 gen，只有当 globalThis.__execjs_gen 仍等于它时才写全局结果。
+// 这样一来，被取消/超时的上一次请求遗留在某个 Promise 上的 .then（Go 侧 cleanup
+// 只清全局变量、无法解绑已注册的 .then），即使其 Promise 在下一次请求的事件循环里
+// 才 settle，也会因 gen 已过期而作废，不会把结果串写进当前请求——根治歌曲串号
+// （songloft-org/songloft#286）。
+globalThis.__setupAwaitProbe = function(gen) {
+    globalThis.__execjs_gen = gen;
     globalThis.__execjs_done = false;
     globalThis.__execjs_value = undefined;
     globalThis.__execjs_error = undefined;
-    Promise.resolve(globalThis.__execjs_pending).then(
-        function(v){ globalThis.__execjs_value = v; globalThis.__execjs_done = true; },
-        function(e){ globalThis.__execjs_error = (e && e.stack) ? String(e.stack) : String(e); globalThis.__execjs_done = true; }
-    );
+    var pending = globalThis.__execjs_pending;
     globalThis.__execjs_pending = undefined;
+    Promise.resolve(pending).then(
+        function(v){ if (globalThis.__execjs_gen === gen) { globalThis.__execjs_value = v; globalThis.__execjs_done = true; } },
+        function(e){ if (globalThis.__execjs_gen === gen) { globalThis.__execjs_error = (e && e.stack) ? String(e.stack) : String(e); globalThis.__execjs_done = true; } }
+    );
 };
 
 // __isAwaitDone 返回 done flag。
@@ -230,7 +239,10 @@ globalThis.__readAwaitValue = function() {
 };
 
 // __cleanupAwaitProbe 清理 await probe 写入的全局变量。
+// 把 __execjs_gen 也置 undefined，使任何遗留在存活 Promise 上的 .then 立即失配，
+// 覆盖「已 cleanup 但下一次 setup 尚未执行」的窗口期。
 globalThis.__cleanupAwaitProbe = function() {
+    globalThis.__execjs_gen = undefined;
     globalThis.__execjs_pending = undefined;
     globalThis.__execjs_done = undefined;
     globalThis.__execjs_value = undefined;

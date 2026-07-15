@@ -640,13 +640,20 @@ func valueIsThenable(vm *quickjs.VM, val quickjs.Value) bool {
 	return false
 }
 
+// awaitProbeGen 为每次 setupAwaitProbe 分配单调递增的唯一代号，供 JS 侧 .then
+// 闭包判活：被取消/超时请求遗留的 .then 因 gen 过期而作废，不会串写下一次请求的
+// 结果（songloft-org/songloft#286）。
+var awaitProbeGen atomic.Uint64
+
 // setupAwaitProbe 把 val 挂到全局，附加 .then 钩子，把结果回填到
 // __execjs_done / __execjs_value / __execjs_error。
+// gen 传给 JS 侧作为本次调用代号，遗留 .then 只在 gen 仍匹配时才写全局结果。
 func setupAwaitProbe(vm *quickjs.VM, val quickjs.Value) error {
 	if err := bindGlobalValue(vm, "__execjs_pending", val); err != nil {
 		return err
 	}
-	r, err := vm.CallValue("__setupAwaitProbe")
+	gen := strconv.FormatUint(awaitProbeGen.Add(1), 10)
+	r, err := vm.CallValue("__setupAwaitProbe", gen)
 	if err != nil {
 		return err
 	}

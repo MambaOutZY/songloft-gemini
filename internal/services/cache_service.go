@@ -63,6 +63,10 @@ type CacheService struct {
 	orchestrator    CacheSongFetcher // 下载编排器(按 song.ID),由 app.go 注入
 	ffmpegPath      string           // ffmpeg 可执行文件路径,由 app.go 注入
 	transcodeSem    chan struct{}    // 转码串行信号量（默认 size=1），防止并发 ffmpeg 争抢 CPU
+	// asyncCacheInflight 按 song.ID 去重流式代理触发的后台全量下载（AsyncDownloadAndCache）。
+	// 流式播放路径不走 CacheService.Get 的 inflight，重试/并发 206 会各自触发一次全量下载，
+	// 在慢网下互相抢带宽全败——这里去重，同一首同时只跑一个后台下载（songloft-org/songloft#286）。
+	asyncCacheInflight sync.Map // songID(int64) -> struct{}
 	// 回调：由 app.go 注入,连接 SongRepository
 	updateCachePath    func(ctx context.Context, songID int64, cachePath string) error
 	clearCachePath     func(ctx context.Context, songID int64) error

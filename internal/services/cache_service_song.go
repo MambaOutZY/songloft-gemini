@@ -377,7 +377,19 @@ func (c *CacheService) FinalizeCache(ctx context.Context, song *models.Song, tmp
 
 // AsyncDownloadAndCache 在后台全量下载远程歌曲并缓存。
 // 用于 206 场景：客户端已在接收代理流，此方法独立发起全量 GET。
+//
+// 按 song.ID 去重：客户端重试或并发 206 分片会多次进入此路径，若不去重会在慢网下
+// 发起多个互相抢带宽的全量下载而全部失败。同一首歌同时只保留一个后台下载在跑
+// （songloft-org/songloft#286）。
 func (c *CacheService) AsyncDownloadAndCache(ctx context.Context, song *models.Song, url string, headers map[string]string) {
+	if song == nil {
+		return
+	}
+	if _, loaded := c.asyncCacheInflight.LoadOrStore(song.ID, struct{}{}); loaded {
+		return
+	}
+	defer c.asyncCacheInflight.Delete(song.ID)
+
 	tmpPath, ext, err := c.downloadExternalToTemp(ctx, url, headers)
 	if err != nil {
 		slog.Warn("async cache download failed", "songId", song.ID, "error", err)
