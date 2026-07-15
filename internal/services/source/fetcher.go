@@ -331,6 +331,14 @@ func (f *SourceFetcher) downloadToTemp(ctx context.Context, url string, headers 
 		return "", 0, fmt.Errorf("close temp: %w", closeErr)
 	}
 
+	// Content-Length 截断校验:服务端声明了长度(非 chunked / 非 gzip 透明解压,
+	// 此时 resp.ContentLength >= 0)却写入不足,说明被慢代理干净地切断了——
+	// io.Copy 看到的是正常 EOF 不会报错,只能在这里显式判死,让上层同源重试兜住。(issue #265)
+	if resp.ContentLength >= 0 && written < resp.ContentLength {
+		_ = os.Remove(tmpPath)
+		return "", 0, fmt.Errorf("truncated: got %d of %d bytes", written, resp.ContentLength)
+	}
+
 	return tmpPath, written, nil
 }
 

@@ -46,12 +46,24 @@ type ReassignTracker interface {
 	Track(parent context.Context, sk ReassignSessionKey, songID int64, cat string) (context.Context, func())
 }
 
+// SourceFetcherAPI 抽象 SourceFetcher,供 orchestrator 依赖。
+// *SourceFetcher 天然满足;抽成接口便于单测注入受控的假 Fetcher。
+type SourceFetcherAPI interface {
+	Fetch(ctx context.Context, entryPath, sourceData string, song *SongInfo, allowPluginFallback bool) (*FetchResult, error)
+	ResolveURL(ctx context.Context, entryPath, sourceData string, song *SongInfo, allowPluginFallback bool) (*ResolvedURL, error)
+}
+
 // OrchestratorOpts 编排器配置。
 type OrchestratorOpts struct {
-	Fetcher     *SourceFetcher
+	Fetcher     SourceFetcherAPI
 	Resolver    *SourceResolver
 	SongUpdater SongUpdater
 	MaxAttempts int // ModeFallback 时总尝试次数上限(含主源);默认 4
+	// SameSourceRetries 主源瞬时故障(慢代理截断等)的额外重试次数,不含首次;默认 2。
+	// 仅对 IsRetryable 的错误生效,ModeStrict / ModeFallback 都适用。(issue #265)
+	SameSourceRetries int
+	// SameSourceRetryBackoff 同源重试之间的退避间隔;默认 1.5s。
+	SameSourceRetryBackoff time.Duration
 	// FallbackInterval 进入 L2 fallback 时,候选源之间的最小间隔(防风控)
 	FallbackInterval time.Duration // 默认 3s
 	// FallbackJitter 在 FallbackInterval 上随机加一个 [0, jitter) 抖动
@@ -74,6 +86,12 @@ type SourceOrchestrator struct {
 func NewSourceOrchestrator(opts OrchestratorOpts) *SourceOrchestrator {
 	if opts.MaxAttempts <= 0 {
 		opts.MaxAttempts = 4
+	}
+	if opts.SameSourceRetries <= 0 {
+		opts.SameSourceRetries = 2
+	}
+	if opts.SameSourceRetryBackoff <= 0 {
+		opts.SameSourceRetryBackoff = 1500 * time.Millisecond
 	}
 	if opts.FallbackInterval <= 0 {
 		opts.FallbackInterval = 3 * time.Second
@@ -109,8 +127,9 @@ func (o *SourceOrchestrator) Fetch(ctx context.Context, song *SongInfo, mode Fet
 		return nil, errors.New("song is nil")
 	}
 
-	// Step 1: 主源(允许 L1 插件内自搜)
-	res, err := o.opts.Fetcher.Fetch(ctx, song.PluginEntryPath, song.SourceData, song, true)
+	// Step 1: 主源(允许 L1 插件内自搜),对瞬时故障(慢代理截断等)做同源重试。
+	// 每次重试都会重新调 music/url 拿新鲜直链,天然规避直链过期。(issue #265)
+	res, err := o.fetchMainWithRetry(ctx, song)
 	if err == nil {
 		o.persistIfChanged(ctx, song, res)
 		return res, nil
@@ -158,6 +177,42 @@ func (o *SourceOrchestrator) Fetch(ctx context.Context, song *SongInfo, mode Fet
 	}
 
 	return nil, &AllSourcesFailedError{Tried: tried, LastErr: lastErr}
+}
+
+// fetchMainWithRetry 对主源(允许 L1 自搜)拉取,失败且 IsRetryable 时同源重试。
+// 最多尝试 1 + SameSourceRetries 次,每次间隔 SameSourceRetryBackoff,尊重 ctx 取消。
+// 返回最后一次的结果/错误——不可重试错误立即返回,交给上层判断 fallback。
+func (o *SourceOrchestrator) fetchMainWithRetry(ctx context.Context, song *SongInfo) (*FetchResult, error) {
+	var lastErr error
+	for attempt := 0; attempt <= o.opts.SameSourceRetries; attempt++ {
+		if attempt > 0 {
+			if !o.sleepRetry(ctx) {
+				return nil, lastErr // ctx 已取消,别再拉一次
+			}
+			slog.Info("source: retrying main source",
+				"songId", song.ID, "plugin", song.PluginEntryPath,
+				"attempt", attempt+1, "max", o.opts.SameSourceRetries+1, "lastError", lastErr.Error())
+		}
+		res, err := o.opts.Fetcher.Fetch(ctx, song.PluginEntryPath, song.SourceData, song, true)
+		if err == nil {
+			return res, nil
+		}
+		lastErr = err
+		if !IsRetryable(err) {
+			break
+		}
+	}
+	return nil, lastErr
+}
+
+// sleepRetry 睡 SameSourceRetryBackoff;ctx 取消时立即返回 false。
+func (o *SourceOrchestrator) sleepRetry(ctx context.Context) bool {
+	select {
+	case <-time.After(o.opts.SameSourceRetryBackoff):
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // ResolveURL 解析插件歌曲的可下载音频 URL（不下载）。

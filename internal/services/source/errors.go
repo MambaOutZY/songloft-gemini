@@ -86,3 +86,31 @@ func IsFallbackable(err error) bool {
 	var pe *PluginInvocationError
 	return errors.As(err, &ia) || errors.As(err, &ne) || errors.As(err, &pe)
 }
+
+// IsRetryable 判断错误是否值得对**同一个音源**立即重试(区别于 IsFallbackable 的切源)。
+// 只针对"同一直链再拉一次大概率能成"的瞬时故障——典型是慢/抖动代理把下载切断。(issue #265)
+//
+//   - *NetworkError → 可重试(连接重置 / 读流中断 / 超时 / Content-Length 短读)。
+//   - *InvalidAudioError 且 reason 是截断症状(duration_mismatch_low / too_short / probe_failed)→ 可重试。
+//   - *InvalidAudioError 且 reason 是 duration_mismatch_high / bitrate_too_low → 不重试
+//     (源错位或码率不足,同源重试无益;但仍 IsFallbackable,交给 L2 切源)。
+//   - *PluginInvocationError → 不重试(插件级问题,同样交给 L2)。
+func IsRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var ne *NetworkError
+	if errors.As(err, &ne) {
+		return true
+	}
+	var ia *InvalidAudioError
+	if errors.As(err, &ia) {
+		switch ia.Reason {
+		case ReasonDurationMismatchLow, ReasonTooShort, ReasonProbeFailed:
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
