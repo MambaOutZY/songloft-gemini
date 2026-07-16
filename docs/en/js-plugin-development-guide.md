@@ -729,6 +729,49 @@ If a plugin has multiple JS files, just destructure from the global at the top o
 const { apiGet, apiPost } = SongloftPlugin;
 ```
 
+### Client SDK — Controlling the Host Player (webview pages only)
+
+Plugin pages opened inside the Songloft client can call host client capabilities via `window.SongloftPlugin.host` / `.player` — most commonly to rewrite the host's "now playing queue".
+
+> - Works in: the **native client** (Android/iOS/macOS/Windows/Linux) webview plugin pages, and **Web embedded tab plugin pages** (host iframe, via a postMessage bridge).
+> - Does NOT work in: **Web full-screen plugin pages** (opened standalone in a new browser tab, no host parent window) — there `host.isAvailable()` returns `false` and calls throw, so always feature-detect first.
+> - Capabilities are injected by the host client and track its version. Set an appropriate `minHostVersion` in `plugin.json` and use `host.getInfo().capabilities` for capability negotiation.
+
+```javascript
+const { host, player } = SongloftPlugin;
+
+if (host && host.isAvailable()) {
+  // Capability negotiation
+  const info = await host.getInfo();   // { version, platform, capabilities: ['player'] }
+
+  // Replace the now-playing queue with song ids and start from index 0
+  // (ids typically come from your own search results, persisted first via the
+  // server-side songs.create to obtain their ids)
+  await player.setQueue([101, 102, 103], { startIndex: 0 });
+
+  // Append to the end of the queue (without interrupting current playback)
+  await player.addToQueue([104]);
+
+  // Read state / subscribe to state changes
+  const state = await player.getState();     // { queue, current_index, is_playing, ... }
+  const off = player.onStateChange(s => console.log('now at index', s.current_index));
+}
+```
+
+`player` namespace methods: `getState` / `setQueue` / `addToQueue` / `insertToQueue` / `removeFromQueue` / `reorderQueue` / `clearQueue` / `play(id?)` / `pause` / `togglePlay` / `next` / `prev` / `seek(seconds)` / `setVolume(0-100)` / `setPlayMode('order'|'loop'|'single'|'random'|'singlePlay')` / `playPlaylistById(id)` / `onStateChange(cb)`.
+
+When developing with TypeScript / a bundler (e.g. the Vue template), install [`@songloft/client-sdk`](https://github.com/songloft-org/plugin-toolchain/tree/main/packages/client-sdk) for full types and ergonomic wrappers:
+
+```ts
+import { player, host, isClient } from '@songloft/client-sdk';
+
+if (isClient()) {
+  await player.setQueue([101, 102], { startIndex: 0 });
+}
+```
+
+Build-free vanilla static pages need no install — just use the injected `window.SongloftPlugin.player` directly (only losing type hints).
+
 ### Theme Adaptation
 
 The main program's `common.css` defines `--md-*` CSS variables under `:root` (light values), and overrides them with dark values under `html[data-theme="dark"]`. Plugin pages that use these variables adapt to the theme automatically:

@@ -34,8 +34,15 @@
     }
 
     window.addEventListener('message', function(e) {
-        if (e.data && e.data.type === 'songloft-theme' && (e.data.theme === 'light' || e.data.theme === 'dark')) {
+        if (!e.data || !e.data.type) return;
+        if (e.data.type === 'songloft-theme' && (e.data.theme === 'light' || e.data.theme === 'dark')) {
             applyTheme(e.data.theme);
+        } else if (e.data.type === 'songloft-player-state') {
+            dispatchPlayerState(e.data.state);
+        } else if (e.data.type === 'songloft-host-reply') {
+            // 安全：host 回执只接受来自父窗口的消息（native 顶层 parent===self 亦成立）。
+            if (e.source && e.source !== window.parent) return;
+            resolveHostReply(e.data);
         }
     });
 
@@ -213,6 +220,132 @@
         initAccessibility();
     }
 
+    // ── 宿主客户端桥接（仅 Flutter 客户端 webview 有效）──
+    //
+    // 让 webview 打开的插件页调用 Flutter 宿主能力（改写正在播放队列、播放控制、
+    // 状态订阅等）。请求走 flutter_inappwebview 的 callHandler（原生 Promise 返回值），
+    // 事件（播放状态变更）复用上面的 postMessage 通道。
+    // Web/iframe 或无原生桥接时优雅降级：isHostAvailable() 返回 false，调用会 reject。
+
+    var HOST_HANDLER = 'songloftHost';
+    var HOST_CALL_TIMEOUT_MS = 10000;
+
+    // native（Android/iOS/桌面）webview：flutter_inappwebview 提供请求/响应式 callHandler。
+    function isNativeHost() {
+        return !!(window.flutter_inappwebview &&
+            typeof window.flutter_inappwebview.callHandler === 'function');
+    }
+
+    // Web：插件页运行在宿主 iframe 内，走 postMessage 与父窗口通信。
+    // 独立浏览器标签（parent === self）没有宿主，返回 false。
+    function isIframeHost() {
+        try {
+            return !!window.parent && window.parent !== window;
+        } catch (e) {
+            return true; // 跨域访问 parent 抛错 → 视为嵌入
+        }
+    }
+
+    function isHostAvailable() {
+        return isNativeHost() || isIframeHost();
+    }
+
+    // ── Web/iframe postMessage 传输：请求/响应关联 ──
+    var hostPending = {};
+    var hostCallSeq = 0;
+
+    function invokeViaPostMessage(ns, method, params) {
+        return new Promise(function(resolve, reject) {
+            var id = 'c' + (++hostCallSeq) + '_' + Date.now();
+            var timer = setTimeout(function() {
+                delete hostPending[id];
+                reject(new Error('songloft host call timeout: ' + ns + '.' + method));
+            }, HOST_CALL_TIMEOUT_MS);
+            hostPending[id] = { resolve: resolve, reject: reject, timer: timer };
+            window.parent.postMessage(
+                { type: 'songloft-host-call', id: id, ns: ns, method: method, params: params || null },
+                '*'
+            );
+        });
+    }
+
+    function resolveHostReply(msg) {
+        var p = hostPending[msg.id];
+        if (!p) return;
+        clearTimeout(p.timer);
+        delete hostPending[msg.id];
+        if (msg.ok) p.resolve(msg.data);
+        else p.reject(new Error(msg.error || 'songloft host call failed'));
+    }
+
+    /**
+     * 调用宿主能力。约定返回 { ok, data } 或 { ok:false, error }。
+     * native 走 callHandler，Web/iframe 走 postMessage 关联。
+     * @returns {Promise<any>}
+     */
+    function invokeHost(ns, method, params) {
+        if (isNativeHost()) {
+            return window.flutter_inappwebview
+                .callHandler(HOST_HANDLER, { ns: ns, method: method, params: params || null })
+                .then(function(res) {
+                    if (res && res.ok) return res.data;
+                    throw new Error((res && res.error) || 'songloft host call failed');
+                });
+        }
+        if (isIframeHost()) {
+            return invokeViaPostMessage(ns, method, params);
+        }
+        return Promise.reject(new Error('songloft host bridge unavailable (not running in a Songloft client webview)'));
+    }
+
+    // 播放状态订阅
+    var playerStateListeners = [];
+
+    function dispatchPlayerState(state) {
+        for (var i = 0; i < playerStateListeners.length; i++) {
+            try { playerStateListeners[i](state); } catch (e) { /* ignore */ }
+        }
+        document.dispatchEvent(new CustomEvent('songloft-player-state-change', { detail: state }));
+    }
+
+    var host = {
+        isAvailable: isHostAvailable,
+        getInfo: function() { return invokeHost('host', 'getInfo'); }
+    };
+
+    var player = {
+        getState: function() { return invokeHost('player', 'getState'); },
+        setQueue: function(ids, options) {
+            options = options || {};
+            return invokeHost('player', 'setQueue', {
+                ids: ids,
+                startIndex: options.startIndex,
+                sourcePlaylistId: options.sourcePlaylistId
+            });
+        },
+        addToQueue: function(ids) { return invokeHost('player', 'addToQueue', { ids: ids }); },
+        insertToQueue: function(index, id) { return invokeHost('player', 'insertToQueue', { index: index, id: id }); },
+        removeFromQueue: function(index) { return invokeHost('player', 'removeFromQueue', { index: index }); },
+        reorderQueue: function(oldIndex, newIndex) { return invokeHost('player', 'reorderQueue', { oldIndex: oldIndex, newIndex: newIndex }); },
+        clearQueue: function() { return invokeHost('player', 'clearQueue'); },
+        play: function(id) { return invokeHost('player', 'play', { id: id }); },
+        pause: function() { return invokeHost('player', 'pause'); },
+        togglePlay: function() { return invokeHost('player', 'togglePlay'); },
+        next: function() { return invokeHost('player', 'next'); },
+        prev: function() { return invokeHost('player', 'prev'); },
+        seek: function(seconds) { return invokeHost('player', 'seek', { seconds: seconds }); },
+        setVolume: function(volume) { return invokeHost('player', 'setVolume', { volume: volume }); },
+        setPlayMode: function(mode) { return invokeHost('player', 'setPlayMode', { mode: mode }); },
+        playPlaylistById: function(playlistId) { return invokeHost('player', 'playPlaylistById', { playlistId: playlistId }); },
+        onStateChange: function(handler) {
+            playerStateListeners.push(handler);
+            return function() {
+                var idx = playerStateListeners.indexOf(handler);
+                if (idx >= 0) playerStateListeners.splice(idx, 1);
+            };
+        }
+    };
+
     window.SongloftPlugin = {
         getAuthToken: getAuthToken,
         apiGet: apiGet,
@@ -223,6 +356,8 @@
         onThemeChange: onThemeChange,
         announce: announce,
         hideDecorationIcons: hideDecorationIcons,
-        enhanceClickableElements: enhanceClickableElements
+        enhanceClickableElements: enhanceClickableElements,
+        host: host,
+        player: player
     };
 })();

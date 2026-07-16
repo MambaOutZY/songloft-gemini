@@ -729,6 +729,48 @@ onThemeChange(theme => console.log('主题切换到:', theme));
 const { apiGet, apiPost } = SongloftPlugin;
 ```
 
+### 客户端 SDK —— 调用宿主播放器（webview 页面专用）
+
+在 Songloft 客户端中打开的插件页面，可通过 `window.SongloftPlugin.host` / `.player` 调用宿主客户端能力——最常见的是改写宿主的「正在播放队列」。
+
+> - 生效范围：**native 客户端**（Android/iOS/macOS/Windows/Linux）的 webview 插件页；**Web 端 Tab 内嵌插件页**（宿主 iframe，走 postMessage 桥接）。
+> - 不生效：**Web 端全屏插件页**（在新浏览器标签独立打开，无宿主父窗口）——此时 `host.isAvailable()` 返回 `false`，调用会抛错，务必先 feature-detect。
+> - 能力由宿主客户端注入，跟随客户端版本。请在 `plugin.json` 设置合适的 `minHostVersion`，并用 `host.getInfo().capabilities` 做能力协商。
+
+```javascript
+const { host, player } = SongloftPlugin;
+
+if (host && host.isAvailable()) {
+  // 能力协商
+  const info = await host.getInfo();   // { version, platform, capabilities: ['player'] }
+
+  // 用歌曲 id 替换正在播放队列并从第 0 首开始播（id 通常来自你自己的搜索结果，
+  // 先经服务端 songs.create 持久化拿到 id）
+  await player.setQueue([101, 102, 103], { startIndex: 0 });
+
+  // 追加到队列末尾（不打断当前播放）
+  await player.addToQueue([104]);
+
+  // 读取状态 / 订阅状态变更
+  const state = await player.getState();     // { queue, current_index, is_playing, ... }
+  const off = player.onStateChange(s => console.log('当前第', s.current_index, '首'));
+}
+```
+
+`player` 命名空间方法：`getState` / `setQueue` / `addToQueue` / `insertToQueue` / `removeFromQueue` / `reorderQueue` / `clearQueue` / `play(id?)` / `pause` / `togglePlay` / `next` / `prev` / `seek(seconds)` / `setVolume(0-100)` / `setPlayMode('order'|'loop'|'single'|'random'|'singlePlay')` / `playPlaylistById(id)` / `onStateChange(cb)`。
+
+用 TypeScript / 构建工具（如 Vue 模板）开发时，安装 [`@songloft/client-sdk`](https://github.com/songloft-org/plugin-toolchain/tree/main/packages/client-sdk) 获得完整类型与便捷封装：
+
+```ts
+import { player, host, isClient } from '@songloft/client-sdk';
+
+if (isClient()) {
+  await player.setQueue([101, 102], { startIndex: 0 });
+}
+```
+
+免构建的 vanilla 静态页面无需安装，直接用注入的 `window.SongloftPlugin.player` 即可（仅少了类型提示）。
+
 ### 主题适配
 
 主程序的 `common.css` 在 `:root` 下定义了 `--md-*` CSS 变量（亮色），并在 `html[data-theme="dark"]` 下覆盖为暗色值。插件页面使用这些变量即可自动适配主题：
