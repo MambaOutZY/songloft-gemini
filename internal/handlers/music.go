@@ -1301,7 +1301,9 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 		http.Error(w, "resource fetch failed", http.StatusInternalServerError)
 		return
 	}
-	upstreamReq.Header.Set("User-Agent", streamUserAgent)
+	// 直连电台流用媒体播放器风格 UA，绝不用浏览器 UA：streamtheworld 等防盗链电台
+	// 检测到浏览器 UA 会只回约 32KB 预览就断流（约 3 秒，songloft#275）。见 radioStreamUserAgent 注释。
+	upstreamReq.Header.Set("User-Agent", radioStreamUserAgent)
 	upstreamReq.Header.Set("Accept", streamAccept)
 	// Icy-MetaData 透传:仅在客户端显式请求时才向上游要 ICY 元数据。
 	// 浏览器 <audio> 既不发此头也不解析交织在音频里的元数据块;若无条件强制 Icy-MetaData:1,

@@ -30,9 +30,19 @@ const (
 	// hlsContentType m3u8 标准 MIME。
 	hlsContentType = "application/vnd.apple.mpegurl"
 
+	// streamUserAgent 浏览器风格 UA，仅用于 HLS 反代（hls.go）：反代是替浏览器拉 m3u8/切片
+	// 解决 CORS，模拟浏览器请求头对少数按 UA 校验的 HLS 源更稳。
 	streamUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 Songloft/1.0"
-	streamAccept    = "*/*"
-	hlsAccept       = "application/vnd.apple.mpegurl, application/x-mpegURL, application/x-mpegurl, */*"
+
+	// radioStreamUserAgent 直连电台/Shoutcast 流（serveRadio）专用的媒体播放器风格 UA。
+	// 绝不能用浏览器 UA：streamtheworld 等大量 Shoutcast/CDN 电台带防盗链，检测到浏览器 UA
+	// 会只回一段约 32KB 的预览音频就断流（约 3 秒），迫使网页改用其官方播放器嵌入。
+	// 这会让所有经本机代理播放的客户端（web/桌面/小爱音箱）都在约 3 秒后断开（songloft#275）。
+	// Songloft/1.0 是 2.10.0 之前一直在用、经真实电台验证可长播的值。
+	radioStreamUserAgent = "Songloft/1.0"
+
+	streamAccept = "*/*"
+	hlsAccept    = "application/vnd.apple.mpegurl, application/x-mpegURL, application/x-mpegurl, */*"
 )
 
 var (

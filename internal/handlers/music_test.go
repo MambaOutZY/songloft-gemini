@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"songloft/internal/database"
@@ -627,6 +628,40 @@ func TestServeRadioNormalizesAACPContentType(t *testing.T) {
 
 	if ct := rr.Header().Get("Content-Type"); ct != "audio/aac" {
 		t.Errorf("Content-Type=%q,期望归一化为 audio/aac", ct)
+	}
+}
+
+// TestServeRadioUsesNonBrowserUserAgent 验证 serveRadio 向上游发的 User-Agent 不是浏览器风格(songloft#275)。
+// streamtheworld 等防盗链电台检测到浏览器 UA 会只回约 32KB 预览就断流(约 3 秒),
+// 导致所有经本机代理播放的客户端(web/桌面/小爱音箱)约 3 秒后断开。
+func TestServeRadioUsesNonBrowserUserAgent(t *testing.T) {
+	repo := newTestSongRepo(t)
+	songService := services.NewSongService(repo, nil, nil, nil, nil, nil)
+	handler := NewSongHandler(songService, nil, nil, nil, nil, nil)
+
+	var gotUA string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("mp3-bytes"))
+	}))
+	defer upstream.Close()
+
+	id := seedSong(t, repo, &models.Song{Type: models.TypeRadio, Title: "电台", URL: upstream.URL + "/live.mp3"})
+	song, err := songService.GetByID(context.Background(), id)
+	if err != nil {
+		t.Fatalf("get song: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/songs/"+strconv.FormatInt(id, 10)+"/play", nil)
+	rr := httptest.NewRecorder()
+	handler.serveRadio(rr, req, song)
+
+	if gotUA == "" {
+		t.Fatal("上游未收到 User-Agent")
+	}
+	if strings.Contains(gotUA, "Mozilla") || strings.Contains(gotUA, "Chrome") || strings.Contains(gotUA, "Safari") {
+		t.Errorf("serveRadio 向上游发了浏览器风格 UA=%q,会触发防盗链电台断流", gotUA)
 	}
 }
 
