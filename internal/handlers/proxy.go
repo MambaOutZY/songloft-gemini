@@ -245,7 +245,13 @@ func ServeRemoteResourceWithCache(
 	}
 	httputil.ApplyBasicAuthFromURL(upstreamReq)
 
-	client := httputil.NewClient(120 * time.Second)
+	// 流式播放代理不能用「整请求硬超时」的 client：客户端（尤其小爱音箱等硬件播放器）
+	// 是按播放进度渐进地读代理流，慢读时上游连接会被 120s 整请求超时提前掐断，只送到
+	// 约 2~3 分钟音频，音箱缓冲耗尽后从头重拉同一首、随后被本地切歌定时器提前切下一首
+	// （songloft-org/songloft-plugin-miot#55）。改用 streaming client：无整请求超时，
+	// 仅用 ResponseHeaderTimeout 防坏源永久转圈；客户端断开由 r.Context() 取消上游请求。
+	// 与 serveRadio 的处理保持一致。
+	client := httputil.NewStreamingClient()
 
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
