@@ -51,25 +51,21 @@ func TestActivate_CancelsOtherSongsInSameSession(t *testing.T) {
 	r := New()
 	sk := SessionKey{ClientID: "c1"}
 
-	// song 100 的 play、prefetch、transcode、reassign
+	// song 100 的 play、transcode、reassign
 	ctx100Play, _ := r.Track(context.Background(), sk, 100, CatPlay)
-	ctx100Prefetch, _ := r.Track(context.Background(), sk, 100, CatPrefetch)
 	ctx100Tc, _ := r.Track(context.Background(), sk, 100, CatTranscode)
 	ctx100Reassign, _ := r.Track(context.Background(), sk, 100, CatReassign)
 
 	// song 200 的 play
 	ctx200Play, _ := r.Track(context.Background(), sk, 200, CatPlay)
 
-	// 切到 song 200 → 同会话所有 songID != 200 的 entries 都 cancel；
-	// 同 200 的 prefetch 也会 cancel；200 的 play 不动。
+	// 切到 song 200 → 同会话所有 songID != 200 的 play/transcode/reassign 都 cancel；
+	// 200 的 play 不动。（prefetch 的保活行为见 TestActivate_KeepsPrefetchForOtherSongs）
 	r.Activate(sk, 200)
 
 	// 等到 cancel 真正落到 ctx
 	if !waitCanceled(ctx100Play) {
 		t.Errorf("song 100 play 应被 cancel")
-	}
-	if !waitCanceled(ctx100Prefetch) {
-		t.Errorf("song 100 prefetch 应被 cancel")
 	}
 	if !waitCanceled(ctx100Tc) {
 		t.Errorf("song 100 transcode 应被 cancel")
@@ -79,6 +75,32 @@ func TestActivate_CancelsOtherSongsInSameSession(t *testing.T) {
 	}
 	if ctx200Play.Err() != nil {
 		t.Errorf("song 200 play 不应被 cancel，err=%v", ctx200Play.Err())
+	}
+}
+
+// TestActivate_KeepsPrefetchForOtherSongs 锁定 songloft-org/songloft#300 的修复：
+// prefetch 是为「下一首」预热的，正在播放 song N（Activate(N)）时插件已为 N+1 发起 prefetch。
+// Activate 绝不能取消非当前歌的 prefetch，否则每次切歌都杀掉刚发起的下一首预热转码，
+// 真正播放 N+1 时只能实时转码，prefetch 形同虚设。
+func TestActivate_KeepsPrefetchForOtherSongs(t *testing.T) {
+	r := New()
+	sk := SessionKey{ClientID: "c1"}
+
+	// 正在播放 song 100；插件已为下一首 song 101 发起 prefetch（转码）。
+	ctx100Play, _ := r.Track(context.Background(), sk, 100, CatPlay)
+	ctx101Prefetch, _ := r.Track(context.Background(), sk, 101, CatPrefetch)
+
+	// 切到 song 100（真实播放触发 Activate(100)）。
+	r.Activate(sk, 100)
+
+	if ctx100Play.Err() != nil {
+		t.Errorf("当前歌 song 100 play 不应被 cancel，err=%v", ctx100Play.Err())
+	}
+	if ctx101Prefetch.Err() != nil {
+		t.Errorf("下一首 song 101 的 prefetch 不应被 cancel（#300），err=%v", ctx101Prefetch.Err())
+	}
+	if r.Size(sk) != 2 {
+		t.Errorf("play 与 prefetch 都应保留，桶大小应为 2，got %d", r.Size(sk))
 	}
 }
 
@@ -110,16 +132,16 @@ func TestActivate_DoesNotAffectOtherSessions(t *testing.T) {
 	skA := SessionKey{ClientID: "client-A"}
 	skB := SessionKey{ClientID: "client-B"}
 
-	// Client A 在 song 100 跑 prefetch
-	ctxAPrefetch, _ := r.Track(context.Background(), skA, 100, CatPrefetch)
+	// Client A 在 song 100 跑 transcode
+	ctxATc, _ := r.Track(context.Background(), skA, 100, CatTranscode)
 	// Client B 在 song 200 跑 transcode
 	ctxBTc, _ := r.Track(context.Background(), skB, 200, CatTranscode)
 
 	// Client A 切到 song 101
 	r.Activate(skA, 101)
 
-	if !waitCanceled(ctxAPrefetch) {
-		t.Errorf("Client A 自己的 song 100 prefetch 应被 cancel")
+	if !waitCanceled(ctxATc) {
+		t.Errorf("Client A 自己的 song 100 transcode 应被 cancel")
 	}
 	if ctxBTc.Err() != nil {
 		t.Errorf("Client B 的 song 200 transcode 不应被 cancel（跨会话隔离），err=%v", ctxBTc.Err())

@@ -105,13 +105,20 @@ func (r *Registry) Track(parent context.Context, sk SessionKey, songID int64, ca
 // Activate 标记 (sk, keepSongID) 为当前活跃。
 //
 // 仅在 sk 桶内 cancel，不影响其他 sessionKey：
-//   - 所有 songID != keepSongID 的全部工作（包括 play/prefetch/transcode/reassign）
+//   - songID != keepSongID 的 play / transcode / reassign 工作
 //
-// 不动同桶 keepSongID 的任何工作（play / prefetch / transcode / reassign）——避免取消"自己"。
-// 尤其是 keepSongID 的 prefetch：慢音源（如 B站，music/url 解析要 ~9s）的预热用 background
-// ctx 在后台解析+下载+缓存，是让「真实播放直接命中缓存」的关键。若在 Activate 时把它掐掉，
-// 同步播放路只能从零重解析，而 libmpv 等客户端对无数据连接有 ~5s 上限、会在解析完成前断连，
-// 直接 502（songloft-org/songloft#271）。让它跑完远比「预热没意义」重要。
+// **不取消任何 CatPrefetch 条目**（无论 songID 是否等于 keepSongID）。prefetch 天然是为
+// 「下一首」预热的：顺序播放时，正在播放 song N（触发 Activate(N)）的同时，插件已经为
+// song N+1 发起了 prefetch。若 Activate 把非当前歌的 prefetch 掐掉，就会在每次切歌时杀掉
+// 刚发起的「下一首」预热转码，导致真正播放 N+1 时只能从零实时转码——prefetch 特性形同虚设
+// （songloft-org/songloft#300：日志里预热 ffmpeg 反复 "signal: killed"，播放时 dur_ms 高达
+// 29s~117s 的实时转码）。prefetch 有自己的生命周期兜底：background+10min 超时、转码信号量
+// 串行（sem=1，不会 CPU 风暴）、inflight 去重，孤儿转码有界且会自愈缓存，不需要 Activate 清理。
+//
+// 同样不动同桶 keepSongID 的任何工作（play / transcode / reassign）——避免取消"自己"。
+// keepSongID 的 prefetch 尤其重要：慢音源（如 B站，music/url 解析要 ~9s）的预热是让「真实
+// 播放直接命中缓存」的关键，掐掉会让同步播放路从零重解析，libmpv 等客户端 ~5s 无数据即断连
+// 直接 502（songloft-org/songloft#271）。
 func (r *Registry) Activate(sk SessionKey, keepSongID int64) {
 	r.mu.Lock()
 	bucket, ok := r.buckets[sk]
@@ -123,10 +130,12 @@ func (r *Registry) Activate(sk SessionKey, keepSongID int64) {
 	// release 又要拿同一把锁——避免重入）。
 	toCancel := make([]*entry, 0)
 	for id, e := range bucket {
-		if e.songID != keepSongID {
-			toCancel = append(toCancel, e)
-			delete(bucket, id)
+		// 保留所有 prefetch（为下一首预热，见函数注释）与当前活跃歌曲的全部工作。
+		if e.cat == CatPrefetch || e.songID == keepSongID {
+			continue
 		}
+		toCancel = append(toCancel, e)
+		delete(bucket, id)
 	}
 	if len(bucket) == 0 {
 		delete(r.buckets, sk)

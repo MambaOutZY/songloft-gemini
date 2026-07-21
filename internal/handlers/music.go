@@ -1183,8 +1183,9 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 
 	// 预拉取模式：异步触发缓存 + 转码预热，立即返回 202。
 	// 不能用 r.Context()，否则 202 发出后客户端断开会 Kill ffmpeg，预热失败。
-	// 但通过 playActivity.Track 让 prefetch 能在下一次 Activate 时被 cancel，
-	// 避免占着 plugin worker 跑完整 30s。
+	// 通过 playActivity.Track 注册进 registry（CatPrefetch），但 Activate 不会取消 prefetch
+	// （songloft-org/songloft#300）：prefetch 天然为「下一首」预热，切到当前歌时不能连带杀掉
+	// 下一首的预热转码。其生命周期由 background+10min 超时兜底。
 	if r.URL.Query().Get("prefetch") == "1" {
 		go func() {
 			pctx, release := h.trackActivity(context.Background(), sk, song.ID, playactivity.CatPrefetch)
