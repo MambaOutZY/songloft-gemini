@@ -106,6 +106,13 @@ html[data-theme="dark"] {
 /* ── Reset ── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* ── 根元素：始终预留纵向滚动条槽 ──
+   插件页内容高度恰好卡在视口高度附近时，文档级纵向滚动条会「按需出现→内容区
+   变窄→文字重排→高度变化→滚动条消失→…」形成无限反馈回路，表现为整页每帧抖动
+   （songloft-org/songloft#278 的残留现象，非 iframe 重载）。预留滚动条槽后
+   宽度不再随滚动条增删而变化，回路被打断。scrollbar-gutter 现代浏览器均支持。 */
+html { scrollbar-gutter: stable; }
+
 /* ── Body ── */
 body {
     font-family: 'Roboto', 'Noto Sans SC', system-ui, sans-serif;
