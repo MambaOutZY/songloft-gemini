@@ -89,8 +89,9 @@ func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string,
 	// [2] 并发解析所有 plugin.json URL
 	resolved := s.resolveAll(ctx, pluginURLs, githubProxy, token, &warnings)
 
-	// [3] 按 entry_path 去重（高版本优先）
-	plugins := make(map[string]RegistryEntry)
+	// [3] 按 entry_path 去重（高版本优先），保持首次出现顺序（稳定序，避免分页跳序 #302）
+	plugins := make(map[string]int) // entry_path -> result 索引
+	result := make([]RegistryEntry, 0, len(resolved))
 	for _, entry := range resolved {
 		if entry.EntryPath == "" || entry.DownloadURL == "" {
 			if entry.EntryPath != "" {
@@ -98,14 +99,13 @@ func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string,
 			}
 			continue
 		}
-		existing, exists := plugins[entry.EntryPath]
-		if !exists || compareVersion(entry.Version, existing.Version) > 0 {
-			plugins[entry.EntryPath] = entry
+		if idx, exists := plugins[entry.EntryPath]; exists {
+			if compareVersion(entry.Version, result[idx].Version) > 0 {
+				result[idx] = entry
+			}
+			continue
 		}
-	}
-
-	result := make([]RegistryEntry, 0, len(plugins))
-	for _, entry := range plugins {
+		plugins[entry.EntryPath] = len(result)
 		result = append(result, entry)
 	}
 
@@ -116,7 +116,8 @@ func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string,
 // 每个源使用其自身的 Token 认证；单个源失败不中断其他源，错误并入 warnings。
 // 典型用于「全部」聚合模式：一次展示所有启用源的插件。
 func (s *RegistryService) FetchAndMergeMulti(ctx context.Context, sources []RegistryConfig, githubProxy string) ([]RegistryEntry, []string) {
-	merged := make(map[string]RegistryEntry)
+	merged := make(map[string]int) // entry_path -> result 索引
+	result := make([]RegistryEntry, 0)
 	var warnings []string
 
 	for _, src := range sources {
@@ -133,18 +134,18 @@ func (s *RegistryService) FetchAndMergeMulti(ctx context.Context, sources []Regi
 			warnings = append(warnings, fmt.Sprintf("源 %q 拉取失败: %v", label, err))
 			continue
 		}
+		// 保持首次出现顺序（稳定序，避免分页跳序 #302）
 		for _, entry := range entries {
 			entry.SourceURL = src.URL // 标记来源，供安装时按源解析 token
-			existing, exists := merged[entry.EntryPath]
-			if !exists || compareVersion(entry.Version, existing.Version) > 0 {
-				merged[entry.EntryPath] = entry
+			if idx, exists := merged[entry.EntryPath]; exists {
+				if compareVersion(entry.Version, result[idx].Version) > 0 {
+					result[idx] = entry
+				}
+				continue
 			}
+			merged[entry.EntryPath] = len(result)
+			result = append(result, entry)
 		}
-	}
-
-	result := make([]RegistryEntry, 0, len(merged))
-	for _, entry := range merged {
-		result = append(result, entry)
 	}
 	return result, warnings
 }

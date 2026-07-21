@@ -79,6 +79,44 @@ func TestFetchAndMerge_Basic(t *testing.T) {
 	}
 }
 
+// TestFetchAndMerge_StableOrder 验证结果保持注册表 plugins 数组的声明顺序，
+// 且多次拉取顺序一致（回归 #302：map 迭代随机导致分页跳序）。
+func TestFetchAndMerge_StableOrder(t *testing.T) {
+	mux := http.NewServeMux()
+	names := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+	var pluginURLs []string
+	pluginSrv := httptest.NewServer(mux)
+	defer pluginSrv.Close()
+	for _, n := range names {
+		mux.HandleFunc("/"+n+"/plugin.json", servePluginJSON("Plugin "+n, "plugin-"+n, "1.0.0", "https://example.com/"+n+".zip"))
+		pluginURLs = append(pluginURLs, pluginSrv.URL+"/"+n+"/plugin.json")
+	}
+
+	registry := RegistryJSON{Plugins: pluginURLs}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(registry)
+	}))
+	defer srv.Close()
+
+	svc := NewRegistryService()
+	want := []string{"plugin-a", "plugin-b", "plugin-c", "plugin-d", "plugin-e", "plugin-f", "plugin-g", "plugin-h"}
+	// 多次拉取，每次顺序都必须与声明顺序一致
+	for iter := range 5 {
+		plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
+		if err != nil {
+			t.Fatalf("FetchAndMerge error: %v", err)
+		}
+		if len(plugins) != len(want) {
+			t.Fatalf("iter %d: expected %d plugins, got %d", iter, len(want), len(plugins))
+		}
+		for i, p := range plugins {
+			if p.EntryPath != want[i] {
+				t.Fatalf("iter %d: position %d = %q, want %q", iter, i, p.EntryPath, want[i])
+			}
+		}
+	}
+}
+
 func TestFetchAndMerge_Dedup(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/plugin.json", servePluginJSON("Plugin A v1", "plugin-a", "1.0.0", "https://example.com/a1.zip"))
