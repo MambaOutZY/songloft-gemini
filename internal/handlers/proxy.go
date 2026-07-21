@@ -264,7 +264,8 @@ func ServeRemoteResourceWithCache(
 	forwardResponseHeaders(w, resp)
 	w.WriteHeader(resp.StatusCode)
 
-	if resp.StatusCode == http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
 		contentType := resp.Header.Get("Content-Type")
 		ext := services.GetExtFromContentType(contentType)
 		tmpFile, tmpErr := os.CreateTemp("", "songloft-proxy-cache-*"+ext)
@@ -283,12 +284,12 @@ func ServeRemoteResourceWithCache(
 		} else {
 			os.Remove(tmpPath)
 		}
-	} else if resp.StatusCode == http.StatusPartialContent {
+	case http.StatusPartialContent:
 		io.Copy(w, resp.Body)
 		if onCacheMiss != nil {
 			go onCacheMiss()
 		}
-	} else {
+	default:
 		slog.Warn("remote resource upstream error", "url", upstreamReq.URL.String(), "status", resp.StatusCode)
 		io.Copy(w, resp.Body)
 	}

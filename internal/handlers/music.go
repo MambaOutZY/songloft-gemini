@@ -1185,7 +1185,7 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 	// 不能用 r.Context()，否则 202 发出后客户端断开会 Kill ffmpeg，预热失败。
 	// 通过 playActivity.Track 注册进 registry（CatPrefetch），但 Activate 不会取消 prefetch
 	// （songloft-org/songloft#300）：prefetch 天然为「下一首」预热，切到当前歌时不能连带杀掉
-	// 下一首的预热转码。其生命周期由 background+10min 超时兜底。
+	// 下一首的预热转码。转码跑完后 prepareSongPlayback 返回、defer release() 注销 entry。
 	if r.URL.Query().Get("prefetch") == "1" {
 		go func() {
 			pctx, release := h.trackActivity(context.Background(), sk, song.ID, playactivity.CatPrefetch)
@@ -1973,7 +1973,7 @@ func (h *SongHandler) GetDuplicates(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]any{
 		"groups":           result,
 		"total_groups":     len(result),
 		"total_duplicates": totalDuplicates,

@@ -112,8 +112,9 @@ func (r *Registry) Track(parent context.Context, sk SessionKey, songID int64, ca
 // song N+1 发起了 prefetch。若 Activate 把非当前歌的 prefetch 掐掉，就会在每次切歌时杀掉
 // 刚发起的「下一首」预热转码，导致真正播放 N+1 时只能从零实时转码——prefetch 特性形同虚设
 // （songloft-org/songloft#300：日志里预热 ffmpeg 反复 "signal: killed"，播放时 dur_ms 高达
-// 29s~117s 的实时转码）。prefetch 有自己的生命周期兜底：background+10min 超时、转码信号量
-// 串行（sem=1，不会 CPU 风暴）、inflight 去重，孤儿转码有界且会自愈缓存，不需要 Activate 清理。
+// 29s~117s 的实时转码）。prefetch 无需 Activate 清理也不会失控：ffmpeg 处理完整个文件后自然
+// 退出、prepareSongPlayback 返回即 release() 注销 entry；转码信号量串行（sem=1，不会 CPU 风暴）
+// + inflight 去重，让孤儿转码有界且会把结果缓存下来（下次真正播放直接命中）。
 //
 // 同样不动同桶 keepSongID 的任何工作（play / transcode / reassign）——避免取消"自己"。
 // keepSongID 的 prefetch 尤其重要：慢音源（如 B站，music/url 解析要 ~9s）的预热是让「真实
