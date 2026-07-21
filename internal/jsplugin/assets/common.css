@@ -106,12 +106,15 @@ html[data-theme="dark"] {
 /* ── Reset ── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-/* ── 根元素：始终预留纵向滚动条槽 ──
+/* ── 根元素：始终保留纵向滚动条，杜绝滚动条增删引起的重排抖动 ──
    插件页内容高度恰好卡在视口高度附近时，文档级纵向滚动条会「按需出现→内容区
-   变窄→文字重排→高度变化→滚动条消失→…」形成无限反馈回路，表现为整页每帧抖动
-   （songloft-org/songloft#278 的残留现象，非 iframe 重载）。预留滚动条槽后
-   宽度不再随滚动条增删而变化，回路被打断。scrollbar-gutter 现代浏览器均支持。 */
-html { scrollbar-gutter: stable; }
+   变窄→内容重排→高度变化→滚动条消失→…」形成无限反馈回路，表现为整页每帧抖动
+   （songloft-org/songloft#278 的残留现象，经无头浏览器 + 逐帧像素差核实：非
+   iframe 重载，而是插件文档级视口滚动条的宽度翻转）。
+   注意：仅靠 `scrollbar-gutter: stable` 无效——它只对「滚动容器」(overflow
+   auto/scroll)生效，而这里 html 的 overflow 是默认的 visible。必须用
+   `overflow-y: scroll` 让视口滚动条常驻、宽度恒定，回路才被真正打断。 */
+html { overflow-y: scroll; }
 
 /* ── Body ── */
 body {
