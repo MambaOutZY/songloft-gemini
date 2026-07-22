@@ -1271,7 +1271,9 @@ func (h *SongHandler) prepareSongPlayback(ctx context.Context, song *models.Song
 			slog.Warn("prefetch cache get failed", "songId", song.ID, "error", err)
 			return
 		}
-		srcPath = path
+		// 按配置的缓存转码格式统一基础缓存格式（如 mp3），使真实播放直接命中目标格式；
+		// 未配置 / 失败时原样返回。随后的 NeedsTranscode 判断会因基础缓存已是目标格式而短路。
+		srcPath = h.cacheService.EnsureCachedFormat(ctx, song, path)
 	default:
 		return
 	}

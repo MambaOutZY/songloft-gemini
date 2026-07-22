@@ -343,6 +343,7 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 - 缓存目录默认 `{data_dir}/music_cache/`，可通过 `PUT /api/v1/cache-manage/config` 的 `cache_dir` 字段自定义为绝对路径
 - 启动时从 `music_cache_config` 配置读取自定义目录；运行时切换目录会自动重建 LRU 索引，不迁移旧文件
 - LRU 淘汰：超出 `max_size`（默认 1GB）时按最后访问时间淘汰，`max_size=0` 表示不限制
+- **缓存落盘转码**（`transcode_format` / `transcode_quality`，`PUT /api/v1/cache-manage/config`，songloft-org/songloft#300）：默认 `""` 按上游原码落盘（YouTube .mkv/.webm、B站 .mov）；设为 `mp3/m4a/ogg/flac/wav` 后，缓存网络歌曲落盘时统一转码为该格式（解决小爱音箱等设备无法播放 MKV）。由 `EnsureCachedFormat` 在两个播放侧产出点执行——`FinalizeCache`（流式播放 + 206 异步全量）与 `prepareSongPlayback` 的 prefetch 预热（`Get` 之后）；复用 `runFFmpeg`，转码后删原码、`cache_path` 指向新格式。缺 ffmpeg 或转码失败时**优雅降级保留原格式**。**不影响** `songs.download` 的显式格式处理（下载路径复用 `Get` 但自带 `opts.Format`，故转码逻辑只挂在播放侧，不动 `moveToCache`/`Get`）。**取舍**：`ffmpeg -vn` 会丢视频轨，故对 `is_video` 的远程歌开启后 `media=video` 投屏只得纯音频（属预期，满足 YouTube MKV→mp3 主诉求）；`EnsureCachedFormat` 内含 `cacheTranscodeTimeout`（15min）兜底，防坏源卡死永久占用 `transcodeSem`
 - `POST /api/v1/cache-manage/validate-dir` 可预先验证目录（自动创建 + 可写性检查 + 返回磁盘空间）
 - inflight 去重：同 `song.ID` 的并发请求只下载一次；首请求被 `ctx.Canceled` 时后续等待者自动重试
 

@@ -104,7 +104,7 @@ func (h *CacheHandler) HandleCleanCache(w http.ResponseWriter, r *http.Request) 
 
 // HandleGetCacheConfig 获取缓存配置
 // @Summary 获取缓存配置
-// @Description 获取服务端音乐缓存的配置信息,包括最大缓存大小限制和缓存目录路径。cache_dir 为空表示使用 default_cache_dir。
+// @Description 获取服务端音乐缓存的配置信息,包括最大缓存大小限制、缓存目录路径、缓存转码格式(transcode_format)与码率(transcode_quality)。cache_dir 为空表示使用 default_cache_dir;transcode_format 为空表示缓存不转码、按原格式落盘。
 // @Tags 缓存管理
 // @Accept json
 // @Produce json
@@ -119,7 +119,7 @@ func (h *CacheHandler) HandleGetCacheConfig(w http.ResponseWriter, r *http.Reque
 
 // HandleUpdateCacheConfig 更新缓存配置
 // @Summary 更新缓存配置
-// @Description 更新服务端音乐缓存的配置,如最大缓存大小和缓存目录。cache_dir 为空字符串时恢复使用默认目录。更新后会自动触发 LRU 淘汰检查。切换目录时不会自动迁移旧缓存文件。
+// @Description 更新服务端音乐缓存的配置,如最大缓存大小和缓存目录。cache_dir 为空字符串时恢复使用默认目录。transcode_format 非空（mp3/m4a/ogg/flac/wav）时,缓存网络歌曲落盘会统一转码为该格式(缺 ffmpeg 或转码失败时保留原格式),transcode_quality 为可选码率(128/192/320,空或非法为最高质量)。更新后会自动触发 LRU 淘汰检查。切换目录时不会自动迁移旧缓存文件。
 // @Tags 缓存管理
 // @Accept json
 // @Produce json
@@ -150,6 +150,21 @@ func (h *CacheHandler) HandleUpdateCacheConfig(w http.ResponseWriter, r *http.Re
 			respondError(w, http.StatusBadRequest, "缓存目录不可用: "+err.Error(), err)
 			return
 		}
+	}
+
+	// 缓存转码格式：空串=不转码；非空必须为受支持的音频容器（mp3/m4a/ogg/flac/wav）。
+	// 规范化后回写，码率经 ParseBitrate 容错（非 128/192/320 视为最高质量，不报错）。
+	if cfg.TranscodeFormat != "" {
+		normalized := services.NormalizeTranscodeFormat(cfg.TranscodeFormat)
+		if normalized == "" {
+			respondError(w, http.StatusBadRequest, "不支持的缓存转码格式（仅支持 mp3/m4a/ogg/flac/wav）", nil)
+			return
+		}
+		cfg.TranscodeFormat = normalized
+	}
+	// 非法码率（非 128/192/320）归一为空=最高质量，避免持久化垃圾值污染 GET 回显
+	if cfg.TranscodeQuality != "" && services.ParseBitrate(cfg.TranscodeQuality) == 0 {
+		cfg.TranscodeQuality = ""
 	}
 
 	if err := h.cacheService.UpdateCacheConfig(cfg); err != nil {

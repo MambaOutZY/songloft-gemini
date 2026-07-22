@@ -37,13 +37,20 @@ type CacheStats struct {
 type CacheConfig struct {
 	MaxSize  int64  `json:"max_size"`  // 最大缓存大小（字节），0 表示无限制
 	CacheDir string `json:"cache_dir"` // 自定义缓存目录，空字符串表示使用默认目录
+	// TranscodeFormat 缓存网络歌曲落盘时统一转码的目标格式（mp3/m4a/ogg/flac/wav）。
+	// 空字符串表示不转码、按上游原格式落盘（默认）。缺 ffmpeg 或转码失败时优雅降级保留原格式。
+	TranscodeFormat string `json:"transcode_format"`
+	// TranscodeQuality 转码目标码率（128/192/320），空或非法值表示最高质量。仅对有损格式生效。
+	TranscodeQuality string `json:"transcode_quality"`
 }
 
 // CacheConfigResponse 缓存配置 API 响应（含只读的默认目录信息）
 type CacheConfigResponse struct {
-	MaxSize         int64  `json:"max_size"`
-	CacheDir        string `json:"cache_dir"`
-	DefaultCacheDir string `json:"default_cache_dir"`
+	MaxSize          int64  `json:"max_size"`
+	CacheDir         string `json:"cache_dir"`
+	DefaultCacheDir  string `json:"default_cache_dir"`
+	TranscodeFormat  string `json:"transcode_format"`
+	TranscodeQuality string `json:"transcode_quality"`
 }
 
 // inflightDownload 追踪正在进行的下载
@@ -63,6 +70,10 @@ type CacheService struct {
 	orchestrator    CacheSongFetcher // 下载编排器(按 song.ID),由 app.go 注入
 	ffmpegPath      string           // ffmpeg 可执行文件路径,由 app.go 注入
 	transcodeSem    chan struct{}    // 转码串行信号量（默认 size=1），防止并发 ffmpeg 争抢 CPU
+	// 缓存落盘转码设置（field-cache，沿用 cacheDir 无锁惯例）：从 CacheConfig 读取，
+	// NewCacheService/UpdateCacheConfig 时同步。cacheTranscodeFormat 为空表示不转码。
+	cacheTranscodeFormat  string
+	cacheTranscodeBitrate int
 	// asyncCacheInflight 按 song.ID 去重流式代理触发的后台全量下载（AsyncDownloadAndCache）。
 	// 流式播放路径不走 CacheService.Get 的 inflight，重试/并发 206 会各自触发一次全量下载，
 	// 在慢网下互相抢带宽全败——这里去重，同一首同时只跑一个后台下载（songloft-org/songloft#286）。
@@ -89,9 +100,13 @@ func NewCacheService(defaultCacheDir string, configService *ConfigService) *Cach
 		downloadClient: httputil.NewDownloadClient(),
 	}
 	var cfg CacheConfig
-	if err := configService.GetJSON(cacheConfigKey, &cfg); err == nil && cfg.CacheDir != "" {
-		cs.cacheDir = cfg.CacheDir
-		slog.Info("使用自定义缓存目录", "path", cfg.CacheDir)
+	if err := configService.GetJSON(cacheConfigKey, &cfg); err == nil {
+		if cfg.CacheDir != "" {
+			cs.cacheDir = cfg.CacheDir
+			slog.Info("使用自定义缓存目录", "path", cfg.CacheDir)
+		}
+		cs.cacheTranscodeFormat = NormalizeTranscodeFormat(cfg.TranscodeFormat)
+		cs.cacheTranscodeBitrate = ParseBitrate(cfg.TranscodeQuality)
 	}
 	cs.loadLRUIndex()
 	return cs
@@ -400,9 +415,29 @@ func (c *CacheService) GetCacheConfig() CacheConfig {
 func (c *CacheService) GetCacheConfigResponse() CacheConfigResponse {
 	cfg := c.GetCacheConfig()
 	return CacheConfigResponse{
-		MaxSize:         cfg.MaxSize,
-		CacheDir:        cfg.CacheDir,
-		DefaultCacheDir: c.defaultCacheDir,
+		MaxSize:          cfg.MaxSize,
+		CacheDir:         cfg.CacheDir,
+		DefaultCacheDir:  c.defaultCacheDir,
+		TranscodeFormat:  cfg.TranscodeFormat,
+		TranscodeQuality: cfg.TranscodeQuality,
+	}
+}
+
+// cacheTranscodeSettings 返回当前缓存落盘转码格式与码率（field-cache）。
+// 格式为空时表示不转码。
+func (c *CacheService) cacheTranscodeSettings() (format string, bitrate int) {
+	return c.cacheTranscodeFormat, c.cacheTranscodeBitrate
+}
+
+// NormalizeTranscodeFormat 规范化并校验缓存转码目标格式。
+// 仅接受 ffmpegArgs 支持的有损/无损容器（mp3/m4a/ogg/flac/wav），其余（含空串、
+// 视频容器）一律返回 ""，语义为「不转码」。
+func NormalizeTranscodeFormat(s string) string {
+	switch NormalizeFormat(s) {
+	case "mp3", "m4a", "ogg", "flac", "wav":
+		return NormalizeFormat(s)
+	default:
+		return ""
 	}
 }
 
@@ -420,6 +455,10 @@ func (c *CacheService) UpdateCacheConfig(cfg CacheConfig) error {
 	if newDir != oldDir {
 		c.setCacheDir(newDir)
 	}
+
+	// 同步缓存落盘转码设置（field-cache，即时生效，无需重启）
+	c.cacheTranscodeFormat = NormalizeTranscodeFormat(cfg.TranscodeFormat)
+	c.cacheTranscodeBitrate = ParseBitrate(cfg.TranscodeQuality)
 
 	go c.EvictLRU()
 	return nil

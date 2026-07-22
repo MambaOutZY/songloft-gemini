@@ -340,6 +340,63 @@ func (c *CacheService) moveToCache(song *models.Song, tmpPath, ext string) (stri
 	return finalPath, nil
 }
 
+// EnsureCachedFormat 对已落盘的基础缓存文件按配置的「缓存转码格式」原地转码。
+//   - 未配置格式 / 缺 ffmpeg / 源已是目标格式且无码率要求 → 原样返回 cachedPath（保留原格式）
+//   - 需要转码 → runFFmpeg 转到临时文件 → moveToCache 覆盖为 {id}.{key}.{fmt} → 删除原码 → 返回新路径
+//   - 转码失败 → 仅告警并返回原 cachedPath（优雅降级，等同未开启该功能）
+//
+// 仅供播放侧缓存产出点调用（FinalizeCache 与 prefetch 预热），不影响 songs.download
+// 的显式格式处理。srcFmt 直接取文件真实扩展名，比可能过期的 song.Format 可靠。
+func (c *CacheService) EnsureCachedFormat(ctx context.Context, song *models.Song, cachedPath string) string {
+	if song == nil || cachedPath == "" {
+		return cachedPath
+	}
+	fmtName, bitrate := c.cacheTranscodeSettings()
+	if fmtName == "" || c.ffmpegPath == "" {
+		return cachedPath
+	}
+	srcFmt := NormalizeFormat(strings.TrimPrefix(filepath.Ext(cachedPath), "."))
+	if !NeedsTranscode(srcFmt, fmtName) && bitrate <= 0 {
+		return cachedPath
+	}
+
+	// 兜底转码超时：调用方 ctx（FinalizeCache / prefetch 预热）多为 context.Background()
+	// 派生、无 deadline，若 ffmpeg 卡死会永久占用 transcodeSem（size=1）阻塞后续所有转码。
+	tctx, cancel := context.WithTimeout(ctx, cacheTranscodeTimeout)
+	defer cancel()
+
+	dir := filepath.Dir(cachedPath)
+	tmp, err := os.CreateTemp(dir, "cachetc-*.tmp")
+	if err != nil {
+		slog.Warn("cache transcode: create temp failed", "songId", song.ID, "error", err)
+		return cachedPath
+	}
+	tmpPath := tmp.Name()
+	tmp.Close()
+
+	if err := c.runFFmpeg(tctx, cachedPath, tmpPath, song, fmtName, bitrate, -1); err != nil {
+		slog.Warn("cache transcode failed, keeping original format",
+			"songId", song.ID, "format", fmtName, "bitrate", bitrate, "srcPath", cachedPath, "error", err)
+		os.Remove(tmpPath)
+		return cachedPath
+	}
+
+	newPath, err := c.moveToCache(song, tmpPath, "."+fmtName)
+	if err != nil {
+		slog.Warn("cache transcode: move failed, keeping original format", "songId", song.ID, "error", err)
+		os.Remove(tmpPath)
+		return cachedPath
+	}
+	// 删除原码基础缓存（newPath 与 cachedPath 扩展名不同则为两个文件；相同则 moveToCache 已覆盖）
+	if newPath != cachedPath {
+		if err := os.Remove(cachedPath); err != nil && !os.IsNotExist(err) {
+			slog.Warn("cache transcode: remove original failed", "songId", song.ID, "path", cachedPath, "error", err)
+		}
+	}
+	slog.Info("cache transcoded", "songId", song.ID, "format", fmtName, "bitrate", bitrate, "path", newPath)
+	return newPath
+}
+
 // FinalizeCache 将临时文件移入结构化缓存目录并写入元数据。
 // 由流式代理完成回调在 goroutine 中调用。
 func (c *CacheService) FinalizeCache(ctx context.Context, song *models.Song, tmpPath, ext string) {
@@ -354,6 +411,9 @@ func (c *CacheService) FinalizeCache(ctx context.Context, song *models.Song, tmp
 		slog.Warn("finalize cache: move failed", "songId", song.ID, "error", err)
 		return
 	}
+
+	// 按配置的缓存转码格式统一落盘格式（如 mp3），失败时保留原码。
+	finalPath = c.EnsureCachedFormat(ctx, song, finalPath)
 
 	if c.updateCachePath != nil {
 		if err := c.updateCachePath(ctx, song.ID, finalPath); err != nil {
@@ -414,6 +474,12 @@ func (c *CacheService) ClearStaleCachePath(songID int64) {
 // externalDownloadStallTimeout 纯外链下载的停滞空闲超时:连续该时长读不到字节才判死。
 // 不限制总时长,慢但持续的下载不会被误掐。(issue #265)
 const externalDownloadStallTimeout = 120 * time.Second
+
+// cacheTranscodeTimeout 缓存落盘转码（EnsureCachedFormat）的兜底总超时。
+// 调用方 ctx 多为 Background 派生、无 deadline，此处限制单次 ffmpeg 转码总时长，
+// 防坏源/卡死的 ffmpeg 永久占用 transcodeSem（size=1）。比播放路径的 10min 略宽松，
+// 因缓存转码常在后台处理较大的完整文件。
+const cacheTranscodeTimeout = 15 * time.Minute
 
 // downloadExternalToTemp 纯外链歌曲的简化下载:分块 HTTP Range GET,无 fallback、无元数据校验。
 // 因为纯外链没有"插件源"概念,Orchestrator 也无能为力。

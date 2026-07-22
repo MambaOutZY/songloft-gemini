@@ -607,7 +607,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取服务端音乐缓存的配置信息,包括最大缓存大小限制和缓存目录路径。cache_dir 为空表示使用 default_cache_dir。",
+                "description": "获取服务端音乐缓存的配置信息,包括最大缓存大小限制、缓存目录路径、缓存转码格式(transcode_format)与码率(transcode_quality)。cache_dir 为空表示使用 default_cache_dir;transcode_format 为空表示缓存不转码、按原格式落盘。",
                 "consumes": [
                     "application/json"
                 ],
@@ -642,7 +642,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "更新服务端音乐缓存的配置,如最大缓存大小和缓存目录。cache_dir 为空字符串时恢复使用默认目录。更新后会自动触发 LRU 淘汰检查。切换目录时不会自动迁移旧缓存文件。",
+                "description": "更新服务端音乐缓存的配置,如最大缓存大小和缓存目录。cache_dir 为空字符串时恢复使用默认目录。transcode_format 非空（mp3/m4a/ogg/flac/wav）时,缓存网络歌曲落盘会统一转码为该格式(缺 ffmpeg 或转码失败时保留原格式),transcode_quality 为可选码率(128/192/320,空或非法为最高质量)。更新后会自动触发 LRU 淘汰检查。切换目录时不会自动迁移旧缓存文件。",
                 "consumes": [
                     "application/json"
                 ],
@@ -8364,6 +8364,14 @@ const docTemplate = `{
                 "max_size": {
                     "description": "最大缓存大小（字节），0 表示无限制",
                     "type": "integer"
+                },
+                "transcode_format": {
+                    "description": "TranscodeFormat 缓存网络歌曲落盘时统一转码的目标格式（mp3/m4a/ogg/flac/wav）。\n空字符串表示不转码、按上游原格式落盘（默认）。缺 ffmpeg 或转码失败时优雅降级保留原格式。",
+                    "type": "string"
+                },
+                "transcode_quality": {
+                    "description": "TranscodeQuality 转码目标码率（128/192/320），空或非法值表示最高质量。仅对有损格式生效。",
+                    "type": "string"
                 }
             }
         },
@@ -8378,6 +8386,12 @@ const docTemplate = `{
                 },
                 "max_size": {
                     "type": "integer"
+                },
+                "transcode_format": {
+                    "type": "string"
+                },
+                "transcode_quality": {
+                    "type": "string"
                 }
             }
         },
