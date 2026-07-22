@@ -1,9 +1,10 @@
 import { defineConfig } from 'vitepress'
+import { withMermaid } from 'vitepress-plugin-mermaid'
 import AutoSidebar from 'vite-plugin-vitepress-auto-sidebar';
 import taskLists from 'markdown-it-task-lists'
 
 export default async () => {
-  return defineConfig({
+  return withMermaid(defineConfig({
     title: "Songloft",
     description: "Songloft - 自托管个人音乐服务器，支持 JS 插件扩展，跨平台 Flutter 客户端",
     lang: 'zh-Hans',
@@ -129,5 +130,5 @@ export default async () => {
         }),
       ],
     },
-  })
+  }))
 }
