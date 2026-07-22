@@ -17,6 +17,8 @@ import (
 	"songloft/internal/httputil"
 	"songloft/internal/models"
 	"songloft/internal/services/source"
+
+	"github.com/hanxi/tag"
 )
 
 // CacheSongFetcher 抽象 SourceOrchestrator,由 app.go 注入。
@@ -357,7 +359,14 @@ func (c *CacheService) EnsureCachedFormat(ctx context.Context, song *models.Song
 	}
 	srcFmt := NormalizeFormat(strings.TrimPrefix(filepath.Ext(cachedPath), "."))
 	if !NeedsTranscode(srcFmt, fmtName) && bitrate <= 0 {
-		return cachedPath
+		// 防御：扩展名与目标一致但文件内容实际不匹配（如 WebM 被错误地存为 .mp3）。
+		// 检查文件头 magic bytes，不匹配时仍走转码修正。
+		if !matchesFormatMagic(cachedPath, srcFmt) {
+			slog.Info("cache format mismatch detected, will re-transcode",
+				"songId", song.ID, "ext", srcFmt, "path", cachedPath)
+		} else {
+			return cachedPath
+		}
 	}
 
 	// 兜底转码超时：调用方 ctx（FinalizeCache / prefetch 预热）多为 context.Background()
@@ -534,6 +543,27 @@ func songInfoOf(s *models.Song) *source.SongInfo {
 
 // extensionFromFormat 把 AudioInfoCopy 的格式字段映射回扩展名。
 // 留空时由调用方根据 Content-Type 兜底。
+
+// matchesFormatMagic 检查文件实际格式是否与声称的扩展名一致。
+// 仅用于 EnsureCachedFormat 的"跳过转码"守卫：若扩展名与目标格式相同但文件内容实际不匹配
+// （如 WebM 被错误地存为 .mp3），返回 false 触发重转码修正。
+// 使用 pkg/tag 库探测文件头，比手写 magic bytes 更可靠且自动覆盖所有已支持格式。
+func matchesFormatMagic(path, format string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return true
+	}
+	defer f.Close()
+
+	m, err := tag.ReadFrom(f)
+	if err != nil {
+		// tag 库无法识别 → 文件不是任何已知音频格式，与声称的格式不符
+		return false
+	}
+	detected := NormalizeFormat(string(m.FileType()))
+	return detected == NormalizeFormat(format)
+}
+
 func extensionFromFormat(info *source.AudioInfoCopy) string {
 	if info != nil && info.Format != "" {
 		return "." + info.Format

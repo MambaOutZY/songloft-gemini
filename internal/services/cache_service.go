@@ -149,10 +149,14 @@ func GetExtFromContentType(contentType string) string {
 		return ".mp3"
 	case strings.Contains(ct, "audio/flac"):
 		return ".flac"
-	case strings.Contains(ct, "audio/ogg"):
+	case strings.Contains(ct, "audio/ogg"), strings.Contains(ct, "audio/opus"):
 		return ".ogg"
 	case strings.Contains(ct, "audio/x-m4a"), strings.Contains(ct, "audio/mp4"), strings.Contains(ct, "video/mp4"):
 		return ".m4a"
+	case strings.Contains(ct, "audio/webm"), strings.Contains(ct, "video/webm"):
+		return ".webm"
+	case strings.Contains(ct, "video/x-matroska"), strings.Contains(ct, "audio/x-matroska"):
+		return ".mkv"
 	case strings.Contains(ct, "video/quicktime"):
 		return ".mov"
 	case strings.Contains(ct, "audio/wav"):

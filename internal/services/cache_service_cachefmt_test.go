@@ -78,7 +78,15 @@ func TestEnsureCachedFormat_Noop(t *testing.T) {
 	t.Run("already target format", func(t *testing.T) {
 		dir := t.TempDir()
 		cs := &CacheService{cacheDir: dir, ffmpegPath: "/bin/echo", cacheTranscodeFormat: "mp3"}
-		src := writeCacheFile(t, dir, "src.mp3") // 源已是 mp3，无码率要求 → 短路
+		// 复制真实 MP3 样本，让 tag.ReadFrom 能识别为 MP3
+		src := filepath.Join(dir, "src.mp3")
+		data, err := os.ReadFile("../../pkg/tag/testdata/with_tags/sample.id3v23.mp3")
+		if err != nil {
+			t.Fatalf("read sample mp3: %v", err)
+		}
+		if err := os.WriteFile(src, data, 0644); err != nil {
+			t.Fatalf("write cache file: %v", err)
+		}
 		got := cs.EnsureCachedFormat(context.Background(), song, src)
 		if got != src {
 			t.Errorf("got %q, want unchanged %q (same format short-circuit)", got, src)
