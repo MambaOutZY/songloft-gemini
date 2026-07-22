@@ -4,7 +4,7 @@ This document provides AI coding assistants with the **entry-point information**
 
 > **Detailed docs**:
 > - Architecture: [Overview](docs/architecture.md) · [Backend](docs/architecture_backend.md) · [Frontend](docs/architecture_frontend.md)
-> - Topics: [Database operations](docs/database_migrations.md) · [Color system](docs/color_system.md) · [API response format](docs/api_response.md) · [Quick start](docs/quick-start.md)
+> - Topics: [Database operations](docs/database_migrations.md) · [Color system](docs/color_system.md) · [API response format](docs/api_response.md) · [Quick start](docs/quick-start.md) · [Frontend gotchas](docs/en/frontend_gotchas.md)
 > - Plugin development: see `plugin-toolchain/README.md` (separate repo)
 > - Plugin registry authoring: [Plugin registry authoring guide](docs/plugin_registry.md)
 > - API: after starting in dev mode, visit `/swagger/index.html`

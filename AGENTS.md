@@ -4,7 +4,7 @@
 
 > **详细文档**：
 > - 架构：[整体](docs/architecture.md) · [后端](docs/architecture_backend.md) · [前端](docs/architecture_frontend.md)
-> - 专题：[数据库操作](docs/database_migrations.md) · [颜色系统](docs/color_system.md) · [API 响应格式](docs/api_response.md) · [快速上手](docs/quick-start.md)
+> - 专题：[数据库操作](docs/database_migrations.md) · [颜色系统](docs/color_system.md) · [API 响应格式](docs/api_response.md) · [快速上手](docs/quick-start.md) · [前端踩坑与铁律](docs/frontend_gotchas.md)
 > - 插件开发：见 `plugin-toolchain/README.md`（独立仓库）
 > - 插件源制作：[插件源制作指南](docs/plugin_registry.md)
 > - API：开发模式启动后访问 `/swagger/index.html`
