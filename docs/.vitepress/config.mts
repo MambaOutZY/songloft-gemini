@@ -73,20 +73,14 @@ export default async () => {
           ],
         },
         { text: '源码解析', link: '/repowiki/项目概述' },
-        {
-          text: '子项目',
-          items: [
-            { text: 'Flutter 客户端', link: '/player/architecture' },
-            { text: 'Tracely 可观测', link: '/tracely/' },
-            { text: 'HA 加载项', link: '/addon/' },
-          ],
-        },
         { text: 'FAQ', link: '/faq' },
         { text: '更新日志', link: '/changelog' },
         {
           text: '更多',
           items: [
             { text: 'API 文档', link: '/swagger-api/' },
+            { text: 'Flutter 客户端', link: '/player/architecture' },
+            { text: 'HA 加载项', link: '/addon/' },
             { text: 'Docker Hub', link: 'https://hub.docker.com/r/songloft/songloft' },
             { text: '隐私说明', link: '/PRIVACY' },
             { text: 'NOTICE', link: '/NOTICE' },
@@ -116,8 +110,6 @@ export default async () => {
     sitemap: {
       hostname: 'https://songloft.hanxi.cc',
     },
-
-    ignoreDeadLinks: [/^https?:\/\/localhost/],
 
     lastUpdated: true,
 

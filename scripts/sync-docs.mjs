@@ -34,21 +34,6 @@ const syncItems = [
   { from: 'songloft-player/docs/cn/development.md',     to: 'docs/player/development.md',     subdir: 'songloft-player/docs/cn' },
   { from: 'songloft-player/docs/cn/platform-notes.md',  to: 'docs/player/platform-notes.md',  subdir: 'songloft-player/docs/cn' },
 
-  // ── tracely 可观测系统文档 → docs/tracely/ ──
-  { from: 'tracely/docs/README.md',            to: 'docs/tracely/index.md',            subdir: 'tracely/docs' },
-  { from: 'tracely/docs/architecture.md',      to: 'docs/tracely/architecture.md',     subdir: 'tracely/docs' },
-  { from: 'tracely/docs/api-reference.md',     to: 'docs/tracely/api-reference.md',    subdir: 'tracely/docs' },
-  { from: 'tracely/docs/configuration.md',     to: 'docs/tracely/configuration.md',    subdir: 'tracely/docs' },
-  { from: 'tracely/docs/dashboard.md',         to: 'docs/tracely/dashboard.md',        subdir: 'tracely/docs' },
-  { from: 'tracely/docs/deployment.md',        to: 'docs/tracely/deployment.md',       subdir: 'tracely/docs' },
-  { from: 'tracely/docs/design-decisions.md',  to: 'docs/tracely/design-decisions.md', subdir: 'tracely/docs' },
-  { from: 'tracely/docs/development.md',       to: 'docs/tracely/development.md',      subdir: 'tracely/docs' },
-  { from: 'tracely/docs/getting-started.md',   to: 'docs/tracely/getting-started.md',  subdir: 'tracely/docs' },
-  { from: 'tracely/docs/sdk-go.md',            to: 'docs/tracely/sdk-go.md',           subdir: 'tracely/docs' },
-  { from: 'tracely/docs/sdk-typescript.md',    to: 'docs/tracely/sdk-typescript.md',   subdir: 'tracely/docs' },
-  { from: 'tracely/docs/security.md',          to: 'docs/tracely/security.md',         subdir: 'tracely/docs' },
-  { from: 'tracely/docs/troubleshooting.md',   to: 'docs/tracely/troubleshooting.md',  subdir: 'tracely/docs' },
-
   // ── Home Assistant 加载项文档 → docs/addon/ ──
   { from: 'addon/README.md',         to: 'docs/addon/index.md',       subdir: 'addon' },
   { from: 'addon/songloft/DOCS.md',  to: 'docs/addon/user-guide.md',  subdir: 'addon/songloft' },
@@ -181,6 +166,10 @@ for (const { from, to, en = false, subdir } of syncItems) {
   const dst = resolve(repoRoot, to);
 
   if (!existsSync(src)) {
+    if (subdir) {
+      console.warn(`[sync-docs] skipped (submodule not checked out): ${from}`);
+      continue;
+    }
     console.error(`[sync-docs] source file not found: ${src}`);
     failed = true;
     continue;
