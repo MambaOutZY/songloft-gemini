@@ -83,7 +83,7 @@ func TestGetOrTranscode_InflightWaiterCanceledByOwnCtx(t *testing.T) {
 
 	// srcPath 不存在不影响测试——我们只走到 inflight 等待分支就够了
 	start := time.Now()
-	_, err := cs.GetOrTranscode(ctx, "/nonexistent/src.wma", song, targetFormat, 0, -1)
+	_, err := cs.GetOrTranscode(ctx, "/nonexistent/src.wma", song, targetFormat, 0, -1, false)
 	elapsed := time.Since(start)
 
 	if err == nil {

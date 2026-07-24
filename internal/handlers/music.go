@@ -1211,6 +1211,13 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// normalize=1：启用 EBU R128 音量均衡（songloft-org/songloft#315）。
+	// 需要转码，若未指定 format 则默认使用 mp3。
+	normalize := r.URL.Query().Get("normalize") == "1"
+	if normalize && targetFormat == "" {
+		targetFormat = "mp3"
+	}
+
 	// 预拉取模式：异步触发缓存 + 转码预热，立即返回 202。
 	// 不能用 r.Context()，否则 202 发出后客户端断开会 Kill ffmpeg，预热失败。
 	// 通过 playActivity.Track 注册进 registry（CatPrefetch），但 Activate 不会取消 prefetch
@@ -1228,11 +1235,11 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 
 	switch song.Type {
 	case models.TypeLocal:
-		h.serveLocal(w, r, song, targetFormat, bitrate, videoIntent, trackIndex)
+		h.serveLocal(w, r, song, targetFormat, bitrate, videoIntent, trackIndex, normalize)
 	case models.TypeRadio:
 		h.serveRadio(w, r, song)
 	case models.TypeRemote:
-		h.serveRemote(w, r, song, targetFormat, bitrate)
+		h.serveRemote(w, r, song, targetFormat, bitrate, normalize)
 	default:
 		http.Error(w, "unsupported song type", http.StatusInternalServerError)
 	}
@@ -1322,7 +1329,7 @@ func (h *SongHandler) prepareSongPlayback(ctx context.Context, song *models.Song
 	if song.CueSourcePath == "" && !services.NeedsTranscodeForServe(song, srcPath, targetFormat) && bitrate == 0 {
 		return
 	}
-	if _, err := h.cacheService.GetOrTranscode(ctx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1); err != nil {
+	if _, err := h.cacheService.GetOrTranscode(ctx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, false); err != nil {
 		slog.Warn("prefetch transcode failed", "songId", song.ID, "format", targetFormat, "bitrate", bitrate, "error", err)
 	} else {
 		slog.Info("prefetch ready", "songId", song.ID, "format", targetFormat, "bitrate", bitrate)
@@ -1334,7 +1341,7 @@ func (h *SongHandler) prepareSongPlayback(ctx context.Context, song *models.Song
 // videoIntent=true（media=video）时上游已清空 targetFormat/bitrate/trackIndex，此处按容器真实类型给 video mime。
 // trackIndex >= 0（songloft-org/songloft#298）时抽取指定音轨：由后端探测该轨编码决定目标容器
 // （AAC → m4a 无损 remux，否则 → mp3），忽略传入的 targetFormat/bitrate。
-func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string, bitrate int, videoIntent bool, trackIndex int) {
+func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string, bitrate int, videoIntent bool, trackIndex int, normalize bool) {
 	if song.FilePath == "" {
 		http.NotFound(w, r)
 		return
@@ -1355,7 +1362,7 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 		sk := playactivity.SessionFromContext(r.Context())
 		trackedCtx, release := h.trackActivity(tcCtx, sk, song.ID, playactivity.CatTranscode)
 		defer release()
-		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1)
+		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize)
 		if err != nil {
 			slog.Warn("CUE track extraction failed", "songId", song.ID, "error", err)
 			http.Error(w, "CUE track extraction failed", http.StatusInternalServerError)
@@ -1373,19 +1380,19 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 		sk := playactivity.SessionFromContext(r.Context())
 		trackedCtx, release := h.trackActivity(tcCtx, sk, song.ID, playactivity.CatTranscode)
 		defer release()
-		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, trackIndex)
+		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, trackIndex, normalize)
 		if err != nil {
 			slog.Warn("track extraction failed, serving original", "songId", song.ID, "trackIndex", trackIndex, "error", err)
 		} else {
 			srcPath = path
 		}
-	} else if services.NeedsTranscodeForServe(song, srcPath, targetFormat) || bitrate > 0 {
+	} else if services.NeedsTranscodeForServe(song, srcPath, targetFormat) || bitrate > 0 || normalize {
 		tcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		sk := playactivity.SessionFromContext(r.Context())
 		trackedCtx, release := h.trackActivity(tcCtx, sk, song.ID, playactivity.CatTranscode)
 		defer release()
-		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1)
+		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize)
 		if err != nil {
 			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "bitrate", bitrate, "error", err)
 		} else {
@@ -1609,11 +1616,11 @@ func isHLSURL(rawURL string) bool {
 // - 纯外链歌曲:走 ServeRemoteResource(直接代理)
 // 失败时:返回 502,后台异步切源(若注入了 reassigner),客户端下次播放该 song 会用新源。
 // targetFormat 非空且与原格式不同时,对已缓存文件走 ffmpeg 转码。
-func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string, bitrate int) {
+func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string, bitrate int, normalize bool) {
 	// 1. 缓存命中 → 直接 ServeFile
 	if song.CachePath != "" {
 		if _, err := os.Stat(song.CachePath); err == nil {
-			h.serveCachedFile(w, r, song, song.CachePath, targetFormat, bitrate)
+			h.serveCachedFile(w, r, song, song.CachePath, targetFormat, bitrate, normalize)
 			return
 		}
 		h.cacheService.ClearStaleCachePath(song.ID)
@@ -1621,7 +1628,7 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 
 	// fallback: 旧格式缓存（兼容升级过渡）
 	if cachedPath, ok := h.cacheService.FindCachedFileBySong(song); ok {
-		h.serveCachedFile(w, r, song, cachedPath, targetFormat, bitrate)
+		h.serveCachedFile(w, r, song, cachedPath, targetFormat, bitrate, normalize)
 		return
 	}
 
@@ -1692,14 +1699,14 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 }
 
 // serveCachedFile 从缓存文件提供服务,支持转码。
-func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, song *models.Song, cachedPath, targetFormat string, bitrate int) {
-	if services.NeedsTranscodeForServe(song, cachedPath, targetFormat) || bitrate > 0 {
+func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, song *models.Song, cachedPath, targetFormat string, bitrate int, normalize bool) {
+	if services.NeedsTranscodeForServe(song, cachedPath, targetFormat) || bitrate > 0 || normalize {
 		sk := playactivity.SessionFromContext(r.Context())
 		tcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		trackedCtx, releaseTc := h.trackActivity(tcCtx, sk, song.ID, playactivity.CatTranscode)
 		defer releaseTc()
-		path, err := h.cacheService.GetOrTranscode(trackedCtx, cachedPath, song, services.NormalizeFormat(targetFormat), bitrate, -1)
+		path, err := h.cacheService.GetOrTranscode(trackedCtx, cachedPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize)
 		if err != nil {
 			slog.Warn("transcode failed, serving original", "songId", song.ID, "format", targetFormat, "bitrate", bitrate, "error", err)
 		} else {

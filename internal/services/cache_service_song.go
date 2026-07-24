@@ -383,7 +383,7 @@ func (c *CacheService) EnsureCachedFormat(ctx context.Context, song *models.Song
 	tmpPath := tmp.Name()
 	tmp.Close()
 
-	if err := c.runFFmpeg(tctx, cachedPath, tmpPath, song, fmtName, bitrate, -1); err != nil {
+	if err := c.runFFmpeg(tctx, cachedPath, tmpPath, song, fmtName, bitrate, -1, false); err != nil {
 		slog.Warn("cache transcode failed, keeping original format",
 			"songId", song.ID, "format", fmtName, "bitrate", bitrate, "srcPath", cachedPath, "error", err)
 		os.Remove(tmpPath)
