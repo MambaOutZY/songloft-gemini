@@ -294,7 +294,7 @@ The Docker image contains a base package `/app/songloft`, while the persistent d
 - tag has a title → use `tag.Title` directly
 - tag has no title → filename minus extension
 - **Do not** apply "longest-common-substring dedup + concatenation" — it produces results like "Artist - Title" that redundantly stuff the artist into the title field
-- Video container probe: when scanning containers like mp4/mov/mkv/webm/avi/ts, ffprobe detects whether a real video track is present (excluding the cover attached_pic) to set `songs.is_video`; the client uses this to render the picture / pick the cast mime
+- Video container probe: when scanning containers like mp4/mov/m4v/mkv/webm/avi/ts/mpg/mpeg/flv/wmv/rm/rmvb/3gp, ffprobe detects whether a real video track is present (excluding the cover attached_pic) to set `songs.is_video`; the client uses this to render the picture / pick the cast mime
 
 ### Tag writing (pkg/tag)
 
@@ -305,8 +305,8 @@ The Docker image contains a base package `/app/songloft`, while the persistent d
 |------|---------|------|------|
 | MP3 | ID3v2.3 text frames | USLT | APIC |
 | FLAC | Vorbis Comment | LYRICS | PICTURE block |
-| M4A/MP4/M4B/MOV | iTunes atoms (©nam, etc.) | ©lyr | covr |
-| OGG(.ogg/.oga) | Vorbis Comment | LYRICS | METADATA_BLOCK_PICTURE (base64) |
+| M4A/MP4/M4B/M4V/MOV/3GP | iTunes atoms (©nam, etc.) | ©lyr | covr |
+| OGG(.ogg/.oga/.opus) | Vorbis Comment | LYRICS | METADATA_BLOCK_PICTURE (base64) |
 | APE | APEv2 text items | Lyrics | Cover Art (Front) (binary item) |
 | WAV | RIFF LIST INFO | ICMT | **Not supported** (format limitation) |
 | AIFF/AIF | ID3v2.3 (ID3 chunk) + NAME/AUTH | USLT (ID3 chunk) | APIC (ID3 chunk) |

@@ -1438,6 +1438,16 @@ func videoContentType(path string) string {
 		return "video/x-msvideo"
 	case ".ts":
 		return "video/mp2t"
+	case ".mpg", ".mpeg":
+		return "video/mpeg"
+	case ".flv":
+		return "video/x-flv"
+	case ".wmv":
+		return "video/x-ms-wmv"
+	case ".rm", ".rmvb":
+		return "application/vnd.rn-realmedia-vbr"
+	case ".3gp":
+		return "video/3gpp"
 	}
 	return ""
 }

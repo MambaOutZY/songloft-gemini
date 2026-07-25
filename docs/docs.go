@@ -6950,6 +6950,123 @@ const docTemplate = `{
                 }
             }
         },
+        "/songs/{id}/video-hls/playlist.m3u8": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "对浏览器不原生支持的视频格式（mpg/flv/wmv/rmvb/avi/mkv 等）实时转码为 HLS（H.264+AAC），返回 master.m3u8 播放列表。多音轨文件会生成 HLS 多音频 rendition（hls.js 原生支持切换）。首次请求会启动转码（转完再播）；后续请求命中缓存。需要 ffmpeg。",
+                "produces": [
+                    "application/vnd.apple.mpegurl"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "获取视频 HLS 播放列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌曲 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "HLS 播放列表内容",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "无效的歌曲 ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "歌曲不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "ffmpeg 不可用或转码失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/songs/{id}/video-hls/{path}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回视频 HLS 转码生成的子播放列表或 .ts 切片文件。由 hls.js 根据 master playlist 自动请求。支持多音轨场景下的子目录结构（stream_0/playlist.m3u8, stream_0/0001.ts 等）。",
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "获取视频 HLS 子资源",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌曲 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "子资源路径（如 stream_0/playlist.m3u8 或 stream_0/0001.ts）",
+                        "name": "path",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "HLS 子资源",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "无效请求",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "资源不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/upgrade/check": {
             "get": {
                 "security": [

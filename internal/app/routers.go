@@ -38,6 +38,7 @@ func (a *App) setupRouter() {
 func (a *App) setupAPIV1Router() {
 	authHandler := handlers.NewAuthHandler(a.authService)
 	hlsHandler := handlers.NewHLSHandler(a.songService, a.configService)
+	videoHLSHandler := handlers.NewVideoHLSHandler(a.songService, a.cacheService)
 	songHandler := handlers.NewSongHandler(
 		a.songService,
 		a.cacheService,
@@ -242,6 +243,10 @@ func (a *App) setupAPIV1Router() {
 			r.Head("/songs/{id}/hls/playlist", hlsHandler.HandlePlaylist)
 			r.Get("/songs/{id}/hls/segment", hlsHandler.HandleSegment)
 			r.Head("/songs/{id}/hls/segment", hlsHandler.HandleSegment)
+
+			// 视频 HLS 转码端点（Web 端播放浏览器不原生支持的视频格式）
+			r.Get("/songs/{id}/video-hls/playlist.m3u8", videoHLSHandler.GetPlaylist)
+			r.Get("/songs/{id}/video-hls/*", videoHLSHandler.GetResource)
 
 			// 歌曲封面端点（本地歌曲返回封面文件，网络歌曲由 CoverURL 直接指向外部 CDN）
 			r.Get("/songs/{id}/cover", songHandler.GetSongCover)

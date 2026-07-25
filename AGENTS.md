@@ -294,7 +294,7 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 - tag 有 title → 直接用 `tag.Title`
 - tag 没 title → 文件名去扩展名
 - **不要**再做"最长公共子串去重 + 拼接"，会产生"艺术家 - 标题"这种把艺术家冗余到标题字段的结果
-- 视频容器探测：扫描 mp4/mov/mkv/webm/avi/ts 等容器时用 ffprobe 探测是否含真实视频轨（排除封面 attached_pic）来置 `songs.is_video`，客户端据此渲染画面 / 选择投屏 mime
+- 视频容器探测：扫描 mp4/mov/m4v/mkv/webm/avi/ts/mpg/mpeg/flv/wmv/rm/rmvb/3gp 等容器时用 ffprobe 探测是否含真实视频轨（排除封面 attached_pic）来置 `songs.is_video`，客户端据此渲染画面 / 选择投屏 mime
 
 ### tag 写入（pkg/tag）
 
@@ -305,8 +305,8 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 |------|---------|------|------|
 | MP3 | ID3v2.3 text frames | USLT | APIC |
 | FLAC | Vorbis Comment | LYRICS | PICTURE block |
-| M4A/MP4/M4B/MOV | iTunes atoms (©nam 等) | ©lyr | covr |
-| OGG(.ogg/.oga) | Vorbis Comment | LYRICS | METADATA_BLOCK_PICTURE (base64) |
+| M4A/MP4/M4B/M4V/MOV/3GP | iTunes atoms (©nam 等) | ©lyr | covr |
+| OGG(.ogg/.oga/.opus) | Vorbis Comment | LYRICS | METADATA_BLOCK_PICTURE (base64) |
 | APE | APEv2 text items | Lyrics | Cover Art (Front) (binary item) |
 | WAV | RIFF LIST INFO | ICMT | **不支持**（格式限制） |
 | AIFF/AIF | ID3v2.3 (ID3 chunk) + NAME/AUTH | USLT (ID3 chunk) | APIC (ID3 chunk) |

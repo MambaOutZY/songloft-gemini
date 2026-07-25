@@ -432,13 +432,16 @@ func NeedsTranscodeForServe(song *models.Song, srcPath, targetFormat string) boo
 
 // EffectiveSourceFormat 计算源格式，优先使用 song.Format，
 // 为空时回退到 srcPath 的文件扩展名。
-// song.Format 存的是 tag 库返回的元数据格式名（如 "ID3v2.3"、"VORBIS"、"MP4"），
-// 需要先映射为音频格式；无法确定时回退到文件扩展名。
+// song.Format 在扫描时由 NormalizeFormat(extension) 或 ffprobe format_name 填充，
+// 已是归一化的格式标识（如 "mp3"、"mpg"、"wmv"）；tagFormatToAudioFormat 处理
+// 遗留条目中可能存在的 tag 格式名（如 "ID3v2.3" → "mp3"）。
 func EffectiveSourceFormat(song *models.Song, srcPath string) string {
 	if song != nil && song.Format != "" {
 		if af := tagFormatToAudioFormat(song.Format); af != "" {
 			return af
 		}
+		// song.Format 已是归一化的格式标识，直接使用（如 "mpg"、"wmv"、"flv"）。
+		return song.Format
 	}
 	if srcPath != "" {
 		return strings.TrimPrefix(filepath.Ext(srcPath), ".")
@@ -466,10 +469,12 @@ func NormalizeFormat(f string) string {
 	switch f {
 	case "mpeg", "mp3":
 		return "mp3"
-	case "mp4", "m4a", "aac":
+	case "mp4", "m4a", "aac", "m4b":
 		return "m4a"
-	case "ogg", "vorbis":
+	case "ogg", "vorbis", "oga":
 		return "ogg"
+	case "opus":
+		return "opus"
 	case "flac":
 		return "flac"
 	case "wav", "wave":
@@ -492,6 +497,18 @@ func NormalizeFormat(f string) string {
 		return "avi"
 	case "ts", "mpegts", "mp2t":
 		return "ts"
+	case "mpg":
+		return "mpg"
+	case "flv":
+		return "flv"
+	case "wmv":
+		return "wmv"
+	case "rm", "rmvb":
+		return "rmvb"
+	case "3gp":
+		return "3gp"
+	case "m4v":
+		return "m4v"
 	}
 	return f
 }

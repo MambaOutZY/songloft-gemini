@@ -298,6 +298,25 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 		metadata.Format = "mka"
 	}
 
+	// .mpg（MPEG Program Stream 视频容器）：ffprobe 报告 format_name 为 "mpeg"，
+	// 与 MP3 音频的 "mpeg" 编码格式名冲突（NormalizeFormat("mpeg") → "mp3"）；
+	// 统一按扩展名覆盖为 "mpg"，确保转码判定不会误认为 MP3 而跳过音频抽取。
+	if strings.EqualFold(filepath.Ext(filePath), ".mpg") {
+		metadata.Format = "mpg"
+	}
+
+	// .mpeg 同 .mpg，ffprobe 同样报告 "mpeg"；统一存为 "mpg" 避免与 MP3 冲突。
+	if strings.EqualFold(filepath.Ext(filePath), ".mpeg") {
+		metadata.Format = "mpg"
+	}
+
+	// .wmv（Windows Media Video）：ffprobe 报告 format_name 为 "asf"，
+	// 与 WMA 音频共用同一容器格式名（NormalizeFormat("asf") → "wma"）；
+	// 按扩展名覆盖为 "wmv"，防止被误认为纯音频而跳过视频探测/音轨抽取。
+	if strings.EqualFold(filepath.Ext(filePath), ".wmv") {
+		metadata.Format = "wmv"
+	}
+
 	// 视频轨探测：对可能含视频画面的容器（mp4/mov/mkv/webm/avi/ts 等）用 ffprobe 判定是否含真实视频流。
 	// 注意：含视频轨的 mp4/mov 会被 tag 库成功读取（拿到时长），不会进入上面的 ffprobe 分支，
 	// 故这里必须对视频容器候选独立探测；已探测过（mkv 等无 tag 的容器）则复用 probe，避免重复调用。
@@ -667,6 +686,8 @@ func (m *MetadataExtractor) runFFProbe(ctx context.Context, filePath string) (*F
 var videoContainerExts = map[string]bool{
 	".mp4": true, ".mov": true, ".m4v": true,
 	".mkv": true, ".webm": true, ".avi": true, ".ts": true,
+	".mpg": true, ".mpeg": true,
+	".flv": true, ".wmv": true, ".rm": true, ".rmvb": true, ".3gp": true,
 }
 
 // isVideoContainerCandidate 判断扩展名是否可能含视频画面（需进一步 ffprobe 实探）。
