@@ -49,7 +49,7 @@ make build-frontend-web            # 独立部署 web
 make build-frontend-{linux,windows,macos,android,ios,all}
 
 # Bundle 本地模式（Go 后端编译为移动端库 / 桌面端可执行文件）
-make build-go-mobile-android       # Android .aar（gomobile bind，arm64 + arm）
+make build-go-mobile-android       # Android .aar（gomobile bind，arm64 + arm + x86_64）
 make build-go-mobile-ios           # iOS .xcframework（gomobile bind，arm64，仅 macOS）
 make build-go-desktop-linux        # Linux 可执行文件
 make build-go-desktop-windows      # Windows .exe

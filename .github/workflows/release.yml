@@ -620,8 +620,9 @@ jobs:
           cp build/app/outputs/flutter-apk/app-x86_64-release.apk "$GITHUB_WORKSPACE/songloft-bundled-android-x86_64.apk"
 
       # 无基线热更:每次发版自动产出本渠道最新的前端补丁(libapp.so)+ 后端补丁
-      # (libgojni.so),随 release 上传;客户端查本渠道最新即更新。仅 arm64-v8a/armeabi-v7a
-      # (gomobile 只产这两个 ABI;x86_64 无 libgojni.so)。详见 songloft-player/docs/cn/backend_hotupdate.md。
+      # (libgojni.so),随 release 上传;客户端查本渠道最新即更新。覆盖 arm64-v8a/
+      # armeabi-v7a/x86_64(gomobile bind 含 android/amd64 目标,x86_64 供模拟器验证)。
+      # 详见 songloft-player/docs/cn/backend_hotupdate.md。
       - name: Guard mobile export surface (frozen)
         run: |
           go doc ./mobile | grep '^func ' | sort > /tmp/current_surface.txt
@@ -645,7 +646,7 @@ jobs:
           cd songloft-player
           # versionCode 取自 pubspec 的 +N(本项目恒定;仅作 flutter_patcher 绑定,非手挑基线)
           VERSION_CODE=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f2)
-          for abi in arm64-v8a armeabi-v7a; do
+          for abi in arm64-v8a armeabi-v7a x86_64; do
             apk="build/app/outputs/flutter-apk/app-${abi}-release.apk"
             [ -f "$apk" ] || { echo "跳过 $abi(无 APK)"; continue; }
             LABEL="${SEMVER}-${GIT_COMMIT}"

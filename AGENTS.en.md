@@ -49,7 +49,7 @@ make build-frontend-web            # Standalone web deployment
 make build-frontend-{linux,windows,macos,android,ios,all}
 
 # Bundle local mode (Go backend compiled into a mobile library / desktop executable)
-make build-go-mobile-android       # Android .aar (gomobile bind, arm64 + arm)
+make build-go-mobile-android       # Android .aar (gomobile bind, arm64 + arm + x86_64)
 make build-go-mobile-ios           # iOS .xcframework (gomobile bind, arm64, macOS only)
 make build-go-desktop-linux        # Linux executable
 make build-go-desktop-windows      # Windows .exe

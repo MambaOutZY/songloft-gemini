@@ -90,7 +90,7 @@ build-frontend-macos: ## 构建 Flutter macOS 桌面版
 build-go-mobile-android: ## 编译 Go 后端为 Android .aar（gomobile bind）
 	@echo "$(BLUE)正在编译 Go 后端为 Android .aar...$(NC)"
 	@which gomobile > /dev/null || (echo "$(RED)错误: gomobile 未安装，请运行: go install golang.org/x/mobile/cmd/gomobile@latest && gomobile init$(NC)" && exit 1)
-	gomobile bind -v -target=android/arm64,android/arm -androidapi 23 \
+	gomobile bind -v -target=android/arm64,android/arm,android/amd64 -androidapi 23 \
 		-tags lite \
 		-ldflags="$(LDFLAGS)" \
 		-o songloft-player/android/app/libs/songloft.aar ./mobile
