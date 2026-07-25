@@ -93,10 +93,10 @@ func (h *VideoHLSHandler) GetResource(w http.ResponseWriter, r *http.Request) {
 	dir := h.cacheService.VideoHLSDir(songID)
 	fullPath := filepath.Join(dir, filepath.FromSlash(subPath))
 
-	// 确保路径仍在 HLS 目录内（防穿越）
+	// 确保路径仍在 HLS 目录内（防穿越，追加分隔符避免前缀歧义如 /video_hls/12 vs /video_hls/123）
 	absDir, _ := filepath.Abs(dir)
 	absPath, _ := filepath.Abs(fullPath)
-	if !strings.HasPrefix(absPath, absDir) {
+	if !strings.HasPrefix(absPath, absDir+string(filepath.Separator)) && absPath != absDir {
 		respondError(w, http.StatusBadRequest, "无效的资源路径", nil)
 		return
 	}

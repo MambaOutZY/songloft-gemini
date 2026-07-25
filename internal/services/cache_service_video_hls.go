@@ -100,7 +100,8 @@ func (c *CacheService) VideoHLSTranscode(ctx context.Context, srcPath string, so
 	}()
 
 	// 5. 等待首个 segment 出现（边转边播：首个 segment 就绪即可播放）
-	if err := c.waitForFirstSegment(ctx, outDir, nil); err != nil {
+	// 传入 dl.done 以便 ffmpeg 快速失败时提前退出（不用等 30s 超时）
+	if err := c.waitForFirstSegment(ctx, outDir, dl.done); err != nil {
 		return "", err
 	}
 
@@ -230,18 +231,9 @@ func isHLSComplete(playlistPath string) bool {
 	return false
 }
 
-// containsEndList 快速检测字节是否包含 #EXT-X-ENDLIST。
+// containsEndList 检测 HLS playlist 是否包含 #EXT-X-ENDLIST 标记。
 func containsEndList(data []byte) bool {
-	for i := 0; i <= len(data)-16; i++ {
-		if data[i] == '#' && string(data[i:i+16]) == "#EXT-X-ENDLIST\r\n" || string(data[i:i+15]) == "#EXT-X-ENDLIST\n" {
-			return true
-		}
-	}
-	// 也可能在文件末尾无换行
-	if len(data) >= 14 && string(data[len(data)-14:]) == "#EXT-X-ENDLIST" {
-		return true
-	}
-	return false
+	return strings.Contains(string(data), "#EXT-X-ENDLIST")
 }
 
 // CleanVideoHLS 清理指定歌曲的视频 HLS 缓存目录。
