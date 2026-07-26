@@ -644,17 +644,22 @@ jobs:
         run: |
           set -e
           cd songloft-player
-          # versionCode 取自 pubspec 的 +N(本项目恒定;仅作 flutter_patcher 绑定,非手挑基线)
-          VERSION_CODE=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f2)
+          # --split-per-abi 时 gradle 会把各 ABI APK 的 versionCode 改写为
+          # 「ABI偏移×1000+pubspec基础值」(如 arm64-v8a=2001),flutter_patcher 按
+          # versionCode 严格绑定,manifest/补丁必须写 APK 的**真实值**(用 aapt 读),
+          # 写 pubspec 裸值会让客户端 versionCode 闸恒不通过。
+          BUILD_TOOLS_DIR=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           for abi in arm64-v8a armeabi-v7a x86_64; do
             apk="build/app/outputs/flutter-apk/app-${abi}-release.apk"
             [ -f "$apk" ] || { echo "跳过 $abi(无 APK)"; continue; }
+            ABI_VC=$("$BUILD_TOOLS_DIR/aapt" dump badging "$apk" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" | head -1)
+            [ -n "$ABI_VC" ] || { echo "::error::无法从 $apk 读取 versionCode"; exit 1; }
             LABEL="${SEMVER}-${GIT_COMMIT}"
 
             # 前端补丁:libapp.so 打成 patch.zip + 扩展 manifest
             rm -rf dist
             dart run flutter_patcher:pack --apk "$apk" --version "$LABEL" \
-              --target-version-code "$VERSION_CODE" --abi "$abi"
+              --target-version-code "$ABI_VC" --abi "$abi"
             cp dist/patch.zip "$GITHUB_WORKSPACE/patch-${abi}.zip"
             ZIP_MD5=$(md5sum "$GITHUB_WORKSPACE/patch-${abi}.zip" | cut -d' ' -f1)
             cat > "$GITHUB_WORKSPACE/manifest-${abi}.json" <<EOF
@@ -665,7 +670,7 @@ jobs:
               "semanticVersion": "${SEMVER}",
               "gitCommit": "${GIT_COMMIT}",
               "flutterBinding": "${FLUTTER_BINDING}",
-              "targetVersionCode": ${VERSION_CODE},
+              "targetVersionCode": ${ABI_VC},
               "patchUrl": "https://github.com/${REPO}/releases/download/${TAG}/patch-${abi}.zip",
               "md5": "${ZIP_MD5}"
             }
