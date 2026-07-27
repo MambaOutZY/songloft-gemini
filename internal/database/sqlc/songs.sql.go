@@ -21,7 +21,7 @@ func (q *Queries) ClearAllCachePaths(ctx context.Context) error {
 }
 
 const clearAllFingerprints = `-- name: ClearAllFingerprints :exec
-UPDATE songs SET fingerprint = '', fingerprint_duration = 0 WHERE type = 'local' AND fingerprint != ''
+UPDATE songs SET fingerprint = '', fingerprint_duration = 0, fingerprint_attempted_at = 0 WHERE type = 'local'
 `
 
 func (q *Queries) ClearAllFingerprints(ctx context.Context) error {
@@ -41,19 +41,21 @@ func (q *Queries) ClearCachePath(ctx context.Context, id int64) error {
 const countLocalFingerprints = `-- name: CountLocalFingerprints :one
 SELECT
     COUNT(*) AS total,
-    CAST(COALESCE(SUM(CASE WHEN fingerprint != '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS computed
+    CAST(COALESCE(SUM(CASE WHEN fingerprint != '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS computed,
+    CAST(COALESCE(SUM(CASE WHEN fingerprint = '' AND fingerprint_attempted_at != 0 THEN 1 ELSE 0 END), 0) AS INTEGER) AS failed
 FROM songs WHERE type = 'local'
 `
 
 type CountLocalFingerprintsRow struct {
 	Total    int64
 	Computed int64
+	Failed   int64
 }
 
 func (q *Queries) CountLocalFingerprints(ctx context.Context) (CountLocalFingerprintsRow, error) {
 	row := q.db.QueryRowContext(ctx, countLocalFingerprints)
 	var i CountLocalFingerprintsRow
-	err := row.Scan(&i.Total, &i.Computed)
+	err := row.Scan(&i.Total, &i.Computed, &i.Failed)
 	return i, err
 }
 
@@ -249,7 +251,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
     file_modified_at, track, language, style, is_video,
-    cue_start_seconds, cue_end_seconds
+    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at
 FROM songs WHERE id = ?
 `
 
@@ -296,6 +298,7 @@ func (q *Queries) GetSongByID(ctx context.Context, id int64) (Song, error) {
 		&i.IsVideo,
 		&i.CueStartSeconds,
 		&i.CueEndSeconds,
+		&i.FingerprintAttemptedAt,
 	)
 	return i, err
 }
@@ -448,12 +451,15 @@ func (q *Queries) ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsR
 }
 
 const listLocalWithoutFingerprint = `-- name: ListLocalWithoutFingerprint :many
-SELECT id, file_path FROM songs WHERE type = 'local' AND fingerprint = ''
+SELECT id, file_path, cue_start_seconds, cue_end_seconds FROM songs
+WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at = 0
 `
 
 type ListLocalWithoutFingerprintRow struct {
-	ID       int64
-	FilePath string
+	ID              int64
+	FilePath        string
+	CueStartSeconds float64
+	CueEndSeconds   float64
 }
 
 func (q *Queries) ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalWithoutFingerprintRow, error) {
@@ -465,7 +471,12 @@ func (q *Queries) ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalW
 	items := []ListLocalWithoutFingerprintRow{}
 	for rows.Next() {
 		var i ListLocalWithoutFingerprintRow
-		if err := rows.Scan(&i.ID, &i.FilePath); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.FilePath,
+			&i.CueStartSeconds,
+			&i.CueEndSeconds,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -619,7 +630,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
     file_modified_at, track, language, style, is_video,
-    cue_start_seconds, cue_end_seconds
+    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at
 FROM songs WHERE cache_path != ''
 `
 
@@ -672,6 +683,7 @@ func (q *Queries) ListSongsWithCache(ctx context.Context) ([]Song, error) {
 			&i.IsVideo,
 			&i.CueStartSeconds,
 			&i.CueEndSeconds,
+			&i.FingerprintAttemptedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -684,6 +696,20 @@ func (q *Queries) ListSongsWithCache(ctx context.Context) ([]Song, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const markFingerprintAttempted = `-- name: MarkFingerprintAttempted :exec
+UPDATE songs SET fingerprint_attempted_at = ? WHERE id = ?
+`
+
+type MarkFingerprintAttemptedParams struct {
+	FingerprintAttemptedAt int64
+	ID                     int64
+}
+
+func (q *Queries) MarkFingerprintAttempted(ctx context.Context, arg MarkFingerprintAttemptedParams) error {
+	_, err := q.db.ExecContext(ctx, markFingerprintAttempted, arg.FingerprintAttemptedAt, arg.ID)
+	return err
 }
 
 const updateCachePath = `-- name: UpdateCachePath :exec
@@ -894,17 +920,23 @@ func (q *Queries) UpdateSongDuration(ctx context.Context, arg UpdateSongDuration
 }
 
 const updateSongFingerprint = `-- name: UpdateSongFingerprint :exec
-UPDATE songs SET fingerprint = ?, fingerprint_duration = ? WHERE id = ?
+UPDATE songs SET fingerprint = ?, fingerprint_duration = ?, fingerprint_attempted_at = ? WHERE id = ?
 `
 
 type UpdateSongFingerprintParams struct {
-	Fingerprint         string
-	FingerprintDuration float64
-	ID                  int64
+	Fingerprint            string
+	FingerprintDuration    float64
+	FingerprintAttemptedAt int64
+	ID                     int64
 }
 
 func (q *Queries) UpdateSongFingerprint(ctx context.Context, arg UpdateSongFingerprintParams) error {
-	_, err := q.db.ExecContext(ctx, updateSongFingerprint, arg.Fingerprint, arg.FingerprintDuration, arg.ID)
+	_, err := q.db.ExecContext(ctx, updateSongFingerprint,
+		arg.Fingerprint,
+		arg.FingerprintDuration,
+		arg.FingerprintAttemptedAt,
+		arg.ID,
+	)
 	return err
 }
 

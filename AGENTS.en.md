@@ -312,6 +312,43 @@ The Docker image contains a base package `/app/songloft`, while the persistent d
 | AIFF/AIF | ID3v2.3 (ID3 chunk) + NAME/AUTH | USLT (ID3 chunk) | APIC (ID3 chunk) |
 - Unsupported formats → return `ErrUnsupportedWrite`; the caller **must** degrade to a log entry and **must not** block the main flow
 
+### Audio fingerprints (fingerprint — cost-control rules)
+
+Fingerprints (ffmpeg chromaprint) serve only two purposes: the "Duplicate detection" settings page and
+an **optional** parameter for plugin lyric/cover search. It is an on-demand feature, **not** a required
+step of scanning. Read the rules below before touching this area — `songloft-org/songloft#323` is exactly
+what happens when they are missing: "scan reports completed but the CPU stays pinned at 100% forever".
+
+- **Auto-fingerprint after scan is off by default**: business endpoint `GET/PUT /api/v1/settings/scan-auto-fingerprint`
+  with body `{enabled: bool}`, config key `scan_auto_fingerprint`, default `false`. Checked at the top of
+  `runAutoFingerprint` (`song_service.go`), symmetric with `scan_auto_create_playlists`. While off, users
+  trigger `POST /scan/fingerprints` manually from the duplicate detection page
+- **Failures must be persisted**: `songs.fingerprint_attempted_at` (unix seconds, 0 = never attempted).
+  `ListLocalWithoutFingerprint` filters on `fingerprint = '' AND fingerprint_attempted_at = 0`.
+  **Never** just log on failure — without the marker, AutoScanner (default 3600s) re-queues the same batch of
+  doomed long/audio-less files for a full ffmpeg decode on every round. `ClearAllFingerprints` resets the
+  marker, so "Recompute all" is the only way to retry failed items
+- **120-second sampling cap**: `ExtractFingerprint` passes `-t 120` (constant `fingerprintSampleSeconds`),
+  which is also the AcoustID de-facto standard. **Do not** remove it — decoding a 30-minute audiobook in
+  full inevitably times out on a weak NAS; measured on one file: 3.8s full decode vs 0.35s for 120s sampling.
+  30s timeout plus `cmd.WaitDelay` keeps a stuck ffmpeg child from pinning a worker
+- **CUE tracks sample by range**: a CUE track's `file_path` points at the whole-disc image, so
+  `cue_start_seconds/cue_end_seconds` must be passed through `-ss`; otherwise every track under the same
+  image gets an **identical** fingerprint and they all flag each other as duplicates
+- **Concurrency adapts to CPU**: `fpWorkerCount()` = `clamp(GOMAXPROCS/4, 1, 4)`. **Do not** revert to a
+  hard-coded 4 — Go's GOMAXPROCS is cgroup-aware, so a CPU-limited Docker container converges correctly
+- **Cancellable**: `POST /api/v1/scan/fingerprints/cancel` → `FingerprintService.Cancel()`. The fingerprint
+  task uses its own `context.Background()` and **cannot** reuse the scan's cancelCh — `scanProgressManager.Complete()`
+  already did `close(cancel); cancel = nil`, after which `GetCancelChannel()` returns nil. Songs cancelled
+  mid-flight are not marked as attempted, so the next run resumes them
+- **Dedup has a duration guard**: within one fingerprint, `ListDuplicateGroups` further clusters by
+  `fingerprint_duration` (full-file length) with a 2-second tolerance, because only the first 120 seconds are
+  sampled and "audiobooks with a shared intro" can collide
+- Migration `0029` clears legacy full-length fingerprints once (they are not comparable with 120s sampling);
+  after upgrading they need to be recomputed
+- `IsChromaprintAvailable` honors the `ffmpeg_path` config injected via `SetFingerprintFFmpegPath` instead of
+  only searching PATH
+
 ### HLS radio proxy mode (/settings/hls-proxy)
 
 - Business toggle endpoint: `GET/PUT /api/v1/settings/hls-proxy` with body `{enabled: bool}`, default `false`

@@ -345,6 +345,7 @@ query parameter 回退主要服务于无法自定义 Header 的场景：`<img>` 
 | GET | `/scan/fingerprints/status` | 指纹状态 |
 | POST | `/scan/fingerprints` | 启动指纹计算 |
 | GET | `/scan/fingerprints/progress` | 指纹计算进度 |
+| POST | `/scan/fingerprints/cancel` | 中断指纹计算 |
 
 ### 8.6 缓存 (CacheHandler)
 

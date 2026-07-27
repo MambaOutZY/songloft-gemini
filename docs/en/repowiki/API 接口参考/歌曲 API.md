@@ -109,7 +109,7 @@ Shares filter conditions with `/songs` (`type`, `keyword`, `path_prefix`), but r
 
 **Path:** `/api/v1/songs/duplicates` | **Authentication:** BearerAuth
 
-Queries groups of local songs with identical content via audio fingerprints (Chromaprint). Fingerprint computation must be completed first (`POST /scan/fingerprints`).
+Queries groups of local songs with identical content via audio fingerprints (Chromaprint). Fingerprint computation must be completed first (`POST /scan/fingerprints`) — auto-computing fingerprints after a scan is **off by default** (see `/settings/scan-auto-fingerprint`). Only the first 120 seconds of each song are sampled, so songs within one fingerprint are further clustered by full-file length with a 2-second tolerance to rule out "shared intro" collisions.
 
 **Success response (200):**
 

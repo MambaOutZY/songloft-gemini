@@ -186,6 +186,8 @@ func (a *App) setupAPIV1Router() {
 			r.Put("/settings/scan-auto-create-playlists", scanHandler.UpdateAutoCreatePlaylistsSetting)
 			r.Get("/settings/scan-title-source", scanHandler.GetScanTitleSourceSetting)
 			r.Put("/settings/scan-title-source", scanHandler.UpdateScanTitleSourceSetting)
+			r.Get("/settings/scan-auto-fingerprint", scanHandler.GetScanAutoFingerprintSetting)
+			r.Put("/settings/scan-auto-fingerprint", scanHandler.UpdateScanAutoFingerprintSetting)
 			r.Get("/settings/auto-scan", scanHandler.GetAutoScanSetting)
 			r.Put("/settings/auto-scan", scanHandler.UpdateAutoScanSetting)
 			r.Get("/settings/log-level", logHandler.GetLevelSetting)
@@ -226,6 +228,7 @@ func (a *App) setupAPIV1Router() {
 			r.Get("/scan/fingerprints/status", scanHandler.GetFingerprintStatus)
 			r.Post("/scan/fingerprints", scanHandler.StartFingerprintCompute)
 			r.Get("/scan/fingerprints/progress", scanHandler.GetFingerprintProgress)
+			r.Post("/scan/fingerprints/cancel", scanHandler.CancelFingerprintCompute)
 
 			// 资源代理模块（解决外部 CDN 的 CORS 问题）
 			r.Get("/proxy", proxyHandler.Proxy)

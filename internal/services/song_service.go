@@ -44,10 +44,11 @@ type SongRepository interface {
 	ListCueSources(ctx context.Context) (map[string]bool, error)
 	ListCueAudioPaths(ctx context.Context, cueSourcePath string) ([]string, error)
 	DeleteByCueSource(ctx context.Context, cueSourcePath string) (int, error)
-	UpdateFingerprint(ctx context.Context, id int64, fingerprint string, duration float64) error
+	UpdateFingerprint(ctx context.Context, id int64, fingerprint string, duration float64, attemptedAt int64) error
+	MarkFingerprintAttempted(ctx context.Context, id int64, attemptedAt int64) error
 	ClearAllFingerprints(ctx context.Context) error
 	ListLocalWithoutFingerprint(ctx context.Context) ([]database.SongIDPath, error)
-	CountLocalFingerprints(ctx context.Context) (total, computed int64, err error)
+	CountLocalFingerprints(ctx context.Context) (total, computed, failed int64, err error)
 	ListDuplicateGroups(ctx context.Context) ([]database.DuplicateGroup, error)
 	ListFacet(ctx context.Context, field string, f *database.FacetFilter) ([]database.Facet, error)
 	CountFacet(ctx context.Context, field, keyword string) (int64, error)
@@ -123,8 +124,8 @@ func (s *SongService) CancelScan() bool {
 	return s.scanProgressManager.Cancel()
 }
 
-// CountLocalFingerprints 返回本地歌曲总数和已计算指纹数。
-func (s *SongService) CountLocalFingerprints(ctx context.Context) (total, computed int64, err error) {
+// CountLocalFingerprints 返回本地歌曲总数、已计算指纹数，以及尝试过但失败的数量。
+func (s *SongService) CountLocalFingerprints(ctx context.Context) (total, computed, failed int64, err error) {
 	return s.songs.CountLocalFingerprints(ctx)
 }
 
@@ -680,7 +681,13 @@ func (s *SongService) runAutoCreatePlaylists(ctx context.Context) {
 }
 
 // runAutoFingerprint 扫描完成后自动为缺失指纹的歌曲计算指纹。
+// 默认关闭：指纹只服务于「重复歌曲检测」与插件歌词/封面搜索，属按需功能，
+// 全库自动计算会在扫描「完成」之后继续长时间占满 CPU（songloft-org/songloft#323）。
 func (s *SongService) runAutoFingerprint() {
+	if s.configService != nil && !s.configService.GetBool("scan_auto_fingerprint", false) {
+		slog.Info("auto fingerprint disabled, skipping")
+		return
+	}
 	if s.fingerprintService == nil || !IsChromaprintAvailable() {
 		return
 	}

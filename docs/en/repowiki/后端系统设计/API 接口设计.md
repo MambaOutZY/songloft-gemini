@@ -345,6 +345,7 @@ The following route list covers all endpoints registered in `routers.go`, `JSPlu
 | GET | `/scan/fingerprints/status` | Fingerprint status |
 | POST | `/scan/fingerprints` | Start fingerprint computation |
 | GET | `/scan/fingerprints/progress` | Fingerprint computation progress |
+| POST | `/scan/fingerprints/cancel` | Interrupt fingerprint computation |
 
 ### 8.6 Cache (CacheHandler)
 

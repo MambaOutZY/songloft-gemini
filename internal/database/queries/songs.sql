@@ -9,7 +9,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
     file_modified_at, track, language, style, is_video,
-    cue_start_seconds, cue_end_seconds
+    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at
 FROM songs WHERE id = ?;
 
 -- name: CreateSong :execlastid
@@ -95,18 +95,23 @@ WHERE id = ?;
 SELECT added_at, updated_at FROM songs WHERE id = ?;
 
 -- name: UpdateSongFingerprint :exec
-UPDATE songs SET fingerprint = ?, fingerprint_duration = ? WHERE id = ?;
+UPDATE songs SET fingerprint = ?, fingerprint_duration = ?, fingerprint_attempted_at = ? WHERE id = ?;
+
+-- name: MarkFingerprintAttempted :exec
+UPDATE songs SET fingerprint_attempted_at = ? WHERE id = ?;
 
 -- name: ClearAllFingerprints :exec
-UPDATE songs SET fingerprint = '', fingerprint_duration = 0 WHERE type = 'local' AND fingerprint != '';
+UPDATE songs SET fingerprint = '', fingerprint_duration = 0, fingerprint_attempted_at = 0 WHERE type = 'local';
 
 -- name: ListLocalWithoutFingerprint :many
-SELECT id, file_path FROM songs WHERE type = 'local' AND fingerprint = '';
+SELECT id, file_path, cue_start_seconds, cue_end_seconds FROM songs
+WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at = 0;
 
 -- name: CountLocalFingerprints :one
 SELECT
     COUNT(*) AS total,
-    CAST(COALESCE(SUM(CASE WHEN fingerprint != '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS computed
+    CAST(COALESCE(SUM(CASE WHEN fingerprint != '' THEN 1 ELSE 0 END), 0) AS INTEGER) AS computed,
+    CAST(COALESCE(SUM(CASE WHEN fingerprint = '' AND fingerprint_attempted_at != 0 THEN 1 ELSE 0 END), 0) AS INTEGER) AS failed
 FROM songs WHERE type = 'local';
 
 -- name: ListDuplicateFingerprints :many
@@ -143,7 +148,7 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
     file_modified_at, track, language, style, is_video,
-    cue_start_seconds, cue_end_seconds
+    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at
 FROM songs WHERE cache_path != '';
 
 -- name: ListSongsNeedingMetadata :many

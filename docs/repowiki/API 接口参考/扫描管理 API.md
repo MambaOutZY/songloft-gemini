@@ -20,12 +20,14 @@
    - [GET /scan/fingerprints/status -- 获取指纹计算状态](#31-get-scanfingerprintsstatus----获取指纹计算状态)
    - [POST /scan/fingerprints -- 触发批量指纹计算](#32-post-scanfingerprints----触发批量指纹计算)
    - [GET /scan/fingerprints/progress -- 获取指纹计算进度](#33-get-scanfingerprintsprogress----获取指纹计算进度)
+   - [POST /scan/fingerprints/cancel -- 中断指纹计算](#34-post-scanfingerprintscancel----中断指纹计算)
 4. [扫描业务设置端点](#4-扫描业务设置端点)
    - [GET/PUT /settings/music-path -- 音乐路径配置](#41-getput-settingsmusic-path----音乐路径配置)
    - [GET/PUT /settings/scan-playlist-mode -- 歌单归并模式](#42-getput-settingsscan-playlist-mode----歌单归并模式)
    - [GET/PUT /settings/scan-auto-create-playlists -- 自动创建歌单开关](#43-getput-settingsscan-auto-create-playlists----自动创建歌单开关)
-   - [GET/PUT /settings/scan-title-source -- 扫描标题来源配置](#44-getput-settingsscan-title-source----扫描标题来源配置)
-   - [GET/PUT /settings/auto-scan -- 自动扫描配置](#45-getput-settingsauto-scan----自动扫描配置)
+   - [GET/PUT /settings/scan-auto-fingerprint -- 自动计算音频指纹开关](#44-getput-settingsscan-auto-fingerprint----自动计算音频指纹开关)
+   - [GET/PUT /settings/scan-title-source -- 扫描标题来源配置](#45-getput-settingsscan-title-source----扫描标题来源配置)
+   - [GET/PUT /settings/auto-scan -- 自动扫描配置](#46-getput-settingsauto-scan----自动扫描配置)
 
 ---
 
@@ -214,8 +216,10 @@
 {
   "chromaprint_available": true,
   "total": 1000,
-  "computed": 800,
-  "missing": 200
+  "computed": 795,
+  "missing": 200,
+  "failed": 5,
+  "auto_enabled": false
 }
 ```
 
@@ -224,7 +228,9 @@
 | `chromaprint_available` | boolean | ffmpeg chromaprint 是否可用 |
 | `total` | int | 本地歌曲总数 |
 | `computed` | int | 已计算指纹的歌曲数 |
-| `missing` | int | 缺少指纹的歌曲数 |
+| `missing` | int | 尚未尝试过计算的歌曲数（= total - computed - failed） |
+| `failed` | int | 尝试过但失败的歌曲数（无音轨 / 文件损坏 / 超时）。**不会自动重试**，只有 `recompute_all=true` 才会再试 |
+| `auto_enabled` | boolean | 扫描后是否自动计算指纹（config `scan_auto_fingerprint`，默认 false） |
 
 ---
 
@@ -234,7 +240,7 @@
 **路径:** `/api/v1/scan/fingerprints`
 **认证:** 需要 BearerAuth
 
-**描述:** 异步为本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。
+**描述:** 异步为本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。单文件只采样前 120 秒（AcoustID 标准），并发度按 CPU 自适应（`clamp(GOMAXPROCS/4, 1, 4)`），失败的歌曲会被标记为「已尝试」而不再自动重试。
 
 **请求体:**
 
@@ -246,7 +252,7 @@
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `recompute_all` | boolean | 否 | 为 true 时清空已有指纹后重新计算全部（默认 false，仅计算缺失的） |
+| `recompute_all` | boolean | 否 | 为 true 时清空已有指纹**与「已尝试」标记**后重新计算全部（默认 false，仅计算从未尝试过的）。这是重试失败项的唯一入口 |
 
 **成功响应 (200):**
 
@@ -286,10 +292,32 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `status` | string | 任务状态：`idle` / `running` / `done` |
+| `status` | string | 任务状态：`idle` / `running` / `done` / `cancelled` |
 | `computed` | int | 已计算数量 |
 | `total` | int | 总任务数量 |
 | `failed` | int | 失败数量 |
+
+---
+
+### 3.4 POST /scan/fingerprints/cancel -- 中断指纹计算
+
+**方法:** `POST`
+**路径:** `/api/v1/scan/fingerprints/cancel`
+**认证:** 需要 BearerAuth
+
+**描述:** 停止正在运行的批量指纹计算任务并杀掉其 ffmpeg 子进程。指纹任务不挂在扫描的取消通道上（扫描「完成」后该通道已关闭），所以需要独立的取消入口。已算出的指纹保留；被中断的歌曲**不打**「已尝试」标记，下次继续计算。
+
+**成功响应 (200):**
+
+```json
+{
+  "cancelled": true
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `cancelled` | boolean | 是否确实中断了一个在跑的任务（无任务时为 false，不报错） |
 
 ---
 
@@ -380,7 +408,26 @@
 
 ---
 
-### 4.4 GET/PUT /settings/scan-title-source -- 扫描标题来源配置
+### 4.4 GET/PUT /settings/scan-auto-fingerprint -- 自动计算音频指纹开关
+
+**路径:** `/api/v1/settings/scan-auto-fingerprint`
+**认证:** 需要 BearerAuth
+
+控制扫描完成后是否自动为缺失指纹的本地歌曲计算 chromaprint 音频指纹。**默认关闭（`false`）**：指纹只服务于「重复歌曲检测」和插件歌词/封面搜索，属按需功能，全库自动计算会在扫描进度已显示「完成」之后继续长时间占用 CPU（songloft-org/songloft#323）。关闭时用户可在重复检测页手动 `POST /scan/fingerprints`。
+
+开启后单文件开销恒定（只采样前 120 秒），并发按 CPU 自适应，失败只尝试一次，可随时通过 `POST /scan/fingerprints/cancel` 停止。
+
+#### GET 响应 / PUT 请求体:
+
+```json
+{
+  "enabled": false
+}
+```
+
+---
+
+### 4.5 GET/PUT /settings/scan-title-source -- 扫描标题来源配置
 
 **路径:** `/api/v1/settings/scan-title-source`
 **认证:** 需要 BearerAuth
@@ -408,7 +455,7 @@
 
 ---
 
-### 4.5 GET/PUT /settings/auto-scan -- 自动扫描配置
+### 4.6 GET/PUT /settings/auto-scan -- 自动扫描配置
 
 **路径:** `/api/v1/settings/auto-scan`
 **认证:** 需要 BearerAuth

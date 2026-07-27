@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -790,27 +791,43 @@ func (r *SongRepository) DeleteByCueSource(ctx context.Context, cueSourcePath st
 	return int(n), nil
 }
 
-// UpdateFingerprint 更新歌曲的音频指纹。
-func (r *SongRepository) UpdateFingerprint(ctx context.Context, id int64, fingerprint string, duration float64) error {
+// UpdateFingerprint 更新歌曲的音频指纹，并把 attemptedAt 记为已尝试时间戳（unix 秒）。
+func (r *SongRepository) UpdateFingerprint(ctx context.Context, id int64, fingerprint string, duration float64, attemptedAt int64) error {
 	return r.queries.UpdateSongFingerprint(ctx, sqlc.UpdateSongFingerprintParams{
-		Fingerprint:         fingerprint,
-		FingerprintDuration: duration,
-		ID:                  id,
+		Fingerprint:            fingerprint,
+		FingerprintDuration:    duration,
+		FingerprintAttemptedAt: attemptedAt,
+		ID:                     id,
 	})
 }
 
-// ClearAllFingerprints 清空所有本地歌曲的指纹数据。
+// MarkFingerprintAttempted 只记录「已尝试计算指纹」的时间戳（unix 秒），不写指纹本身。
+// 用于计算失败（超时 / 无音轨 / 文件损坏）的场景：没有这个标记，
+// 每轮扫描都会把同一批注定失败的文件重新捞出来跑 ffmpeg 全解码（songloft-org/songloft#323）。
+func (r *SongRepository) MarkFingerprintAttempted(ctx context.Context, id int64, attemptedAt int64) error {
+	return r.queries.MarkFingerprintAttempted(ctx, sqlc.MarkFingerprintAttemptedParams{
+		FingerprintAttemptedAt: attemptedAt,
+		ID:                     id,
+	})
+}
+
+// ClearAllFingerprints 清空所有本地歌曲的指纹数据，并重置「已尝试」标记，
+// 让此前失败的歌曲在「重新计算全部」时能被重试。
 func (r *SongRepository) ClearAllFingerprints(ctx context.Context) error {
 	return r.queries.ClearAllFingerprints(ctx)
 }
 
-// SongIDPath 是 (id, file_path) 的轻量对。
+// SongIDPath 是指纹计算所需的歌曲最小信息。
+// CueStartSeconds / CueEndSeconds 仅 CUE 轨非零：CUE 轨的 FilePath 指向整轨镜像，
+// 必须按区间采样，否则同一镜像下的所有 track 会拿到完全相同的指纹。
 type SongIDPath struct {
-	ID       int64
-	FilePath string
+	ID              int64
+	FilePath        string
+	CueStartSeconds float64
+	CueEndSeconds   float64
 }
 
-// ListLocalWithoutFingerprint 返回所有尚无指纹的本地歌曲 (id, file_path)。
+// ListLocalWithoutFingerprint 返回所有尚无指纹、且从未尝试过计算的本地歌曲。
 func (r *SongRepository) ListLocalWithoutFingerprint(ctx context.Context) ([]SongIDPath, error) {
 	rows, err := r.queries.ListLocalWithoutFingerprint(ctx)
 	if err != nil {
@@ -818,18 +835,23 @@ func (r *SongRepository) ListLocalWithoutFingerprint(ctx context.Context) ([]Son
 	}
 	result := make([]SongIDPath, len(rows))
 	for i, row := range rows {
-		result[i] = SongIDPath{ID: row.ID, FilePath: row.FilePath}
+		result[i] = SongIDPath{
+			ID:              row.ID,
+			FilePath:        row.FilePath,
+			CueStartSeconds: row.CueStartSeconds,
+			CueEndSeconds:   row.CueEndSeconds,
+		}
 	}
 	return result, nil
 }
 
-// CountLocalFingerprints 返回本地歌曲总数和已计算指纹数。
-func (r *SongRepository) CountLocalFingerprints(ctx context.Context) (total, computed int64, err error) {
+// CountLocalFingerprints 返回本地歌曲总数、已计算指纹数，以及尝试过但失败的数量。
+func (r *SongRepository) CountLocalFingerprints(ctx context.Context) (total, computed, failed int64, err error) {
 	row, err := r.queries.CountLocalFingerprints(ctx)
 	if err != nil {
-		return 0, 0, fmt.Errorf("count local fingerprints: %w", err)
+		return 0, 0, 0, fmt.Errorf("count local fingerprints: %w", err)
 	}
-	return row.Total, row.Computed, nil
+	return row.Total, row.Computed, row.Failed, nil
 }
 
 // DuplicateGroup 表示一组指纹相同的歌曲。
@@ -838,7 +860,14 @@ type DuplicateGroup struct {
 	Songs       []*models.Song
 }
 
+// duplicateDurationTolerance 是判定「同指纹即重复」时允许的全片时长差（秒）。
+// 指纹只采样前 fingerprintSampleSeconds 秒，理论上存在「统一片头的有声书/系列节目
+// 前若干秒完全一致」的碰撞，用全片时长做二次护栏把这类误判排除。
+const duplicateDurationTolerance = 2.0
+
 // ListDuplicateGroups 查询所有指纹重复的本地歌曲组。
+// 同一指纹内还会按全片时长（fingerprint_duration）以 duplicateDurationTolerance
+// 容差聚簇，只有簇内 ≥2 首才算重复组。
 func (r *SongRepository) ListDuplicateGroups(ctx context.Context) ([]DuplicateGroup, error) {
 	fps, err := r.queries.ListDuplicateFingerprints(ctx)
 	if err != nil {
@@ -874,9 +903,41 @@ func (r *SongRepository) ListDuplicateGroups(ctx context.Context) ([]DuplicateGr
 				AddedAt:             row.AddedAt,
 			}
 		}
-		groups = append(groups, DuplicateGroup{Fingerprint: fp.Fingerprint, Songs: songs})
+		for _, cluster := range clusterByFingerprintDuration(songs) {
+			groups = append(groups, DuplicateGroup{Fingerprint: fp.Fingerprint, Songs: cluster})
+		}
 	}
 	return groups, nil
+}
+
+// clusterByFingerprintDuration 把同指纹的歌曲按全片时长聚簇，返回簇内 ≥2 首的那些簇。
+// 排序后贪心切分：与簇内第一首时长差超过容差就另起一簇。
+func clusterByFingerprintDuration(songs []*models.Song) [][]*models.Song {
+	if len(songs) < 2 {
+		return nil
+	}
+	sorted := make([]*models.Song, len(songs))
+	copy(sorted, songs)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].FingerprintDuration < sorted[j].FingerprintDuration
+	})
+
+	var clusters [][]*models.Song
+	current := []*models.Song{sorted[0]}
+	for _, s := range sorted[1:] {
+		if s.FingerprintDuration-current[0].FingerprintDuration <= duplicateDurationTolerance {
+			current = append(current, s)
+			continue
+		}
+		if len(current) > 1 {
+			clusters = append(clusters, current)
+		}
+		current = []*models.Song{s}
+	}
+	if len(current) > 1 {
+		clusters = append(clusters, current)
+	}
+	return clusters
 }
 
 // Facet 标签分类的一个取值及其歌曲数量（如 genre="Rock", count=42）。

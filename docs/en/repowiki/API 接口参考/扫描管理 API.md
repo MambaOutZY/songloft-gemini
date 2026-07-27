@@ -20,12 +20,14 @@ This document is based on the following source files:
    - [GET /scan/fingerprints/status -- Get Fingerprint Computation Status](#31-get-scanfingerprintsstatus----get-fingerprint-computation-status)
    - [POST /scan/fingerprints -- Trigger Batch Fingerprint Computation](#32-post-scanfingerprints----trigger-batch-fingerprint-computation)
    - [GET /scan/fingerprints/progress -- Get Fingerprint Computation Progress](#33-get-scanfingerprintsprogress----get-fingerprint-computation-progress)
+   - [POST /scan/fingerprints/cancel -- Interrupt Fingerprint Computation](#34-post-scanfingerprintscancel----interrupt-fingerprint-computation)
 4. [Scan Business Settings Endpoints](#4-scan-business-settings-endpoints)
    - [GET/PUT /settings/music-path -- Music Path Configuration](#41-getput-settingsmusic-path----music-path-configuration)
    - [GET/PUT /settings/scan-playlist-mode -- Playlist Merge Mode](#42-getput-settingsscan-playlist-mode----playlist-merge-mode)
    - [GET/PUT /settings/scan-auto-create-playlists -- Auto-Create Playlists Switch](#43-getput-settingsscan-auto-create-playlists----auto-create-playlists-switch)
-   - [GET/PUT /settings/scan-title-source -- Scan Title Source Configuration](#44-getput-settingsscan-title-source----scan-title-source-configuration)
-   - [GET/PUT /settings/auto-scan -- Auto Scan Configuration](#45-getput-settingsauto-scan----auto-scan-configuration)
+   - [GET/PUT /settings/scan-auto-fingerprint -- Auto Audio-Fingerprint Switch](#44-getput-settingsscan-auto-fingerprint----auto-audio-fingerprint-switch)
+   - [GET/PUT /settings/scan-title-source -- Scan Title Source Configuration](#45-getput-settingsscan-title-source----scan-title-source-configuration)
+   - [GET/PUT /settings/auto-scan -- Auto Scan Configuration](#46-getput-settingsauto-scan----auto-scan-configuration)
 
 ---
 
@@ -214,8 +216,10 @@ The scan management module handles the discovery, importing, and directory manag
 {
   "chromaprint_available": true,
   "total": 1000,
-  "computed": 800,
-  "missing": 200
+  "computed": 795,
+  "missing": 200,
+  "failed": 5,
+  "auto_enabled": false
 }
 ```
 
@@ -224,7 +228,9 @@ The scan management module handles the discovery, importing, and directory manag
 | `chromaprint_available` | boolean | Whether ffmpeg chromaprint is available |
 | `total` | int | Total number of local songs |
 | `computed` | int | Number of songs with computed fingerprints |
-| `missing` | int | Number of songs missing fingerprints |
+| `missing` | int | Number of songs never attempted yet (= total - computed - failed) |
+| `failed` | int | Number of songs attempted but failed (no audio track / corrupted / timed out). **Never retried automatically** — only `recompute_all=true` tries again |
+| `auto_enabled` | boolean | Whether fingerprints are computed automatically after a scan (config `scan_auto_fingerprint`, default false) |
 
 ---
 
@@ -234,7 +240,7 @@ The scan management module handles the discovery, importing, and directory manag
 **Path:** `/api/v1/scan/fingerprints`
 **Authentication:** BearerAuth required
 
-**Description:** Asynchronously computes audio fingerprints for local songs; requires ffmpeg with chromaprint support. If a task is already running, it is interrupted and restarted.
+**Description:** Asynchronously computes audio fingerprints for local songs; requires ffmpeg with chromaprint support. If a task is already running, it is interrupted and restarted. Each file samples only its first 120 seconds (the AcoustID standard), concurrency adapts to the CPU (`clamp(GOMAXPROCS/4, 1, 4)`), and failed songs are marked as "attempted" so they are not retried automatically.
 
 **Request body:**
 
@@ -246,7 +252,7 @@ The scan management module handles the discovery, importing, and directory manag
 
 | Field | Type | Required | Description |
 |------|------|------|------|
-| `recompute_all` | boolean | No | When true, clears existing fingerprints and recomputes all (default false, computes only the missing ones) |
+| `recompute_all` | boolean | No | When true, clears existing fingerprints **and the "attempted" markers**, then recomputes everything (default false, computes only songs never attempted). This is the only way to retry failed items |
 
 **Success response (200):**
 
@@ -286,10 +292,32 @@ The scan management module handles the discovery, importing, and directory manag
 
 | Field | Type | Description |
 |------|------|------|
-| `status` | string | Task status: `idle` / `running` / `done` |
+| `status` | string | Task status: `idle` / `running` / `done` / `cancelled` |
 | `computed` | int | Number computed |
 | `total` | int | Total number of tasks |
 | `failed` | int | Number failed |
+
+---
+
+### 3.4 POST /scan/fingerprints/cancel -- Interrupt Fingerprint Computation
+
+**Method:** `POST`
+**Path:** `/api/v1/scan/fingerprints/cancel`
+**Authentication:** BearerAuth required
+
+**Description:** Stops the running batch fingerprint computation task and kills its ffmpeg child processes. The fingerprint task is not attached to the scan's cancel channel (that channel is already closed once the scan reports "completed"), so it needs a dedicated cancel entry point. Fingerprints already computed are kept; interrupted songs are **not** marked as "attempted" and will be computed next time.
+
+**Success response (200):**
+
+```json
+{
+  "cancelled": true
+}
+```
+
+| Field | Type | Description |
+|------|------|------|
+| `cancelled` | boolean | Whether a running task was actually interrupted (false when none is running; not an error) |
 
 ---
 
@@ -380,7 +408,26 @@ Controls whether playlists are automatically created based on the music director
 
 ---
 
-### 4.4 GET/PUT /settings/scan-title-source -- Scan Title Source Configuration
+### 4.4 GET/PUT /settings/scan-auto-fingerprint -- Auto Audio-Fingerprint Switch
+
+**Path:** `/api/v1/settings/scan-auto-fingerprint`
+**Authentication:** BearerAuth required
+
+Controls whether chromaprint audio fingerprints are computed automatically for local songs that lack them after a scan completes. **Off by default (`false`)**: fingerprints only serve "Duplicate detection" and plugin lyric/cover search, making them an on-demand feature, and computing them library-wide keeps the CPU busy long after the scan progress already reads "completed" (songloft-org/songloft#323). While off, users can trigger `POST /scan/fingerprints` manually from the duplicate detection page.
+
+Once enabled, per-file cost is constant (only the first 120 seconds are sampled), concurrency adapts to the CPU, failures are attempted only once, and the task can be stopped at any time via `POST /scan/fingerprints/cancel`.
+
+#### GET response / PUT request body:
+
+```json
+{
+  "enabled": false
+}
+```
+
+---
+
+### 4.5 GET/PUT /settings/scan-title-source -- Scan Title Source Configuration
 
 **Path:** `/api/v1/settings/scan-title-source`
 **Authentication:** BearerAuth required
@@ -408,7 +455,7 @@ Configures the source of the song title during scanning. After switching, a scan
 
 ---
 
-### 4.5 GET/PUT /settings/auto-scan -- Auto Scan Configuration
+### 4.6 GET/PUT /settings/auto-scan -- Auto Scan Configuration
 
 **Path:** `/api/v1/settings/auto-scan`
 **Authentication:** BearerAuth required

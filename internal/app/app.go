@@ -288,6 +288,8 @@ func (a *App) Init() error {
 	}
 	a.cacheService.SetFFmpegPath(ffmpegConfig.Path)
 	a.metadataExtractor.SetFFMpegPath(ffmpegConfig.Path)
+	// 指纹计算此前只查 PATH，配了自定义 ffmpeg 路径时会静默不可用
+	services.SetFingerprintFFmpegPath(ffmpegConfig.Path)
 	a.metadataExtractor.SetHTTPClient(httputil.NewClient(30 * time.Second))
 
 	// 让 SongService.Delete/BatchDelete 联动清理 cache,避免 ID 复用时旧 cache 被新 song 误命中

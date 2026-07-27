@@ -3728,6 +3728,34 @@
                 }
             }
         },
+        "/scan/fingerprints/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "停止正在运行的批量指纹计算任务并杀掉其 ffmpeg 子进程。指纹任务不挂在扫描的取消通道上（扫描「完成」后该通道已关闭），所以需要独立的取消入口。任务不在运行时返回 cancelled=false。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "扫描管理"
+                ],
+                "summary": "中断指纹计算",
+                "responses": {
+                    "200": {
+                        "description": "返回 cancelled 字段",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/scan/fingerprints/progress": {
             "get": {
                 "security": [
@@ -3760,7 +3788,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回 ffmpeg chromaprint 可用性以及本地歌曲指纹计算统计",
+                "description": "返回 ffmpeg chromaprint 可用性、本地歌曲指纹计算统计（含尝试失败数）以及「扫描后自动计算指纹」开关状态",
                 "produces": [
                     "application/json"
                 ],
@@ -3772,8 +3800,16 @@
                     "200": {
                         "description": "指纹状态",
                         "schema": {
+                            "$ref": "#/definitions/handlers.FingerprintStatus"
+                        }
+                    },
+                    "500": {
+                        "description": "查询指纹统计失败",
+                        "schema": {
                             "type": "object",
-                            "additionalProperties": true
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -4868,6 +4904,92 @@
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/handlers.scanAutoCreatePlaylistsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "返回 enabled 字段",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "保存配置失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/settings/scan-auto-fingerprint": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "控制扫描完成后是否自动为缺失指纹的本地歌曲计算 chromaprint 音频指纹。默认关闭（false）：指纹只服务于「重复歌曲检测」和插件歌词/封面搜索，属按需功能，全库自动计算会长时间占用 CPU。关闭时可在重复检测页手动触发 POST /scan/fingerprints。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "扫描管理"
+                ],
+                "summary": "获取「扫描后自动计算音频指纹」开关",
+                "responses": {
+                    "200": {
+                        "description": "返回 enabled 字段",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "开启后每次扫描结束会在后台为缺失指纹的本地歌曲计算 chromaprint 指纹（并发按 CPU 自适应，单文件采样前 120 秒，失败只尝试一次）。大音乐库开启前请留意 CPU 开销。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "扫描管理"
+                ],
+                "summary": "更新「扫描后自动计算音频指纹」开关",
+                "parameters": [
+                    {
+                        "description": "开关请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.scanAutoFingerprintRequest"
                         }
                     }
                 ],
@@ -7314,6 +7436,35 @@
                 }
             }
         },
+        "handlers.FingerprintStatus": {
+            "type": "object",
+            "properties": {
+                "auto_enabled": {
+                    "description": "AutoEnabled 扫描后是否自动计算指纹（config scan_auto_fingerprint）",
+                    "type": "boolean"
+                },
+                "chromaprint_available": {
+                    "description": "ChromaprintAvailable ffmpeg 是否带 chromaprint muxer，false 时无法计算指纹",
+                    "type": "boolean"
+                },
+                "computed": {
+                    "description": "Computed 已有指纹的数量",
+                    "type": "integer"
+                },
+                "failed": {
+                    "description": "Failed 尝试过但失败的数量（无音轨 / 文件损坏 / 超时），不会自动重试，\n需要「重新计算全部」才会再试",
+                    "type": "integer"
+                },
+                "missing": {
+                    "description": "Missing 尚未尝试过计算的数量（= total - computed - failed）",
+                    "type": "integer"
+                },
+                "total": {
+                    "description": "Total 本地歌曲总数",
+                    "type": "integer"
+                }
+            }
+        },
         "handlers.MusicPathSetting": {
             "type": "object",
             "properties": {
@@ -7797,6 +7948,14 @@
             }
         },
         "handlers.scanAutoCreatePlaylistsRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handlers.scanAutoFingerprintRequest": {
             "type": "object",
             "properties": {
                 "enabled": {
@@ -8696,7 +8855,7 @@
                     "type": "integer"
                 },
                 "status": {
-                    "description": "idle, running, done",
+                    "description": "idle, running, done, cancelled",
                     "type": "string"
                 },
                 "total": {

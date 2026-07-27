@@ -312,6 +312,36 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 | AIFF/AIF | ID3v2.3 (ID3 chunk) + NAME/AUTH | USLT (ID3 chunk) | APIC (ID3 chunk) |
 - 不支持的格式 → 返回 `ErrUnsupportedWrite`，调用方**必须**降级为日志，**不要**阻塞主流程
 
+### 音频指纹（fingerprint — 开销控制铁律）
+
+指纹（ffmpeg chromaprint）只服务两处：设置页「重复歌曲检测」和插件歌词/封面搜索的**可选**参数。
+它是按需功能，**不是**扫描的必要环节。改这块前先读完下面几条，`songloft-org/songloft#323`
+就是这些约束缺位叠加出的「扫描显示完成但 CPU 永久 100%」。
+
+- **扫描后自动指纹默认关闭**：业务端点 `GET/PUT /api/v1/settings/scan-auto-fingerprint` 体 `{enabled: bool}`，
+  config key `scan_auto_fingerprint`，默认 `false`。`runAutoFingerprint`（`song_service.go`）开头判定，
+  与 `scan_auto_create_playlists` 对称。关闭时用户在重复检测页手动 `POST /scan/fingerprints`
+- **失败必须落库标记**：`songs.fingerprint_attempted_at`（unix 秒，0 = 未尝试）。
+  `ListLocalWithoutFingerprint` 的条件是 `fingerprint = '' AND fingerprint_attempted_at = 0`。
+  **绝不能**只在失败时打日志——没有标记，AutoScanner 每轮（默认 3600s）都会把同一批注定失败的
+  长音频/无音轨文件重新捞出来跑 ffmpeg 全解码。`ClearAllFingerprints` 会重置该标记，
+  所以「重新计算全部」是重试失败项的唯一入口
+- **采样上限 120 秒**：`ExtractFingerprint` 带 `-t 120`（常量 `fingerprintSampleSeconds`），
+  这也是 AcoustID 的事实标准。**不要**去掉——30 分钟有声书全解码在弱 NAS 上必然超时，
+  实测同一文件全长 3.8s vs 120s 采样 0.35s。超时 30s + `cmd.WaitDelay` 防 ffmpeg 子进程挂住 worker
+- **CUE 轨按区间采样**：CUE 轨的 `file_path` 指向整轨镜像，必须传 `cue_start_seconds/cue_end_seconds`
+  走 `-ss`，否则同一镜像下所有 track 拿到**完全相同**的指纹并互判重复
+- **并发按 CPU 自适应**：`fpWorkerCount()` = `clamp(GOMAXPROCS/4, 1, 4)`。**不要**改回硬编码 4，
+  Go 的 GOMAXPROCS 感知 cgroup 限额，Docker 限核能正确收敛
+- **可取消**：`POST /api/v1/scan/fingerprints/cancel` → `FingerprintService.Cancel()`。
+  指纹任务用独立的 `context.Background()`，**不能**复用扫描的 cancelCh——`scanProgressManager.Complete()`
+  已经 `close(cancel); cancel = nil`，之后 `GetCancelChannel()` 返回 nil。取消中途的歌曲不打
+  attempted 标记，下次续算
+- **去重带时长护栏**：`ListDuplicateGroups` 在同指纹内还按 `fingerprint_duration`（全片时长）
+  以 2 秒容差聚簇。因为只采样前 120 秒，「统一片头的有声书」存在指纹碰撞可能
+- 迁移 `0029` 已把旧的全长指纹一次性清空（与 120 秒采样不可比），升级后需重算一次
+- `IsChromaprintAvailable` 走 `SetFingerprintFFmpegPath` 注入的 `ffmpeg_path` 配置，不再只查 PATH
+
 ### HLS 电台代理模式（/settings/hls-proxy）
 
 - 业务开关端点：`GET/PUT /api/v1/settings/hls-proxy` 体 `{enabled: bool}`，默认 `false`

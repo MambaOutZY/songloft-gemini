@@ -278,6 +278,7 @@ const (
 	scanPlaylistModeConfigKey        = "scan_playlist_mode"
 	scanAutoCreatePlaylistsConfigKey = "scan_auto_create_playlists"
 	scanTitleSourceConfigKey         = "scan_title_source"
+	scanAutoFingerprintConfigKey     = "scan_auto_fingerprint"
 )
 
 // MusicPathSetting /settings/music-path 的请求与响应体。
@@ -477,6 +478,60 @@ func (h *ScanHandler) UpdateAutoCreatePlaylistsSetting(w http.ResponseWriter, r 
 	respondJSON(w, http.StatusOK, map[string]bool{"enabled": req.Enabled})
 }
 
+// scanAutoFingerprintRequest /settings/scan-auto-fingerprint PUT 请求体
+type scanAutoFingerprintRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// GetScanAutoFingerprintSetting GET /api/v1/settings/scan-auto-fingerprint
+// @Summary 获取「扫描后自动计算音频指纹」开关
+// @Description 控制扫描完成后是否自动为缺失指纹的本地歌曲计算 chromaprint 音频指纹。默认关闭（false）：指纹只服务于「重复歌曲检测」和插件歌词/封面搜索，属按需功能，全库自动计算会长时间占用 CPU。关闭时可在重复检测页手动触发 POST /scan/fingerprints。
+// @Tags 扫描管理
+// @Produce json
+// @Success 200 {object} map[string]bool "返回 enabled 字段"
+// @Security BearerAuth
+// @Router /settings/scan-auto-fingerprint [get]
+func (h *ScanHandler) GetScanAutoFingerprintSetting(w http.ResponseWriter, r *http.Request) {
+	enabled := false
+	if h.configService != nil {
+		enabled = h.configService.GetBool(scanAutoFingerprintConfigKey, false)
+	}
+	respondJSON(w, http.StatusOK, map[string]bool{"enabled": enabled})
+}
+
+// UpdateScanAutoFingerprintSetting PUT /api/v1/settings/scan-auto-fingerprint
+// @Summary 更新「扫描后自动计算音频指纹」开关
+// @Description 开启后每次扫描结束会在后台为缺失指纹的本地歌曲计算 chromaprint 指纹（并发按 CPU 自适应，单文件采样前 120 秒，失败只尝试一次）。大音乐库开启前请留意 CPU 开销。
+// @Tags 扫描管理
+// @Accept json
+// @Produce json
+// @Param request body scanAutoFingerprintRequest true "开关请求"
+// @Success 200 {object} map[string]bool "返回 enabled 字段"
+// @Failure 400 {object} map[string]string "请求格式错误"
+// @Failure 500 {object} map[string]string "保存配置失败"
+// @Security BearerAuth
+// @Router /settings/scan-auto-fingerprint [put]
+func (h *ScanHandler) UpdateScanAutoFingerprintSetting(w http.ResponseWriter, r *http.Request) {
+	if h.configService == nil {
+		respondError(w, http.StatusInternalServerError, "configService 未注入", nil)
+		return
+	}
+	var req scanAutoFingerprintRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	val := "false"
+	if req.Enabled {
+		val = "true"
+	}
+	if err := h.configService.Set(scanAutoFingerprintConfigKey, val); err != nil {
+		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]bool{"enabled": req.Enabled})
+}
+
 // scanTitleSourceRequest /settings/scan-title-source PUT 请求体
 type scanTitleSourceRequest struct {
 	TitleSource string `json:"title_source" example:"tag" enums:"tag,filename"`
@@ -534,31 +589,65 @@ func (h *ScanHandler) UpdateScanTitleSourceSetting(w http.ResponseWriter, r *htt
 	respondJSON(w, http.StatusOK, scanTitleSourceRequest{TitleSource: req.TitleSource})
 }
 
+// FingerprintStatus /scan/fingerprints/status 的响应体。
+type FingerprintStatus struct {
+	// ChromaprintAvailable ffmpeg 是否带 chromaprint muxer，false 时无法计算指纹
+	ChromaprintAvailable bool `json:"chromaprint_available"`
+	// Total 本地歌曲总数
+	Total int64 `json:"total"`
+	// Computed 已有指纹的数量
+	Computed int64 `json:"computed"`
+	// Missing 尚未尝试过计算的数量（= total - computed - failed）
+	Missing int64 `json:"missing"`
+	// Failed 尝试过但失败的数量（无音轨 / 文件损坏 / 超时），不会自动重试，
+	// 需要「重新计算全部」才会再试
+	Failed int64 `json:"failed"`
+	// AutoEnabled 扫描后是否自动计算指纹（config scan_auto_fingerprint）
+	AutoEnabled bool `json:"auto_enabled"`
+}
+
 // GetFingerprintStatus 获取指纹计算状态
 // @Summary 获取指纹计算状态
-// @Description 返回 ffmpeg chromaprint 可用性以及本地歌曲指纹计算统计
+// @Description 返回 ffmpeg chromaprint 可用性、本地歌曲指纹计算统计（含尝试失败数）以及「扫描后自动计算指纹」开关状态
 // @Tags 扫描管理
 // @Produce json
-// @Success 200 {object} map[string]interface{} "指纹状态"
+// @Success 200 {object} FingerprintStatus "指纹状态"
+// @Failure 500 {object} map[string]string "查询指纹统计失败"
 // @Security BearerAuth
 // @Router /scan/fingerprints/status [get]
 func (h *ScanHandler) GetFingerprintStatus(w http.ResponseWriter, r *http.Request) {
-	available := services.IsChromaprintAvailable()
-	var total, computed int64
-	if h.fingerprintService != nil {
-		var err error
-		total, computed, err = h.songService.CountLocalFingerprints(r.Context())
+	status := FingerprintStatus{ChromaprintAvailable: services.IsChromaprintAvailable()}
+	if h.songService != nil {
+		total, computed, failed, err := h.songService.CountLocalFingerprints(r.Context())
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "查询指纹统计失败", err)
 			return
 		}
+		status.Total = total
+		status.Computed = computed
+		status.Failed = failed
+		status.Missing = total - computed - failed
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"chromaprint_available": available,
-		"total":                 total,
-		"computed":              computed,
-		"missing":               total - computed,
-	})
+	if h.configService != nil {
+		status.AutoEnabled = h.configService.GetBool(scanAutoFingerprintConfigKey, false)
+	}
+	respondJSON(w, http.StatusOK, status)
+}
+
+// CancelFingerprintCompute 中断正在运行的指纹计算
+// @Summary 中断指纹计算
+// @Description 停止正在运行的批量指纹计算任务并杀掉其 ffmpeg 子进程。指纹任务不挂在扫描的取消通道上（扫描「完成」后该通道已关闭），所以需要独立的取消入口。任务不在运行时返回 cancelled=false。
+// @Tags 扫描管理
+// @Produce json
+// @Success 200 {object} map[string]bool "返回 cancelled 字段"
+// @Security BearerAuth
+// @Router /scan/fingerprints/cancel [post]
+func (h *ScanHandler) CancelFingerprintCompute(w http.ResponseWriter, r *http.Request) {
+	if h.fingerprintService == nil {
+		respondJSON(w, http.StatusOK, map[string]bool{"cancelled": false})
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]bool{"cancelled": h.fingerprintService.Cancel()})
 }
 
 // StartFingerprintCompute 触发批量指纹计算
