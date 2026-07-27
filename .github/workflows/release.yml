@@ -589,6 +589,20 @@ jobs:
           cd songloft-player
           flutter pub get
 
+      # 原生契约哈希:pub get 后(GeneratedPluginRegistrant/.flutter-plugins-dependencies
+      # 已生成)、build 前计算并写 asset,同一组值稍后写进 manifest(同源同值)。
+      - name: Compute native contract hash (bake asset)
+        run: |
+          cd songloft-player
+          HASHES=$(./scripts/compute_native_contract.sh \
+            --export-surface ../mobile/export_surface.txt \
+            --write-asset android/app/src/main/assets/native_contract.json)
+          echo "native_contract.json = $HASHES"
+          DART_CONTRACT_HASH=$(printf '%s' "$HASHES" | sed -n 's/.*"dart":"\([a-f0-9]*\)".*/\1/p')
+          GO_CONTRACT_HASH=$(printf '%s' "$HASHES" | sed -n 's/.*"go":"\([a-f0-9]*\)".*/\1/p')
+          echo "DART_CONTRACT_HASH=$DART_CONTRACT_HASH" >> "$GITHUB_ENV"
+          echo "GO_CONTRACT_HASH=$GO_CONTRACT_HASH" >> "$GITHUB_ENV"
+
       - name: Setup Android signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -670,6 +684,7 @@ jobs:
               "semanticVersion": "${SEMVER}",
               "gitCommit": "${GIT_COMMIT}",
               "flutterBinding": "${FLUTTER_BINDING}",
+              "contractHash": "${DART_CONTRACT_HASH}",
               "targetVersionCode": ${ABI_VC},
               "patchUrl": "https://github.com/${REPO}/releases/download/${TAG}/patch-${abi}.zip",
               "md5": "${ZIP_MD5}"
@@ -700,6 +715,7 @@ jobs:
               "buildTime": "${BUILD_TIME}",
               "soUrl": "https://github.com/${REPO}/releases/download/${TAG}/libgojni-${abi}.so",
               "md5": "${SO_MD5}",
+              "contractHash": "${GO_CONTRACT_HASH}",
               "size": ${SO_SIZE}
             }
           }
