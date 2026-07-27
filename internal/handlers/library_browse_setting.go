@@ -26,6 +26,7 @@ type libraryBrowseSetting struct {
 //   - 歌曲组：all(全部)/local(本地)/remote(网络)/radio(电台) —— 按 type 过滤的扁平歌曲列表；
 //   - 分类组：artist/album/genre/year/decade/language/style —— facet 分类聚合，下钻歌曲；
 //   - 歌单组：playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单) —— 歌单卡片列表。
+//
 // 前端渲染时按组固定顺序展示并在组间加分割线，组内顺序沿用用户配置。
 var libraryViewKeys = []string{
 	"all", "local", "remote", "radio",

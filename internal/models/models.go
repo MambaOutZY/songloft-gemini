@@ -566,12 +566,14 @@ type BatchDeleteSongsResponse struct {
 
 // BatchDeletePlaylistsRequest 批量删除歌单请求
 type BatchDeletePlaylistsRequest struct {
-	IDs []int64 `json:"ids" example:"1"` // 要删除的歌单 ID 列表
+	IDs         []int64 `json:"ids" example:"1"`              // 要删除的歌单 ID 列表
+	DeleteSongs bool    `json:"delete_songs" example:"false"` // 为 true 时，一并删除仅属于被删歌单的孤儿歌曲（含本地歌曲及其磁盘文件）
 }
 
 // BatchDeletePlaylistsResponse 批量删除歌单响应
 type BatchDeletePlaylistsResponse struct {
-	Deleted int `json:"deleted" example:"3"` // 实际删除的数量
+	Deleted      int `json:"deleted" example:"3"`        // 实际删除的歌单数量
+	DeletedSongs int `json:"deleted_songs" example:"12"` // 连带清理的孤儿歌曲数量
 }
 
 // UpdatePlaylistRequest 更新歌单请求

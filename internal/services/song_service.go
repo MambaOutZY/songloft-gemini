@@ -38,7 +38,9 @@ type SongRepository interface {
 	UpdateSource(ctx context.Context, id int64, pluginEntryPath, sourceData string) error
 	ListLocalPaths(ctx context.Context) (map[string]database.LocalPathInfo, error)
 	ListTypesByIDs(ctx context.Context, ids []int64) (map[int64]string, error)
+	FilterOrphanSongIDs(ctx context.Context, ids []int64) ([]int64, error)
 	CountCoverPathReferences(ctx context.Context, coverPath string) (int, error)
+	CountSongsByFilePath(ctx context.Context, filePath string) (int, error)
 	ListCueSources(ctx context.Context) (map[string]bool, error)
 	ListCueAudioPaths(ctx context.Context, cueSourcePath string) ([]string, error)
 	DeleteByCueSource(ctx context.Context, cueSourcePath string) (int, error)
@@ -166,11 +168,7 @@ func (s *SongService) Delete(ctx context.Context, id int64, deleteFiles bool) er
 		removeCoverIfUnreferenced(ctx, s.songs, song.CoverPath)
 	}
 	if deleteFiles && song != nil && song.Type == models.TypeLocal && song.FilePath != "" && song.CueSourcePath == "" {
-		if err := os.Remove(song.FilePath); err != nil {
-			slog.Warn("删除音频文件失败", "path", song.FilePath, "error", err)
-		} else {
-			slog.Info("已删除音频文件", "path", song.FilePath)
-		}
+		s.removeLocalFileIfUnreferenced(ctx, song.FilePath)
 	}
 	if s.cacheService != nil {
 		cachePath := ""
@@ -192,7 +190,7 @@ func (s *SongService) BatchDelete(ctx context.Context, ids []int64, deleteFiles 
 
 	coverPathSet := make(map[string]struct{})
 	cachePaths := make(map[int64]string)
-	var filePaths []string
+	filePathSet := make(map[string]struct{})
 	for _, id := range ids {
 		song, err := s.GetByID(ctx, id)
 		if err != nil || song == nil {
@@ -205,7 +203,7 @@ func (s *SongService) BatchDelete(ctx context.Context, ids []int64, deleteFiles 
 			cachePaths[id] = song.CachePath
 		}
 		if deleteFiles && song.Type == models.TypeLocal && song.FilePath != "" && song.CueSourcePath == "" {
-			filePaths = append(filePaths, song.FilePath)
+			filePathSet[song.FilePath] = struct{}{}
 		}
 	}
 
@@ -217,12 +215,8 @@ func (s *SongService) BatchDelete(ctx context.Context, ids []int64, deleteFiles 
 	for coverPath := range coverPathSet {
 		removeCoverIfUnreferenced(ctx, s.songs, coverPath)
 	}
-	for _, fp := range filePaths {
-		if err := os.Remove(fp); err != nil {
-			slog.Warn("删除音频文件失败", "path", fp, "error", err)
-		} else {
-			slog.Info("已删除音频文件", "path", fp)
-		}
+	for fp := range filePathSet {
+		s.removeLocalFileIfUnreferenced(ctx, fp)
 	}
 	if s.cacheService != nil {
 		for _, id := range ids {
@@ -232,6 +226,49 @@ func (s *SongService) BatchDelete(ctx context.Context, ids []int64, deleteFiles 
 		}
 	}
 	return deleted, nil
+}
+
+// DeleteOrphanSongs 从 candidateIDs 中筛出"孤儿"歌曲（不属于任何歌单）并删除，返回实际删除条数。
+// 供删除歌单后清理"仅属于被删歌单"的残留歌曲用：调用方在删歌单前收集歌单内全部歌曲 ID 作为
+// candidateIDs，歌单删除后其 playlist_songs 关联已被 FK CASCADE 清空，此处筛出的即真正无归属的歌曲。
+// deleteFiles=true 时 BatchDelete 会一并删除本地歌曲的磁盘文件（仅对 type=local 生效），
+// 并清理缓存与不再被引用的封面。
+func (s *SongService) DeleteOrphanSongs(ctx context.Context, candidateIDs []int64, deleteFiles bool) (int, error) {
+	if len(candidateIDs) == 0 {
+		return 0, nil
+	}
+	orphans, err := s.songs.FilterOrphanSongIDs(ctx, candidateIDs)
+	if err != nil {
+		return 0, fmt.Errorf("failed to filter orphan songs: %w", err)
+	}
+	if len(orphans) == 0 {
+		return 0, nil
+	}
+	return s.BatchDelete(ctx, orphans, deleteFiles)
+}
+
+// removeLocalFileIfUnreferenced 删除本地歌曲的物理文件，但仅当没有其他 song 行仍引用同一 file_path 时。
+// 调用时机：DB 行已删除之后（Delete/BatchDelete 都先删行再删文件），此时若 CountSongsByFilePath 仍 > 0，
+// 说明存在另一条指向同一文件的歌曲行（如手动重复导入 / 插件路径碰撞），必须保留文件避免误删。
+// 查询失败时保守跳过删除（宁可残留也不误删）。仅应对已判定为「本地、非 CUE、file_path 非空」的歌曲调用。
+func (s *SongService) removeLocalFileIfUnreferenced(ctx context.Context, filePath string) {
+	if filePath == "" {
+		return
+	}
+	refs, err := s.songs.CountSongsByFilePath(ctx, filePath)
+	if err != nil {
+		slog.Warn("查询文件引用计数失败,跳过删除音频文件", "path", filePath, "error", err)
+		return
+	}
+	if refs > 0 {
+		slog.Info("音频文件仍被其他歌曲引用,跳过删除", "path", filePath, "refs", refs)
+		return
+	}
+	if err := os.Remove(filePath); err != nil {
+		slog.Warn("删除音频文件失败", "path", filePath, "error", err)
+		return
+	}
+	slog.Info("已删除音频文件", "path", filePath)
 }
 
 // coverReferenceCounter 让 removeCoverIfUnreferenced 既能被 SongRepository

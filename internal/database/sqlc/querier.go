@@ -21,6 +21,7 @@ type Querier interface {
 	CountPlaylistsByCoverPath(ctx context.Context, coverPath string) (int64, error)
 	CountPlaylistsContainingSong(ctx context.Context, songID int64) (int64, error)
 	CountSongsByCoverPath(ctx context.Context, coverPath string) (int64, error)
+	CountSongsByFilePath(ctx context.Context, filePath string) (int64, error)
 	CreateJSPlugin(ctx context.Context, arg CreateJSPluginParams) (int64, error)
 	CreatePlaylist(ctx context.Context, arg CreatePlaylistParams) (int64, error)
 	CreateSong(ctx context.Context, arg CreateSongParams) (int64, error)

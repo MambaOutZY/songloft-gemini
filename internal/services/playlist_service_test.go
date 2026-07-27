@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"songloft/internal/database"
@@ -581,5 +583,126 @@ func TestPlaylistServiceAddSongSongNotFound(t *testing.T) {
 
 	if err := service.AddSong(ctx, playlist.ID, 999); err == nil {
 		t.Error("AddSong() should return error for non-existent song")
+	}
+}
+
+// TestDeletePlaylistOrphanCleanup 验证删除歌单时的孤儿歌曲清理语义（issue #325）：
+//   - 仅属于被删歌单的歌曲（remote / local）被清理；
+//   - 被其他歌单或内置收藏引用的歌曲保留；
+//   - 本地孤儿歌曲 deleteFiles=true 时磁盘文件被删；
+//
+// 复刻 handler 编排：删前收集歌单歌曲 ID → 删歌单 → DeleteOrphanSongs。
+func TestDeletePlaylistOrphanCleanup(t *testing.T) {
+	env := newPlaylistTestEnv(t)
+	playlistSvc := env.newService()
+	songSvc := NewSongService(env.songs, nil, nil, nil, nil, nil)
+	ctx := context.Background()
+
+	// 目标歌单 A（待删）与旁证歌单 B（引用共享歌曲，保护它不被清理）。
+	plA := &models.Playlist{Type: models.PlaylistTypeNormal, Name: "待删歌单"}
+	plB := &models.Playlist{Type: models.PlaylistTypeNormal, Name: "其他歌单"}
+	if err := playlistSvc.Create(ctx, plA); err != nil {
+		t.Fatalf("create playlist A: %v", err)
+	}
+	if err := playlistSvc.Create(ctx, plB); err != nil {
+		t.Fatalf("create playlist B: %v", err)
+	}
+
+	// 本地孤儿歌曲：准备一个真实临时文件，验证 deleteFiles=true 会删磁盘文件。
+	localFile := filepath.Join(t.TempDir(), "orphan.mp3")
+	if err := os.WriteFile(localFile, []byte("dummy"), 0644); err != nil {
+		t.Fatalf("write local file: %v", err)
+	}
+
+	orphanRemote := &models.Song{Type: models.TypeRemote, Title: "孤儿网络歌", URL: "https://example.com/a.mp3"}
+	orphanLocal := &models.Song{Type: models.TypeLocal, Title: "孤儿本地歌", FilePath: localFile}
+	sharedRemote := &models.Song{Type: models.TypeRemote, Title: "共享网络歌", URL: "https://example.com/b.mp3"}
+	favRemote := &models.Song{Type: models.TypeRemote, Title: "收藏网络歌", URL: "https://example.com/c.mp3"}
+	for _, s := range []*models.Song{orphanRemote, orphanLocal, sharedRemote, favRemote} {
+		if err := env.songs.Create(ctx, s); err != nil {
+			t.Fatalf("create song %q: %v", s.Title, err)
+		}
+	}
+
+	// 关联：A 含全部 4 首；B 也含 sharedRemote；内置收藏(id=1)含 favRemote。
+	add := func(pid, sid int64, pos int) {
+		if err := env.playlistSongs.AddSong(ctx, pid, sid, pos); err != nil {
+			t.Fatalf("add song %d to playlist %d: %v", sid, pid, err)
+		}
+	}
+	add(plA.ID, orphanRemote.ID, 1)
+	add(plA.ID, orphanLocal.ID, 2)
+	add(plA.ID, sharedRemote.ID, 3)
+	add(plA.ID, favRemote.ID, 4)
+	add(plB.ID, sharedRemote.ID, 1)
+	add(1, favRemote.ID, 1) // 内置「收藏」歌单 id=1
+
+	// —— 复刻 handler 编排 ——
+	candidateIDs, err := playlistSvc.SongIDsInPlaylist(ctx, plA.ID)
+	if err != nil {
+		t.Fatalf("SongIDsInPlaylist: %v", err)
+	}
+	if len(candidateIDs) != 4 {
+		t.Fatalf("candidateIDs = %d, want 4", len(candidateIDs))
+	}
+	if err := playlistSvc.Delete(ctx, plA.ID); err != nil {
+		t.Fatalf("Delete playlist A: %v", err)
+	}
+	deleted, err := songSvc.DeleteOrphanSongs(ctx, candidateIDs, true)
+	if err != nil {
+		t.Fatalf("DeleteOrphanSongs: %v", err)
+	}
+	if deleted != 2 {
+		t.Errorf("deleted orphan songs = %d, want 2 (orphanRemote + orphanLocal)", deleted)
+	}
+
+	// 断言：孤儿被删，共享/收藏保留。
+	assertGone := func(id int64, name string) {
+		if _, err := songSvc.GetByID(ctx, id); err == nil {
+			t.Errorf("song %q (id=%d) should be deleted", name, id)
+		}
+	}
+	assertKept := func(id int64, name string) {
+		if _, err := songSvc.GetByID(ctx, id); err != nil {
+			t.Errorf("song %q (id=%d) should be kept, got err: %v", name, id, err)
+		}
+	}
+	assertGone(orphanRemote.ID, "孤儿网络歌")
+	assertGone(orphanLocal.ID, "孤儿本地歌")
+	assertKept(sharedRemote.ID, "共享网络歌")
+	assertKept(favRemote.ID, "收藏网络歌")
+
+	// 本地孤儿磁盘文件应被删除。
+	if _, err := os.Stat(localFile); !os.IsNotExist(err) {
+		t.Errorf("local orphan file should be deleted, stat err = %v", err)
+	}
+}
+
+// TestDeletePlaylistNoOrphanCleanupByDefault 验证不传 deleteSongs（candidateIDs 不收集）时，
+// 仅删歌单、歌曲全部保留——即默认行为不变。
+func TestDeletePlaylistNoOrphanCleanupByDefault(t *testing.T) {
+	env := newPlaylistTestEnv(t)
+	playlistSvc := env.newService()
+	songSvc := NewSongService(env.songs, nil, nil, nil, nil, nil)
+	ctx := context.Background()
+
+	pl := &models.Playlist{Type: models.PlaylistTypeNormal, Name: "歌单"}
+	if err := playlistSvc.Create(ctx, pl); err != nil {
+		t.Fatalf("create playlist: %v", err)
+	}
+	song := &models.Song{Type: models.TypeRemote, Title: "网络歌", URL: "https://example.com/x.mp3"}
+	if err := env.songs.Create(ctx, song); err != nil {
+		t.Fatalf("create song: %v", err)
+	}
+	if err := env.playlistSongs.AddSong(ctx, pl.ID, song.ID, 1); err != nil {
+		t.Fatalf("add song: %v", err)
+	}
+
+	if err := playlistSvc.Delete(ctx, pl.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	// 未调用 DeleteOrphanSongs：歌曲应仍在。
+	if _, err := songSvc.GetByID(ctx, song.ID); err != nil {
+		t.Errorf("song should be kept when deleteSongs is off, got err: %v", err)
 	}
 }

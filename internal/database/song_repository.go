@@ -173,6 +173,48 @@ func (r *SongRepository) ListTypesByIDs(ctx context.Context, ids []int64) (map[i
 	return result, nil
 }
 
+// FilterOrphanSongIDs 从 ids 中筛出"孤儿"歌曲——即在 playlist_songs 里没有任何关联行的歌曲。
+// 供删除歌单时清理"仅属于被删歌单"的残留歌曲用（歌单删除后其 playlist_songs 已被 FK CASCADE 清空，
+// 故此处判定 NOT EXISTS 即等价于"不属于任何其他歌单"）。按 sqlBatchSize 分片规避 SQLite 变量上限。
+func (r *SongRepository) FilterOrphanSongIDs(ctx context.Context, ids []int64) ([]int64, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	orphans := make([]int64, 0, len(ids))
+	for start := 0; start < len(ids); start += sqlBatchSize {
+		end := start + sqlBatchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunk := ids[start:end]
+		query, args, err := sq.Select("s.id").From("songs s").
+			Where(sq.Eq{"s.id": chunk}).
+			Where("NOT EXISTS (SELECT 1 FROM playlist_songs ps WHERE ps.song_id = s.id)").
+			ToSql()
+		if err != nil {
+			return nil, fmt.Errorf("build filter orphan song ids sql: %w", err)
+		}
+		rows, err := r.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, fmt.Errorf("filter orphan song ids: %w", err)
+		}
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan orphan song id: %w", err)
+			}
+			orphans = append(orphans, id)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("iterate orphan song ids: %w", err)
+		}
+		rows.Close()
+	}
+	return orphans, nil
+}
+
 // LocalPathInfo 本地歌曲路径信息，用于扫描去重与不完整记录检测。
 type LocalPathInfo struct {
 	SongID        int64
@@ -220,6 +262,21 @@ func (r *SongRepository) CountCoverPathReferences(ctx context.Context, coverPath
 		return 0, fmt.Errorf("count playlists by cover_path: %w", err)
 	}
 	return int(songs + playlists), nil
+}
+
+// CountSongsByFilePath 统计有多少 song 行引用了同一 file_path。
+// 删除本地歌曲的物理文件前用它做引用计数：多条歌曲行指向同一文件时（异常但可能，
+// 如手动重复导入 / 插件路径模板碰撞），只删 DB 行不删文件，避免误删仍被引用的音频。
+// file_path 为空直接返回 0（远程 / 电台歌曲无本地文件）。
+func (r *SongRepository) CountSongsByFilePath(ctx context.Context, filePath string) (int, error) {
+	if filePath == "" {
+		return 0, nil
+	}
+	n, err := r.queries.CountSongsByFilePath(ctx, filePath)
+	if err != nil {
+		return 0, fmt.Errorf("count songs by file_path: %w", err)
+	}
+	return int(n), nil
 }
 
 // FindByDedupKey 按 (plugin_entry_path, dedup_key) 查找歌曲 ID，找不到返回 ErrNotFound。

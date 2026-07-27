@@ -90,6 +90,17 @@ func (q *Queries) CountSongsByCoverPath(ctx context.Context, coverPath string) (
 	return count, err
 }
 
+const countSongsByFilePath = `-- name: CountSongsByFilePath :one
+SELECT COUNT(*) FROM songs WHERE file_path = ?
+`
+
+func (q *Queries) CountSongsByFilePath(ctx context.Context, filePath string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSongsByFilePath, filePath)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createSong = `-- name: CreateSong :execlastid
 INSERT INTO songs (
     type, title, artist, album, duration, file_path, url,

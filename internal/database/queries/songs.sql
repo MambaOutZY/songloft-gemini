@@ -67,6 +67,9 @@ SELECT COUNT(*) FROM playlist_songs WHERE song_id = ?;
 -- name: CountSongsByCoverPath :one
 SELECT COUNT(*) FROM songs WHERE cover_path = ?;
 
+-- name: CountSongsByFilePath :one
+SELECT COUNT(*) FROM songs WHERE file_path = ?;
+
 -- name: CountPlaylistsByCoverPath :one
 SELECT COUNT(*) FROM playlists WHERE cover_path = ?;
 

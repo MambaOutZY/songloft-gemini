@@ -2462,7 +2462,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据歌单 ID 列表批量删除歌单，内置歌单会被跳过",
+                "description": "根据歌单 ID 列表批量删除歌单，内置歌单会被跳过。请求体 delete_songs=true 时，同时删除仅属于这些歌单的孤儿歌曲（不属于任何其他歌单）——本地歌曲连同磁盘文件一并删除。",
                 "consumes": [
                     "application/json"
                 ],
@@ -2792,7 +2792,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据歌单ID删除歌单",
+                "description": "根据歌单ID删除歌单。delete_songs=true 时，同时删除仅属于本歌单的孤儿歌曲（不属于任何其他歌单，含内置的收藏/电台收藏保护）——本地歌曲连同磁盘文件一并删除，网络/电台歌曲清理数据库记录与缓存。",
                 "consumes": [
                     "application/json"
                 ],
@@ -2810,16 +2810,20 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否一并删除仅属于本歌单的孤儿歌曲（含本地文件），默认 false",
+                        "name": "delete_songs",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功",
+                        "description": "删除成功，含连带清理的歌曲数 deleted_songs",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "additionalProperties": true
                         }
                     },
                     "400": {
@@ -8001,6 +8005,11 @@ const docTemplate = `{
         "models.BatchDeletePlaylistsRequest": {
             "type": "object",
             "properties": {
+                "delete_songs": {
+                    "description": "为 true 时，一并删除仅属于被删歌单的孤儿歌曲（含本地歌曲及其磁盘文件）",
+                    "type": "boolean",
+                    "example": false
+                },
                 "ids": {
                     "description": "要删除的歌单 ID 列表",
                     "type": "array",
@@ -8017,9 +8026,14 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "deleted": {
-                    "description": "实际删除的数量",
+                    "description": "实际删除的歌单数量",
                     "type": "integer",
                     "example": 3
+                },
+                "deleted_songs": {
+                    "description": "连带清理的孤儿歌曲数量",
+                    "type": "integer",
+                    "example": 12
                 }
             }
         },

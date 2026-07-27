@@ -172,6 +172,20 @@ func (s *PlaylistService) BatchDelete(ctx context.Context, ids []int64) (int, er
 	return deleted, nil
 }
 
+// SongIDsInPlaylist 返回歌单内全部歌曲 ID（含本地）。
+// 供删除歌单时先行收集候选歌曲、删后交由 SongService.DeleteOrphanSongs 清理孤儿用。
+func (s *PlaylistService) SongIDsInPlaylist(ctx context.Context, playlistID int64) ([]int64, error) {
+	songs, err := s.playlistSongs.GetSongs(ctx, playlistID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get playlist songs: %w", err)
+	}
+	ids := make([]int64, 0, len(songs))
+	for _, song := range songs {
+		ids = append(ids, song.ID)
+	}
+	return ids, nil
+}
+
 // List 列出歌单
 func (s *PlaylistService) List(ctx context.Context, filter *database.PlaylistFilter) ([]*models.Playlist, error) {
 	playlists, err := s.playlists.List(ctx, filter)

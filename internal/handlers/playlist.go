@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -275,12 +276,13 @@ func (h *PlaylistHandler) TouchPlaylist(w http.ResponseWriter, r *http.Request) 
 
 // DeletePlaylist 删除歌单
 // @Summary 删除歌单
-// @Description 根据歌单ID删除歌单
+// @Description 根据歌单ID删除歌单。delete_songs=true 时，同时删除仅属于本歌单的孤儿歌曲（不属于任何其他歌单，含内置的收藏/电台收藏保护）——本地歌曲连同磁盘文件一并删除，网络/电台歌曲清理数据库记录与缓存。
 // @Tags 歌单管理
 // @Accept json
 // @Produce json
 // @Param id path int true "歌单ID"
-// @Success 200 {object} map[string]string "删除成功"
+// @Param delete_songs query bool false "是否一并删除仅属于本歌单的孤儿歌曲（含本地文件），默认 false"
+// @Success 200 {object} map[string]interface{} "删除成功，含连带清理的歌曲数 deleted_songs"
 // @Failure 400 {object} map[string]string "无效的歌单ID"
 // @Failure 500 {object} map[string]string "删除失败"
 // @Security BearerAuth
@@ -295,19 +297,42 @@ func (h *PlaylistHandler) DeletePlaylist(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	deleteSongs := r.URL.Query().Get("delete_songs") == "true"
+
+	// 删歌单前先收集歌单内全部歌曲 ID：歌单删除后 playlist_songs 关联被 FK CASCADE 清空，
+	// 需在此之前拿到候选，才能在删后判定哪些歌曲已无任何归属（孤儿）。
+	var candidateIDs []int64
+	if deleteSongs {
+		if ids, err := h.playlistService.SongIDsInPlaylist(ctx, id); err != nil {
+			slog.Warn("收集歌单歌曲失败，跳过孤儿清理", "playlistId", id, "error", err)
+		} else {
+			candidateIDs = ids
+		}
+	}
+
 	if err := h.playlistService.Delete(ctx, id); err != nil {
 		respondError(w, http.StatusInternalServerError, "删除歌单失败", err)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{
-		"message": "歌单已删除",
+	deletedSongs := 0
+	if deleteSongs && len(candidateIDs) > 0 {
+		if n, err := h.songService.DeleteOrphanSongs(ctx, candidateIDs, true); err != nil {
+			slog.Warn("清理孤儿歌曲失败", "playlistId", id, "error", err)
+		} else {
+			deletedSongs = n
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"message":       "歌单已删除",
+		"deleted_songs": deletedSongs,
 	})
 }
 
 // BatchDeletePlaylists 批量删除歌单
 // @Summary 批量删除歌单
-// @Description 根据歌单 ID 列表批量删除歌单，内置歌单会被跳过
+// @Description 根据歌单 ID 列表批量删除歌单，内置歌单会被跳过。请求体 delete_songs=true 时，同时删除仅属于这些歌单的孤儿歌曲（不属于任何其他歌单）——本地歌曲连同磁盘文件一并删除。
 // @Tags 歌单管理
 // @Accept json
 // @Produce json
@@ -331,14 +356,44 @@ func (h *PlaylistHandler) BatchDeletePlaylists(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// 删歌单前收集所有待删歌单内歌曲 ID 的并集（去重）作为孤儿清理候选。
+	// 内置歌单会被 BatchDelete 跳过，其歌曲仍在 playlist_songs 中，故不会被误判为孤儿。
+	var candidateIDs []int64
+	if req.DeleteSongs {
+		seen := make(map[int64]struct{})
+		for _, pid := range req.IDs {
+			ids, err := h.playlistService.SongIDsInPlaylist(ctx, pid)
+			if err != nil {
+				slog.Warn("收集歌单歌曲失败，跳过该歌单孤儿清理", "playlistId", pid, "error", err)
+				continue
+			}
+			for _, sid := range ids {
+				if _, ok := seen[sid]; !ok {
+					seen[sid] = struct{}{}
+					candidateIDs = append(candidateIDs, sid)
+				}
+			}
+		}
+	}
+
 	deleted, err := h.playlistService.BatchDelete(ctx, req.IDs)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "批量删除歌单失败", err)
 		return
 	}
 
+	deletedSongs := 0
+	if req.DeleteSongs && len(candidateIDs) > 0 {
+		if n, err := h.songService.DeleteOrphanSongs(ctx, candidateIDs, true); err != nil {
+			slog.Warn("清理孤儿歌曲失败", "playlistIds", req.IDs, "error", err)
+		} else {
+			deletedSongs = n
+		}
+	}
+
 	respondJSON(w, http.StatusOK, models.BatchDeletePlaylistsResponse{
-		Deleted: deleted,
+		Deleted:      deleted,
+		DeletedSongs: deletedSongs,
 	})
 }
 
