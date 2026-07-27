@@ -684,7 +684,9 @@ func (s *SongService) runAutoCreatePlaylists(ctx context.Context) {
 // 默认关闭：指纹只服务于「重复歌曲检测」与插件歌词/封面搜索，属按需功能，
 // 全库自动计算会在扫描「完成」之后继续长时间占满 CPU（songloft-org/songloft#323）。
 func (s *SongService) runAutoFingerprint() {
-	if s.configService != nil && !s.configService.GetBool("scan_auto_fingerprint", false) {
+	// 注意判定方向：configService 缺失时也必须跳过（默认关闭），
+	// 不能写成 `configService != nil && !GetBool(...)`——那样注入缺失反而会放行全库计算。
+	if s.configService == nil || !s.configService.GetBool("scan_auto_fingerprint", false) {
 		slog.Info("auto fingerprint disabled, skipping")
 		return
 	}

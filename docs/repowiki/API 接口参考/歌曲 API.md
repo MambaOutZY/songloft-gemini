@@ -109,7 +109,7 @@
 
 **路径:** `/api/v1/songs/duplicates` | **认证:** BearerAuth
 
-通过音频指纹（Chromaprint）查询本地歌曲中内容相同的重复组。需先完成指纹计算（`POST /scan/fingerprints`）——扫描后自动计算指纹**默认关闭**（见 `/settings/scan-auto-fingerprint`）。指纹只采样每首歌前 120 秒，故同一指纹内还会按全片时长以 2 秒容差二次聚簇，排除「统一片头」类碰撞。
+通过音频指纹（Chromaprint）查询本地歌曲中内容相同的重复组。需先完成指纹计算（`POST /scan/fingerprints`）——扫描后自动计算指纹**默认关闭**（见 `/settings/scan-auto-fingerprint`）。指纹只采样每首歌前 120 秒，故同一指纹内还会按全片时长以 30 秒容差二次聚簇（相邻比较，时长未知不切），排除「统一片头」类碰撞。
 
 **成功响应 (200):**
 

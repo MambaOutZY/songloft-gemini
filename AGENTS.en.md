@@ -398,7 +398,7 @@ what happens when they are missing: "scan reports completed but the CPU stays pi
   already did `close(cancel); cancel = nil`, after which `GetCancelChannel()` returns nil. Songs cancelled
   mid-flight are not marked as attempted, so the next run resumes them
 - **Dedup has a duration guard**: within one fingerprint, `ListDuplicateGroups` further clusters by
-  `fingerprint_duration` (full-file length) with a 2-second tolerance, because only the first 120 seconds are
+  `fingerprint_duration` (full-file length) using a 30-second tolerance between **adjacent** entries (0 = unknown never splits), because only the first 120 seconds are
   sampled and "audiobooks with a shared intro" can collide
 - Migration `0029` clears legacy full-length fingerprints once (they are not comparable with 120s sampling);
   after upgrading they need to be recomputed

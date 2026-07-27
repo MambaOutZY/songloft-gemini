@@ -67,6 +67,46 @@ func TestListDuplicateGroups_DurationGuard(t *testing.T) {
 	}
 }
 
+// TestListDuplicateGroups_DurationChain 时长呈链式分布（相邻都很近、首尾差得远）时
+// 不能被切碎。护栏最初按「与簇首比较」实现，300/301.5/303 会把 303 切成单元素簇丢掉，
+// 而它与 301.5 只差 1.5 秒、指纹完全相同——那是把真重复漏报了。
+func TestListDuplicateGroups_DurationChain(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	repo := db.SongRepository()
+
+	seedDuplicateSong(t, repo, "/m/chain-a.mp3", "AQAAchain", 300.0)
+	seedDuplicateSong(t, repo, "/m/chain-b.mp3", "AQAAchain", 301.5)
+	seedDuplicateSong(t, repo, "/m/chain-c.mp3", "AQAAchain", 303.0)
+
+	groups, err := repo.ListDuplicateGroups(context.Background())
+	if err != nil {
+		t.Fatalf("ListDuplicateGroups: %v", err)
+	}
+	if len(groups) != 1 || len(groups[0].Songs) != 3 {
+		t.Fatalf("链式时长应聚成一组 3 首，got %d 组 %+v", len(groups), groups)
+	}
+}
+
+// TestListDuplicateGroups_UnknownDurationNotSplit fingerprint_duration 为 0 表示
+// 时长未知（stderr 没有 Duration 行）。未知不能当成「时长差 210 秒」把整组拆散。
+func TestListDuplicateGroups_UnknownDurationNotSplit(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	repo := db.SongRepository()
+
+	seedDuplicateSong(t, repo, "/m/unknown.aac", "AQAAunknown", 0)
+	seedDuplicateSong(t, repo, "/m/known.mp3", "AQAAunknown", 210.0)
+
+	groups, err := repo.ListDuplicateGroups(context.Background())
+	if err != nil {
+		t.Fatalf("ListDuplicateGroups: %v", err)
+	}
+	if len(groups) != 1 || len(groups[0].Songs) != 2 {
+		t.Fatalf("时长未知不应拆组，got %d 组 %+v", len(groups), groups)
+	}
+}
+
 // TestListDuplicateGroups_MixedClusters 同指纹里既有真重复也有时长离群项时，
 // 只输出成簇的那一组，离群项被剔除。
 func TestListDuplicateGroups_MixedClusters(t *testing.T) {

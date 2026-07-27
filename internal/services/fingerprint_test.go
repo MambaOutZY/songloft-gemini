@@ -148,6 +148,42 @@ func TestFPWorkerCount(t *testing.T) {
 	}
 }
 
+// TestCancel_DoesNotClobberNewTask 取消等待旧任务收尾期间，若新任务（如扫描尾部的
+// runAutoFingerprint）已启动，绝不能把新任务的进度覆写成 cancelled——否则前端轮询
+// 看到「已停止」而 ffmpeg 仍在后台跑，正是 songloft-org/songloft#323 要消灭的状态。
+func TestCancel_DoesNotClobberNewTask(t *testing.T) {
+	mdb := testutil.OpenMemoryDB(t)
+	svc := NewFingerprintService(mdb.SongRepository())
+
+	oldDone := make(chan struct{})
+	newDone := make(chan struct{})
+
+	svc.mu.Lock()
+	svc.running = true
+	svc.done = oldDone
+	svc.progress = FingerprintProgress{Status: "running", Total: 100, Computed: 10}
+	// cancelFn 里模拟「旧任务收尾的同时新任务抢先启动并换掉 done」
+	svc.cancelFn = func() {
+		go func() {
+			svc.mu.Lock()
+			svc.done = newDone
+			svc.progress = FingerprintProgress{Status: "running", Total: 50}
+			svc.mu.Unlock()
+			close(oldDone)
+		}()
+	}
+	svc.mu.Unlock()
+
+	// 等待期间新任务顶上来了：Cancel 没有真正停下任何在跑的东西，
+	// 必须报 false（否则前端会停掉轮询并显示「已停止」，而 ffmpeg 还在跑）
+	if svc.Cancel() {
+		t.Error("Cancel() 未能停下新任务时不应返回 true")
+	}
+	if got := svc.GetProgress().Status; got != "running" {
+		t.Errorf("新任务的进度被覆写了: status = %q, want \"running\"", got)
+	}
+}
+
 // TestFingerprintService_ComputeMissingEmpty 无待计算歌曲时立即完成，不留下 running 状态。
 func TestFingerprintService_ComputeMissingEmpty(t *testing.T) {
 	mdb := testutil.OpenMemoryDB(t)

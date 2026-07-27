@@ -384,7 +384,8 @@ curl -s -X POST http://127.0.0.1:3000/function \
   已经 `close(cancel); cancel = nil`，之后 `GetCancelChannel()` 返回 nil。取消中途的歌曲不打
   attempted 标记，下次续算
 - **去重带时长护栏**：`ListDuplicateGroups` 在同指纹内还按 `fingerprint_duration`（全片时长）
-  以 2 秒容差聚簇。因为只采样前 120 秒，「统一片头的有声书」存在指纹碰撞可能
+  以 30 秒容差**相邻**聚簇（时长为 0 = 未知则不切）。因为只采样前 120 秒，「统一片头的有声书」存在指纹碰撞可能；
+  护栏刻意保守——漏报真重复比误报更不可接受，用户会照列表删文件
 - 迁移 `0029` 已把旧的全长指纹一次性清空（与 120 秒采样不可比），升级后需重算一次
 - `IsChromaprintAvailable` 走 `SetFingerprintFFmpegPath` 注入的 `ffmpeg_path` 配置，不再只查 PATH
 

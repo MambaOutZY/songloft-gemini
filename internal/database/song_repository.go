@@ -863,7 +863,11 @@ type DuplicateGroup struct {
 // duplicateDurationTolerance 是判定「同指纹即重复」时允许的全片时长差（秒）。
 // 指纹只采样前 fingerprintSampleSeconds 秒，理论上存在「统一片头的有声书/系列节目
 // 前若干秒完全一致」的碰撞，用全片时长做二次护栏把这类误判排除。
-const duplicateDurationTolerance = 2.0
+//
+// 取 30 秒而不是 2 秒：要拦的是「集与集之间差几分钟」的长音频碰撞，
+// 而同一首歌的不同封装（CUE 轨长 vs 独立文件解码长度、尾部静音、容器时长精度）
+// 差几秒是常态，阈值太小会把真重复切掉。
+const duplicateDurationTolerance = 30.0
 
 // ListDuplicateGroups 查询所有指纹重复的本地歌曲组。
 // 同一指纹内还会按全片时长（fingerprint_duration）以 duplicateDurationTolerance
@@ -911,7 +915,13 @@ func (r *SongRepository) ListDuplicateGroups(ctx context.Context) ([]DuplicateGr
 }
 
 // clusterByFingerprintDuration 把同指纹的歌曲按全片时长聚簇，返回簇内 ≥2 首的那些簇。
-// 排序后贪心切分：与簇内第一首时长差超过容差就另起一簇。
+//
+// 护栏刻意做得**保守**：这里的漏判（真重复没被报出来）比误判（把不同的歌报成重复）
+// 更可接受不了——用户会照着这个列表删文件。所以只在两首歌的时长「明显不是一回事」时才切开：
+//   - 相邻切分而非跟簇首比较：否则 300/301.5/303 这种链会被切成 [300,301.5] + 孤立的 303，
+//     后者被丢弃，而它和 301.5 只差 1.5 秒
+//   - 时长为 0 表示未知（stderr 没有 Duration 行，如某些 ADTS/裸流），一律不切，
+//     否则「一份 0 + 一份 210」会被拆成两个单元素簇导致整组消失
 func clusterByFingerprintDuration(songs []*models.Song) [][]*models.Song {
 	if len(songs) < 2 {
 		return nil
@@ -924,15 +934,18 @@ func clusterByFingerprintDuration(songs []*models.Song) [][]*models.Song {
 
 	var clusters [][]*models.Song
 	current := []*models.Song{sorted[0]}
-	for _, s := range sorted[1:] {
-		if s.FingerprintDuration-current[0].FingerprintDuration <= duplicateDurationTolerance {
-			current = append(current, s)
+	for i := 1; i < len(sorted); i++ {
+		prev, cur := sorted[i-1], sorted[i]
+		splittable := prev.FingerprintDuration > 0 && cur.FingerprintDuration > 0 &&
+			cur.FingerprintDuration-prev.FingerprintDuration > duplicateDurationTolerance
+		if !splittable {
+			current = append(current, cur)
 			continue
 		}
 		if len(current) > 1 {
 			clusters = append(clusters, current)
 		}
-		current = []*models.Song{s}
+		current = []*models.Song{cur}
 	}
 	if len(current) > 1 {
 		clusters = append(clusters, current)

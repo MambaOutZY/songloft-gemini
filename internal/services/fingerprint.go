@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -124,6 +125,12 @@ func ExtractFingerprint(ctx context.Context, filePath string, startSeconds, endS
 		return fingerprint, trackLen, nil
 	}
 	duration := parseDurationFromStderr(stderr.String())
+	// CUE 的**最后一轨** endSeconds 为 0（含义是「到文件末尾」，见 pkg/cue.ResolvedTrack），
+	// 此时 trackLen 为负走不到上面的分支。若直接返回 stderr 的时长，最后一轨会拿到整轨
+	// 镜像的时长（同专辑其他轨拿的是轨长），去重时永远无法与它真正的副本聚到一簇。
+	if startSeconds > 0 && duration > startSeconds {
+		return fingerprint, duration - startSeconds, nil
+	}
 	return fingerprint, duration, nil
 }
 
@@ -190,14 +197,25 @@ func (s *FingerprintService) Cancel() bool {
 
 	<-done
 	s.mu.Lock()
-	s.progress.Status = "cancelled"
+	// 等待期间可能已有新任务启动（如扫描尾部的 runAutoFingerprint）。
+	// 那时 s.done 已被换成新 channel，绝不能把新任务的进度覆写成 cancelled，
+	// 也不能报告 cancelled=true——否则前端会停掉轮询、显示「已停止」，
+	// 而 ffmpeg 仍在后台跑，正是 #323 要消灭的状态。
+	stopped := s.done == done
+	if stopped {
+		s.progress.Status = "cancelled"
+	}
 	s.mu.Unlock()
-	return true
+	return stopped
 }
 
 func (s *FingerprintService) startCompute(clearFirst bool) (int, error) {
 	s.mu.Lock()
-	if s.running {
+	// 必须用 for 而不是 if：两个并发的 startCompute（双击「重新计算全部」、
+	// 或手动触发撞上扫描尾部的 runAutoFingerprint）会等在同一个 done 上，
+	// 用 if 时后醒的那个会直接覆盖前一个刚装好的任务状态——
+	// 两个 doCompute 同时在跑（ffmpeg 翻倍）且可能 close 同一 channel 两次而 panic。
+	for s.running {
 		s.cancelFn()
 		done := s.done
 		s.mu.Unlock()
@@ -269,11 +287,17 @@ func fpWorkerCount() int {
 }
 
 func (s *FingerprintService) doCompute(ctx context.Context, items []database.SongIDPath) {
+	// 捕获本任务自己的 done：绝不能关 s.done 字段。字段可能已被后启动的任务换掉，
+	// 那样既会漏掉本任务的等待者（永久阻塞），又可能把别人的 channel 关两次而 panic。
+	s.mu.Lock()
+	done := s.done
+	s.mu.Unlock()
+
 	defer func() {
 		s.mu.Lock()
 		s.running = false
 		s.progress.Status = "done"
-		close(s.done)
+		close(done)
 		s.mu.Unlock()
 	}()
 
@@ -293,8 +317,21 @@ func (s *FingerprintService) doCompute(ctx context.Context, items []database.Son
 				default:
 				}
 
-				// 无论成败都落库「已尝试」时间戳：否则失败项会在每轮扫描里
-				// 被反复捞出来重跑 ffmpeg，形成永久 CPU 占用。
+				// 文件当前访问不到（网络存储掉线、卷还没挂上）属**短暂性**失败，
+				// 不能打「已尝试」标记：否则 NAS 掉线一次就会把整库标成永久失败，
+				// 只能靠「重新计算全部」全量重算才能恢复。
+				if _, statErr := os.Stat(item.FilePath); statErr != nil {
+					slog.Warn("fingerprint skipped, file unreachable (will retry later)",
+						"id", item.ID, "path", item.FilePath, "err", statErr)
+					failed.Add(1)
+					s.mu.Lock()
+					s.progress.Failed = failed.Load()
+					s.mu.Unlock()
+					continue
+				}
+
+				// ffmpeg 真的读了文件仍失败（无音轨 / 损坏 / 超时）才落库「已尝试」时间戳：
+				// 否则失败项会在每轮扫描里被反复捞出来重跑 ffmpeg，形成永久 CPU 占用。
 				attemptedAt := time.Now().Unix()
 				fp, dur, err := ExtractFingerprint(ctx, item.FilePath, item.CueStartSeconds, item.CueEndSeconds)
 				if err != nil {
