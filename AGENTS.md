@@ -256,6 +256,52 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 
 ---
 
+## 前端 UI 验证（Docker 无头浏览器）
+
+需要**真的把改动在界面上跑一遍**（而不是只跑 `flutter test`）时，走 Docker 里的无头 Chrome：
+本仓库开发机上宿主的 `google-chrome --headless` 会 core dump，CDP 端口也起不来，别在那上面浪费时间。
+
+```bash
+# 1. 前端编成嵌入模式，由 Go 后端同源提供（省掉 standalone 的 API 地址配置步骤）
+make build-frontend-web-embedded
+go build -tags dev -o /tmp/songloft-full .
+/tmp/songloft-full -port 58191 -db <tmpdir>/test.db -music <musicdir>
+
+# 2. 起浏览器容器。--network host 才能让容器里的 Chrome 访问宿主 127.0.0.1:58191
+docker run -d --name uichrome --network host browserless/chrome:latest
+
+# 3. 用 /function 端点跑 puppeteer 脚本（Content-Type 必须是 application/javascript）
+curl -s -X POST http://127.0.0.1:3000/function \
+  -H 'Content-Type: application/javascript' --data-binary @script.js
+```
+
+脚本形如 `module.exports = async ({ page }) => { ...; return { data: {...}, type: 'application/json' } }`，
+截图用 `page.screenshot({ encoding: 'base64' })` 塞进 `data` 里带回来再本地 base64 解码成 png。
+
+### 驱动 Flutter Web 的踩坑
+
+- **Flutter Web 是 canvas 渲染，DOM 里没有按钮**。可交互元素只以 `<flt-semantics>` 无障碍节点暴露：
+  用 `getBoundingClientRect()` 拿到中心点后 `page.mouse.click(x, y)`。语义树默认已开启；
+  若首屏出现 `<flt-semantics-placeholder>` 需先 `.click()` 它
+- **语义 label 会被合并**：一屏内容常聚合成一个长 aria-label 节点，按钮文字未必是独立节点。
+  找不到时**先截图看坐标再点**，不要在 label 匹配上死磕
+- **文本框**：`<input aria-label="Username">` 是真实 DOM，但用坐标点击 + `keyboard.type` 更稳；
+  点击与输入之间要留 ~800ms，否则 Flutter 焦点还没建立、输入会丢
+- **验证双语**：用 `evaluateOnNewDocument` 覆写 `navigator.language`/`languages` 为 `zh-CN`，
+  Flutter l10n 会跟着切
+- **深链**：`page.goto('/settings/category/2')` 是整页刷新，会在 boot 到一半时产生假的
+  "Failed to load"。用应用内点击导航，别用 goto 跳嵌套路由
+
+### 断言要落在后端可观测状态上
+
+截图只能证明「渲染对了」。交互是否真的生效必须另找证据，例如点完开关 `curl` 对应
+`/settings/<name>` 端点看值有没有变、点完「停止计算」用 `pgrep -x ffmpeg` 看子进程有没有归零。
+
+- **数进程别用 `ps -ef | grep <关键字> | wc -l`**：当前 shell 自己的命令行里就含那个关键字，
+  会稳定多算 1~2 个，很容易得出「没停掉」的错误结论。用 `pgrep -x <可执行名>`
+
+---
+
 ## 平台适配踩坑
 
 - 升级检查 (`/api/v1/upgrade/check`) 仅 Docker 可用

@@ -256,6 +256,62 @@ The Docker image contains a base package `/app/songloft`, while the persistent d
 
 ---
 
+## Frontend UI Verification (Dockerized Headless Browser)
+
+When you need to **actually exercise a change in the UI** (rather than only running `flutter test`), use a
+headless Chrome inside Docker: on this repo's dev machine the host's `google-chrome --headless` core dumps
+and never binds its CDP port, so don't waste time on it.
+
+```bash
+# 1. Build the frontend in embedded mode so the Go backend serves it same-origin
+#    (skips the standalone API-address configuration step)
+make build-frontend-web-embedded
+go build -tags dev -o /tmp/songloft-full .
+/tmp/songloft-full -port 58191 -db <tmpdir>/test.db -music <musicdir>
+
+# 2. Start the browser container. --network host is what lets the containerized Chrome
+#    reach the host's 127.0.0.1:58191
+docker run -d --name uichrome --network host browserless/chrome:latest
+
+# 3. Drive it through the /function endpoint (Content-Type must be application/javascript)
+curl -s -X POST http://127.0.0.1:3000/function \
+  -H 'Content-Type: application/javascript' --data-binary @script.js
+```
+
+Scripts look like `module.exports = async ({ page }) => { ...; return { data: {...}, type: 'application/json' } }`.
+Take screenshots with `page.screenshot({ encoding: 'base64' })`, return them inside `data`, and base64-decode
+them into PNGs locally.
+
+### Pitfalls when driving Flutter Web
+
+- **Flutter Web renders to a canvas, so there are no buttons in the DOM.** Interactive elements are only
+  exposed as `<flt-semantics>` accessibility nodes: read `getBoundingClientRect()`, then
+  `page.mouse.click(x, y)` on the center. The semantics tree is usually already enabled; if a
+  `<flt-semantics-placeholder>` shows up on first paint, `.click()` it first
+- **Semantics labels get merged**: a whole screen often collapses into one long aria-label node, and a
+  button's text is not necessarily its own node. When you can't find it, **screenshot first and click by
+  coordinates** instead of fighting label matching
+- **Text fields**: `<input aria-label="Username">` is real DOM, but clicking by coordinates plus
+  `keyboard.type` is more reliable; leave ~800ms between the click and the typing, otherwise Flutter has not
+  established focus yet and the input is dropped
+- **Verifying both languages**: override `navigator.language`/`languages` to `zh-CN` via
+  `evaluateOnNewDocument`; Flutter l10n follows
+- **Deep links**: `page.goto('/settings/category/2')` is a full reload and can produce a bogus
+  "Failed to load" while the app is mid-boot. Navigate by clicking inside the app instead of using goto for
+  nested routes
+
+### Anchor assertions on backend-observable state
+
+A screenshot only proves "it rendered correctly". Whether the interaction actually took effect needs separate
+evidence — e.g. after flipping a toggle, `curl` the matching `/settings/<name>` endpoint and check the value
+changed; after clicking "Stop computing", use `pgrep -x ffmpeg` to confirm the child processes hit zero.
+
+- **Do not count processes with `ps -ef | grep <keyword> | wc -l`**: the current shell's own command line
+  contains that keyword, so you consistently over-count by 1–2 and can easily conclude "it didn't stop".
+  Use `pgrep -x <executable>`
+
+---
+
 ## Platform Adaptation Pitfalls
 
 - The upgrade check (`/api/v1/upgrade/check`) is only available on Docker
