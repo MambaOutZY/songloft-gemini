@@ -450,6 +450,46 @@ what happens when they are missing: "scan reports completed but the CPU stays pi
 - `POST /api/v1/cache-manage/validate-dir` can validate a directory in advance (auto-create + writability check + return disk space)
 - Inflight dedup: concurrent requests for the same `song.ID` download only once; when the first request is `ctx.Canceled`, later waiters retry automatically
 
+### Server-side seek stream (`/songs/{id}/play?seek=<seconds>`)
+
+Exists to express a resume position for push-style clients that can only pull a URL from the
+beginning and don't support HTTP Range. A Xiaomi speaker handed a URL via `player_play_url` can
+only play from the start of the stream, so "resume at second N" can only be expressed by having
+the server produce a stream that **begins at second N** (songloft-org/songloft-plugin-miot#60:
+firmware ignores pause → escalate to stop → device-side media context is lost → resuming can
+only re-push the URL). Implemented in `internal/services/seek_stream.go`, structurally identical
+to `radio_transcode.go` (`Peek(1)` confirms real output before committing the response,
+otherwise a sentinel error lets the handler degrade losslessly to serving the whole file).
+
+- **Always outputs MP3**: mp3 sources use `-c:a copy` (input seek; measured 0.14s for a whole
+  track, near-zero CPU), everything else `libmp3lame`. **Don't** grow this into a multi-format
+  matrix — browsers have Range; this parameter only serves push-style clients
+- **Re-encoding must be CBR (`-b:a 320k`)**: a pipe isn't seekable, so the Xing frame can't be
+  rewritten (hence the explicit `-write_xing 0`) and clients can only estimate duration from
+  "first-frame bitrate × byte count". **Don't** switch to `-q:a 0` like elsewhere in the project:
+  a measured 105.4s stream gets estimated as 97.6s, and a speaker may declare it finished early
+- **`-map 0:a:0` must stay**: the mp3 muxer accepts a single audio stream; a dual-track `.mka`
+  (#298) without explicit track selection fails outright, showing up as a silent fallback to
+  "play from the start" with a single warn line — extremely hard to attribute
+- **Only applies to local songs and already-cached remote songs**: on a cache miss, obtaining a
+  local file requires synchronously downloading the whole track, which would stall the resume
+  keypress for an entire download. Radio (live, no position), `media=video` (`-vn` drops the
+  picture) and HEAD all ignore it
+- **seek must be clamped to at least 3s before the end** (the same guard in `parseSeekSeconds`
+  and in the plugin's `playCurrent`): past the end of file → ffmpeg produces nothing → the
+  fallback kicks in → **the whole track replays from the start**, which is worse than ignoring seek
+- **Doesn't hold `transcodeSem`** (the process lives for the remaining track duration and would
+  starve other transcodes); uses a separate `cap=4` semaphore in the same file that degrades
+  immediately instead of queueing. `exec.CommandContext` also carries a "remaining duration +
+  5min" hard timeout to reap orphaned processes
+- The response is chunked: no `Content-Length`, no `Accept-Ranges`, `Cache-Control: no-store`
+- Plugin-side counterpart: `PlaylistManager.streamSeekOffsetSec` remembers where the current
+  stream starts. To the device a seek stream is "a new stream starting at 0", so the
+  `play_song_detail.position` it reports is only an in-stream offset and **every consumer must
+  add the offset back** (`resolvePlayerStatus` in `handlers/playlist.ts`, `resetAutoNextTimer` in
+  `voicecmd/engine.ts`), otherwise the web progress bar drops back to 0 after resuming and
+  auto-advance is delayed by a whole seek duration
+
 ### Song persistence (song_downloader — plugin infrastructure)
 
 - **Positioning**: this is a plugin infrastructure capability, not a user-facing feature of the main program. The main program provides the `songs.download` Bridge API, allowing plugins to persist remote songs from the user's own network storage (NAS/WebDAV/Subsonic, etc.) to the server's local `music_path`, converting them to the `local` type. **This capability is only for music the user legally owns and must not be used to download copyright-protected content from third-party commercial music platforms**

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -725,6 +727,235 @@ func TestServeRadioHLSDirectBypassesProxy(t *testing.T) {
 		}
 		if !upstreamHit {
 			t.Error("反代路径未拉取上游 m3u8")
+		}
+	})
+}
+
+// TestParseSeekSeconds 验证 seek 参数解析与「尾部夹紧」。
+// 夹紧是关键：seek 越过文件尾会让 ffmpeg 零输出，进而触发无损降级把整首歌从头重播一遍，
+// 比忽略 seek 更糟（songloft-plugin-miot#60）。
+func TestParseSeekSeconds(t *testing.T) {
+	cases := []struct {
+		name     string
+		raw      string
+		duration float64
+		want     float64
+	}{
+		{"空值", "", 200, 0},
+		{"零", "0", 200, 0},
+		{"负数", "-5", 200, 0},
+		{"非数字", "abc", 200, 0},
+		{"无穷", "Inf", 200, 0},
+		{"NaN", "NaN", 200, 0},
+		{"正常值", "60", 200, 60},
+		{"小数", "60.5", 200, 60.5},
+		{"贴近结尾被夹紧", "199", 200, 0},
+		{"超过时长被夹紧", "9999", 200, 0},
+		{"时长未知不夹紧", "9999", 0, 9999},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseSeekSeconds(tc.raw, tc.duration); got != tc.want {
+				t.Errorf("parseSeekSeconds(%q, %v) = %v, want %v", tc.raw, tc.duration, got, tc.want)
+			}
+		})
+	}
+}
+
+// newSeekTestHandler 造一个带假 ffmpeg 的 handler：ffmpeg 换成 /bin/echo，
+// 于是响应 body 就是 ffmpeg 的参数列表，可直接断言参数契约。ffmpegPath 传空则模拟缺 ffmpeg。
+func newSeekTestHandler(t *testing.T, ffmpegPath string) (*SongHandler, *database.SongRepository, *services.SongService) {
+	t.Helper()
+	mdb := testutil.OpenMemoryDB(t)
+	repo := mdb.SongRepository()
+	songService := services.NewSongService(repo, nil, nil, nil, nil, nil)
+	cacheService := services.NewCacheService(t.TempDir(), services.NewConfigService(mdb.ConfigRepository()))
+	cacheService.SetFFmpegPath(ffmpegPath)
+	return NewSongHandler(songService, cacheService, nil, nil, nil, nil), repo, songService
+}
+
+// writeSeekTestFile 写一个测试音频文件并返回路径。
+func writeSeekTestFile(t *testing.T, name string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(p, []byte("audio-file-bytes"), 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+	return p
+}
+
+// playSeekRequest 发一次带 seek 的播放请求。
+func playSeekRequest(t *testing.T, handler *SongHandler, id int64, query string) *httptest.ResponseRecorder {
+	t.Helper()
+	return playSeekRequestMethod(t, handler, id, query, "GET")
+}
+
+func playSeekRequestMethod(t *testing.T, handler *SongHandler, id int64, query, method string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, "/api/v1/songs/"+strconv.FormatInt(id, 10)+"/play?"+query, nil)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", strconv.FormatInt(id, 10))
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	rr := httptest.NewRecorder()
+	handler.GetSongPlay(rr, req)
+	return rr
+}
+
+// TestGetSongPlaySeekStreamsMP3 验证本地歌曲带 seek 时走流式 MP3：
+// chunked（无 Content-Length）、no-store，且 ffmpeg 参数契约完整。
+func TestGetSongPlaySeekStreamsMP3(t *testing.T) {
+	handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+	src := writeSeekTestFile(t, "song.mp3")
+	id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "本地歌", FilePath: src, Format: "mp3", Duration: 200})
+
+	rr := playSeekRequest(t, handler, id, "seek=60")
+
+	if ct := rr.Header().Get("Content-Type"); ct != "audio/mpeg" {
+		t.Errorf("Content-Type=%q, 期望 audio/mpeg", ct)
+	}
+	if cl := rr.Header().Get("Content-Length"); cl != "" {
+		t.Errorf("Content-Length=%q, 期望为空（chunked 流）", cl)
+	}
+	if cc := rr.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Errorf("Cache-Control=%q, 期望含 no-store", cc)
+	}
+	body := rr.Body.String()
+	for _, want := range []string{"-ss 60.000", src, "-map 0:a:0", "-codec:a copy", "-write_xing 0", "-f mp3"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("ffmpeg 参数缺 %q，实际: %s", want, body)
+		}
+	}
+}
+
+// TestGetSongPlaySeekFallsBackToWholeFile 验证 seek 流无法开始时无损降级为「从头完整提供文件」：
+// body 必须等于原文件字节、带 Content-Length，且预设的 seek 响应头已被清掉。
+func TestGetSongPlaySeekFallsBackToWholeFile(t *testing.T) {
+	cases := []struct {
+		name       string
+		ffmpegPath string
+	}{
+		{"缺 ffmpeg", ""},
+		{"ffmpeg 零输出", "/bin/true"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			handler, repo, _ := newSeekTestHandler(t, tc.ffmpegPath)
+			src := writeSeekTestFile(t, "song.mp3")
+			id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "本地歌", FilePath: src, Format: "mp3", Duration: 200})
+
+			rr := playSeekRequest(t, handler, id, "seek=60")
+
+			if rr.Body.String() != "audio-file-bytes" {
+				t.Errorf("body=%q, 期望原文件完整字节", rr.Body.String())
+			}
+			if rr.Header().Get("Content-Length") == "" {
+				t.Error("降级后应由 http.ServeFile 提供 Content-Length")
+			}
+			if cc := rr.Header().Get("Cache-Control"); strings.Contains(cc, "no-store") {
+				t.Errorf("Cache-Control=%q, 降级时应清掉 seek 的 no-store", cc)
+			}
+		})
+	}
+}
+
+// TestGetSongPlaySeekIgnored 验证不该起 seek 流的场景：视频画面、prefetch、HEAD、电台。
+func TestGetSongPlaySeekIgnored(t *testing.T) {
+	t.Run("media=video 直出原容器", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "clip.mp4")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "视频", FilePath: src, Format: "mp4", Duration: 200})
+
+		rr := playSeekRequest(t, handler, id, "media=video&seek=30")
+
+		if ct := rr.Header().Get("Content-Type"); ct != "video/mp4" {
+			t.Errorf("Content-Type=%q, 期望 video/mp4（seek 被忽略）", ct)
+		}
+		if rr.Body.String() != "audio-file-bytes" {
+			t.Errorf("body=%q, 期望原文件字节", rr.Body.String())
+		}
+	})
+
+	t.Run("HEAD 不起 ffmpeg", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "song.mp3")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "本地歌", FilePath: src, Format: "mp3", Duration: 200})
+
+		rr := playSeekRequestMethod(t, handler, id, "seek=60", "HEAD")
+
+		if strings.Contains(rr.Body.String(), "-ss") {
+			t.Errorf("HEAD 起了 ffmpeg: %s", rr.Body.String())
+		}
+	})
+
+	t.Run("prefetch 立即 202", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "song.mp3")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "本地歌", FilePath: src, Format: "mp3", Duration: 200})
+
+		rr := playSeekRequest(t, handler, id, "prefetch=1&seek=60")
+
+		if rr.Code != http.StatusAccepted {
+			t.Errorf("status=%d, 期望 202", rr.Code)
+		}
+		if strings.Contains(rr.Body.String(), "-ss") {
+			t.Errorf("prefetch 起了 seek 流: %s", rr.Body.String())
+		}
+	})
+
+	t.Run("电台直播忽略 seek", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "audio/mpeg")
+			w.Write([]byte("live-bytes"))
+		}))
+		defer upstream.Close()
+		id := seedSong(t, repo, &models.Song{Type: models.TypeRadio, Title: "电台", URL: upstream.URL + "/live"})
+
+		rr := playSeekRequest(t, handler, id, "seek=60")
+
+		if rr.Body.String() != "live-bytes" {
+			t.Errorf("body=%q, 期望原样代理直播流", rr.Body.String())
+		}
+	})
+}
+
+// TestGetSongPlaySeekRemote 验证网络歌曲：已缓存时走 seek 流，未缓存时忽略 seek 直接代理
+// （未缓存下拿到本地文件要先同步下载整首，会让「续播」这一下按键卡住一整首下载时长）。
+func TestGetSongPlaySeekRemote(t *testing.T) {
+	t.Run("已缓存走 seek 流", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		cached := writeSeekTestFile(t, "cached.mp3")
+		id := seedSong(t, repo, &models.Song{
+			Type: models.TypeRemote, Title: "网络歌", URL: "https://example.com/a.mp3",
+			Format: "mp3", Duration: 200,
+		})
+		// cache_path 由专门的 UpdateCachePath 写入，Create 不落这一列
+		if err := repo.UpdateCachePath(context.Background(), id, cached); err != nil {
+			t.Fatalf("update cache path: %v", err)
+		}
+
+		rr := playSeekRequest(t, handler, id, "seek=60")
+
+		if !strings.Contains(rr.Body.String(), "-ss 60.000") {
+			t.Errorf("已缓存网络歌未走 seek 流: %s", rr.Body.String())
+		}
+	})
+
+	t.Run("未缓存忽略 seek", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "audio/mpeg")
+			w.Write([]byte("proxied-bytes"))
+		}))
+		defer upstream.Close()
+		id := seedSong(t, repo, &models.Song{
+			Type: models.TypeRemote, Title: "网络歌", URL: upstream.URL + "/a.mp3", Duration: 200,
+		})
+
+		rr := playSeekRequest(t, handler, id, "seek=60")
+
+		if strings.Contains(rr.Body.String(), "-ss") {
+			t.Errorf("未缓存网络歌起了 seek 流: %s", rr.Body.String())
 		}
 	})
 }

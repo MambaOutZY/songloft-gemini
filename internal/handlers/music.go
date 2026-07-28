@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -1153,6 +1154,7 @@ func (h *SongHandler) UpdateSongLyrics(w http.ResponseWriter, r *http.Request) {
 // @Param media query string false "传 video 时按视频播放：直出原容器（忽略 format/quality 转码，避免 -vn 丢画面），并按容器真实类型返回 Content-Type（如 video/mp4）。用于应用内视频画面渲染与 DLNA 视频投屏"
 // @Param hls query string false "仅电台(HLS)有效。传 direct 时强制 302 直连源站、绕过本机 HLS 反代（即使 /settings/hls-proxy 已开）。原生 player 无 CORS 限制，直连可避免直播切片经反代往返后过期(404)；浏览器不传此参数以继续走反代解决 CORS"
 // @Param radio_transcode query string false "仅电台有效。传目标格式（如 mp3）时，服务端用 ffmpeg 把电台流实时转码为该格式（HLS 与裸流均适用）。用于只支持 MP3、无法解码 AAC/HE-AAC 或不支持 HLS 的音箱。缺 ffmpeg 或坏源时优雅降级为原样代理/302。与 format 分离：电台侧忽略 format，只认此参数"
+// @Param seek query number false "从第 N 秒起播。面向不支持 HTTP Range seek 的推流客户端（如小爱音箱经 player_play_url 只会从头拉流）：服务端用 ffmpeg input seek 产出一条以第 N 秒为开头的 chunked MP3 流，因此响应无 Content-Length、不可 Range、Cache-Control 为 no-store；浏览器等支持 Range 的客户端请用 Range 而非此参数。仅本地歌曲与已缓存的网络歌曲有效（电台是直播、未缓存的网络歌曲会阻塞整首下载，均忽略）；media=video 与 HEAD 忽略；缺 ffmpeg / seek 越过时长时优雅降级为从头完整播放"
 // @Success 200 {file} binary "音频文件"
 // @Success 202 {string} string "预拉取已触发"
 // @Success 302 {string} string "电台流重定向"
@@ -1218,6 +1220,13 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 		targetFormat = "mp3"
 	}
 
+	// seek=N：从第 N 秒起播，服务端产出以该位置为开头的 MP3 流（songloft-plugin-miot#60）。
+	// videoIntent 下忽略（seek 流一律 -vn 出 MP3，会丢画面）；HEAD 忽略（探测请求不该起 ffmpeg）。
+	var seekSeconds float64
+	if !videoIntent && r.Method != http.MethodHead {
+		seekSeconds = parseSeekSeconds(r.URL.Query().Get("seek"), song.Duration)
+	}
+
 	// 预拉取模式：异步触发缓存 + 转码预热，立即返回 202。
 	// 不能用 r.Context()，否则 202 发出后客户端断开会 Kill ffmpeg，预热失败。
 	// 通过 playActivity.Track 注册进 registry（CatPrefetch），但 Activate 不会取消 prefetch
@@ -1233,16 +1242,96 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	opts := servePlayOptions{
+		targetFormat: targetFormat,
+		bitrate:      bitrate,
+		videoIntent:  videoIntent,
+		trackIndex:   trackIndex,
+		normalize:    normalize,
+		seekSeconds:  seekSeconds,
+	}
+
 	switch song.Type {
 	case models.TypeLocal:
-		h.serveLocal(w, r, song, targetFormat, bitrate, videoIntent, trackIndex, normalize)
+		h.serveLocal(w, r, song, opts)
 	case models.TypeRadio:
+		// 电台是直播流，没有「曲内位置」可言，seek 天然不适用（opts 里的值被忽略）。
 		h.serveRadio(w, r, song)
 	case models.TypeRemote:
-		h.serveRemote(w, r, song, targetFormat, bitrate, normalize)
+		h.serveRemote(w, r, song, opts)
 	default:
 		http.Error(w, "unsupported song type", http.StatusInternalServerError)
 	}
+}
+
+// servePlayOptions 是 serveLocal / serveRemote / serveCachedFile 共用的播放参数。
+// 收成结构体而非位置参数：这些字段里相邻的 int/bool/float64 用位置传参极易调错且编译器不报。
+type servePlayOptions struct {
+	targetFormat string  // 目标转码格式（format 参数，已含 quality/normalize 推导出的默认值）
+	bitrate      int     // 目标码率 kbps，0=原始音质
+	videoIntent  bool    // media=video：直出原容器保留画面
+	trackIndex   int     // 抽轨（audio-relative 0-based），< 0 = 不抽轨
+	normalize    bool    // EBU R128 音量均衡
+	seekSeconds  float64 // 从第 N 秒起播，0 = 从头
+}
+
+// parseSeekSeconds 解析 seek 查询参数。
+//
+// duration > 0 时把接近/超过时长的值夹成 0：seek 越过文件尾会让 ffmpeg 零输出，
+// 进而触发「无损降级」把整首歌从头重播一遍——比忽略 seek 更糟。duration == 0（时长未知）
+// 时不夹紧，交由 ffmpeg 零输出后的降级兜底。
+func parseSeekSeconds(raw string, duration float64) float64 {
+	if raw == "" {
+		return 0
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || v <= 0 || math.IsInf(v, 0) || math.IsNaN(v) {
+		return 0
+	}
+	if duration > 0 && v >= duration-seekTailGuardSeconds {
+		return 0
+	}
+	return v
+}
+
+// seekTailGuardSeconds seek 距歌曲结尾的最小保留秒数，见 parseSeekSeconds。
+const seekTailGuardSeconds = 3
+
+// trySeekStream 尝试以「从 opts.seekSeconds 起的 MP3 流」提供 path，成功接管响应返回 true。
+//
+// 返回 false 表示尚未向响应写入任何字节（含未请求 seek、ffmpeg 缺失/并发满/零输出等），
+// 调用方应继续走原本的 http.ServeFile 从头提供文件。
+func (h *SongHandler) trySeekStream(w http.ResponseWriter, r *http.Request, song *models.Song, path string, opts servePlayOptions) bool {
+	if opts.seekSeconds <= 0 || h.cacheService == nil {
+		return false
+	}
+
+	// 先设响应头：StreamSeekedMP3 一旦写出字节就无法再改。降级时下面会原样删掉。
+	w.Header().Set("Content-Type", "audio/mpeg")
+	w.Header().Set("Cache-Control", "no-store")
+
+	var remaining float64
+	if song.Duration > opts.seekSeconds {
+		remaining = song.Duration - opts.seekSeconds
+	}
+	err := h.cacheService.StreamSeekedMP3(r.Context(), w, services.SeekStreamOptions{
+		SourcePath:      path,
+		StartSecond:     opts.seekSeconds,
+		RemainingSecond: remaining,
+	})
+	if err == nil {
+		return true
+	}
+	if !errors.Is(err, services.ErrSeekStreamUnavailable) {
+		// 已写出部分字节后中途失败：响应已提交，无法再降级。
+		return true
+	}
+	// 一个字节都没写出：清掉预设的响应头，让调用方降级为从头完整提供文件。
+	w.Header().Del("Content-Type")
+	w.Header().Del("Cache-Control")
+	slog.Warn("seek stream unavailable, serving from start",
+		"songId", song.ID, "seek", opts.seekSeconds, "path", path, "error", err)
+	return false
 }
 
 // trackActivity 是 playActivity.Track 的兜底封装：当 registry 未注入（旧测试 / lite 模式）时
@@ -1341,11 +1430,12 @@ func (h *SongHandler) prepareSongPlayback(ctx context.Context, song *models.Song
 // videoIntent=true（media=video）时上游已清空 targetFormat/bitrate/trackIndex，此处按容器真实类型给 video mime。
 // trackIndex >= 0（songloft-org/songloft#298）时抽取指定音轨：由后端探测该轨编码决定目标容器
 // （AAC → m4a 无损 remux，否则 → mp3），忽略传入的 targetFormat/bitrate。
-func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string, bitrate int, videoIntent bool, trackIndex int, normalize bool) {
+func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *models.Song, opts servePlayOptions) {
 	if song.FilePath == "" {
 		http.NotFound(w, r)
 		return
 	}
+	targetFormat, bitrate, trackIndex, normalize := opts.targetFormat, opts.bitrate, opts.trackIndex, opts.normalize
 	srcPath := song.FilePath
 	if song.CueSourcePath != "" {
 		// CUE track: FilePath 指向共享的整轨音频，必须经 ffmpeg 按需提取对应片段。
@@ -1399,8 +1489,15 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 			srcPath = path
 		}
 	}
+	// seek 放在最后一步、作用在已定型的 srcPath 上（CUE 提取 / 抽轨 / 转码 / normalize 之后），
+	// 这样 seek 语义恒为「曲内偏移」，与上面各分支自动叠加：CUE 轨先被提取成独立文件再 seek，
+	// 不会与 -ss CueStartSeconds 叠成整轨镜像的绝对位置；转码产物已是 mp3 则走无损 copy。
+	if h.trySeekStream(w, r, song, srcPath, opts) {
+		return
+	}
+
 	w.Header().Set("Cache-Control", "public, max-age=31536000")
-	if videoIntent {
+	if opts.videoIntent {
 		// 视频画面播放:按容器真实类型给 Content-Type(如 video/mp4),供 Web <video> 与 DLNA 正确识别;
 		// videoIntent 下上游已禁用转码,srcPath 一定是原容器。未知扩展名交由 http.ServeFile 决定。
 		if ct := videoContentType(srcPath); ct != "" {
@@ -1626,11 +1723,11 @@ func isHLSURL(rawURL string) bool {
 // - 纯外链歌曲:走 ServeRemoteResource(直接代理)
 // 失败时:返回 502,后台异步切源(若注入了 reassigner),客户端下次播放该 song 会用新源。
 // targetFormat 非空且与原格式不同时,对已缓存文件走 ffmpeg 转码。
-func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *models.Song, targetFormat string, bitrate int, normalize bool) {
+func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *models.Song, opts servePlayOptions) {
 	// 1. 缓存命中 → 直接 ServeFile
 	if song.CachePath != "" {
 		if _, err := os.Stat(song.CachePath); err == nil {
-			h.serveCachedFile(w, r, song, song.CachePath, targetFormat, bitrate, normalize)
+			h.serveCachedFile(w, r, song, song.CachePath, opts)
 			return
 		}
 		h.cacheService.ClearStaleCachePath(song.ID)
@@ -1638,8 +1735,14 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 
 	// fallback: 旧格式缓存（兼容升级过渡）
 	if cachedPath, ok := h.cacheService.FindCachedFileBySong(song); ok {
-		h.serveCachedFile(w, r, song, cachedPath, targetFormat, bitrate, normalize)
+		h.serveCachedFile(w, r, song, cachedPath, opts)
 		return
+	}
+
+	// 到这里缓存未命中：seek 只服务已缓存的网络歌曲。未命中时拿到本地文件必须先同步下载整首，
+	// 会让「续播」这一下按键卡住一整首歌的下载时长；而刚在播的歌几乎必然已缓存，代价可忽略。
+	if opts.seekSeconds > 0 {
+		slog.Info("seek ignored for uncached remote song", "songId", song.ID, "seek", opts.seekSeconds)
 	}
 
 	// 2. 缓存未命中：解析播放 URL
@@ -1709,7 +1812,8 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 }
 
 // serveCachedFile 从缓存文件提供服务,支持转码。
-func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, song *models.Song, cachedPath, targetFormat string, bitrate int, normalize bool) {
+func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, song *models.Song, cachedPath string, opts servePlayOptions) {
+	targetFormat, bitrate, normalize := opts.targetFormat, opts.bitrate, opts.normalize
 	if services.NeedsTranscodeForServe(song, cachedPath, targetFormat) || bitrate > 0 || normalize {
 		sk := playactivity.SessionFromContext(r.Context())
 		tcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -1722,6 +1826,10 @@ func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, so
 		} else {
 			cachedPath = path
 		}
+	}
+	// 同 serveLocal：seek 作用在已定型的 cachedPath 上，与转码/均衡自动叠加。
+	if h.trySeekStream(w, r, song, cachedPath, opts) {
+		return
 	}
 	w.Header().Set("Cache-Control", "public, max-age=604800")
 	http.ServeFile(w, r, cachedPath)

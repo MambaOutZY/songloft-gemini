@@ -434,6 +434,34 @@ curl -s -X POST http://127.0.0.1:3000/function \
 - `POST /api/v1/cache-manage/validate-dir` 可预先验证目录（自动创建 + 可写性检查 + 返回磁盘空间）
 - inflight 去重：同 `song.ID` 的并发请求只下载一次；首请求被 `ctx.Canceled` 时后续等待者自动重试
 
+### 服务端 seek 流（`/songs/{id}/play?seek=<秒>`）
+
+给「只会从头拉 URL、不支持 HTTP Range」的推流客户端表达续播位置用。小爱音箱经
+`player_play_url` 拿到 URL 后只能从流的开头播，所以「从第 N 秒续播」只能由服务端产出一条
+**以第 N 秒为开头**的流（songloft-org/songloft-plugin-miot#60：暂停被固件忽略 → 升级 stop →
+设备端媒体上下文丢失 → 续播只能重推 URL）。实现在 `internal/services/seek_stream.go`，
+骨架与 `radio_transcode.go` 同构（`Peek(1)` 确认有输出才提交响应，否则返回哨兵错误让
+handler 无损降级为从头 `ServeFile`）。
+
+- **一律输出 MP3**：源是 mp3 走 `-c:a copy`（input seek，实测整首 0.14s、近零 CPU），否则
+  `libmp3lame`。**不要**扩成多格式矩阵——浏览器有 Range 可用，这个参数只服务推流客户端
+- **重编码必须 CBR（`-b:a 320k`）**：pipe 不可 seek → 无法回写 Xing 帧（故显式 `-write_xing 0`），
+  客户端只能按「首帧码率 × 字节数」估时长。**不要**改成项目别处的 `-q:a 0`：实测 105.4s 的流
+  会被估成 97.6s，音箱据此可能提前判定播完
+- **`-map 0:a:0` 不能删**：mp3 muxer 只接单条音频流，双音轨 `.mka`（#298）不选轨会直接失败，
+  表现为静默降级回「从头播」，只有一行 warn，极难归因
+- **只对本地歌曲与已缓存的网络歌曲生效**：未缓存时拿到本地文件要先同步下载整首，会让「续播」
+  这一下按键卡住一整首下载时长。电台（直播无位置）、`media=video`（`-vn` 会丢画面）、HEAD 均忽略
+- **seek 必须夹到距结尾 3 秒之外**（`parseSeekSeconds` 与插件侧 `playCurrent` 同源守卫）：
+  越过文件尾 → ffmpeg 零输出 → 触发降级 → **整首从头重播**，比忽略 seek 更糟
+- **不占 `transcodeSem`**（进程存活整首剩余时长，会饿死其他转码），改用本文件内 `cap=4` 的独立
+  信号量，满了直接降级不排队；`exec.CommandContext` 另带「剩余时长 + 5min」硬超时回收孤儿进程
+- 响应是 chunked：无 `Content-Length`、不设 `Accept-Ranges`、`Cache-Control: no-store`
+- 插件侧配套：`PlaylistManager.streamSeekOffsetSec` 记住当前流的起点。带 seek 的流对设备是
+  「从 0 开始的新流」，它上报的 `play_song_detail.position` 只是流内偏移，**消费点必须补上偏移**
+  （`handlers/playlist.ts` 的 `resolvePlayerStatus`、`voicecmd/engine.ts` 的 `resetAutoNextTimer`），
+  否则续播后网页进度条会掉回 0、自动切歌被推迟一整个 seek 时长
+
 ### 歌曲持久化（song_downloader — 插件基础设施）
 
 - **定位**：插件基础设施能力，不是主程序面向用户的功能。主程序提供 `songs.download` Bridge API，允许插件将用户自有网络存储（NAS/WebDAV/Subsonic 等）中的远程歌曲持久化到服务端本地 `music_path`，转为 `local` 类型。**此能力仅用于用户合法拥有的音乐资源，不得用于下载第三方商业音乐平台的受版权保护内容**
