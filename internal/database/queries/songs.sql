@@ -103,6 +103,9 @@ UPDATE songs SET fingerprint_attempted_at = ? WHERE id = ?;
 -- name: ClearAllFingerprints :exec
 UPDATE songs SET fingerprint = '', fingerprint_duration = 0, fingerprint_attempted_at = 0 WHERE type = 'local';
 
+-- name: ResetFailedFingerprintAttempts :exec
+UPDATE songs SET fingerprint_attempted_at = 0 WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at != 0;
+
 -- name: ListLocalWithoutFingerprint :many
 SELECT id, file_path, cue_start_seconds, cue_end_seconds FROM songs
 WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at = 0;

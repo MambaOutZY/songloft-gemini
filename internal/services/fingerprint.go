@@ -168,17 +168,37 @@ func (s *FingerprintService) GetProgress() FingerprintProgress {
 	return s.progress
 }
 
+// fingerprintComputeMode 控制 startCompute 启动前的预处理。
+type fingerprintComputeMode int
+
+const (
+	// fpModeMissing 只算从未尝试过的歌曲。
+	fpModeMissing fingerprintComputeMode = iota
+	// fpModeRecomputeAll 清空全部指纹后重算。
+	fpModeRecomputeAll
+	// fpModeRetryFailed 仅重置失败标记后重试，保留已算好的指纹。
+	fpModeRetryFailed
+)
+
 // ComputeMissing 为所有缺失指纹的本地歌曲计算指纹。
 // 若已有任务在运行，打断旧任务后重新启动。
 func (s *FingerprintService) ComputeMissing() (int, error) {
-	return s.startCompute(false)
+	return s.startCompute(fpModeMissing)
 }
 
 // RecomputeAll 清空所有已有指纹后重新计算全部本地歌曲的指纹。
 // 会同时重置「已尝试」标记，因此此前失败的歌曲也会被重试。
 // 若已有任务在运行，打断旧任务后重新启动。
 func (s *FingerprintService) RecomputeAll() (int, error) {
-	return s.startCompute(true)
+	return s.startCompute(fpModeRecomputeAll)
+}
+
+// RetryFailed 仅重置失败项的「已尝试」标记后重试，已算好的指纹保持不动。
+// 适用于 ffmpeg 能力升级（如新增 mpeg 解复用器）后恢复此前因解码器缺失
+// 而失败的歌曲，代价远低于「重新计算全部」。
+// 若已有任务在运行，打断旧任务后重新启动。
+func (s *FingerprintService) RetryFailed() (int, error) {
+	return s.startCompute(fpModeRetryFailed)
 }
 
 // Cancel 中断正在运行的指纹计算任务并等待其收尾。
@@ -209,7 +229,7 @@ func (s *FingerprintService) Cancel() bool {
 	return stopped
 }
 
-func (s *FingerprintService) startCompute(clearFirst bool) (int, error) {
+func (s *FingerprintService) startCompute(mode fingerprintComputeMode) (int, error) {
 	s.mu.Lock()
 	// 必须用 for 而不是 if：两个并发的 startCompute（双击「重新计算全部」、
 	// 或手动触发撞上扫描尾部的 runAutoFingerprint）会等在同一个 done 上，
@@ -229,16 +249,26 @@ func (s *FingerprintService) startCompute(clearFirst bool) (int, error) {
 	s.done = make(chan struct{})
 	s.mu.Unlock()
 
-	if clearFirst {
+	// 启动前预处理：清库重算 / 仅重置失败标记，失败时回滚任务状态。
+	var prepErr error
+	switch mode {
+	case fpModeRecomputeAll:
 		if err := s.songs.ClearAllFingerprints(ctx); err != nil {
-			cancel()
-			s.mu.Lock()
-			s.running = false
-			close(s.done)
-			s.progress = FingerprintProgress{Status: "idle"}
-			s.mu.Unlock()
-			return 0, fmt.Errorf("clear fingerprints: %w", err)
+			prepErr = fmt.Errorf("clear fingerprints: %w", err)
 		}
+	case fpModeRetryFailed:
+		if err := s.songs.ResetFailedFingerprintAttempts(ctx); err != nil {
+			prepErr = fmt.Errorf("reset failed attempts: %w", err)
+		}
+	}
+	if prepErr != nil {
+		cancel()
+		s.mu.Lock()
+		s.running = false
+		close(s.done)
+		s.progress = FingerprintProgress{Status: "idle"}
+		s.mu.Unlock()
+		return 0, prepErr
 	}
 
 	missing, err := s.songs.ListLocalWithoutFingerprint(ctx)

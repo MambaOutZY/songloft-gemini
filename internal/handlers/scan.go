@@ -652,7 +652,7 @@ func (h *ScanHandler) CancelFingerprintCompute(w http.ResponseWriter, r *http.Re
 
 // StartFingerprintCompute 触发批量指纹计算
 // @Summary 触发批量指纹计算
-// @Description 异步为本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。传入 recompute_all=true 时清空已有指纹后重新计算全部。
+// @Description 异步为本地歌曲计算音频指纹，需要 ffmpeg 支持 chromaprint。若已有任务在运行则打断重启。传入 recompute_all=true 时清空已有指纹后重新计算全部；传入 retry_failed=true 时仅重置失败项的「已尝试」标记后重试（已算好的指纹保留，适用于 ffmpeg 能力升级后恢复失败歌曲）。两者同时传入时 recompute_all 优先。
 // @Tags 扫描管理
 // @Accept json
 // @Produce json
@@ -681,9 +681,12 @@ func (h *ScanHandler) StartFingerprintCompute(w http.ResponseWriter, r *http.Req
 
 	var total int
 	var err error
-	if req.RecomputeAll {
+	switch {
+	case req.RecomputeAll:
 		total, err = h.fingerprintService.RecomputeAll()
-	} else {
+	case req.RetryFailed:
+		total, err = h.fingerprintService.RetryFailed()
+	default:
 		total, err = h.fingerprintService.ComputeMissing()
 	}
 	if err != nil {
@@ -698,6 +701,8 @@ func (h *ScanHandler) StartFingerprintCompute(w http.ResponseWriter, r *http.Req
 
 type startFingerprintRequest struct {
 	RecomputeAll bool `json:"recompute_all"`
+	// RetryFailed 仅重置失败项的「已尝试」标记后重试，已算好的指纹保留。
+	RetryFailed bool `json:"retry_failed"`
 }
 
 // GetFingerprintProgress 获取指纹计算进度

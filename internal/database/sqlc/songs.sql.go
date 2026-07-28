@@ -712,6 +712,15 @@ func (q *Queries) MarkFingerprintAttempted(ctx context.Context, arg MarkFingerpr
 	return err
 }
 
+const resetFailedFingerprintAttempts = `-- name: ResetFailedFingerprintAttempts :exec
+UPDATE songs SET fingerprint_attempted_at = 0 WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at != 0
+`
+
+func (q *Queries) ResetFailedFingerprintAttempts(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, resetFailedFingerprintAttempts)
+	return err
+}
+
 const updateCachePath = `-- name: UpdateCachePath :exec
 UPDATE songs SET cache_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 `

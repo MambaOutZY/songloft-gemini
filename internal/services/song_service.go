@@ -47,6 +47,7 @@ type SongRepository interface {
 	UpdateFingerprint(ctx context.Context, id int64, fingerprint string, duration float64, attemptedAt int64) error
 	MarkFingerprintAttempted(ctx context.Context, id int64, attemptedAt int64) error
 	ClearAllFingerprints(ctx context.Context) error
+	ResetFailedFingerprintAttempts(ctx context.Context) error
 	ListLocalWithoutFingerprint(ctx context.Context) ([]database.SongIDPath, error)
 	CountLocalFingerprints(ctx context.Context) (total, computed, failed int64, err error)
 	ListDuplicateGroups(ctx context.Context) ([]database.DuplicateGroup, error)

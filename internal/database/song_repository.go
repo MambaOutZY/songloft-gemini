@@ -817,6 +817,13 @@ func (r *SongRepository) ClearAllFingerprints(ctx context.Context) error {
 	return r.queries.ClearAllFingerprints(ctx)
 }
 
+// ResetFailedFingerprintAttempts 仅重置失败项（无指纹且已标记尝试）的「已尝试」标记，
+// 已算好的指纹不受影响。用于 ffmpeg 能力升级（如新增 mpeg 解复用器）后
+// 单独重试此前因解码器缺失而失败的歌曲，避免为此清空全库重算。
+func (r *SongRepository) ResetFailedFingerprintAttempts(ctx context.Context) error {
+	return r.queries.ResetFailedFingerprintAttempts(ctx)
+}
+
 // SongIDPath 是指纹计算所需的歌曲最小信息。
 // CueStartSeconds / CueEndSeconds 仅 CUE 轨非零：CUE 轨的 FilePath 指向整轨镜像，
 // 必须按区间采样，否则同一镜像下的所有 track 会拿到完全相同的指纹。

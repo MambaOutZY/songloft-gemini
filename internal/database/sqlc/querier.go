@@ -69,6 +69,7 @@ type Querier interface {
 	MarkFingerprintAttempted(ctx context.Context, arg MarkFingerprintAttemptedParams) error
 	MaxPositionInPlaylist(ctx context.Context, playlistID int64) (int64, error)
 	RemoveSongFromPlaylist(ctx context.Context, arg RemoveSongFromPlaylistParams) (int64, error)
+	ResetFailedFingerprintAttempts(ctx context.Context) error
 	RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64, error)
 	SetConfig(ctx context.Context, arg SetConfigParams) error
 	SetPluginStorage(ctx context.Context, arg SetPluginStorageParams) error

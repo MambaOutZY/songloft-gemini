@@ -103,6 +103,46 @@ func TestClearAllFingerprints_ResetsAttempted(t *testing.T) {
 	}
 }
 
+// TestResetFailedFingerprintAttempts_KeepsComputed 「仅重试失败项」必须只重置
+// 失败标记，已算好的指纹不能被清空——否则就退化成了「重新计算全部」。
+// 场景：ffmpeg 升级新增 mpeg 解复用器后，恢复此前因解码器缺失而失败的 mpg。
+func TestResetFailedFingerprintAttempts_KeepsComputed(t *testing.T) {
+	mdb := testutil.OpenMemoryDB(t)
+	repo := mdb.SongRepository()
+	ctx := context.Background()
+
+	failedID := seedFingerprintSong(t, repo, "/music/ktv/song.mpg")
+	okID := seedFingerprintSong(t, repo, "/music/good.mp3")
+
+	if err := repo.MarkFingerprintAttempted(ctx, failedID, time.Now().Unix()); err != nil {
+		t.Fatalf("mark attempted: %v", err)
+	}
+	if err := repo.UpdateFingerprint(ctx, okID, "AQABc...", 210.5, time.Now().Unix()); err != nil {
+		t.Fatalf("update fingerprint: %v", err)
+	}
+
+	if err := repo.ResetFailedFingerprintAttempts(ctx); err != nil {
+		t.Fatalf("reset failed attempts: %v", err)
+	}
+
+	// 只有失败项回到待计算列表，已算好的不受影响
+	missing, err := repo.ListLocalWithoutFingerprint(ctx)
+	if err != nil {
+		t.Fatalf("list after reset: %v", err)
+	}
+	if len(missing) != 1 || missing[0].ID != failedID {
+		t.Fatalf("after reset only failed song should be pending, got %+v", missing)
+	}
+
+	total, computed, failed, err := repo.CountLocalFingerprints(ctx)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if total != 2 || computed != 1 || failed != 0 {
+		t.Errorf("counts: got total=%d computed=%d failed=%d want 2/1/0", total, computed, failed)
+	}
+}
+
 // TestListLocalWithoutFingerprint_CarriesCueRange CUE 轨的 FilePath 指向整轨镜像，
 // 必须带上区间，否则同一镜像下所有 track 会拿到完全相同的指纹并互判重复。
 func TestListLocalWithoutFingerprint_CarriesCueRange(t *testing.T) {
