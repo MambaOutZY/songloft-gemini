@@ -138,6 +138,12 @@ func (c *CacheService) runVideoHLSFFmpeg(ctx context.Context, srcPath, outDir st
 		"-f", "hls",
 		"-hls_time", "4",
 		"-hls_list_size", "0",
+		// EVENT 类型：进行中的 playlist 带 #EXT-X-PLAYLIST-TYPE:EVENT，
+		// hls.js 从 0 秒顺序播放（EVENT 语义：只追加不删除），而非按 LIVE 处理
+		// 跳到直播边缘 + 每 targetduration 轮询追帧——后者在边转边播场景下
+		// 分片补给慢于消耗，导致首次播放必然反复卡顿。
+		// 转码完成后 ffmpeg 自动追加 #EXT-X-ENDLIST，hls.js 无缝转为 VOD。
+		"-hls_playlist_type", "event",
 		"-hls_segment_filename", segmentPattern,
 		"-y",
 		playlistPath,
