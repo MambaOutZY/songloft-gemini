@@ -65,6 +65,15 @@ Web 端播放栏出现后，`flt-semantics` 节点（`pointer-events:auto`）盖
 - **根因**：`main.dart` 在 Web 强制常驻语义树（`ensureSemantics`，无障碍改进）命中 Flutter 引擎残留 bug [flutter/flutter#175119]：`ensureSemantics` + go_router + 平台视图 iframe，关闭带 barrier 的对话框后语义节点卡在 `pointer-events:auto` 叠在平台视图之上。
 - **修复（方案 A）**：进入插件 iframe 页时临时释放语义句柄关闭语义树、离开时恢复。`lib/core/a11y/web_semantics_controller.dart` 单例持 `SemanticsHandle`；`shell_layout.dart` 按 `isPluginTab` 边沿 suspend/resume。读屏器激活时平台持独立句柄，释放我们的句柄不关语义树，AT 用户不受损。
 
+### 常驻语义树只在桌面 Web（移动浏览器会让软键盘弹不出来）
+
+iOS Safari 打开 Web 端，点登录页用户名/密码框**不弹输入法**；切到桌面再切回 Safari 才能输入，且此时页面被放大只能盲输（songloft-org/songloft-player#26）。
+
+- **根因**：引擎 `HybridTextEditing.strategy` 是 `late final`，**首次用到文本输入时**按当时的 `semanticsEnabled` 一次性定型。启动即 `ensureSemantics()` 会把整个会话钉死在 `SemanticsTextEditingStrategy`，从此绕开 `IOSTextEditingStrategy` —— 后者才带 iOS 的全部绕法（聚焦前先移出屏外、100ms 后再定位、tap 监听），以及 iOS 26「自动填充前先 blur 输入框」的补救（该补救只监听 `flt-text-editing-host` 的 focusin，语义模式下输入框在 `flt-semantics-host` 里，够不着）。上游长期未修：[flutter/flutter#129324]（open，3.41 仍可复现）、[#123338]、[#141975]、[#154741]，症状均为「语义模式 + 移动浏览器 → 键盘不弹或弹起立刻收起」，且与 `InputDecoration`（label/hint/suffixIcon）+ 滚动容器组合相关，正是登录页的形状。
+- **修复**：`WebSemanticsController.enableByDefault()` 在移动端浏览器（`defaultTargetPlatform` 为 iOS / Android）直接跳过，只有桌面 Web 常驻。移动端回落到引擎默认的按需启用（`MobileSemanticsEnabler` 检测读屏器手势后自动开语义树），AT 用户仍可用。
+- **顺带修掉放大**：语义模式下的输入框 `font-size: 13.33px` 且宿主被 `scale(1/dPR)`，iOS 聚焦时会自动放大页面；非语义路径的隐藏输入框是 `font-size: 16px`（正好是 iOS 不放大的阈值）。
+- **验证口径**：headless Chrome 里 `navigator.platform` 才决定引擎的 OS 判定，**只改 UA 无效**，需 `evaluateOnNewDocument` 覆写 `platform: 'iPhone'` + `maxTouchPoints > 2`。判据：移动 UA 下 `flt-semantics` 节点数为 0 且出现 `flt-semantics-placeholder`，点击输入框后 `flt-text-editing-host` 内出现聚焦的 `<input>`；桌面 UA 下语义节点照旧存在。
+
 ---
 
 ## 四、Web 移动端切后台回来黑屏（现状：接受，待引擎修复）
