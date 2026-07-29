@@ -19,16 +19,32 @@ import (
 // 可安全降级为「从头完整提供该文件」。
 var ErrSeekStreamUnavailable = errors.New("seek stream unavailable")
 
-// seekStreamMaxConcurrent 同时存活的 seek 流上限。
+// seekStreamMaxConcurrent 同时存活的 seek / 均衡流上限。
 //
-// seek 流不占用 transcodeSem（见 StreamSeekedMP3 注释），所以必须自带闸门：它由「用户每按一次
-// 暂停/续播」触发，频率比电台转码高一个数量级，且分组播放会给组内每台音箱各开一个流。满了直接
-// 降级为从头播而 **不排队**——排队意味着音箱那端干等，比从头播更糟。
+// 这些流不占用 transcodeSem（见 StreamSeekedMP3 注释），所以必须自带闸门：seek 流由「用户每按一次
+// 暂停/续播」触发，频率比电台转码高一个数量级；均衡流的存活时长取决于客户端读得多快（音箱贪婪缓冲
+// 时几秒就流完，边播边读则接近整首）；分组播放还会给组内每台音箱各开一个。
+// 满了直接降级而 **不排队**——排队意味着音箱那端干等，比降级更糟。
+//
+// 上限刻意保守：每条均衡流是一个 libmp3lame 全解码进程，4 条并发在弱 NAS 上已经吃满 CPU。
+// 降级路径本身无损：seek 流降级为从头播，均衡流降级为原来的「阻塞整首转码」，不比修复前更差
+// ——但那正是 songloft-org/songloft-plugin-miot#61 要消除的 20 秒卡顿，所以调用方应把流注册进
+// playActivity（`CatTranscode`），至少让用户切歌时旧流的 ffmpeg 能被 Activate 掐掉、不白烧 CPU。
+// 槽位本身要等 io.Copy 结束（客户端读完或断开）才归还，ctx 取消不会打断它。
 const seekStreamMaxConcurrent = 4
 
 // seekStreamGrace 是 ffmpeg 硬超时相对于「剩余音频时长」的宽限。
 // 音箱只挂着连接却不再读数据时 r.Context() 不会取消，靠这个上限回收孤儿进程。
 const seekStreamGrace = 5 * time.Minute
+
+// seekStreamUnknownDurationTimeout 是「剩余时长未知」时的硬超时。
+//
+// **不能**退化成裸的 seekStreamGrace：对整首流而言 5 分钟不是宽限而是硬上限，客户端边播边读时
+// 恰好只送出 5 分钟音频就被 CommandContext 杀掉，表现为「播到第 5 分钟突然结束」，而响应正常闭合、
+// 客户端以为播完了。`songs.duration == 0` 是常态而非理论情况（远程/插件歌曲元数据未刷新、
+// 本地文件 tag 与 ffprobe 都拿不到时长），叠上均衡流「每次播放都走这条路」就会真踩到。
+// 取一个足够覆盖有声书的上限；真正的兜底是 r.Context()（客户端断开即取消）。
+const seekStreamUnknownDurationTimeout = 3 * time.Hour
 
 var seekStreamSem = make(chan struct{}, seekStreamMaxConcurrent)
 
@@ -38,10 +54,17 @@ type SeekStreamOptions struct {
 	// 必须是「曲内偏移 0 对应该文件开头」的文件——CUE 轨要先提取再 seek，
 	// 否则两个 -ss 叠加会跳到整轨镜像的绝对位置。
 	SourcePath string
-	// StartSecond 起播秒数，必须 > 0。
+	// StartSecond 起播秒数。必须 > 0，除非 Normalize 为 true（见下）。
 	StartSecond float64
 	// RemainingSecond 预计剩余音频时长（秒），用于设置 ffmpeg 硬超时；<= 0 表示未知（用固定兜底）。
 	RemainingSecond float64
+	// Normalize 边转边发音量均衡（EBU R128）。为 true 时强制重编码并插入 loudnormFilter。
+	//
+	// 借用本函数是因为需要的正是同一套「pipe + Peek(1) 确认有输出才提交响应」骨架：
+	// 均衡产物还没落盘时，整首 loudnorm 会把设备的首个 play 请求阻塞 20+ 秒
+	// （songloft-org/songloft-plugin-miot#61）。此时 StartSecond 允许为 0（纯均衡、不 seek），
+	// 也允许 > 0（续播 + 均衡，一条 ffmpeg 同时做 -ss 与 -af）。
+	Normalize bool
 }
 
 // StreamSeekedMP3 阻塞运行 ffmpeg，把 SourcePath 从 StartSecond 起的音频以 MP3 流写入 w，
@@ -49,6 +72,9 @@ type SeekStreamOptions struct {
 //
 // 用于不支持 HTTP Range seek 的推流客户端：小爱音箱经 player_play_url 收到 URL 后只会从头拉，
 // 想「从第 N 秒续播」只能让服务端产出一条以第 N 秒为开头的流（songloft-plugin-miot#60）。
+//
+// opts.Normalize 时另兼「边转边发音量均衡」，此时 StartSecond 允许为 0——两件事需要的都是
+// 同一套 pipe + Peek(1) 降级骨架，见 SeekStreamOptions.Normalize。
 //
 // 与 runFFmpeg 不同，本函数 **不占用** c.transcodeSem：进程会存活整首歌的剩余时长，
 // 持串行信号量会长时间饿死其他有限文件的转码。并发由 seekStreamSem 单独限。
@@ -58,7 +84,7 @@ type SeekStreamOptions struct {
 //   - ErrSeekStreamUnavailable：在写出任何字节前失败，调用方应降级为从头提供文件（此时 w 未被写入）。
 //   - 其他 error：已写出部分字节后中途失败，无法再降级。
 func (c *CacheService) StreamSeekedMP3(ctx context.Context, w io.Writer, opts SeekStreamOptions) error {
-	if opts.StartSecond <= 0 {
+	if opts.StartSecond <= 0 && !opts.Normalize {
 		return fmt.Errorf("%w: non-positive start second", ErrSeekStreamUnavailable)
 	}
 	ffmpegPath := c.ffmpegPath
@@ -83,9 +109,10 @@ func (c *CacheService) StreamSeekedMP3(ctx context.Context, w io.Writer, opts Se
 	// 已知残留：源本身是 VBR MP3（含 force_mp3/normalize 转码产物，那条路径用 -q:a 0）时走 copy，
 	// 这个时长估算同样会偏几个百分点。只影响客户端自己显示的总时长——插件的进度与自动切歌都由
 	// 它本地计时驱动（见 PlaylistManager.playCurrent）——故不为此放弃零开销的 copy 快路径。
+	// Normalize 必须重编码（loudnorm 是滤镜，copy 下滤镜不生效），故不吃上面的 copy 快路径。
 	encoder := "libmp3lame"
 	var qualityArgs []string
-	if NormalizeFormat(filepath.Ext(opts.SourcePath)) == "mp3" {
+	if !opts.Normalize && NormalizeFormat(filepath.Ext(opts.SourcePath)) == "mp3" {
 		encoder = "copy"
 	} else {
 		qualityArgs = []string{"-b:a", "320k"}
@@ -93,19 +120,26 @@ func (c *CacheService) StreamSeekedMP3(ctx context.Context, w io.Writer, opts Se
 
 	args := []string{"-hide_banner", "-loglevel", "error"}
 	// -ss 放在 -i 之前用 input seek（O(1)），放后面会解码丢弃前 N 秒。
-	args = append(args, "-ss", fmt.Sprintf("%.3f", opts.StartSecond), "-i", opts.SourcePath)
+	// StartSecond 为 0（纯均衡流）时不加 -ss：ffmpeg 认 -ss 0 但没必要，且少一个参数少一处踩坑面。
+	if opts.StartSecond > 0 {
+		args = append(args, "-ss", fmt.Sprintf("%.3f", opts.StartSecond))
+	}
+	args = append(args, "-i", opts.SourcePath)
 	// -map 0:a:0 必需：mp3 muxer 只接受单条音频流，双音轨源（.mka，songloft-org/songloft#298）
 	// 不显式选轨会让 ffmpeg 直接报错退出，静默降级回「从头播」。
 	args = append(args, "-map", "0:a:0", "-vn", "-codec:a", encoder)
+	if opts.Normalize {
+		args = append(args, "-af", loudnormFilter)
+	}
 	args = append(args, qualityArgs...)
 	// -write_xing 0 必需：pipe 不可 seek，mp3 muxer 无法回写 Xing 帧的真实时长，
 	// 留下的占位值会让音箱显示错误时长甚至提前判定播完。
 	args = append(args, "-write_xing", "0", "-f", "mp3", "pipe:1")
 
 	// 音箱只挂着连接不再读数据时 r.Context() 不取消，用硬超时回收孤儿 ffmpeg。
-	timeout := seekStreamGrace
+	timeout := seekStreamUnknownDurationTimeout
 	if opts.RemainingSecond > 0 {
-		timeout += time.Duration(opts.RemainingSecond) * time.Second
+		timeout = seekStreamGrace + time.Duration(opts.RemainingSecond)*time.Second
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -138,6 +172,12 @@ func (c *CacheService) StreamSeekedMP3(ctx context.Context, w io.Writer, opts Se
 
 	// 已确认有音频输出：从此刻起本函数拥有响应，流式转发直到结束或断开。
 	_, copyErr := io.Copy(&flushingWriter{w: w}, reader)
+	// copyErr 时必须先 cancel 再 Wait：ffmpeg 此刻正阻塞在写满的 stdout 管道上，而 cmd.Wait()
+	// 要等进程退出才关管道 —— 两边互等，只能靠 runCtx 到点解开，把本 goroutine 连同一个
+	// seekStreamSem 槽位挂到硬超时。ctx 已取消的场景由 CommandContext 自己解决。
+	if copyErr != nil {
+		cancel()
+	}
 	waitErr := cmd.Wait()
 
 	if ctx.Err() != nil {
@@ -145,6 +185,14 @@ func (c *CacheService) StreamSeekedMP3(ctx context.Context, w io.Writer, opts Se
 	}
 	if copyErr != nil {
 		return copyErr
+	}
+	// 硬超时到点：音频被截断了，但字节已经写出去、响应也正常闭合，客户端会以为播完了。
+	// 唯一能做的是留下可归因的日志——正常结束与被杀掉在 waitErr 里长得一样。
+	if runCtx.Err() != nil {
+		slog.Error("seek stream truncated by hard timeout",
+			"src", opts.SourcePath, "seek", opts.StartSecond, "normalize", opts.Normalize,
+			"remainingSecond", opts.RemainingSecond, "timeout", timeout)
+		return nil
 	}
 	if waitErr != nil {
 		slog.Warn("seek stream ffmpeg exited with error",

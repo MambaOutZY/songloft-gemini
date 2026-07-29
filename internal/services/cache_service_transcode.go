@@ -17,6 +17,15 @@ import (
 
 var ErrUnsupportedTranscodeFormat = errors.New("unsupported transcode format")
 
+// loudnormFilter 是音量均衡（EBU R128）的 ffmpeg 滤镜串，songloft-org/songloft#315。
+//
+// 落盘转码（runFFmpeg）与「均衡产物还没转好时的边转边发」（StreamSeekedMP3 的 Normalize 分支，
+// songloft-org/songloft-plugin-miot#61）共用同一常量：两条路径必须给出同一响度，
+// 否则同一首歌走缓存与走实时流听起来音量不一样。
+//
+// 单遍（动态）loudnorm，不做两遍分析——正因如此实时流与落盘结果一致。
+const loudnormFilter = "loudnorm=I=-16:LRA=11:TP=-1.5"
+
 // SetFFmpegPath 注入 ffmpeg 可执行文件路径。
 func (c *CacheService) SetFFmpegPath(path string) {
 	if path != "" {
@@ -242,7 +251,7 @@ func (c *CacheService) runFFmpeg(ctx context.Context, srcPath, dstPath string, s
 		}
 		args = append(args, "-vn", "-codec:a", encoder)
 		if normalize && encoder != "copy" {
-			args = append(args, "-af", "loudnorm=I=-16:LRA=11:TP=-1.5")
+			args = append(args, "-af", loudnormFilter)
 		}
 		args = append(args, qualityArgs...)
 		args = append(args, "-f", muxer, "-y", dstPath)

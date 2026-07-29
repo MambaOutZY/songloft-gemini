@@ -1153,6 +1153,7 @@ func (h *SongHandler) UpdateSongLyrics(w http.ResponseWriter, r *http.Request) {
 // @Param prefetch query string false "传 1 时异步预热缓存/转码，立即返回 202"
 // @Param media query string false "传 video 时按视频播放：直出原容器（忽略 format/quality 转码，避免 -vn 丢画面），并按容器真实类型返回 Content-Type（如 video/mp4）。用于应用内视频画面渲染与 DLNA 视频投屏"
 // @Param hls query string false "仅电台(HLS)有效。传 direct 时强制 302 直连源站、绕过本机 HLS 反代（即使 /settings/hls-proxy 已开）。原生 player 无 CORS 限制，直连可避免直播切片经反代往返后过期(404)；浏览器不传此参数以继续走反代解决 CORS"
+// @Param normalize query string false "传 1 时启用 EBU R128 音量均衡（ffmpeg loudnorm=I=-16:LRA=11:TP=-1.5），用于消除不同音源之间的响度落差。需要重编码，未同时指定 format 时默认转为 mp3。均衡产物有独立缓存（文件名带 norm. 标记）；产物尚未生成时服务端边转边发一条 chunked MP3 流（无 Content-Length、不可 Range、Cache-Control 为 no-store），因此首字节不必等整首转完。media=video 忽略（-vn 会丢画面）；缺 ffmpeg 时优雅降级为原始音频"
 // @Param radio_transcode query string false "仅电台有效。传目标格式（如 mp3）时，服务端用 ffmpeg 把电台流实时转码为该格式（HLS 与裸流均适用）。用于只支持 MP3、无法解码 AAC/HE-AAC 或不支持 HLS 的音箱。缺 ffmpeg 或坏源时优雅降级为原样代理/302。与 format 分离：电台侧忽略 format，只认此参数"
 // @Param seek query number false "从第 N 秒起播。面向不支持 HTTP Range seek 的推流客户端（如小爱音箱经 player_play_url 只会从头拉流）：服务端用 ffmpeg input seek 产出一条以第 N 秒为开头的 chunked MP3 流，因此响应无 Content-Length、不可 Range、Cache-Control 为 no-store；浏览器等支持 Range 的客户端请用 Range 而非此参数。仅本地歌曲与已缓存的网络歌曲有效（电台是直播、未缓存的网络歌曲会阻塞整首下载，均忽略）；media=video 与 HEAD 忽略；缺 ffmpeg / seek 越过时长时优雅降级为从头完整播放"
 // @Success 200 {file} binary "音频文件"
@@ -1215,7 +1216,11 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 
 	// normalize=1：启用 EBU R128 音量均衡（songloft-org/songloft#315）。
 	// 需要转码，若未指定 format 则默认使用 mp3。
-	normalize := r.URL.Query().Get("normalize") == "1"
+	//
+	// videoIntent 下必须强制关掉：上面刚为了保住画面清空了 targetFormat，若这里又把它填成 mp3，
+	// 转码的 `-vn` 会把视频轨切掉，`media=video` 就只剩纯音频——正是那段代码要避免的结果。
+	// 均衡本身也没有「保留画面」的实现路径（`-vn` 是 loudnorm 这条链的固定前提）。
+	normalize := r.URL.Query().Get("normalize") == "1" && !videoIntent
 	if normalize && targetFormat == "" {
 		targetFormat = "mp3"
 	}
@@ -1236,7 +1241,7 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 		go func() {
 			pctx, release := h.trackActivity(context.Background(), sk, song.ID, playactivity.CatPrefetch)
 			defer release()
-			h.prepareSongPlayback(pctx, song, targetFormat, bitrate)
+			h.prepareSongPlayback(pctx, song, targetFormat, bitrate, normalize)
 		}()
 		w.WriteHeader(http.StatusAccepted)
 		return
@@ -1305,20 +1310,77 @@ func (h *SongHandler) trySeekStream(w http.ResponseWriter, r *http.Request, song
 	if opts.seekSeconds <= 0 || h.cacheService == nil {
 		return false
 	}
+	return h.streamPipedMP3(r.Context(), w, song, services.SeekStreamOptions{
+		SourcePath:      path,
+		StartSecond:     opts.seekSeconds,
+		RemainingSecond: remainingAfter(song, opts.seekSeconds),
+	}, "seek stream")
+}
 
+// tryLiveNormalizeStream 在「请求了音量均衡但均衡产物还没转好」时边转边发一条 MP3 流，
+// 成功接管响应返回 true。必须调用在原有的阻塞转码分支 **之前**。
+//
+// 存在的理由：整首 loudnorm 要 20 多秒，而 GetOrTranscode 是同步的——设备的首个 play 请求
+// 会被一路挂住（实测 dur_ms=22392 / 24348 / 22381）。音箱那端表现为「前 20 多秒空白」，
+// 而插件的自动切歌定时器在推 URL 那一刻就起算，于是尾部还会被砍掉同样长度
+// （songloft-org/songloft-plugin-miot#61）。边转边发让首字节 1 秒内出来，两个症状一起消失。
+//
+// 均衡产物已存在时返回 false 走 http.ServeFile——那条路支持 Range 且更快；产物由
+// `?prefetch=1&normalize=1` 提前热好（prepareSongPlayback 现在会带上 normalize）。
+//
+// 刻意不顺手起一个后台转码去补缓存文件：同一首歌同时跑两个 ffmpeg 会在弱 NAS 上把 CPU 翻倍，
+// 而用户正等着这一秒出声。缓存产物交给预热生成。
+func (h *SongHandler) tryLiveNormalizeStream(w http.ResponseWriter, r *http.Request, song *models.Song, path string, opts servePlayOptions) bool {
+	if !opts.normalize || h.cacheService == nil {
+		return false
+	}
+	// 下面这些一律留给原来的阻塞转码路径，语义不变：
+	//   videoIntent —— 本函数一律 -vn，会丢画面；
+	//   trackIndex  —— 抽轨的目标容器由后端探测决定，不一定是 mp3；
+	//   CUE 轨      —— 必须先按 CueStart/End 提取成独立文件，否则 -ss 会叠到整轨镜像的绝对位置；
+	//   HEAD        —— 探测请求不该起 ffmpeg；
+	//   非 mp3 目标 / 指定了码率 —— 本函数固定输出 320k CBR MP3，冒充不了其他格式或码率。
+	if opts.videoIntent || opts.trackIndex >= 0 || song.CueSourcePath != "" || r.Method == http.MethodHead {
+		return false
+	}
+	if services.NormalizeFormat(opts.targetFormat) != "mp3" || opts.bitrate != 0 {
+		return false
+	}
+	// 均衡产物已就绪 → 交给 ServeFile。
+	if _, ok := h.cacheService.FindTranscodedFile(song, "mp3", opts.bitrate, -1, true); ok {
+		return false
+	}
+	// 注册进 playActivity（与被它替代的阻塞转码分支同一 Category），让 ActivateSong 能在用户切歌时
+	// 掐掉这条流的 ffmpeg，不再白烧 CPU 去编码一首已经不放了的歌。
+	//
+	// 注意它**不能**提前归还 seekStreamSem 槽位：槽位由 StreamSeekedMP3 的 io.Copy 持有，
+	// 而 io.Copy 只在「读端 EOF」或「写响应失败」时返回，不看 ctx。客户端断开属于后者（自动归还），
+	// 但「客户端还在慢慢读 + 用户已切歌」这种组合下槽位仍要等它读完。实测音箱是贪婪缓冲、
+	// 4 分钟的歌 10 秒就流完，占不满 4 个槽；真占满也只是降级回阻塞转码，不会更坏。
+	sk := playactivity.SessionFromContext(r.Context())
+	trackedCtx, release := h.trackActivity(r.Context(), sk, song.ID, playactivity.CatTranscode)
+	defer release()
+
+	return h.streamPipedMP3(trackedCtx, w, song, services.SeekStreamOptions{
+		SourcePath:      path,
+		StartSecond:     opts.seekSeconds, // 可为 0（纯均衡）；> 0 时与均衡由同一条 ffmpeg 一起做
+		RemainingSecond: remainingAfter(song, opts.seekSeconds),
+		Normalize:       true,
+	}, "live normalize stream")
+}
+
+// streamPipedMP3 调用 StreamSeekedMP3 并处理「先设响应头、降级时原样还原」的契约。
+// 返回 true 表示已接管响应（正常结束，或已写出部分字节后失败、无法再降级）。
+//
+// ctx 由调用方决定：seek 流直接用 r.Context()，均衡流额外套一层 playActivity 追踪的 ctx。
+func (h *SongHandler) streamPipedMP3(ctx context.Context, w http.ResponseWriter, song *models.Song, sopts services.SeekStreamOptions, reason string) bool {
 	// 先设响应头：StreamSeekedMP3 一旦写出字节就无法再改。降级时下面会原样删掉。
+	// 降级时 Del 是**必需**的而非可选：http.ServeFile 只在 Content-Type 缺失时才按扩展名推断，
+	// 残留的 audio/mpeg 会让降级后提供的 mp4/flac 拿到错误的 Content-Type。
 	w.Header().Set("Content-Type", "audio/mpeg")
 	w.Header().Set("Cache-Control", "no-store")
 
-	var remaining float64
-	if song.Duration > opts.seekSeconds {
-		remaining = song.Duration - opts.seekSeconds
-	}
-	err := h.cacheService.StreamSeekedMP3(r.Context(), w, services.SeekStreamOptions{
-		SourcePath:      path,
-		StartSecond:     opts.seekSeconds,
-		RemainingSecond: remaining,
-	})
+	err := h.cacheService.StreamSeekedMP3(ctx, w, sopts)
 	if err == nil {
 		return true
 	}
@@ -1326,12 +1388,22 @@ func (h *SongHandler) trySeekStream(w http.ResponseWriter, r *http.Request, song
 		// 已写出部分字节后中途失败：响应已提交，无法再降级。
 		return true
 	}
-	// 一个字节都没写出：清掉预设的响应头，让调用方降级为从头完整提供文件。
+	// 一个字节都没写出：清掉预设的响应头，让调用方降级。
 	w.Header().Del("Content-Type")
 	w.Header().Del("Cache-Control")
-	slog.Warn("seek stream unavailable, serving from start",
-		"songId", song.ID, "seek", opts.seekSeconds, "path", path, "error", err)
+	slog.Warn(reason+" unavailable, falling back",
+		"songId", song.ID, "seek", sopts.StartSecond, "normalize", sopts.Normalize,
+		"path", sopts.SourcePath, "error", err)
 	return false
+}
+
+// remainingAfter 返回从 startSecond 起的预计剩余音频时长；时长未知或已越过结尾时返回 0
+// （交由 StreamSeekedMP3 用固定兜底超时）。
+func remainingAfter(song *models.Song, startSecond float64) float64 {
+	if song.Duration > startSecond {
+		return song.Duration - startSecond
+	}
+	return 0
 }
 
 // trackActivity 是 playActivity.Track 的兜底封装：当 registry 未注入（旧测试 / lite 模式）时
@@ -1377,7 +1449,11 @@ func (h *SongHandler) ActivateSong(w http.ResponseWriter, r *http.Request) {
 
 // prepareSongPlayback 后台预热一首歌曲：拉取到缓存 + 必要时转码。
 // 判断与 serveLocal/serveRemote 保持一致，失败仅警告不报错。
-func (h *SongHandler) prepareSongPlayback(ctx context.Context, song *models.Song, targetFormat string, bitrate int) {
+//
+// normalize 必须与真实播放请求一致：均衡产物的缓存键带 "norm." 标记
+// （见 transcodedFileName），预热成非均衡产物等于白热，真实播放仍会冷启动整首 loudnorm
+// 并把设备的首个 play 请求阻塞 20+ 秒（songloft-org/songloft-plugin-miot#61）。
+func (h *SongHandler) prepareSongPlayback(ctx context.Context, song *models.Song, targetFormat string, bitrate int, normalize bool) {
 	if song == nil {
 		return
 	}
@@ -1415,13 +1491,15 @@ func (h *SongHandler) prepareSongPlayback(ctx context.Context, song *models.Song
 		}
 	}
 
-	if song.CueSourcePath == "" && !services.NeedsTranscodeForServe(song, srcPath, targetFormat) && bitrate == 0 {
+	// normalize 单独作为「必须转码」的理由：mp3 源 + format=mp3 时 NeedsTranscodeForServe 为 false，
+	// 少了这一项就会在最需要预热的均衡场景直接 return，一行没干。
+	if song.CueSourcePath == "" && !normalize && !services.NeedsTranscodeForServe(song, srcPath, targetFormat) && bitrate == 0 {
 		return
 	}
-	if _, err := h.cacheService.GetOrTranscode(ctx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, false); err != nil {
-		slog.Warn("prefetch transcode failed", "songId", song.ID, "format", targetFormat, "bitrate", bitrate, "error", err)
+	if _, err := h.cacheService.GetOrTranscode(ctx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize); err != nil {
+		slog.Warn("prefetch transcode failed", "songId", song.ID, "format", targetFormat, "bitrate", bitrate, "normalize", normalize, "error", err)
 	} else {
-		slog.Info("prefetch ready", "songId", song.ID, "format", targetFormat, "bitrate", bitrate)
+		slog.Info("prefetch ready", "songId", song.ID, "format", targetFormat, "bitrate", bitrate, "normalize", normalize)
 	}
 }
 
@@ -1477,6 +1555,11 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 			srcPath = path
 		}
 	} else if services.NeedsTranscodeForServe(song, srcPath, targetFormat) || bitrate > 0 || normalize {
+		// 均衡产物还没转好时先试边转边发，避免整首 loudnorm 把这个请求挂住 20+ 秒。
+		// 它内部已把 seek 一起做掉，接管成功就不再走下面的 trySeekStream。
+		if h.tryLiveNormalizeStream(w, r, song, srcPath, opts) {
+			return
+		}
 		tcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		sk := playactivity.SessionFromContext(r.Context())
@@ -1815,6 +1898,10 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, song *models.Song, cachedPath string, opts servePlayOptions) {
 	targetFormat, bitrate, normalize := opts.targetFormat, opts.bitrate, opts.normalize
 	if services.NeedsTranscodeForServe(song, cachedPath, targetFormat) || bitrate > 0 || normalize {
+		// 同 serveLocal：均衡产物未就绪时先边转边发，不让整首 loudnorm 挂住这个请求。
+		if h.tryLiveNormalizeStream(w, r, song, cachedPath, opts) {
+			return
+		}
 		sk := playactivity.SessionFromContext(r.Context())
 		tcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()

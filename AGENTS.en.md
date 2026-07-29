@@ -351,6 +351,10 @@ changed; after clicking "Stop computing", use `pgrep -x ffmpeg` to confirm the c
 - tag has no title → filename minus extension
 - **Do not** apply "longest-common-substring dedup + concatenation" — it produces results like "Artist - Title" that redundantly stuff the artist into the title field
 - Video container probe: when scanning containers like mp4/mov/m4v/mkv/webm/avi/ts/mpg/mpeg/flv/wmv/rm/rmvb/3gp, ffprobe detects whether a real video track is present (excluding the cover attached_pic) to set `songs.is_video`; the client uses this to render the picture / pick the cast mime
+- **When verifying locally, don't put the music directory under `/tmp`**: the default `exclude_dirs` for
+  `music_path` includes `tmp`, and `ShouldExcludeDir` matches **any path segment by directory name**, so
+  the entire `/tmp/...` root gets excluded. The symptom is a scan that "completes successfully" with
+  `discovered_files=0` — **no error, no warning** — easy to misread as your own change breaking things
 
 ### Tag writing (pkg/tag)
 
@@ -450,6 +454,36 @@ what happens when they are missing: "scan reports completed but the CPU stays pi
 - `POST /api/v1/cache-manage/validate-dir` can validate a directory in advance (auto-create + writability check + return disk space)
 - Inflight dedup: concurrent requests for the same `song.ID` download only once; when the first request is `ctx.Canceled`, later waiters retry automatically
 
+### Volume normalization (`/songs/{id}/play?normalize=1`)
+
+EBU R128 loudness normalization (songloft-org/songloft#315), removing loudness gaps between sources.
+Currently only the miot plugin uses it (settings page "volume normalization" toggle → config key
+`volume_normalize` → `buildSongURL` appends `&normalize=1&format=mp3`).
+
+- The filter string is the package-level constant `loudnormFilter` in `internal/services`
+  (`loudnorm=I=-16:LRA=11:TP=-1.5`, **single-pass** dynamic mode). On-disk transcoding and the live
+  stream share it — **don't** inline it in either place: both paths must produce the same loudness
+- Artifacts are keyed with a `norm.` marker (`transcodedFileName`) and are **not interchangeable**
+  with non-normalized ones
+- **Streams while transcoding when the artifact isn't ready** (`tryLiveNormalizeStream` →
+  `StreamSeekedMP3(Normalize: true)`): a whole-track loudnorm takes 20+ seconds, and
+  `GetOrTranscode` is synchronous, so it stalls the device's first play request for that entire time
+  (songloft-org/songloft-plugin-miot#61 measured `dur_ms=22392/24348/22381`). On the speaker this is
+  "the first 20-odd seconds are blank", and since the plugin's auto-next timer starts the moment the
+  URL is pushed, the tail gets cut by the same amount. Piping directly took time-to-first-byte from
+  10.03s to 0.088s. Only applies when the target format is mp3, no `quality` is requested, and it's
+  not `media=video` / track extraction / CUE / HEAD; all other cases keep the original blocking path
+- **The live stream deliberately does not kick off a background transcode** to fill the cache:
+  running two ffmpeg processes over the same track doubles CPU on a weak NAS while the user is
+  waiting for sound right now. Cache artifacts are produced by `?prefetch=1&normalize=1`
+- **Prewarming must carry normalize**: `prepareSongPlayback`'s `normalize` parameter must not be
+  dropped, and the short-circuit check needs `!normalize` — for an mp3 source with `format=mp3`,
+  `NeedsTranscodeForServe` is false, so without it prewarming returns immediately and does nothing
+  (the other half of #61's root cause; not a single `prefetch ready` line appears in the log)
+- Plugin-side counterpart: in random mode `PlaylistManager.reserveNextIndex()` locks "the track that
+  was prewarmed" to "the track that will actually play". `getNextIndex()` re-rolls on every call, so
+  prewarming and advancing each calling it once inevitably warms the wrong track (measured 492/500 mismatches)
+
 ### Server-side seek stream (`/songs/{id}/play?seek=<seconds>`)
 
 Exists to express a resume position for push-style clients that can only pull a URL from the
@@ -481,7 +515,19 @@ otherwise a sentinel error lets the handler degrade losslessly to serving the wh
 - **Doesn't hold `transcodeSem`** (the process lives for the remaining track duration and would
   starve other transcodes); uses a separate `cap=4` semaphore in the same file that degrades
   immediately instead of queueing. `exec.CommandContext` also carries a "remaining duration +
-  5min" hard timeout to reap orphaned processes
+  5min" hard timeout to reap orphaned processes. That semaphore is **shared** with the live
+  normalization stream above (`StreamSeekedMP3` is the same function), so 4 is the total for both.
+  How long a slot is held depends on how fast the client drains the stream, not on track duration —
+  speakers buffer greedily; a measured 4-minute track streamed out and exited in 10 seconds.
+  The slot is held by `io.Copy`, and **cancelling the ctx does not interrupt it** (io.Copy only
+  watches for read-side EOF / write-side error), so registering with playActivity can only kill
+  the ffmpeg process to save CPU — it can't release the slot early
+- **When the remaining duration is unknown (`songs.duration == 0`) the hard timeout must not fall
+  back to 5 minutes** (see `seekStreamUnknownDurationTimeout`): for a whole-track stream that's a
+  hard ceiling rather than a grace period, so a client reading in real time gets killed at the
+  5-minute mark while the response closes normally and the client thinks playback finished.
+  `duration == 0` is a normal occurrence (remote song metadata not yet refreshed; a local file
+  where neither the tag nor ffprobe yields a duration)
 - The response is chunked: no `Content-Length`, no `Accept-Ranges`, `Cache-Control: no-store`
 - Plugin-side counterpart: `PlaylistManager.streamSeekOffsetSec` remembers where the current
   stream starts. To the device a seek stream is "a new stream starting at 0", so the

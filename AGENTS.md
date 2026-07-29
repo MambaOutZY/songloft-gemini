@@ -341,6 +341,9 @@ curl -s -X POST http://127.0.0.1:3000/function \
 - tag 没 title → 文件名去扩展名
 - **不要**再做"最长公共子串去重 + 拼接"，会产生"艺术家 - 标题"这种把艺术家冗余到标题字段的结果
 - 视频容器探测：扫描 mp4/mov/m4v/mkv/webm/avi/ts/mpg/mpeg/flv/wmv/rm/rmvb/3gp 等容器时用 ffprobe 探测是否含真实视频轨（排除封面 attached_pic）来置 `songs.is_video`，客户端据此渲染画面 / 选择投屏 mime
+- **本地起服务验证时，music 目录不要放在 `/tmp` 下**：`music_path` 的默认 `exclude_dirs` 含 `tmp`，
+  而 `ShouldExcludeDir` 是**按路径任一层级的目录名**匹配的，于是整个 `/tmp/...` 根目录被排除。
+  表现是扫描「成功完成」但 `discovered_files=0`，**不报错、不打 warn**，极易误判为自己的改动坏了
 
 ### tag 写入（pkg/tag）
 
@@ -434,6 +437,28 @@ curl -s -X POST http://127.0.0.1:3000/function \
 - `POST /api/v1/cache-manage/validate-dir` 可预先验证目录（自动创建 + 可写性检查 + 返回磁盘空间）
 - inflight 去重：同 `song.ID` 的并发请求只下载一次；首请求被 `ctx.Canceled` 时后续等待者自动重试
 
+### 音量均衡（`/songs/{id}/play?normalize=1`）
+
+EBU R128 响度均衡（songloft-org/songloft#315），消除不同音源之间的响度落差。目前只有 miot 插件用
+（设置页「音量均衡」开关 → config key `volume_normalize` → `buildSongURL` 追加 `&normalize=1&format=mp3`）。
+
+- 滤镜串是 `internal/services` 的包级常量 `loudnormFilter`（`loudnorm=I=-16:LRA=11:TP=-1.5`，**单遍**动态模式）。
+  落盘转码与实时流共用它，**不要**在任一处内联写死——两条路径必须给出同一响度
+- 产物缓存键带 `norm.` 标记（`transcodedFileName`），与不均衡的产物**互不通用**
+- **均衡产物未就绪时边转边发**（`tryLiveNormalizeStream` → `StreamSeekedMP3(Normalize: true)`）：
+  整首 loudnorm 要 20+ 秒，而 `GetOrTranscode` 是同步的，会把设备的首个 play 请求整段挂住
+  （songloft-org/songloft-plugin-miot#61 实测 `dur_ms=22392/24348/22381`）。音箱那端是「前 20 多秒空白」，
+  而插件的自动切歌定时器在推 URL 那一刻就起算，尾部又被砍掉同样长度。改为 pipe 直出后实测
+  首字节 10.03s → 0.088s。仅当目标格式是 mp3、未指定 `quality`、非 `media=video` / 抽轨 / CUE / HEAD 时生效，
+  其余场景保持原阻塞路径
+- **实时流刻意不顺手起后台转码补缓存**：同一首歌并跑两个 ffmpeg 会在弱 NAS 上把 CPU 翻倍，
+  而用户正等着这一秒出声。缓存产物交给 `?prefetch=1&normalize=1` 生成
+- **预热必须带 normalize**：`prepareSongPlayback` 的 `normalize` 参数不能丢，且短路判断里要有 `!normalize`
+  ——mp3 源 + `format=mp3` 时 `NeedsTranscodeForServe` 为 false，少了这一项预热会直接 return、一行没干
+  （#61 的另一半根因，日志里连一条 `prefetch ready` 都不会出现）
+- 插件侧配套：随机模式下 `PlaylistManager.reserveNextIndex()` 把「预热的那首」和「真会播的那首」
+  锁到同一首。`getNextIndex()` 每次调用都重新摇骰子，预热与切歌各调一次就必然热错人（实测 492/500 不一致）
+
 ### 服务端 seek 流（`/songs/{id}/play?seek=<秒>`）
 
 给「只会从头拉 URL、不支持 HTTP Range」的推流客户端表达续播位置用。小爱音箱经
@@ -455,7 +480,14 @@ handler 无损降级为从头 `ServeFile`）。
 - **seek 必须夹到距结尾 3 秒之外**（`parseSeekSeconds` 与插件侧 `playCurrent` 同源守卫）：
   越过文件尾 → ffmpeg 零输出 → 触发降级 → **整首从头重播**，比忽略 seek 更糟
 - **不占 `transcodeSem`**（进程存活整首剩余时长，会饿死其他转码），改用本文件内 `cap=4` 的独立
-  信号量，满了直接降级不排队；`exec.CommandContext` 另带「剩余时长 + 5min」硬超时回收孤儿进程
+  信号量，满了直接降级不排队；`exec.CommandContext` 另带「剩余时长 + 5min」硬超时回收孤儿进程。
+  该信号量与上面的实时均衡流**共用**（`StreamSeekedMP3` 是同一个函数），所以 4 是两类流的总额。
+  实际占用时长取决于客户端读得多快而非歌曲时长——音箱是贪婪缓冲，实测 4 分钟的歌 10 秒就流完退出。
+  槽位由 `io.Copy` 持有，**ctx 取消不会打断它**（io.Copy 只看读端 EOF / 写端出错），
+  所以注册 playActivity 只能掐掉 ffmpeg 省 CPU，不能提前归还槽位
+- **剩余时长未知（`songs.duration == 0`）时硬超时不能退化成 5 分钟**（见 `seekStreamUnknownDurationTimeout`）：
+  对整首流那不是宽限而是硬上限，客户端边播边读会在第 5 分钟被杀掉，而响应正常闭合、客户端以为播完了。
+  `duration == 0` 是常态（远程歌曲元数据未刷新、本地文件 tag 与 ffprobe 都拿不到时长）
 - 响应是 chunked：无 `Content-Length`、不设 `Accept-Ranges`、`Cache-Control: no-store`
 - 插件侧配套：`PlaylistManager.streamSeekOffsetSec` 记住当前流的起点。带 seek 的流对设备是
   「从 0 开始的新流」，它上报的 `play_song_detail.position` 只是流内偏移，**消费点必须补上偏移**

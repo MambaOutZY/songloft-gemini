@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"songloft/internal/database"
 	"songloft/internal/database/testutil"
@@ -958,4 +960,129 @@ func TestGetSongPlaySeekRemote(t *testing.T) {
 			t.Errorf("未缓存网络歌起了 seek 流: %s", rr.Body.String())
 		}
 	})
+}
+
+// TestGetSongPlayNormalizeStreamsLive 验证「开了音量均衡但均衡产物还没转好」时，播放请求
+// 立刻边转边发，而不是被整首 loudnorm 同步阻塞。
+//
+// 修复前实测 dur_ms=22392 / 24348 / 22381：音箱那端是「前 20 多秒空白」，而插件的自动切歌
+// 定时器在推 URL 那一刻就起算，尾部又被砍掉同样长度（songloft-org/songloft-plugin-miot#61）。
+func TestGetSongPlayNormalizeStreamsLive(t *testing.T) {
+	t.Run("产物未就绪走实时流", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "song.mp3")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "本地歌", FilePath: src, Format: "mp3", Duration: 200})
+
+		rr := playSeekRequest(t, handler, id, "normalize=1&format=mp3")
+
+		if ct := rr.Header().Get("Content-Type"); ct != "audio/mpeg" {
+			t.Errorf("Content-Type=%q, 期望 audio/mpeg", ct)
+		}
+		if cl := rr.Header().Get("Content-Length"); cl != "" {
+			t.Errorf("Content-Length=%q, 期望为空（chunked 实时流）", cl)
+		}
+		body := rr.Body.String()
+		for _, want := range []string{"-af loudnorm=", "-codec:a libmp3lame", "-b:a 320k", "-f mp3", "pipe:1"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("实时均衡流参数缺 %q，实际: %s", want, body)
+			}
+		}
+		if strings.Contains(body, "-ss") {
+			t.Errorf("没请求 seek 却出现 -ss: %s", body)
+		}
+	})
+
+	t.Run("均衡叠加 seek 由同一条 ffmpeg 完成", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "song.mp3")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "本地歌", FilePath: src, Format: "mp3", Duration: 200})
+
+		rr := playSeekRequest(t, handler, id, "normalize=1&format=mp3&seek=60")
+
+		body := rr.Body.String()
+		for _, want := range []string{"-ss 60.000", "-af loudnorm=", "-codec:a libmp3lame"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("参数缺 %q，实际: %s", want, body)
+			}
+		}
+		// 只该起一条 ffmpeg：出现两次 -f mp3 说明先转码再 seek 各跑了一遍
+		if n := strings.Count(body, "pipe:1"); n != 1 {
+			t.Errorf("pipe:1 出现 %d 次，期望 1（seek 与均衡应由同一条 ffmpeg 完成）: %s", n, body)
+		}
+	})
+
+	// media=video 与 normalize 冲突：均衡链一律 -vn，无论走实时流还是阻塞转码都会把画面切掉。
+	// 上游因此在 videoIntent 下强制关掉 normalize，直出原容器（原先 videoIntent 清空 targetFormat
+	// 保画面，紧接着 normalize 又把它填回 mp3，画面照样丢——#315 起就存在的坑）。
+	t.Run("media=video 直出原容器、不做均衡", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "clip.mp4")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "视频", FilePath: src, Format: "mp4", Duration: 200})
+
+		rr := playSeekRequest(t, handler, id, "normalize=1&media=video")
+
+		if strings.Contains(rr.Body.String(), "loudnorm") {
+			t.Errorf("media=video 起了均衡（-vn 会丢画面）: %s", rr.Body.String())
+		}
+		if ct := rr.Header().Get("Content-Type"); ct != "video/mp4" {
+			t.Errorf("Content-Type=%q, 期望 video/mp4（画面必须保住）", ct)
+		}
+		if rr.Body.String() != "audio-file-bytes" {
+			t.Errorf("body=%q, 期望原容器字节（未经任何 ffmpeg）", rr.Body.String())
+		}
+	})
+
+	t.Run("HEAD 不起实时流", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "song.mp3")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "本地歌", FilePath: src, Format: "mp3", Duration: 200})
+
+		rr := playSeekRequestMethod(t, handler, id, "normalize=1&format=mp3", "HEAD")
+
+		if strings.Contains(rr.Body.String(), "loudnorm") {
+			t.Errorf("HEAD 起了均衡流: %s", rr.Body.String())
+		}
+	})
+}
+
+// TestGetSongPlayPrefetchWarmsNormalized 验证 ?prefetch=1&normalize=1 预热出来的确实是
+// **均衡产物**（文件名带 norm. 标记）。
+//
+// 修复前 prepareSongPlayback 收不到 normalize：一是给 GetOrTranscode 硬编码 false，
+// 二是 mp3 源 + format=mp3 时 NeedsTranscodeForServe 为 false 直接 return，预热一行没干，
+// 真实播放仍要冷启动整首 loudnorm（songloft-org/songloft-plugin-miot#61）。
+func TestGetSongPlayPrefetchWarmsNormalized(t *testing.T) {
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not available")
+	}
+	handler, repo, _ := newSeekTestHandler(t, ffmpegPath)
+
+	src := filepath.Join(t.TempDir(), "tone.mp3")
+	gen := exec.Command(ffmpegPath, "-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-codec:a", "libmp3lame", "-y", src)
+	if out, genErr := gen.CombinedOutput(); genErr != nil {
+		t.Skipf("generate sample mp3 failed: %v (%s)", genErr, out)
+	}
+	song := &models.Song{Type: models.TypeLocal, Title: "本地歌", FilePath: src, Format: "mp3", Duration: 3}
+	id := seedSong(t, repo, song)
+
+	rr := playSeekRequest(t, handler, id, "prefetch=1&normalize=1&format=mp3")
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status=%d, 期望 202", rr.Code)
+	}
+
+	// 预热在 goroutine 里跑，轮询等产物落地
+	cacheService := handler.cacheService
+	var found bool
+	for range 100 {
+		if _, ok := cacheService.FindTranscodedFile(song, "mp3", 0, -1, true); ok {
+			found = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !found {
+		t.Fatal("预热没有产出均衡产物：真实播放仍会冷启动整首 loudnorm 并阻塞首个 play 请求")
+	}
 }

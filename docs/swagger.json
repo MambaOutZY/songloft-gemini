@@ -6871,6 +6871,12 @@
                     },
                     {
                         "type": "string",
+                        "description": "传 1 时启用 EBU R128 音量均衡（ffmpeg loudnorm=I=-16:LRA=11:TP=-1.5），用于消除不同音源之间的响度落差。需要重编码，未同时指定 format 时默认转为 mp3。均衡产物有独立缓存（文件名带 norm. 标记）；产物尚未生成时服务端边转边发一条 chunked MP3 流（无 Content-Length、不可 Range、Cache-Control 为 no-store），因此首字节不必等整首转完。media=video 忽略（-vn 会丢画面）；缺 ffmpeg 时优雅降级为原始音频",
+                        "name": "normalize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "仅电台有效。传目标格式（如 mp3）时，服务端用 ffmpeg 把电台流实时转码为该格式（HLS 与裸流均适用）。用于只支持 MP3、无法解码 AAC/HE-AAC 或不支持 HLS 的音箱。缺 ffmpeg 或坏源时优雅降级为原样代理/302。与 format 分离：电台侧忽略 format，只认此参数",
                         "name": "radio_transcode",
                         "in": "query"
@@ -6973,6 +6979,12 @@
                         "type": "string",
                         "description": "仅电台(HLS)有效。传 direct 时强制 302 直连源站、绕过本机 HLS 反代（即使 /settings/hls-proxy 已开）。原生 player 无 CORS 限制，直连可避免直播切片经反代往返后过期(404)；浏览器不传此参数以继续走反代解决 CORS",
                         "name": "hls",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "传 1 时启用 EBU R128 音量均衡（ffmpeg loudnorm=I=-16:LRA=11:TP=-1.5），用于消除不同音源之间的响度落差。需要重编码，未同时指定 format 时默认转为 mp3。均衡产物有独立缓存（文件名带 norm. 标记）；产物尚未生成时服务端边转边发一条 chunked MP3 流（无 Content-Length、不可 Range、Cache-Control 为 no-store），因此首字节不必等整首转完。media=video 忽略（-vn 会丢画面）；缺 ffmpeg 时优雅降级为原始音频",
+                        "name": "normalize",
                         "in": "query"
                     },
                     {
