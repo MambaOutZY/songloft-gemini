@@ -20,7 +20,9 @@ const repoRoot = resolve(__dirname, '..');
 const issuesDir = resolve(repoRoot, 'docs/issues');
 
 const REPO = 'songloft-org/songloft';
-const GITHUB_PROXY = 'https://gproxy.hanxi.cc/proxy';
+// GitHub 加速代理（cloudflare-github-proxy）：代理入口就是根路径，目标 URL 直接跟在域名后面，
+// 且**主机名不能省** —— 写成裸域名会得到 /user-attachments/...，代理解析不出目标主机会返回 MISSING_HOST。
+const GITHUB_PROXY = 'https://gproxy.hanxi.cc/github.com';
 const REPLACE_RULES = [
   {
     baseUrl: 'https://github.com/songloft-org/songloft/issues',
