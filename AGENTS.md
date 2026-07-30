@@ -63,6 +63,15 @@ cd songloft-player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
 
 ---
 
+## 代码格式化（铁律）
+
+每次修改代码后**必须**格式化，提交前确认无格式差异：
+
+- **Go**：在项目根目录执行 `gofmt -w .`
+- **Dart**：在 `songloft-player/` 目录执行 `dart format lib/ test/`
+
+---
+
 ## 数据库规范（铁律）
 
 > 完整操作步骤见 [docs/database_migrations.md](docs/database_migrations.md)。

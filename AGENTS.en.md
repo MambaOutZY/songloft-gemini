@@ -63,6 +63,15 @@ cd songloft-player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
 
 ---
 
+## Code Formatting (Hard Rule)
+
+After every code change, you **must** format the code before committing:
+
+- **Go**: Run `gofmt -w .` from the project root
+- **Dart**: Run `dart format lib/ test/` from the `songloft-player/` directory
+
+---
+
 ## Database Conventions (Hard Rules)
 
 > For the complete procedure see [docs/database_migrations.md](docs/database_migrations.md).
