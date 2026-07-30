@@ -264,6 +264,24 @@ export const INSTALL: InstallMethod[] = [
     ],
   },
   {
+    id: 'tv',
+    label: { zh: 'TV 客户端', en: 'TV Client' },
+    tagline: { zh: 'Android TV · 遥控器操作', en: 'Android TV · remote-friendly' },
+    icon: 'tv',
+    kind: 'external',
+    external: [
+      {
+        label: { zh: '下载 TV 客户端', en: 'Download TV client' },
+        url: 'https://github.com/boluofan/songloft-tv/releases/latest',
+        primary: true,
+      },
+      {
+        label: { zh: '源码仓库', en: 'Source repo' },
+        url: 'https://github.com/boluofan/songloft-tv',
+      },
+    ],
+  },
+  {
     id: 'kodi',
     label: { zh: 'Kodi 插件', en: 'Kodi Add-on' },
     tagline: { zh: '大屏 / 客厅 · 遥控器优化', en: 'TV / living room' },
