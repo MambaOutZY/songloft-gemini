@@ -70,18 +70,20 @@ func (h *HotReloader) ReloadPlugin(ctx context.Context, pluginID int64) error {
 
 	// 重新加载插件
 	if err := h.manager.LoadPlugin(ctx, plugin); err != nil {
-		slog.Error("load new plugin failed during hot reload, attempting rollback", "plugin", entryPath, "error", err)
+		slog.Error("load new plugin failed during hot reload, retrying once", "plugin", entryPath, "error", err)
 
-		// 回滚：尝试重新加载旧版本
-		rollbackErr := h.manager.LoadPlugin(ctx, plugin)
-		if rollbackErr != nil {
-			slog.Error("rollback failed during hot reload", "plugin", entryPath, "error", rollbackErr)
+		// 这里只能重试同一次加载，不存在真正的"回滚到旧版本"：磁盘上的 zip 已经是新版本，
+		// 旧字节码缓存上面也删了。重试的意义在于放过瞬时故障（文件系统抖动等）——
+		// LoadPlugin 失败时已经把半成品 JS 环境回收掉，所以重试不会再撞 "env already exists"。
+		retryErr := h.manager.LoadPlugin(ctx, plugin)
+		if retryErr != nil {
+			slog.Error("retry failed during hot reload", "plugin", entryPath, "error", retryErr)
 			// 标记为错误状态
 			_ = h.manager.repo.UpdateStatus(ctx, pluginID, JSPluginStatusError)
-			return fmt.Errorf("hot reload failed and rollback failed: load=%w, rollback=%v", err, rollbackErr)
+			return fmt.Errorf("hot reload failed and retry failed: load=%w, retry=%v", err, retryErr)
 		}
-		slog.Warn("hot reload failed, rolled back to old version", "plugin", entryPath)
-		return fmt.Errorf("hot reload failed (rolled back): %w", err)
+		slog.Warn("hot reload load failed but retry succeeded", "plugin", entryPath)
+		return fmt.Errorf("hot reload failed (retry succeeded): %w", err)
 	}
 
 	h.manager.RefreshPublicPaths()

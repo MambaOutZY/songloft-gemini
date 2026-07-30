@@ -250,6 +250,13 @@ func (m *Manager) loadPlugins(ctx context.Context, plugins []*JSPlugin) {
 		if plugin.Status != JSPluginStatusActive {
 			continue
 		}
+		// 插件管理器是异步启动的（app.Init 里 go Start），而 HTTP 路由早已就绪：
+		// 走到这里之前插件可能已被请求/音源触发的 EnsureLoaded 懒加载出来了。
+		// LoadPlugin 现在对此幂等，这里再显式跳过一次，省掉无谓的 singleflight 往返。
+		if _, ok := m.GetService(plugin.EntryPath); ok {
+			slog.Info("js plugin already loaded on demand, skip startup load", "entryPath", plugin.EntryPath)
+			continue
+		}
 		if err := m.LoadPlugin(ctx, plugin); err != nil {
 			slog.Error("failed to load js plugin", "entryPath", plugin.EntryPath, "error", err)
 			// 标记为错误状态
@@ -260,10 +267,35 @@ func (m *Manager) loadPlugins(ctx context.Context, plugins []*JSPlugin) {
 	}
 }
 
-// LoadPlugin 加载单个插件
+// LoadPlugin 加载单个插件。
+//
+// 所有外部调用方（启动期 loadPlugins、health 自愈/唤醒、热更新、Reload/Enable）都走这里，
+// 由 loadGroup 按 entryPath 串行且合并——「一个 entryPath 同时只能有一次加载」这个不变式
+// 以前没人守，导致启动期 loadPlugins 与 HTTP/音源触发的懒加载 EnsureLoaded 撞车，
+// 第二次 create env 报 "env jsplugin-xxx already exists"，还顺手把插件 DB 状态刷成 error，
+// 之后 health 自愈每轮都再撞一次、永不成功。
+//
+// 注意：EnsureLoaded 已经在 loadGroup.Do 内部，必须直连 doLoadPlugin，
+// 否则同 key 嵌套 singleflight 会自我死锁。
 func (m *Manager) LoadPlugin(ctx context.Context, plugin *JSPlugin) error {
+	_, err, _ := m.loadGroup.Do(plugin.EntryPath, func() (any, error) {
+		return nil, m.doLoadPlugin(ctx, plugin)
+	})
+	return err
+}
+
+// doLoadPlugin 是 LoadPlugin 的实际实现，调用方须自行保证同 entryPath 不并发
+// （LoadPlugin 用 loadGroup、EnsureLoaded 用它自己那层 loadGroup）。
+func (m *Manager) doLoadPlugin(ctx context.Context, plugin *JSPlugin) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// 幂等：已加载就直接成功返回。JS 环境的 envID 全局唯一，重复创建必然失败，
+	// 而"已经加载好了"本身不是错误——热更新/Enable 等需要真正重载的路径都会先 UnloadPlugin。
+	if _, ok := m.services.Load(plugin.EntryPath); ok {
+		slog.Debug("js plugin already loaded, skip", "entryPath", plugin.EntryPath)
+		return nil
+	}
 
 	// 确保插件数据目录存在
 	dataDir := m.pluginsDataDir
@@ -284,8 +316,28 @@ func (m *Manager) LoadPlugin(ctx context.Context, plugin *JSPlugin) error {
 	bridgeHandler.onCoverProviderUnregister = m.UnregisterCoverProvider
 	service.bridgeHandler = bridgeHandler
 
+	// 2.5 清理同 pluginID 的残留 JS 环境。
+	// 走到这里已经确认 services map 里没有这个 entryPath，因此 jsManager 里任何属于该
+	// pluginID 的 env 都是孤儿（上一次加载在建好 env 之后失败、或进程内的历史残留）：
+	// UnloadPlugin 找不到它们，而 CreateEnv 遇到同名 envID 只会报错不会覆盖，
+	// 结果是该插件此后永远加载不了、只能重启进程。这一步让这种状态可自愈。
+	// 无残留时是返回 nil 的空操作。
+	if err := m.jsManager.DestroyPluginEnvs(plugin.ID); err != nil {
+		slog.Warn("cleanup stale plugin envs failed", "entryPath", plugin.EntryPath, "error", err)
+	}
+
 	// 3. 加载插件（读取 ZIP、校验 hash、创建 JS 环境）
 	if err := service.Load(m.pluginsDir, dataDir); err != nil {
+		// Load 内部可能已经建好 JS 环境后才失败（如 SetBridgeCallback）。不回收就会留下
+		// 一个 services map 里没有对应 service 的孤儿 env：UnloadPlugin 找不到它、也没有按
+		// envID 直接销毁的入口，之后所有加载都永久报 "env already exists"，只能重启进程。
+		//
+		// 这里刻意不用 service.Stop()：JSService 的初始状态是 ServiceStatusStopped，而
+		// Load 要到最后一步才置为 Ready，所以 Load 中途失败时 Stop() 会在开头直接 return nil，
+		// 什么也不销毁。直接按 pluginID 批量回收，env 尚未创建时是安全的空操作。
+		if destroyErr := m.jsManager.DestroyPluginEnvs(plugin.ID); destroyErr != nil {
+			slog.Warn("rollback destroy plugin envs failed", "entryPath", plugin.EntryPath, "error", destroyErr)
+		}
 		return fmt.Errorf("load plugin %q: %w", plugin.EntryPath, err)
 	}
 
@@ -296,6 +348,12 @@ func (m *Manager) LoadPlugin(ctx context.Context, plugin *JSPlugin) error {
 
 	// 5. 在 scheduler 中注册 service
 	if err := m.scheduler.RegisterService(plugin.EntryPath, service, 0); err != nil {
+		// service.Load 已经建好了 JS 环境，这里失败必须回滚——否则 env 留在 jsManager 里
+		// 而 services map 里没有对应 service，UnloadPlugin 找不到它、也没有按 envID 直接销毁的
+		// 入口，之后所有加载都永久报 "env already exists"，只能重启进程。
+		if stopErr := service.Stop(); stopErr != nil {
+			slog.Warn("rollback stop service failed", "entryPath", plugin.EntryPath, "error", stopErr)
+		}
 		return fmt.Errorf("register service %q: %w", plugin.EntryPath, err)
 	}
 
@@ -484,8 +542,10 @@ func (m *Manager) EnsureLoaded(ctx context.Context, entryPath string) (*JSServic
 			return nil, ErrPluginErrorState
 		case JSPluginStatusActive:
 			// 期望路径：DB active 但未加载（idle eviction）→ 重新加载。
+			// 这里已经在 loadGroup.Do 内部，必须调 doLoadPlugin 而不是 LoadPlugin——
+			// 后者会对同一个 key 再进一次 singleflight，等自己完成从而死锁。
 			start := time.Now()
-			if err := m.LoadPlugin(ctx, plugin); err != nil {
+			if err := m.doLoadPlugin(ctx, plugin); err != nil {
 				return nil, fmt.Errorf("lazy load plugin %q: %w", entryPath, err)
 			}
 			slog.Info("plugin lazy loaded on demand",
