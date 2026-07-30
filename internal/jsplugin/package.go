@@ -454,6 +454,7 @@ func IsGitHubURL(rawURL string) bool {
 	return host == "github.com" ||
 		host == "raw.githubusercontent.com" ||
 		host == "objects.githubusercontent.com" ||
+		host == "api.github.com" ||
 		strings.HasSuffix(host, ".github.io")
 }
 

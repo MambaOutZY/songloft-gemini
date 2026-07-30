@@ -1653,7 +1653,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理。可选传入 token 字段用于从需要认证的私有源下载；若未提供 token 但提供了 source_url（「全部」聚合模式），后端会自动从 plugin_registries 配置解析该源存储的 token。",
+                "description": "从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理（含 api.github.com 私有仓库 Release 资源的下载，代理端需开启 FORWARD_AUTHORIZATION_API 才会转发 token）。可选传入 token 字段用于从需要认证的私有源下载；若未提供 token 但提供了 source_url（「全部」聚合模式），后端会自动从 plugin_registries 配置解析该源存储的 token。",
                 "consumes": [
                     "application/json"
                 ],
@@ -6928,7 +6928,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "根据 song.ID 返回 LyricPayload JSON，含 lyric/tlyric/rlyric/lxlyric。传 refresh=1 时强制重新抓取：跳过库中自动获取的旧歌词(空/scraped/cached)重跑歌词搜索插件，响应挂 no-store 不缓存；file/embedded/manual 等权威歌词不被覆盖。",
+                "description": "根据 song.ID 返回 LyricPayload JSON，含 lyric/tlyric/rlyric/lxlyric。优先级：旁挂 .lrc 文件 \u003e DB url \u003e DB payload \u003e 歌词搜索插件。manual 歌词不被旁挂覆盖。传 refresh=1 时强制重新抓取：跳过库中自动获取的旧歌词(空/scraped/cached)重跑歌词搜索插件，响应挂 no-store 不缓存；file/embedded/manual 等权威歌词不被覆盖。",
                 "produces": [
                     "application/json"
                 ],

@@ -332,7 +332,7 @@ func (h *JSPluginHandler) resolveSourceToken(sourceURL string) string {
 
 // handleRegistryInstall 从注册表 download_url 安装插件
 // @Summary 从注册表安装插件
-// @Description 从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理。可选传入 token 字段用于从需要认证的私有源下载；若未提供 token 但提供了 source_url（「全部」聚合模式），后端会自动从 plugin_registries 配置解析该源存储的 token。
+// @Description 从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理（含 api.github.com 私有仓库 Release 资源的下载，代理端需开启 FORWARD_AUTHORIZATION_API 才会转发 token）。可选传入 token 字段用于从需要认证的私有源下载；若未提供 token 但提供了 source_url（「全部」聚合模式），后端会自动从 plugin_registries 配置解析该源存储的 token。
 // @Tags JS插件管理
 // @Accept json
 // @Produce json
@@ -365,7 +365,7 @@ func (h *JSPluginHandler) handleRegistryInstall(w http.ResponseWriter, r *http.R
 	// repos. When a token is provided and the URL matches, use the GitHub API.
 	if req.Token != "" {
 		if owner, repo, tag, filename, ok := parseGitHubReleaseURL(req.DownloadURL); ok {
-			data, err := downloadGitHubReleaseAsset(r.Context(), owner, repo, tag, filename, req.Token)
+			data, err := downloadGitHubReleaseAsset(r.Context(), owner, repo, tag, filename, req.Token, req.GithubProxy)
 			if err != nil {
 				respondError(w, http.StatusInternalServerError, "下载插件失败", err)
 				return
@@ -375,14 +375,7 @@ func (h *JSPluginHandler) handleRegistryInstall(w http.ResponseWriter, r *http.R
 	}
 
 	if zipData == nil {
-		downloadURL := req.DownloadURL
-		if req.GithubProxy != "" && jsplugin.IsGitHubURL(downloadURL) {
-			proxyPrefix := req.GithubProxy
-			if proxyPrefix[len(proxyPrefix)-1] != '/' {
-				proxyPrefix += "/"
-			}
-			downloadURL = proxyPrefix + downloadURL
-		}
+		downloadURL := applyGithubProxy(req.DownloadURL, req.GithubProxy)
 		data, err := downloadZIP(r.Context(), downloadURL, req.Token)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "下载插件失败", err)
@@ -491,13 +484,29 @@ func parseGitHubReleaseURL(rawURL string) (owner, repo, tag, filename string, ok
 	return
 }
 
+// applyGithubProxy 给 GitHub 相关 URL 加上加速代理前缀，非 GitHub URL 或未配置代理时原样返回。
+func applyGithubProxy(rawURL, proxyPrefix string) string {
+	if proxyPrefix == "" || !jsplugin.IsGitHubURL(rawURL) {
+		return rawURL
+	}
+	if proxyPrefix[len(proxyPrefix)-1] != '/' {
+		proxyPrefix += "/"
+	}
+	return proxyPrefix + rawURL
+}
+
 // downloadGitHubReleaseAsset downloads a release asset from a private GitHub
 // repo via the GitHub API. Browser-style release URLs (github.com/.../releases/
 // download/...) don't accept Bearer tokens for private repos—only the API does.
-func downloadGitHubReleaseAsset(ctx context.Context, owner, repo, tag, filename, token string) ([]byte, error) {
+// githubProxy（非空时）会给两次 api.github.com 请求都套上加速代理前缀，
+// 代理需要开 FORWARD_AUTHORIZATION_API 才会把 Authorization 转发给 GitHub。
+func downloadGitHubReleaseAsset(ctx context.Context, owner, repo, tag, filename, token, githubProxy string) ([]byte, error) {
 	client := httputil.NewClient(60 * time.Second)
 
-	releaseURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, tag)
+	releaseURL := applyGithubProxy(
+		fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, tag),
+		githubProxy,
+	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create release request: %w", err)
@@ -536,7 +545,10 @@ func downloadGitHubReleaseAsset(ctx context.Context, owner, repo, tag, filename,
 		return nil, fmt.Errorf("asset %q not found in release %s/%s@%s", filename, owner, repo, tag)
 	}
 
-	assetURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/assets/%d", owner, repo, assetID)
+	assetURL := applyGithubProxy(
+		fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/assets/%d", owner, repo, assetID),
+		githubProxy,
+	)
 	req2, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create asset request: %w", err)
