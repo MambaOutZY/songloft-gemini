@@ -375,8 +375,7 @@ func (h *JSPluginHandler) handleRegistryInstall(w http.ResponseWriter, r *http.R
 	}
 
 	if zipData == nil {
-		downloadURL := applyGithubProxy(req.DownloadURL, req.GithubProxy)
-		data, err := downloadZIP(r.Context(), downloadURL, req.Token)
+		data, err := downloadZIP(r.Context(), req.DownloadURL, req.GithubProxy, req.Token)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "下载插件失败", err)
 			return
@@ -439,23 +438,21 @@ func (h *JSPluginHandler) handleRegistryInstall(w http.ResponseWriter, r *http.R
 	})
 }
 
-func downloadZIP(ctx context.Context, url string, token string) ([]byte, error) {
+func downloadZIP(ctx context.Context, rawURL string, githubProxy string, token string) ([]byte, error) {
 	client := httputil.NewClient(60 * time.Second)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
+	var header http.Header
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		header = http.Header{"Authorization": []string{"Bearer " + token}}
 	}
-	resp, err := client.Do(req)
+	resp, err := httputil.GetWithGithubProxyFallback(ctx, client, rawURL, githubProxy,
+		httputil.GithubGetOptions{Header: header})
 	if err != nil {
-		return nil, fmt.Errorf("http get %s: %w", url, err)
+		return nil, fmt.Errorf("http get %s: %w", rawURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("http status %d from %s", resp.StatusCode, url)
+		return nil, fmt.Errorf("http status %d from %s", resp.StatusCode, rawURL)
 	}
 
 	const maxZIPSize = 50 << 20 // 50 MB
@@ -484,17 +481,6 @@ func parseGitHubReleaseURL(rawURL string) (owner, repo, tag, filename string, ok
 	return
 }
 
-// applyGithubProxy 给 GitHub 相关 URL 加上加速代理前缀，非 GitHub URL 或未配置代理时原样返回。
-func applyGithubProxy(rawURL, proxyPrefix string) string {
-	if proxyPrefix == "" || !jsplugin.IsGitHubURL(rawURL) {
-		return rawURL
-	}
-	if proxyPrefix[len(proxyPrefix)-1] != '/' {
-		proxyPrefix += "/"
-	}
-	return proxyPrefix + rawURL
-}
-
 // downloadGitHubReleaseAsset downloads a release asset from a private GitHub
 // repo via the GitHub API. Browser-style release URLs (github.com/.../releases/
 // download/...) don't accept Bearer tokens for private repos—only the API does.
@@ -503,7 +489,7 @@ func applyGithubProxy(rawURL, proxyPrefix string) string {
 func downloadGitHubReleaseAsset(ctx context.Context, owner, repo, tag, filename, token, githubProxy string) ([]byte, error) {
 	client := httputil.NewClient(60 * time.Second)
 
-	releaseURL := applyGithubProxy(
+	releaseURL := httputil.ApplyGithubProxy(
 		fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, tag),
 		githubProxy,
 	)
@@ -545,7 +531,7 @@ func downloadGitHubReleaseAsset(ctx context.Context, owner, repo, tag, filename,
 		return nil, fmt.Errorf("asset %q not found in release %s/%s@%s", filename, owner, repo, tag)
 	}
 
-	assetURL := applyGithubProxy(
+	assetURL := httputil.ApplyGithubProxy(
 		fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/assets/%d", owner, repo, assetID),
 		githubProxy,
 	)

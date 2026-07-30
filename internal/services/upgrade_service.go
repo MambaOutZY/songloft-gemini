@@ -60,21 +60,8 @@ func (s *UpgradeService) IsDockerEnvironment() bool {
 	return os.Getenv("IN_DOCKER") == "true"
 }
 
-// applyProxy 将代理前缀应用到 URL 上
-// 代理格式: https://ghproxy.com/ + 原始 URL
-func (s *UpgradeService) applyProxy(rawURL, proxyPrefix string) string {
-	if proxyPrefix == "" {
-		return rawURL
-	}
-	// 确保代理前缀以 / 结尾
-	if proxyPrefix[len(proxyPrefix)-1] != '/' {
-		proxyPrefix += "/"
-	}
-	return proxyPrefix + rawURL
-}
-
 // FetchVersionInfo 获取指定版本的信息
-// proxyPrefix 为 GitHub 代理前缀，为空则直连
+// proxyPrefix 为 GitHub 代理前缀，为空则直连；代理请求失败时自动降级直连重试一次
 func (s *UpgradeService) FetchVersionInfo(versionType string, proxyPrefix string) (*models.RemoteVersionInfo, error) {
 	var rawURL string
 	switch versionType {
@@ -86,19 +73,10 @@ func (s *UpgradeService) FetchVersionInfo(versionType string, proxyPrefix string
 		return nil, fmt.Errorf("invalid version type: %s", versionType)
 	}
 
-	url := s.applyProxy(rawURL, proxyPrefix)
-
 	// 检查更新只拉取很小的 version.json，用独立的短超时避免网络不通时长时间转圈
 	// （下载二进制的 DownloadBinary 仍复用 httpClient 的 10 分钟超时）
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build version info request: %w", err)
-	}
-
-	resp, err := s.httpClient.Do(req)
+	resp, err := httputil.GetWithGithubProxyFallback(context.Background(), s.httpClient, rawURL, proxyPrefix,
+		httputil.GithubGetOptions{AttemptTimeout: 12 * time.Second})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch version info: %w", err)
 	}
@@ -348,7 +326,6 @@ func (s *UpgradeService) DownloadBinary(urlPrefix, targetPath, proxyPrefix strin
 
 	// 根据平台拼接完整的下载 URL
 	rawURL := urlPrefix + s.getPlatformSuffix()
-	url := s.applyProxy(rawURL, proxyPrefix)
 
 	// 创建临时文件
 	out, err := os.Create(targetPath)
@@ -357,8 +334,9 @@ func (s *UpgradeService) DownloadBinary(urlPrefix, targetPath, proxyPrefix strin
 	}
 	defer out.Close()
 
-	// 发起下载请求
-	resp, err := s.httpClient.Get(url)
+	// 发起下载请求（代理失败自动降级直连重试一次）
+	resp, err := httputil.GetWithGithubProxyFallback(context.Background(), s.httpClient, rawURL, proxyPrefix,
+		httputil.GithubGetOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
 	}

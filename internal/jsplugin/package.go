@@ -7,10 +7,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"songloft/internal/httputil"
@@ -23,6 +23,8 @@ type UpdateInfo struct {
 	HasUpdate      bool   `json:"has_update"`
 	DownloadURL    string `json:"download_url,omitempty"`
 	ChangeLog      string `json:"change_log,omitempty"`
+	// rawDownloadURL 是未套代理的原始下载地址（不对外），下载时据此做代理失败降级直连
+	rawDownloadURL string
 }
 
 // PackageManager 管理 .jsplugin.zip 的安装、更新、发现
@@ -429,38 +431,14 @@ func (pm *PackageManager) syncManifestMetadata(ctx context.Context, existing *JS
 	}
 }
 
-// applyProxy 将 GitHub 代理前缀应用到 URL 上。
-// 仅对 GitHub 相关域名生效，非 GitHub URL 原样返回。
-func applyProxy(rawURL, proxyPrefix string) string {
-	if proxyPrefix == "" {
-		return rawURL
-	}
-	if !IsGitHubURL(rawURL) {
-		return rawURL
-	}
-	if proxyPrefix[len(proxyPrefix)-1] != '/' {
-		proxyPrefix += "/"
-	}
-	return proxyPrefix + rawURL
-}
-
-// IsGitHubURL 判断 URL 是否为 GitHub 相关域名。
-func IsGitHubURL(rawURL string) bool {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return false
-	}
-	host := strings.ToLower(u.Host)
-	return host == "github.com" ||
-		host == "raw.githubusercontent.com" ||
-		host == "objects.githubusercontent.com" ||
-		host == "api.github.com" ||
-		strings.HasSuffix(host, ".github.io")
-}
-
 // CheckUpdate 检查远程更新（通过 plugin.json 中的 update_url 或 download_url）。
-// githubProxy 用于在请求 update_url 与最终 download_url 前加上 GitHub 加速代理前缀。
+// githubProxy 用于在请求 update_url 与最终 download_url 前加上 GitHub 加速代理前缀；
+// 代理请求失败时自动降级直连重试一次。
 func (pm *PackageManager) CheckUpdate(pluginID int64, githubProxy string) (*UpdateInfo, error) {
+	return pm.checkUpdate(pluginID, githubProxy, nil)
+}
+
+func (pm *PackageManager) checkUpdate(pluginID int64, githubProxy string, proxyDown *atomic.Bool) (*UpdateInfo, error) {
 	ctx := context.Background()
 
 	plugin, err := pm.repo.GetByID(ctx, pluginID)
@@ -478,12 +456,12 @@ func (pm *PackageManager) CheckUpdate(pluginID int64, githubProxy string) (*Upda
 		}, nil
 	}
 
-	// 请求远程更新信息（应用代理）
-	requestURL := applyProxy(updateURL, githubProxy)
+	// 请求远程更新信息（代理失败自动降级直连）
 	client := httputil.NewClient(15 * time.Second)
-	resp, err := client.Get(requestURL)
+	resp, err := httputil.GetWithGithubProxyFallback(ctx, client, updateURL, githubProxy,
+		httputil.GithubGetOptions{ProxyDown: proxyDown})
 	if err != nil {
-		return nil, fmt.Errorf("fetch update info from %q: %w", requestURL, err)
+		return nil, fmt.Errorf("fetch update info from %q: %w", updateURL, err)
 	}
 	defer resp.Body.Close()
 
@@ -507,7 +485,9 @@ func (pm *PackageManager) CheckUpdate(pluginID int64, githubProxy string) (*Upda
 		CurrentVersion: plugin.Version,
 		LatestVersion:  remoteManifest.Version,
 		HasUpdate:      hasUpdate,
-		DownloadURL:    applyProxy(remoteManifest.DownloadURL, githubProxy),
+		// 对外 JSON 保持「已套代理」语义不变；内部下载走 rawDownloadURL 以便降级
+		DownloadURL:    httputil.ApplyGithubProxy(remoteManifest.DownloadURL, githubProxy),
+		rawDownloadURL: remoteManifest.DownloadURL,
 	}
 
 	return info, nil
@@ -517,8 +497,11 @@ func (pm *PackageManager) CheckUpdate(pluginID int64, githubProxy string) (*Upda
 // githubProxy 同时用于检查更新与下载新 ZIP。
 // force 为 true 时跳过版本比较，强制重新下载安装。
 func (pm *PackageManager) DownloadUpdate(pluginID int64, githubProxy string, force bool) (*JSPlugin, error) {
-	// [1] 先检查更新（已在内部将代理应用到 download_url 上）
-	updateInfo, err := pm.CheckUpdate(pluginID, githubProxy)
+	// 检查与下载共享一份「代理已失效」记忆：死代理时只付一次降级超时
+	var proxyDown atomic.Bool
+
+	// [1] 先检查更新（返回原始 download_url，下载时按需套代理并可降级）
+	updateInfo, err := pm.checkUpdate(pluginID, githubProxy, &proxyDown)
 	if err != nil {
 		return nil, fmt.Errorf("check update: %w", err)
 	}
@@ -527,14 +510,15 @@ func (pm *PackageManager) DownloadUpdate(pluginID int64, githubProxy string, for
 		return nil, fmt.Errorf("no update available")
 	}
 
-	downloadURL := updateInfo.DownloadURL
+	downloadURL := updateInfo.rawDownloadURL
 	if downloadURL == "" {
 		return nil, fmt.Errorf("no download URL available for update")
 	}
 
-	// [2] 下载新 ZIP
+	// [2] 下载新 ZIP（代理失败自动降级直连）
 	client := httputil.NewClient(60 * time.Second)
-	resp, err := client.Get(downloadURL)
+	resp, err := httputil.GetWithGithubProxyFallback(context.Background(), client, downloadURL, githubProxy,
+		httputil.GithubGetOptions{ProxyDown: &proxyDown})
 	if err != nil {
 		return nil, fmt.Errorf("download update from %q: %w", downloadURL, err)
 	}

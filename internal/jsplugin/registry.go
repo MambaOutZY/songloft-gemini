@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"songloft/internal/httputil"
@@ -60,6 +61,9 @@ type RegistryJSON struct {
 // RegistryService 处理注册表的拉取、递归解析和去重合并。
 type RegistryService struct {
 	httpClient *http.Client
+	// proxyDown 记忆本次拉取操作内 GitHub 代理是否已失效（传输层错误），
+	// 置位后后续请求直接直连，避免几十个请求逐个等代理超时。
+	proxyDown atomic.Bool
 }
 
 // NewRegistryService 创建 RegistryService。
@@ -171,14 +175,12 @@ func (s *RegistryService) fetchRecursive(
 	}
 	visited[canonicalURL] = true
 
-	requestURL := applyProxy(url, githubProxy)
-
-	registry, err := s.fetchJSON(ctx, requestURL, token)
+	registry, err := s.fetchJSON(ctx, url, githubProxy, token)
 	if err != nil {
 		if depth == 0 {
-			return fmt.Errorf("fetch registry %s: %w", requestURL, err)
+			return fmt.Errorf("fetch registry %s: %w", url, err)
 		}
-		*warnings = append(*warnings, fmt.Sprintf("failed to fetch include %s: %v", requestURL, err))
+		*warnings = append(*warnings, fmt.Sprintf("failed to fetch include %s: %v", url, err))
 		return nil
 	}
 
@@ -221,12 +223,11 @@ func (s *RegistryService) resolveAll(ctx context.Context, pluginURLs []string, g
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			requestURL := applyProxy(rawURL, githubProxy)
-			entry, err := s.resolvePluginJSON(ctx, requestURL, githubProxy, token)
+			entry, err := s.resolvePluginJSON(ctx, rawURL, githubProxy, token)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				*warnings = append(*warnings, fmt.Sprintf("failed to fetch plugin.json %s: %v", requestURL, err))
+				*warnings = append(*warnings, fmt.Sprintf("failed to fetch plugin.json %s: %v", rawURL, err))
 				return
 			}
 			result[idx] = entry
@@ -239,8 +240,8 @@ func (s *RegistryService) resolveAll(ctx context.Context, pluginURLs []string, g
 
 // resolvePluginJSON 拉取远程 plugin.json 并映射到 RegistryEntry。
 // 如果 plugin.json 中 download_url 为空但 updateUrl 有值，链式拉取 updateUrl 获取 download_url（兼容旧版插件）。
-func (s *RegistryService) resolvePluginJSON(ctx context.Context, url string, githubProxy string, token string) (RegistryEntry, error) {
-	body, err := s.fetchBody(ctx, url, token)
+func (s *RegistryService) resolvePluginJSON(ctx context.Context, rawURL string, githubProxy string, token string) (RegistryEntry, error) {
+	body, err := s.fetchBody(ctx, rawURL, githubProxy, token)
 	if err != nil {
 		return RegistryEntry{}, err
 	}
@@ -263,15 +264,16 @@ func (s *RegistryService) resolvePluginJSON(ctx context.Context, url string, git
 	}
 
 	if manifest.Icon != "" {
-		if lastSlash := strings.LastIndex(url, "/"); lastSlash >= 0 {
-			entry.Icon = url[:lastSlash+1] + "static/" + manifest.Icon
+		// Icon 是前端 Image.network 直接加载的展示地址，保持套代理（无降级机会）
+		iconBase := httputil.ApplyGithubProxy(rawURL, githubProxy)
+		if lastSlash := strings.LastIndex(iconBase, "/"); lastSlash >= 0 {
+			entry.Icon = iconBase[:lastSlash+1] + "static/" + manifest.Icon
 		}
 	}
 
 	// 兼容旧版插件：如果 plugin.json 未直接提供 download_url，通过 updateUrl 链式获取
 	if entry.DownloadURL == "" && entry.UpdateURL != "" {
-		updateRequestURL := applyProxy(entry.UpdateURL, githubProxy)
-		if updateBody, err := s.fetchBody(ctx, updateRequestURL, token); err != nil {
+		if updateBody, err := s.fetchBody(ctx, entry.UpdateURL, githubProxy, token); err != nil {
 			slog.Debug("chain fetch updateUrl failed", "entryPath", entry.EntryPath, "updateUrl", entry.UpdateURL, "error", err)
 		} else {
 			var updateManifest PluginManifest
@@ -285,8 +287,8 @@ func (s *RegistryService) resolvePluginJSON(ctx context.Context, url string, git
 	return entry, nil
 }
 
-func (s *RegistryService) fetchJSON(ctx context.Context, url string, token string) (*RegistryJSON, error) {
-	body, err := s.fetchBody(ctx, url, token)
+func (s *RegistryService) fetchJSON(ctx context.Context, url string, githubProxy string, token string) (*RegistryJSON, error) {
+	body, err := s.fetchBody(ctx, url, githubProxy, token)
 	if err != nil {
 		return nil, err
 	}
@@ -299,16 +301,14 @@ func (s *RegistryService) fetchJSON(ctx context.Context, url string, token strin
 	return &registry, nil
 }
 
-func (s *RegistryService) fetchBody(ctx context.Context, url string, token string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
+func (s *RegistryService) fetchBody(ctx context.Context, rawURL string, githubProxy string, token string) ([]byte, error) {
+	var header http.Header
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		header = http.Header{"Authorization": []string{"Bearer " + token}}
 	}
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := httputil.GetWithGithubProxyFallback(ctx, s.httpClient, rawURL, githubProxy,
+		httputil.GithubGetOptions{Header: header, ProxyDown: &s.proxyDown})
 	if err != nil {
 		return nil, fmt.Errorf("http get: %w", err)
 	}

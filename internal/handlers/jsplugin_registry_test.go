@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"songloft/internal/httputil"
 )
 
 func TestApplyGithubProxy(t *testing.T) {
@@ -43,9 +45,9 @@ func TestApplyGithubProxy(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := applyGithubProxy(c.url, c.proxy)
+			got := httputil.ApplyGithubProxy(c.url, c.proxy)
 			if got != c.want {
-				t.Fatalf("applyGithubProxy(%q, %q) = %q, want %q", c.url, c.proxy, got, c.want)
+				t.Fatalf("ApplyGithubProxy(%q, %q) = %q, want %q", c.url, c.proxy, got, c.want)
 			}
 		})
 	}
