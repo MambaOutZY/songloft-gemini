@@ -183,6 +183,10 @@ Beyond the web interface, Songloft also offers a more powerful cross-platform Fl
 
 > 💡 When using the **Lite (-lite)** server, we recommend pairing it directly with the Flutter client (no need to deploy a separate web frontend). If you do need a standalone web frontend, refer to the `flutter build web` process in the [songloft-player](https://github.com/songloft-org/songloft-player) repository to build it yourself and serve the static files via a reverse proxy such as Nginx.
 
+### 📺 TV Client
+
+In addition to the Flutter client, for TV we recommend the dedicated **[songloft-tv](https://github.com/boluofan/songloft-tv)** client, designed specifically for Android TV with remote control support.
+
 ### 📺 Kodi Plugin
 
 In addition to the Flutter client, Songloft also provides an official **Kodi plugin** that lets you play your Songloft music library directly in the Kodi media center. It's ideal for Kodi-capable big-screen devices such as **Xbox**, Apple TV, Raspberry Pi, and Android TV, optimized for remote control operation for a smooth living-room media experience.

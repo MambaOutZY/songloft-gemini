@@ -256,9 +256,9 @@ A: Flutter's `secure_storage` may be unable to use the Keychain in an unsigned s
 
 A: In the **Radio Favorites** playlist in the client, click the add button and enter the radio streaming address (e.g., `.m3u`, `.pls`, or a direct audio stream URL). Network songs can be searched and added to playlists via JS plugins. Scanning local `.m3u` files to automatically import radio stations is not currently supported.
 
-### Q: How do I operate on TV?
+### Q: How do I use Songloft on TV?
 
-A: Songloft supports TV (screen width ≥ 1920px). Navigate with the remote's directional keys (D-pad); the focused element has a highlighted border and a scaling effect.
+A: For TV, we recommend the dedicated [songloft-tv](https://github.com/boluofan/songloft-tv) client, designed specifically for Android TV with remote control support.
 
 ## Upgrades & Maintenance
 

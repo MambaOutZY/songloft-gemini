@@ -158,7 +158,7 @@ Text('文本', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVa
 
 ## 响应式主题适配
 
-主题根据屏幕类型（Mobile / Tablet / Desktop / TV）动态调整组件尺寸：
+主题根据屏幕类型（Mobile / Tablet / Desktop）动态调整组件尺寸：
 
 ### SnackBar
 
@@ -166,17 +166,15 @@ Text('文本', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVa
 |---------|------|
 | Mobile | 默认浮动样式 |
 | Desktop | 固定宽度 480px，居中 |
-| TV | 固定宽度 600px，更大内边距 |
 
 ### FilledButton / OutlinedButton / TextButton
 
 | 屏幕类型 | 最小尺寸 |
 |---------|---------|
 | Desktop | 88 × 44 |
-| TV | 120 × 56 |
 | Mobile / Tablet | Flutter 框架默认（未定制） |
 
-> 实际代码 (`app_theme.dart`) 中 `filledButtonTheme` / `outlinedButtonTheme` / `textButtonTheme` 三者均以 `isDesktopOrTv` 为前置条件：仅在 Desktop 或 TV 时才设置 theme（Desktop → 88×44，TV → 120×56），Mobile / Tablet 为 `null`，沿用 Flutter 框架默认尺寸。
+> 实际代码 (`app_theme.dart`) 中 `filledButtonTheme` / `outlinedButtonTheme` / `textButtonTheme` 三者均以 `isDesktop` 为前置条件：仅在 Desktop 时才设置 theme（Desktop → 88×44），Mobile / Tablet 为 `null`，沿用 Flutter 框架默认尺寸。
 
 ### 对话框最大宽度
 
@@ -185,21 +183,6 @@ Text('文本', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVa
 | Mobile | 300px |
 | Tablet | 400px |
 | Desktop | 480px |
-| TV | 600px |
-
-### TV 端专用尺寸
-
-TV 端使用 `TvTheme` 类定义的专用常量：
-
-| 属性 | 值 | 说明 |
-|------|-----|------|
-| 标题字体 | 24sp | `fontSizeTitle` |
-| 正文字体 | 20sp | `fontSizeBody` |
-| 副标题字体 | 16sp | `fontSizeCaption` |
-| 焦点边框 | 4px | `focusBorderWidth` |
-| 焦点缩放 | 1.05x | `focusScale` |
-| 网格列数 | 4 | `gridColumns` |
-| 内容内边距 | 48px | `contentPadding` |
 
 ---
 
@@ -219,6 +202,5 @@ Songloft 使用 `palette_generator` 库从歌曲封面图片中提取主色调�
 - **2026-04-14**: 更新为 Flutter Material 3 颜色体系
   - 主前端迁移到 Flutter，使用 `ColorScheme.fromSeed` 自动配色
   - seedColor: M3 Blue baseline (`#415F91`)
-  - 新增响应式主题适配（Mobile / Tablet / Desktop / TV）
-  - 新增 TV 端专用主题常量（`TvTheme`）
+  - 新增响应式主题适配（Mobile / Tablet / Desktop）
   - 新增封面颜色提取功能

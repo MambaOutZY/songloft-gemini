@@ -23,7 +23,7 @@ Songloft 前端是一个基于 Flutter 的跨平台音乐播放器，支持 **An
 ## 设计理念
 
 - **以音乐播放为核心**：播放器始终可见，随时可控
-- **响应式四端适配**：Mobile / Tablet / Desktop / TV 自适应布局
+- **响应式三端适配**：Mobile / Tablet / Desktop 自适应布局
 - **Feature-First 架构**：按功能模块组织代码，每个模块包含 data / domain / presentation 三层
 - **跨平台一致体验**：一套代码适配 6 个平台，针对各平台特性做优化
 
@@ -44,7 +44,7 @@ songloft-player/lib/
 │   │   ├── run_mode_provider.dart          # RunMode 枚举（local/remote）+ 持久化 Provider
 │   │   └── backend_lifecycle.dart          # WidgetsBindingObserver：前台恢复自动重启后端
 │   ├── env/
-│   │   └── tv_detector.dart          # TV 设备检测
+│   │   └── (reserved)                # 环境信息
 │   ├── platform/
 │   │   └── live_activity_service.dart  # iOS 灵动岛/实时活动集成
 │   ├── tracely/
@@ -63,7 +63,7 @@ songloft-player/lib/
 │   │   ├── app_theme.dart           # Material 3 主题（亮色/暗色，响应式）
 │   │   ├── app_dimensions.dart      # 尺寸和圆角常量
 │   │   ├── responsive.dart          # 响应式断点和工具扩展
-│   │   └── tv_theme.dart            # TV 端专用主题常量
+│   │   └── (reserved)               # 主题扩展
 │   └── utils/
 │       ├── color_extraction.dart    # 封面颜色提取
 │       ├── formatters.dart          # 格式化工具（时长、文件大小等）
@@ -125,7 +125,6 @@ songloft-player/lib/
 │   │           ├── desktop_player.dart    # 桌面端播放器（迷你/侧栏形式）
 │   │           ├── desktop_full_player.dart  # 桌面端全屏播放器
 │   │           ├── mobile_player.dart     # 移动端全屏播放器
-│   │           ├── tv_player.dart         # TV 端播放器
 │   │           ├── mini_player.dart       # 迷你播放器条
 │   │           ├── play_controls.dart     # 播放控制按钮
 │   │           ├── popup_controls.dart    # 弹出式控制面板
@@ -200,9 +199,7 @@ songloft-player/lib/
         ├── song_picker_modal.dart   # 歌曲选择弹窗
         ├── empty_state.dart         # 空状态
         ├── error_view.dart          # 错误视图
-        ├── loading_indicator.dart   # 加载指示器
-        ├── tv_focusable.dart        # TV 焦点组件
-        └── tv_grid_view.dart        # TV 网格视图
+        └── loading_indicator.dart   # 加载指示器
 ```
 
 ## 页面结构
@@ -234,8 +231,7 @@ songloft-player/lib/
 |---------|---------|------|
 | **Mobile** | < 600px | 底部导航 + 迷你播放器 |
 | **Tablet** | 600 - 900px | 底部导航 + 迷你播放器（更宽） |
-| **Desktop** | 900 - 1920px | 侧边导航 + 底部播放器栏 |
-| **TV** | ≥ 1920px | 焦点导航 + 大尺寸 UI + D-pad 支持 |
+| **Desktop** | 900px+ | 侧边导航 + 底部播放器栏 |
 
 ### 布局架构
 
@@ -243,8 +239,7 @@ songloft-player/lib/
 ShellLayout (ShellRoute builder)
 ├── AdaptiveScaffold
 │   ├── Mobile/Tablet: NavigationBar (底部) + MiniPlayer
-│   ├── Desktop: NavigationRail (侧边) + DesktopPlayer (底部)
-│   └── TV: 顶部 Tab 导航 + TvPlayer
+│   └── Desktop: NavigationRail (侧边) + DesktopPlayer (底部)
 └── 内容区域 (GoRouter child)
 ```
 
@@ -260,16 +255,8 @@ ShellLayout (ShellRoute builder)
 ### 响应式主题
 
 主题根据屏幕类型动态调整组件尺寸：
-- **SnackBar**: Desktop/TV 使用固定宽度居中显示
-- **FilledButton**: TV 端使用更大的最小尺寸
+- **SnackBar**: Desktop 使用固定宽度居中显示
 - **对话框**: 根据屏幕类型调整最大宽度
-
-### TV 端专用主题
-
-`TvTheme` 类定义了 TV 端的尺寸常量：
-- 字体大小：标题 24sp、正文 20sp、副标题 16sp
-- 焦点效果：3px 边框 + 1.05x 缩放
-- 网格布局：4 列、24px 间距、48px 内边距
 
 ## 部署模式
 

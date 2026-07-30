@@ -23,7 +23,7 @@ The Songloft frontend is a Flutter-based cross-platform music player supporting 
 ## Design Philosophy
 
 - **Music playback at the core**: the player is always visible and controllable at any time
-- **Responsive four-way adaptation**: adaptive layouts for Mobile / Tablet / Desktop / TV
+- **Responsive three-way adaptation**: adaptive layouts for Mobile / Tablet / Desktop
 - **Feature-First architecture**: code organized by feature module, each with three layers — data / domain / presentation
 - **Consistent cross-platform experience**: a single codebase adapts to six platforms, with optimizations tailored to each platform's characteristics
 
@@ -44,7 +44,7 @@ songloft-player/lib/
 │   │   ├── run_mode_provider.dart          # RunMode enum (local/remote) + persistence Provider
 │   │   └── backend_lifecycle.dart          # WidgetsBindingObserver: auto-restart backend on foreground resume
 │   ├── env/
-│   │   └── tv_detector.dart          # TV device detection
+│   │   └── (reserved)                # Environment info
 │   ├── platform/
 │   │   └── live_activity_service.dart  # iOS Dynamic Island / Live Activity integration
 │   ├── tracely/
@@ -63,7 +63,7 @@ songloft-player/lib/
 │   │   ├── app_theme.dart           # Material 3 theme (light/dark, responsive)
 │   │   ├── app_dimensions.dart      # Size and border-radius constants
 │   │   ├── responsive.dart          # Responsive breakpoints and utility extensions
-│   │   └── tv_theme.dart            # TV-specific theme constants
+│   │   └── (reserved)               # Theme extensions
 │   └── utils/
 │       ├── color_extraction.dart    # Cover color extraction
 │       ├── formatters.dart          # Formatting utilities (duration, file size, etc.)
@@ -125,7 +125,6 @@ songloft-player/lib/
 │   │           ├── desktop_player.dart    # Desktop player (mini/sidebar form)
 │   │           ├── desktop_full_player.dart  # Desktop fullscreen player
 │   │           ├── mobile_player.dart     # Mobile fullscreen player
-│   │           ├── tv_player.dart         # TV player
 │   │           ├── mini_player.dart       # Mini player bar
 │   │           ├── play_controls.dart     # Playback control buttons
 │   │           ├── popup_controls.dart    # Popup control panel
@@ -200,9 +199,7 @@ songloft-player/lib/
         ├── song_picker_modal.dart   # Song picker modal
         ├── empty_state.dart         # Empty state
         ├── error_view.dart          # Error view
-        ├── loading_indicator.dart   # Loading indicator
-        ├── tv_focusable.dart        # TV focusable component
-        └── tv_grid_view.dart        # TV grid view
+        └── loading_indicator.dart   # Loading indicator
 ```
 
 ## Page Structure
@@ -234,8 +231,7 @@ Routing implements an authentication guard using GoRouter's `redirect` mechanism
 |---------|---------|------|
 | **Mobile** | < 600px | Bottom navigation + mini player |
 | **Tablet** | 600 - 900px | Bottom navigation + mini player (wider) |
-| **Desktop** | 900 - 1920px | Side navigation + bottom player bar |
-| **TV** | ≥ 1920px | Focus navigation + large-scale UI + D-pad support |
+| **Desktop** | 900px+ | Side navigation + bottom player bar |
 
 ### Layout Architecture
 
@@ -243,8 +239,7 @@ Routing implements an authentication guard using GoRouter's `redirect` mechanism
 ShellLayout (ShellRoute builder)
 ├── AdaptiveScaffold
 │   ├── Mobile/Tablet: NavigationBar (bottom) + MiniPlayer
-│   ├── Desktop: NavigationRail (side) + DesktopPlayer (bottom)
-│   └── TV: top Tab navigation + TvPlayer
+│   └── Desktop: NavigationRail (side) + DesktopPlayer (bottom)
 └── Content area (GoRouter child)
 ```
 
@@ -260,16 +255,8 @@ ShellLayout (ShellRoute builder)
 ### Responsive Theme
 
 The theme dynamically adjusts component sizes based on screen type:
-- **SnackBar**: fixed width, centered on Desktop/TV
-- **FilledButton**: larger minimum size on TV
+- **SnackBar**: fixed width, centered on Desktop
 - **Dialogs**: maximum width adjusted by screen type
-
-### TV-Specific Theme
-
-The `TvTheme` class defines size constants for TV:
-- Font sizes: title 24sp, body 20sp, subtitle 16sp
-- Focus effect: 3px border + 1.05x scale
-- Grid layout: 4 columns, 24px spacing, 48px padding
 
 ## Deployment Modes
 

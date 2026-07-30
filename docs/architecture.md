@@ -163,12 +163,12 @@ make build-frontend-all            # 当前系统支持的所有平台
 
 1. **跨平台一致体验**：一套代码适配 6 个平台
 2. **Bundle 本地模式**：内嵌 Go 后端，支持本地/远程双模式切换，无需服务器即可播放本地音乐
-3. **四端响应式布局**：Mobile / Tablet / Desktop / TV 自适应
+3. **三端响应式布局**：Mobile / Tablet / Desktop 自适应
 4. **Feature-First 架构**：按功能模块组织，每个模块含 data / domain / presentation
 5. **音频播放**：just_audio + audio_service，支持通知栏控制和后台播放
 6. **歌词显示**：LRC 歌词解析和同步显示
 7. **封面颜色提取**：从封面图片提取主色调用于动态配色
-8. **TV 端支持**：焦点导航、D-pad 支持、大尺寸 UI
+8. **TV 客户端**：推荐使用 [songloft-tv](https://github.com/boluofan/songloft-tv)
 
 ## 数据库设计
 

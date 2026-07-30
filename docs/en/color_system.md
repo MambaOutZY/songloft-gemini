@@ -158,7 +158,7 @@ Text('Text', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVari
 
 ## Responsive Theme Adaptation
 
-The theme dynamically adjusts component sizes based on screen type (Mobile / Tablet / Desktop / TV):
+The theme dynamically adjusts component sizes based on screen type (Mobile / Tablet / Desktop):
 
 ### SnackBar
 
@@ -166,17 +166,15 @@ The theme dynamically adjusts component sizes based on screen type (Mobile / Tab
 |---------|------|
 | Mobile | Default floating style |
 | Desktop | Fixed width 480px, centered |
-| TV | Fixed width 600px, larger padding |
 
 ### FilledButton / OutlinedButton / TextButton
 
 | Screen Type | Minimum Size |
 |---------|---------|
 | Desktop | 88 × 44 |
-| TV | 120 × 56 |
 | Mobile / Tablet | Flutter framework default (not customized) |
 
-> In the actual code (`app_theme.dart`), all three of `filledButtonTheme` / `outlinedButtonTheme` / `textButtonTheme` are gated by `isDesktopOrTv`: the theme is only set for Desktop or TV (Desktop → 88×44, TV → 120×56). For Mobile / Tablet they are `null`, falling back to the Flutter framework default sizes.
+> In the actual code (`app_theme.dart`), all three of `filledButtonTheme` / `outlinedButtonTheme` / `textButtonTheme` are gated by `isDesktop`: the theme is only set for Desktop (Desktop → 88×44). For Mobile / Tablet they are `null`, falling back to the Flutter framework default sizes.
 
 ### Dialog Maximum Width
 
@@ -185,21 +183,6 @@ The theme dynamically adjusts component sizes based on screen type (Mobile / Tab
 | Mobile | 300px |
 | Tablet | 400px |
 | Desktop | 480px |
-| TV | 600px |
-
-### TV-Specific Sizes
-
-The TV platform uses dedicated constants defined in the `TvTheme` class:
-
-| Property | Value | Description |
-|------|-----|------|
-| Title font | 24sp | `fontSizeTitle` |
-| Body font | 20sp | `fontSizeBody` |
-| Caption font | 16sp | `fontSizeCaption` |
-| Focus border | 4px | `focusBorderWidth` |
-| Focus scale | 1.05x | `focusScale` |
-| Grid columns | 4 | `gridColumns` |
-| Content padding | 48px | `contentPadding` |
 
 ---
 
@@ -219,6 +202,5 @@ Songloft uses the `palette_generator` library to extract dominant colors from so
 - **2026-04-14**: Migrated to the Flutter Material 3 color system
   - Main frontend migrated to Flutter, using `ColorScheme.fromSeed` for automatic palette generation
   - seedColor: M3 Blue baseline (`#415F91`)
-  - Added responsive theme adaptation (Mobile / Tablet / Desktop / TV)
-  - Added TV-specific theme constants (`TvTheme`)
+  - Added responsive theme adaptation (Mobile / Tablet / Desktop)
   - Added cover color extraction feature

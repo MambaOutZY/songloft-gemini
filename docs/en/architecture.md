@@ -163,12 +163,12 @@ make build-frontend-all            # All platforms supported by the current syst
 
 1. **Consistent cross-platform experience**: A single codebase adapts to 6 platforms
 2. **Bundle Local Mode**: Embeds the Go backend, supporting local/remote dual-mode switching, allowing local music playback without a server
-3. **Four-form responsive layout**: Mobile / Tablet / Desktop / TV adaptive
+3. **Three-form responsive layout**: Mobile / Tablet / Desktop adaptive
 4. **Feature-First architecture**: Organized by feature module, each containing data / domain / presentation
 5. **Audio playback**: just_audio + audio_service, supporting notification-bar controls and background playback
 6. **Lyrics display**: LRC lyrics parsing and synchronized display
 7. **Cover color extraction**: Extracts the dominant color from the cover image for dynamic theming
-8. **TV support**: Focus navigation, D-pad support, large-size UI
+8. **TV client**: Recommend [songloft-tv](https://github.com/boluofan/songloft-tv)
 
 ## Database Design
 

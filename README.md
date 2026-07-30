@@ -183,6 +183,10 @@ Songloft 提供三种版本，满足不同使用场景：
 
 > 💡 使用 **精简版（-lite）** 服务端时，推荐直接搭配 Flutter 客户端使用（无需额外部署 Web 前端）；如确实需要独立 Web 前端，可参考 [songloft-player](https://github.com/songloft-org/songloft-player) 仓库的 `flutter build web` 流程自行构建并由 Nginx 等反向代理静态托管。
 
+### 📺 TV 客户端
+
+除 Flutter 客户端外，TV 端推荐使用专门的 **[songloft-tv](https://github.com/boluofan/songloft-tv)** 客户端，专为 Android TV 设计，支持遥控器操作。
+
 ### 📺 Kodi 插件
 
 除 Flutter 客户端外，Songloft 还提供官方 **Kodi 插件**，让你在 Kodi 媒体中心中直接播放 Songloft 音乐库。适合 **Xbox**、Apple TV、树莓派、Android TV 等支持 Kodi 的大屏设备，专为遥控器操作优化，带来流畅的客厅影音体验。

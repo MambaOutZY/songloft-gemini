@@ -256,9 +256,9 @@ A: Flutter 的 `secure_storage` 在 macOS 未签名沙盒环境下可能无法�
 
 A: 在客户端 **电台收藏** 歌单中点击添加按钮，输入电台流媒体地址（如 `.m3u`、`.pls` 或直接的音频流 URL）。网络歌曲可通过 JS 插件搜索添加到歌单中。目前不支持扫描本地 `.m3u` 文件自动导入电台。
 
-### Q: TV 端如何操作？
+### Q: TV 端如何使用？
 
-A: Songloft 支持 TV 端（屏幕宽度 ≥ 1920px），使用遥控器的方向键（D-pad）导航，焦点元素会有高亮边框和缩放效果。
+A: TV 端推荐使用专门的 [songloft-tv](https://github.com/boluofan/songloft-tv) 客户端，专为 Android TV 设计，支持遥控器操作。
 
 ## 升级与维护
 
