@@ -140,8 +140,16 @@ type JSService struct {
 	bridgeHandler *BridgeHandler          // 桥接处理器
 	status        ServiceStatus           // 运行状态
 	mu            sync.RWMutex
-	lastActive    time.Time     // 最后活跃时间
-	timerStop     chan struct{} // 定时器 goroutine 停止信号
+	lastActive    time.Time // 最后活跃时间
+
+	// 定时器 goroutine 的停止信号。用独立的 timerMu 而不是 s.mu 保护：s.mu 被
+	// HandleMessage / Load 等长操作持有，而 armTimerStop / stopTimerProcessor 只做
+	// 几行字段读写，独立小锁既避免锁嵌套死锁，也不会被长操作拖住。
+	// 不变式：timerStopped 为 true 时 timerStop 要么是 nil、要么已 close，
+	// 因此 close 只会发生一次，也永远不会对 nil channel close。
+	timerMu      sync.Mutex
+	timerStop    chan struct{} // nil = 还没有 goroutine 需要这个信号
+	timerStopped bool
 }
 
 // NewJSService 创建新的 JS 服务实例
@@ -318,9 +326,9 @@ func (s *JSService) Init() error {
 		return fmt.Errorf("onInit() failed: %w", err)
 	}
 
-	// 启动定时器处理 goroutine
-	s.timerStop = make(chan struct{})
-	go s.runTimerProcessor()
+	// 启动定时器处理 goroutine。停止信号按值传给 goroutine，让它只读自己的本地副本，
+	// 这样 Stop() 置位字段时不会与 goroutine 的 select 构成竞争。
+	go s.runTimerProcessor(s.armTimerStop())
 
 	slog.Info("JS plugin initialized", "plugin", s.plugin.EntryPath)
 	return nil
@@ -355,10 +363,7 @@ func (s *JSService) Stop() error {
 	s.mu.Unlock()
 
 	// 停止定时器 goroutine（在 Deinit 之前，避免 Deinit 期间定时器仍在跑）
-	if s.timerStop != nil {
-		close(s.timerStop)
-		s.timerStop = nil
-	}
+	s.stopTimerProcessor()
 
 	// 调用 deinit（忽略错误，确保后续清理继续）
 	_ = s.Deinit()
@@ -384,9 +389,44 @@ func (s *JSService) Stop() error {
 	return nil
 }
 
+// armTimerStop 取得（必要时创建）定时器 goroutine 的停止信号。
+// 单独抽出来是为了让 channel 在整个 service 生命周期内只有一个实例：多次 Init（生命周期
+// 消息可以重复投递）拿到的是同一个 channel，Stop() 一次 close 就能收掉所有 goroutine，
+// 不会像"每次 Init 重新 make"那样把先前的 goroutine 永久孤立。
+// 若 Stop() 已经先发生，这里返回一个立即可读的已关闭 channel，让新 goroutine 直接退出。
+func (s *JSService) armTimerStop() chan struct{} {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+
+	if s.timerStop == nil {
+		s.timerStop = make(chan struct{})
+		if s.timerStopped {
+			close(s.timerStop)
+		}
+	}
+	return s.timerStop
+}
+
+// stopTimerProcessor 关闭停止信号，通知定时器 goroutine 退出。
+// 幂等：Stop() 有提前返回分支、且 Manager.Close 与 UnloadPlugin 都可能走到这里，
+// 重复调用不能 panic；service 未 Init 过（如测试里直接构造的字面量）时 channel 为 nil，
+// 只置标记不 close。
+func (s *JSService) stopTimerProcessor() {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+
+	if s.timerStopped {
+		return
+	}
+	s.timerStopped = true
+	if s.timerStop != nil {
+		close(s.timerStop)
+	}
+}
+
 // runTimerProcessor 独立 goroutine，周期性处理 JS 定时器。
 // 使用 TryLock 确保不阻塞 HTTP 请求处理。
-func (s *JSService) runTimerProcessor() {
+func (s *JSService) runTimerProcessor(timerStop <-chan struct{}) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -400,7 +440,7 @@ func (s *JSService) runTimerProcessor() {
 				s.lastActive = time.Now()
 				s.mu.Unlock()
 			}
-		case <-s.timerStop:
+		case <-timerStop:
 			return
 		}
 	}
