@@ -122,8 +122,9 @@ func TestLoadPlugin_IdempotentAcrossStartupAndLazyLoad(t *testing.T) {
 	})
 
 	t.Run("ensure_loaded_does_not_deadlock", func(t *testing.T) {
-		// EnsureLoaded 自己就在 loadGroup.Do 内部，必须直连 doLoadPlugin；
-		// 若它改回调用带 singleflight 的 LoadPlugin，同 key 嵌套会自我死锁，本用例会超时。
+		// EnsureLoaded 在自己的 loadGroup.Do 内部调 LoadPlugin。只要 LoadPlugin 不套
+		// singleflight 就没问题；若给它加上同 group 同 key 的 singleflight，
+		// 这里会等自己完成从而死锁，本用例超时。
 		if err := manager.UnloadPlugin(ctx, entryPath); err != nil {
 			t.Fatalf("UnloadPlugin: %v", err)
 		}

@@ -267,26 +267,21 @@ func (m *Manager) loadPlugins(ctx context.Context, plugins []*JSPlugin) {
 	}
 }
 
-// LoadPlugin 加载单个插件。
+// LoadPlugin 加载单个插件。对「已加载」幂等。
 //
-// 所有外部调用方（启动期 loadPlugins、health 自愈/唤醒、热更新、Reload/Enable）都走这里，
-// 由 loadGroup 按 entryPath 串行且合并——「一个 entryPath 同时只能有一次加载」这个不变式
-// 以前没人守，导致启动期 loadPlugins 与 HTTP/音源触发的懒加载 EnsureLoaded 撞车，
-// 第二次 create env 报 "env jsplugin-xxx already exists"，还顺手把插件 DB 状态刷成 error，
-// 之后 health 自愈每轮都再撞一次、永不成功。
+// 「一个 entryPath 同时只能有一次加载」这个不变式以前没人守：启动期 loadPlugins 与
+// HTTP/音源触发的懒加载 EnsureLoaded 会撞车，第二次 create env 报
+// "env jsplugin-xxx already exists"，还顺手把插件 DB 状态刷成 error，
+// 之后 health 自愈每轮都再撞一次、永不成功。现在由 m.mu 串行 + 开头的幂等检查兜住：
+// 后到的那次看到 services map 里已有 service 就直接成功返回。
 //
-// 注意：EnsureLoaded 已经在 loadGroup.Do 内部，必须直连 doLoadPlugin，
-// 否则同 key 嵌套 singleflight 会自我死锁。
+// 刻意**不**在这里套 singleflight。EnsureLoaded 有它自己的 loadGroup，而两者的返回契约
+// 不同（EnsureLoaded 要返回 *JSService 并按 DB status 拒绝，LoadPlugin 只报成败且刻意
+// 不看 DB status——health 自愈依赖这一点）。共用同一个 group + 同一个 key 会让二者互相
+// 拿到对方的返回值：EnsureLoaded 的 follower 拿到 nil 后做类型断言直接 panic，
+// LoadPlugin 的 follower 则会拿到 ErrPluginDisabled 之类而误判失败。
+// 见 load_race_test.go。
 func (m *Manager) LoadPlugin(ctx context.Context, plugin *JSPlugin) error {
-	_, err, _ := m.loadGroup.Do(plugin.EntryPath, func() (any, error) {
-		return nil, m.doLoadPlugin(ctx, plugin)
-	})
-	return err
-}
-
-// doLoadPlugin 是 LoadPlugin 的实际实现，调用方须自行保证同 entryPath 不并发
-// （LoadPlugin 用 loadGroup、EnsureLoaded 用它自己那层 loadGroup）。
-func (m *Manager) doLoadPlugin(ctx context.Context, plugin *JSPlugin) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -542,10 +537,9 @@ func (m *Manager) EnsureLoaded(ctx context.Context, entryPath string) (*JSServic
 			return nil, ErrPluginErrorState
 		case JSPluginStatusActive:
 			// 期望路径：DB active 但未加载（idle eviction）→ 重新加载。
-			// 这里已经在 loadGroup.Do 内部，必须调 doLoadPlugin 而不是 LoadPlugin——
-			// 后者会对同一个 key 再进一次 singleflight，等自己完成从而死锁。
+			// LoadPlugin 自身不套 singleflight，所以这里在 loadGroup.Do 内部调它不会自我死锁。
 			start := time.Now()
-			if err := m.doLoadPlugin(ctx, plugin); err != nil {
+			if err := m.LoadPlugin(ctx, plugin); err != nil {
 				return nil, fmt.Errorf("lazy load plugin %q: %w", entryPath, err)
 			}
 			slog.Info("plugin lazy loaded on demand",
