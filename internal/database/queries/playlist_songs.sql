@@ -66,3 +66,8 @@ SELECT CAST(COALESCE(MAX(position), 0) AS INTEGER) FROM playlist_songs WHERE pla
 
 -- name: DeletePlaylistSongsByPlaylistID :exec
 DELETE FROM playlist_songs WHERE playlist_id = ?;
+
+-- name: ListPlaylistSongIDsOrdered :many
+SELECT song_id FROM playlist_songs
+WHERE playlist_id = ?
+ORDER BY position ASC;

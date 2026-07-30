@@ -490,6 +490,12 @@ Called by the client when a song starts playing, finishes playing, or is skipped
 |------|------|------|------|
 | `source` | string | No | Caller source identifier, e.g., `songloft-player` (official client), `miot` (Xiao AI speaker plugin) |
 | `type` | string | No | Event type: `play` (start playing) / `finish` (finished playing, default) / `skip` (user skipped) |
+| `context_type` | string | No | Playback context type, **only effective when `type=play`**: `playlist` or a facet dimension (`artist`/`album`/`genre`/`year`/`decade`/`language`/`style`) |
+| `context_key` | string | No | Playback context identifier, **only effective when `type=play`**: playlist ID for `playlist`, the dimension value (e.g. artist name) for facets |
+
+**Side effect:** when `type=play` and a valid `context_type` + `context_key` are both supplied, the song is additionally written to that context's play history (deduplicated by song within the context, keeping only the most recent 50 entries). A write failure is only logged and does not affect the status code. See [Play History API](播放历史%20API.md).
+
+> Only `type=play` is persisted: `finish` is redundant information about the same song, while `skip` reports the **previous** song, whose context may already have switched on the client, filing it under the wrong context.
 
 **Success response:** `204 No Content`
 

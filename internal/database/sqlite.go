@@ -93,6 +93,7 @@ func (s *SQLiteDB) RunInTx(ctx context.Context, fn func(context.Context, *UnitOf
 		Songs:         NewSongRepository(tx),
 		Playlists:     NewPlaylistRepository(tx),
 		PlaylistSongs: NewPlaylistSongRepository(tx),
+		PlayHistory:   NewPlayHistoryRepository(tx),
 	}
 	if err := fn(ctx, uow); err != nil {
 		_ = tx.Rollback()
@@ -129,6 +130,11 @@ func (s *SQLiteDB) PlaylistRepository() *PlaylistRepository {
 // PlaylistSongRepository 返回歌单-歌曲关联仓储
 func (s *SQLiteDB) PlaylistSongRepository() *PlaylistSongRepository {
 	return NewPlaylistSongRepository(s.db)
+}
+
+// PlayHistoryRepository 返回播放历史仓储
+func (s *SQLiteDB) PlayHistoryRepository() *PlayHistoryRepository {
+	return NewPlayHistoryRepository(s.db)
 }
 
 // PluginStorageRepository 返回插件持久化存储仓储

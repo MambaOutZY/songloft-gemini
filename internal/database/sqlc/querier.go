@@ -16,7 +16,10 @@ type Querier interface {
 	ClearAllCachePaths(ctx context.Context) error
 	ClearAllFingerprints(ctx context.Context) error
 	ClearCachePath(ctx context.Context, id int64) error
+	ClearPlayHistory(ctx context.Context, arg ClearPlayHistoryParams) (int64, error)
+	ClearPlayHistoryByPlaylist(ctx context.Context, contextKey string) (int64, error)
 	CountLocalFingerprints(ctx context.Context) (CountLocalFingerprintsRow, error)
+	CountPlayHistory(ctx context.Context, arg CountPlayHistoryParams) (int64, error)
 	CountPlaylistSongs(ctx context.Context, playlistID int64) (int64, error)
 	CountPlaylistsByCoverPath(ctx context.Context, coverPath string) (int64, error)
 	CountPlaylistsContainingSong(ctx context.Context, songID int64) (int64, error)
@@ -30,6 +33,7 @@ type Querier interface {
 	DeleteByCueSource(ctx context.Context, cueSourcePath string) (int64, error)
 	DeleteConfig(ctx context.Context, key string) (int64, error)
 	DeleteJSPlugin(ctx context.Context, id int64) error
+	DeletePlayHistoryEntry(ctx context.Context, arg DeletePlayHistoryEntryParams) (int64, error)
 	DeletePlaylist(ctx context.Context, id int64) (int64, error)
 	DeletePlaylistSongsByPlaylistID(ctx context.Context, playlistID int64) error
 	DeletePluginStorage(ctx context.Context, arg DeletePluginStorageParams) (int64, error)
@@ -60,6 +64,8 @@ type Querier interface {
 	ListJSPlugins(ctx context.Context) ([]JsPlugin, error)
 	ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsRow, error)
 	ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalWithoutFingerprintRow, error)
+	ListPlayHistory(ctx context.Context, arg ListPlayHistoryParams) ([]ListPlayHistoryRow, error)
+	ListPlaylistSongIDsOrdered(ctx context.Context, playlistID int64) ([]int64, error)
 	ListPlaylistsContainingSong(ctx context.Context, songID int64) ([]int64, error)
 	ListPluginStorageEntryPaths(ctx context.Context) ([]string, error)
 	ListPluginStorageKeys(ctx context.Context, pluginEntryPath string) ([]string, error)
@@ -68,12 +74,14 @@ type Querier interface {
 	ListSongsWithCache(ctx context.Context) ([]Song, error)
 	MarkFingerprintAttempted(ctx context.Context, arg MarkFingerprintAttemptedParams) error
 	MaxPositionInPlaylist(ctx context.Context, playlistID int64) (int64, error)
+	RecordPlay(ctx context.Context, arg RecordPlayParams) error
 	RemoveSongFromPlaylist(ctx context.Context, arg RemoveSongFromPlaylistParams) (int64, error)
 	ResetFailedFingerprintAttempts(ctx context.Context) error
 	RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64, error)
 	SetConfig(ctx context.Context, arg SetConfigParams) error
 	SetPluginStorage(ctx context.Context, arg SetPluginStorageParams) error
 	TouchPlaylist(ctx context.Context, arg TouchPlaylistParams) (int64, error)
+	TrimPlayHistory(ctx context.Context, arg TrimPlayHistoryParams) error
 	UpdateAutoCreatedPlaylistMeta(ctx context.Context, arg UpdateAutoCreatedPlaylistMetaParams) (int64, error)
 	UpdateCachePath(ctx context.Context, arg UpdateCachePathParams) error
 	UpdateJSPlugin(ctx context.Context, arg UpdateJSPluginParams) error

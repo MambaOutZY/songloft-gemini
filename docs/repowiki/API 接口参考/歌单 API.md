@@ -179,9 +179,22 @@
 
 **章节来源**: `internal/handlers/playlist.go`
 
+### GET /api/v1/playlists/{id}/song-ids
+
+返回歌单内全部歌曲 ID，顺序与 `GET /playlists/{id}/songs` 的默认顺序（`position` 升序）**严格一致**，不分页。形态与 `GET /songs/ids` 对齐。
+
+用途：客户端需要知道「某首歌在歌单里排第几」时（如从播放历史里的某首歌接着往下播），用本端点拿到有序 ID 数组后取下标，即可直接作为 `/playlists/{id}/songs` 的 `offset` 使用，避免为此拉取全部歌曲对象。
+
+- **认证**: Bearer Token
+- **路径参数**: `id`（int）
+- **200**: `{"ids": [1, 2, 3], "total": 3}`
+- **400**: 无效 ID | **500**: 服务器错误
+
 ### POST /api/v1/playlists/{id}/touch
 
-更新歌单的 `updated_at` 字段，记录最后播放时间。前端在播放歌单时调用，实现"最近播放"排序。
+更新歌单的 `updated_at` 字段，作为**歌单级的粗粒度**「最后播放时间」。前端在播放歌单时调用，实现"最近播放"排序。
+
+> 注意：`updated_at` 也会被改名 / 换封面等更新操作刷新，因此这个"最近播放"是被污染的。**歌曲级的精确播放历史**见 [播放历史 API](播放历史%20API.md)（`GET /play-history?context_type=playlist&context_key={id}`）。
 
 - **认证**: Bearer Token
 - **路径参数**: `id`（int）

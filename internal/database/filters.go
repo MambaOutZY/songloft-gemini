@@ -128,6 +128,13 @@ var (
 	}
 )
 
+// IsSongFacetField 判断给定字符串是否为受支持的歌曲分面维度。
+// 对外导出以便 models / handlers 复用同一份维度清单，避免各层各写一份枚举而漂移。
+func IsSongFacetField(field string) bool {
+	_, ok := songFacetColumn[field]
+	return ok
+}
+
 // facetBaseCond 返回某 facet 维度「取值非空」的基础过滤条件。
 // year/decade 用 year>0；文本维度用 <col> != ”。
 func facetBaseCond(field, col string) sq.Sqlizer {

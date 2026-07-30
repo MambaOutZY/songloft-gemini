@@ -490,6 +490,12 @@ dry-run 预览目录整理变更，**不移动任何文件、不改数据库**�
 |------|------|------|------|
 | `source` | string | 否 | 调用来源标识，如 `songloft-player`（官方客户端）、`miot`（小爱音箱插件） |
 | `type` | string | 否 | 事件类型：`play`（开始播放）/ `finish`（播放完成，默认）/ `skip`（用户跳过） |
+| `context_type` | string | 否 | 播放上下文类型，**仅 `type=play` 生效**：`playlist` 或分面维度（`artist`/`album`/`genre`/`year`/`decade`/`language`/`style`） |
+| `context_key` | string | 否 | 播放上下文标识，**仅 `type=play` 生效**：`playlist` 传歌单 ID，分面维度传该维度取值（如歌手名） |
+
+**副作用:** 当 `type=play` 且同时传入合法的 `context_type` + `context_key` 时，额外把该歌曲写入对应上下文的播放历史（同上下文内按歌曲去重，只保留最近 50 条）。落库失败只记日志，不影响响应码。详见 [播放历史 API](播放历史%20API.md)。
+
+> 只有 `type=play` 会落库：`finish` 是同一首歌的重复信息；`skip` 上报的是**上一首**歌，此时客户端上下文可能已切换，会记错归属。
 
 **成功响应:** `204 No Content`
 

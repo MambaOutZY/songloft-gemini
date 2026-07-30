@@ -18,6 +18,7 @@ type DB interface {
 	SongRepository() *SongRepository
 	PlaylistRepository() *PlaylistRepository
 	PlaylistSongRepository() *PlaylistSongRepository
+	PlayHistoryRepository() *PlayHistoryRepository
 	PluginStorageRepository() *PluginStorageRepository
 }
 

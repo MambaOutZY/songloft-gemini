@@ -648,6 +648,33 @@ definitions:
         example: Bearer
         type: string
     type: object
+  models.PlayHistoryEntry:
+    properties:
+      play_count:
+        description: 在该上下文内的累计播放次数
+        example: 3
+        type: integer
+      played_at:
+        description: 最后一次播放时间
+        example: "2024-01-01T12:00:00Z"
+        type: string
+      song:
+        allOf:
+        - $ref: '#/definitions/models.Song'
+        description: 歌曲详情
+    type: object
+  models.PlayHistoryListResponse:
+    properties:
+      items:
+        description: 播放记录，按最后播放时间倒序
+        items:
+          $ref: '#/definitions/models.PlayHistoryEntry'
+        type: array
+      total:
+        description: 本次返回的条数（上限 50，故与 items 长度一致）
+        example: 12
+        type: integer
+    type: object
   models.Playlist:
     properties:
       cover_url:
@@ -2751,6 +2778,151 @@ paths:
       summary: 导出后端日志
       tags:
       - 设置
+  /play-history:
+    delete:
+      description: 删除指定播放上下文内的全部播放记录，返回实际删除条数。上下文不存在或本就没有记录时返回 deleted=0，不视为错误。
+      parameters:
+      - description: 播放上下文类型
+        enum:
+        - playlist
+        - artist
+        - album
+        - genre
+        - year
+        - decade
+        - language
+        - style
+        in: query
+        name: context_type
+        required: true
+        type: string
+      - description: 播放上下文标识：playlist 传歌单 ID，分面维度传该维度取值
+        in: query
+        name: context_key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '成功返回 {deleted: 删除条数}'
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: context_type 不支持或缺少 context_key
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 清空播放上下文的播放历史
+      tags:
+      - 播放历史
+    get:
+      description: |-
+        返回指定播放上下文内最近播放过的歌曲，按最后播放时间倒序，含完整歌曲详情。
+        「播放上下文」由 context_type + context_key 二元组标识：歌单为 (playlist, 歌单 ID)，分面维度为 (artist, 歌手名) / (album, 专辑名) 等。
+        同一上下文内按歌曲去重（重复播放只刷新时间并累加 play_count），最多保留最近 50 条，因此本端点不分页。
+        记录由 POST /songs/{id}/played 在 type=play 时写入。歌曲从库中删除时其历史自动级联清理；歌曲仅被移出歌单时历史仍保留，客户端起播时自行判定失效。
+      parameters:
+      - description: 播放上下文类型
+        enum:
+        - playlist
+        - artist
+        - album
+        - genre
+        - year
+        - decade
+        - language
+        - style
+        in: query
+        name: context_type
+        required: true
+        type: string
+      - description: 播放上下文标识：playlist 传歌单 ID，分面维度传该维度取值
+        in: query
+        name: context_key
+        required: true
+        type: string
+      - description: 返回条数，缺省 50，上限 50
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功返回播放历史列表
+          schema:
+            $ref: '#/definitions/models.PlayHistoryListResponse'
+        "400":
+          description: context_type 不支持或缺少 context_key
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询播放上下文的播放历史
+      tags:
+      - 播放历史
+  /play-history/entry:
+    delete:
+      description: 从指定播放上下文中删除某首歌的播放记录。典型用途：清理已被移出歌单、在历史面板里显示为失效的条目。
+      parameters:
+      - description: 播放上下文类型
+        enum:
+        - playlist
+        - artist
+        - album
+        - genre
+        - year
+        - decade
+        - language
+        - style
+        in: query
+        name: context_type
+        required: true
+        type: string
+      - description: 播放上下文标识：playlist 传歌单 ID，分面维度传该维度取值
+        in: query
+        name: context_key
+        required: true
+        type: string
+      - description: 要删除的歌曲 ID
+        in: query
+        name: song_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: 删除成功，无内容
+        "400":
+          description: context_type 不支持、缺少 context_key 或无效的 song_id
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "404":
+          description: 该上下文中不存在此歌曲的播放记录
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: 服务器错误
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 删除单条播放历史
+      tags:
+      - 播放历史
   /playlists:
     get:
       consumes:
@@ -3029,6 +3201,43 @@ paths:
       summary: 上传歌单封面
       tags:
       - 歌单管理
+  /playlists/{id}/song-ids:
+    get:
+      description: |-
+        返回歌单内全部歌曲的 ID，顺序与 GET /playlists/{id}/songs 的默认顺序（position 升序）严格一致，不分页。
+        用途：客户端需要知道「某首歌在歌单里排第几」时（如从播放历史里的某首歌接着往下播），用本端点拿到有序 ID 数组后取下标，即可直接作为 /playlists/{id}/songs 的 offset 使用，避免为此拉取全部歌曲对象。
+        形态与 GET /songs/ids 对齐。
+      parameters:
+      - description: 歌单 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功返回 {ids:[1,2,3], total:3}
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 无效的歌单 ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取歌单歌曲 ID 列表
+      tags:
+      - 歌单管理
   /playlists/{id}/songs:
     get:
       consumes:
@@ -3229,7 +3438,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: 仅更新歌单的 updated_at 字段，用于记录最后播放时间
+      description: |-
+        仅更新歌单的 updated_at 字段，作为歌单级的粗粒度「最后播放时间」，也会被改名/换封面等更新操作刷新。
+        歌曲级的精确播放历史见 GET /play-history?context_type=playlist&context_key={id}。
       parameters:
       - description: 歌单ID
         in: path
@@ -5409,8 +5620,9 @@ paths:
       - 歌曲管理
   /songs/{id}/played:
     post:
-      description: 客户端在歌曲开始播放、播放完成或被跳过时调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent
-        注册）。source 参数标识调用来源，如 songloft-player（官方客户端）、miot（小爱音箱插件）等。type 参数标识事件类型：play（开始播放）、finish（播放完成）、skip（用户跳过）。
+      description: |-
+        客户端在歌曲开始播放、播放完成或被跳过时调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent 注册）。source 参数标识调用来源，如 songloft-player（官方客户端）、miot（小爱音箱插件）等。type 参数标识事件类型：play（开始播放）、finish（播放完成）、skip（用户跳过）。
+        副作用：当 type=play 且同时传入合法的 context_type + context_key 时，额外把该歌曲写入对应播放上下文的播放历史（见 GET /play-history），同一上下文内按歌曲去重、只保留最近 50 条。仅 type=play 会落库：finish 是同一首歌的重复信息，而 skip 上报的是上一首歌、此时上下文可能已切换，会记错归属。落库失败只记日志，不影响响应码。
       parameters:
       - description: 歌曲 ID
         in: path
@@ -5428,6 +5640,23 @@ paths:
         - skip
         in: query
         name: type
+        type: string
+      - description: 播放上下文类型，仅 type=play 时生效：playlist 或分面维度（artist/album/genre/year/decade/language/style）
+        enum:
+        - playlist
+        - artist
+        - album
+        - genre
+        - year
+        - decade
+        - language
+        - style
+        in: query
+        name: context_type
+        type: string
+      - description: 播放上下文标识，仅 type=play 时生效：playlist 传歌单 ID，分面维度传该维度取值（如歌手名）
+        in: query
+        name: context_key
         type: string
       produces:
       - application/json

@@ -2323,6 +2323,212 @@ const docTemplate = `{
                 }
             }
         },
+        "/play-history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回指定播放上下文内最近播放过的歌曲，按最后播放时间倒序，含完整歌曲详情。\n「播放上下文」由 context_type + context_key 二元组标识：歌单为 (playlist, 歌单 ID)，分面维度为 (artist, 歌手名) / (album, 专辑名) 等。\n同一上下文内按歌曲去重（重复播放只刷新时间并累加 play_count），最多保留最近 50 条，因此本端点不分页。\n记录由 POST /songs/{id}/played 在 type=play 时写入。歌曲从库中删除时其历史自动级联清理；歌曲仅被移出歌单时历史仍保留，客户端起播时自行判定失效。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放历史"
+                ],
+                "summary": "查询播放上下文的播放历史",
+                "parameters": [
+                    {
+                        "enum": [
+                            "playlist",
+                            "artist",
+                            "album",
+                            "genre",
+                            "year",
+                            "decade",
+                            "language",
+                            "style"
+                        ],
+                        "type": "string",
+                        "description": "播放上下文类型",
+                        "name": "context_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "播放上下文标识：playlist 传歌单 ID，分面维度传该维度取值",
+                        "name": "context_key",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回条数，缺省 50，上限 50",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功返回播放历史列表",
+                        "schema": {
+                            "$ref": "#/definitions/models.PlayHistoryListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "context_type 不支持或缺少 context_key",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除指定播放上下文内的全部播放记录，返回实际删除条数。上下文不存在或本就没有记录时返回 deleted=0，不视为错误。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放历史"
+                ],
+                "summary": "清空播放上下文的播放历史",
+                "parameters": [
+                    {
+                        "enum": [
+                            "playlist",
+                            "artist",
+                            "album",
+                            "genre",
+                            "year",
+                            "decade",
+                            "language",
+                            "style"
+                        ],
+                        "type": "string",
+                        "description": "播放上下文类型",
+                        "name": "context_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "播放上下文标识：playlist 传歌单 ID，分面维度传该维度取值",
+                        "name": "context_key",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功返回 {deleted: 删除条数}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "context_type 不支持或缺少 context_key",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/play-history/entry": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从指定播放上下文中删除某首歌的播放记录。典型用途：清理已被移出歌单、在历史面板里显示为失效的条目。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "播放历史"
+                ],
+                "summary": "删除单条播放历史",
+                "parameters": [
+                    {
+                        "enum": [
+                            "playlist",
+                            "artist",
+                            "album",
+                            "genre",
+                            "year",
+                            "decade",
+                            "language",
+                            "style"
+                        ],
+                        "type": "string",
+                        "description": "播放上下文类型",
+                        "name": "context_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "播放上下文标识：playlist 传歌单 ID，分面维度传该维度取值",
+                        "name": "context_key",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "要删除的歌曲 ID",
+                        "name": "song_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "删除成功，无内容"
+                    },
+                    "400": {
+                        "description": "context_type 不支持、缺少 context_key 或无效的 song_id",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "该上下文中不存在此歌曲的播放记录",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/playlists": {
             "get": {
                 "security": [
@@ -2965,6 +3171,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/playlists/{id}/song-ids": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回歌单内全部歌曲的 ID，顺序与 GET /playlists/{id}/songs 的默认顺序（position 升序）严格一致，不分页。\n用途：客户端需要知道「某首歌在歌单里排第几」时（如从播放历史里的某首歌接着往下播），用本端点拿到有序 ID 数组后取下标，即可直接作为 /playlists/{id}/songs 的 offset 使用，避免为此拉取全部歌曲对象。\n形态与 GET /songs/ids 对齐。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌单管理"
+                ],
+                "summary": "获取歌单歌曲 ID 列表",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌单 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功返回 {ids:[1,2,3], total:3}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "无效的歌单 ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/playlists/{id}/songs": {
             "get": {
                 "security": [
@@ -3273,7 +3532,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅更新歌单的 updated_at 字段，用于记录最后播放时间",
+                "description": "仅更新歌单的 updated_at 字段，作为歌单级的粗粒度「最后播放时间」，也会被改名/换封面等更新操作刷新。\n歌曲级的精确播放历史见 GET /play-history?context_type=playlist\u0026context_key={id}。",
                 "consumes": [
                     "application/json"
                 ],
@@ -7047,7 +7306,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "客户端在歌曲开始播放、播放完成或被跳过时调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent 注册）。source 参数标识调用来源，如 songloft-player（官方客户端）、miot（小爱音箱插件）等。type 参数标识事件类型：play（开始播放）、finish（播放完成）、skip（用户跳过）。",
+                "description": "客户端在歌曲开始播放、播放完成或被跳过时调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent 注册）。source 参数标识调用来源，如 songloft-player（官方客户端）、miot（小爱音箱插件）等。type 参数标识事件类型：play（开始播放）、finish（播放完成）、skip（用户跳过）。\n副作用：当 type=play 且同时传入合法的 context_type + context_key 时，额外把该歌曲写入对应播放上下文的播放历史（见 GET /play-history），同一上下文内按歌曲去重、只保留最近 50 条。仅 type=play 会落库：finish 是同一首歌的重复信息，而 skip 上报的是上一首歌、此时上下文可能已切换，会记错归属。落库失败只记日志，不影响响应码。",
                 "produces": [
                     "application/json"
                 ],
@@ -7078,6 +7337,28 @@ const docTemplate = `{
                         "type": "string",
                         "description": "事件类型：play、finish、skip，默认 finish",
                         "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "playlist",
+                            "artist",
+                            "album",
+                            "genre",
+                            "year",
+                            "decade",
+                            "language",
+                            "style"
+                        ],
+                        "type": "string",
+                        "description": "播放上下文类型，仅 type=play 时生效：playlist 或分面维度（artist/album/genre/year/decade/language/style）",
+                        "name": "context_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "播放上下文标识，仅 type=play 时生效：playlist 传歌单 ID，分面维度传该维度取值（如歌手名）",
+                        "name": "context_key",
                         "in": "query"
                     }
                 ],
@@ -8397,6 +8678,46 @@ const docTemplate = `{
                     "description": "Token 类型",
                     "type": "string",
                     "example": "Bearer"
+                }
+            }
+        },
+        "models.PlayHistoryEntry": {
+            "type": "object",
+            "properties": {
+                "play_count": {
+                    "description": "在该上下文内的累计播放次数",
+                    "type": "integer",
+                    "example": 3
+                },
+                "played_at": {
+                    "description": "最后一次播放时间",
+                    "type": "string",
+                    "example": "2024-01-01T12:00:00Z"
+                },
+                "song": {
+                    "description": "歌曲详情",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.Song"
+                        }
+                    ]
+                }
+            }
+        },
+        "models.PlayHistoryListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "播放记录，按最后播放时间倒序",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.PlayHistoryEntry"
+                    }
+                },
+                "total": {
+                    "description": "本次返回的条数（上限 50，故与 items 长度一致）",
+                    "type": "integer",
+                    "example": 12
                 }
             }
         },

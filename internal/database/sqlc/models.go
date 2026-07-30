@@ -54,6 +54,15 @@ type JsPlugin struct {
 	ExternalPaths  string
 }
 
+type PlayHistory struct {
+	ID          int64
+	ContextType string
+	ContextKey  string
+	SongID      int64
+	PlayedAt    time.Time
+	PlayCount   int64
+}
+
 type Playlist struct {
 	ID          int64
 	Type        string

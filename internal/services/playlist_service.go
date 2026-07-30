@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
 
 	"songloft/internal/database"
 	"songloft/internal/models"
@@ -34,6 +36,14 @@ type PlaylistSongRepository interface {
 	BatchUpdatePositions(ctx context.Context, playlistID int64, songIDs []int64) error
 	MaxPosition(ctx context.Context, playlistID int64) (int, error)
 	AddSongsBatch(ctx context.Context, playlistID int64, startPos int, songIDs []int64) (added int, skipped int, err error)
+	ListSongIDsOrdered(ctx context.Context, playlistID int64) ([]int64, error)
+}
+
+// PlayHistoryCleaner 在删除歌单时清理其播放历史。
+// play_history.context_key 是 TEXT，无法对 playlists 建外键做级联，故必须显式清理。
+// 可选依赖，nil 安全（未注入时只是残留少量垃圾行，歌单 ID 不会被 AUTOINCREMENT 复用，无正确性影响）。
+type PlayHistoryCleaner interface {
+	ClearByPlaylist(ctx context.Context, playlistID int64) (int, error)
 }
 
 // PlaylistService 歌单服务
@@ -42,6 +52,33 @@ type PlaylistService struct {
 	playlistSongs     PlaylistSongRepository
 	songs             SongRepository
 	metadataExtractor *MetadataExtractor
+	playHistory       PlayHistoryCleaner // 可选，nil 安全
+}
+
+// SetPlayHistoryCleaner 注入播放历史清理器，删除歌单时顺带清理其播放历史。
+func (s *PlaylistService) SetPlayHistoryCleaner(c PlayHistoryCleaner) {
+	s.playHistory = c
+}
+
+// clearPlayHistory 清理歌单的播放历史，失败只记日志：
+// 残留行不影响任何正确性（歌单 ID 由 AUTOINCREMENT 保证不复用），不值得让删除操作失败。
+func (s *PlaylistService) clearPlayHistory(ctx context.Context, playlistID int64) {
+	if s.playHistory == nil {
+		return
+	}
+	if _, err := s.playHistory.ClearByPlaylist(ctx, playlistID); err != nil {
+		slog.Warn("清理歌单播放历史失败", "playlist_id", playlistID, "error", err)
+	}
+}
+
+// SongIDsOrdered 返回歌单内全部歌曲 ID，顺序与分页查询歌单歌曲一致。
+// 供客户端定位「某首歌在歌单里排第几」用，避免为此拉取完整歌曲对象。
+func (s *PlaylistService) SongIDsOrdered(ctx context.Context, playlistID int64) ([]int64, error) {
+	ids, err := s.playlistSongs.ListSongIDsOrdered(ctx, playlistID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list playlist song ids: %w", err)
+	}
+	return ids, nil
 }
 
 // NewPlaylistService 创建歌单服务
@@ -132,6 +169,7 @@ func (s *PlaylistService) Delete(ctx context.Context, id int64) error {
 	if err := s.playlists.Delete(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete playlist: %w", err)
 	}
+	s.clearPlayHistory(ctx, id)
 
 	if playlist.CoverPath != "" {
 		removeCoverIfUnreferenced(ctx, s.songs, playlist.CoverPath)
@@ -147,23 +185,37 @@ func (s *PlaylistService) BatchDelete(ctx context.Context, ids []int64) (int, er
 
 	// 收集候选 cover_path（去重）。仓储层会跳过 built_in 歌单，
 	// 未被删除的歌单其 cover_path 行仍在表里，helper 的引用计数会自然保护它。
+	// 同时记下哪些 id 真会被删掉：播放历史没有外键级联，只能显式清理，
+	// 而 built_in 歌单（收藏 / 电台收藏）不会被删除，绝不能连带清空它们的历史。
 	coverPathSet := make(map[string]struct{})
+	deletableIDs := make([]int64, 0, len(ids))
 	for _, id := range ids {
 		playlist, err := s.playlists.GetByID(ctx, id)
 		if err != nil {
-			if errors.Is(err, database.ErrNotFound) {
-				continue
+			// 不存在是正常情况（调用方可能传了脏 id）；其余错误说明这一行读失败，
+			// 它仍会被下面的 BatchDelete 删掉，但我们无从判断该不该清它的播放历史，
+			// 于是留下一条残留行（无正确性影响，歌单 id 由 AUTOINCREMENT 保证不复用）。
+			if !errors.Is(err, database.ErrNotFound) {
+				slog.Warn("批量删除歌单：读取歌单失败，其播放历史可能残留",
+					"playlist_id", id, "error", err)
 			}
 			continue
 		}
 		if playlist.CoverPath != "" {
 			coverPathSet[playlist.CoverPath] = struct{}{}
 		}
+		if !slices.Contains(playlist.Labels, models.PlaylistLabelBuiltIn) {
+			deletableIDs = append(deletableIDs, id)
+		}
 	}
 
 	deleted, err := s.playlists.BatchDelete(ctx, ids)
 	if err != nil {
 		return 0, fmt.Errorf("failed to batch delete playlists: %w", err)
+	}
+
+	for _, id := range deletableIDs {
+		s.clearPlayHistory(ctx, id)
 	}
 
 	for coverPath := range coverPathSet {

@@ -431,6 +431,37 @@ func (r *SongRepository) ListIDs(ctx context.Context, filter *SongFilter) ([]int
 	return ids, nil
 }
 
+// ListByIDs 按主键批量拉取歌曲，返回顺序由 SQLite 决定（调用方需要特定顺序时自行重排）。
+// ids 为空时返回空切片而不查库。
+func (r *SongRepository) ListByIDs(ctx context.Context, ids []int64) ([]*models.Song, error) {
+	if len(ids) == 0 {
+		return []*models.Song{}, nil
+	}
+	sb := songSelectBuilder().Where(sq.Eq{"id": ids})
+	query, args, err := sb.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build list songs by ids sql: %w", err)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list songs by ids: %w", err)
+	}
+	defer rows.Close()
+
+	songs := make([]*models.Song, 0, len(ids))
+	for rows.Next() {
+		s, err := scanSongRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		songs = append(songs, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate songs by ids: %w", err)
+	}
+	return songs, nil
+}
+
 // Count 与 List 共享过滤条件，返回匹配行数。
 func (r *SongRepository) Count(ctx context.Context, filter *SongFilter) (int64, error) {
 	if filter == nil {

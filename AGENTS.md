@@ -76,6 +76,8 @@ cd songloft-player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
 - **错误语义** → 仓储未命中统一 `database.ErrNotFound`；service 用 `errors.Is` 判别
 - **测试** → `testutil.OpenMemoryDB(t)` 跑真实 `:memory:` + 真实 Repository；**禁止**手写 mockDB
 - **内置数据** → 迁移预置歌单 id=1「收藏」、id=2「电台收藏」（`labels=["built_in"]`），及 `music_path / jwt_secret / source_*` 默认 config。测试行数断言记得扣掉
+- **`queries/*.sql` 里 `-- name:` 之后不要写中文注释** → sqlc 会把 query 注释当 doc comment 按**字节**嵌进生成代码，中文被截断成非法 UTF-8，`make sqlc` 直接失败（`error generating code: illegal UTF-8 encoding`）。注释写在 Go 仓储方法上
+- **同表自引用子查询要给外层列限定表名** → `DELETE FROM t WHERE col = ? AND id NOT IN (SELECT x.id FROM t x ...)` 里外层裸 `col` 会被 sqlc 判为 `column reference is ambiguous`，写成 `t.col` 才过
 
 ---
 
@@ -391,6 +393,39 @@ curl -s -X POST http://127.0.0.1:3000/function \
   护栏刻意保守——漏报真重复比误报更不可接受，用户会照列表删文件
 - 迁移 `0029` 已把旧的全长指纹一次性清空（与 120 秒采样不可比），升级后需重算一次
 - `IsChromaprintAvailable` 走 `SetFingerprintFFmpegPath` 注入的 `ffmpeg_path` 配置，不再只查 PATH
+
+### 播放历史（play_history — 按播放上下文）
+
+每个「播放上下文」独立记住最近播放过的歌曲（songloft-org/songloft#333）。上下文 = `(context_type, context_key)`：
+歌单是 `("playlist", "<id>")`，分面维度是 `("artist", "周杰伦")` 这类，取值复用 `songFacetColumn` 的
+7 个维度，**不另立枚举**。改这块前先读完下面几条。
+
+- **序数不可靠，所以读端点不返回「第几首」**：分面列表走 `GET /songs?artist=X`，默认排序 `added_at DESC`，
+  而 `added_at` 是秒级 `DATETIME`、批量扫描在单事务里顺序 INSERT → 成百上千首歌 `added_at` **完全相同**；
+  `applyOrder`（`filters.go`）只产出单列 `ORDER BY`、**无 `id` tie-break**。据此算「第 N 首」在数学上不确定，
+  会起播到错的歌。**不要**为此去改 `applyOrder` 加 tie-break——那会动既有分页行为，属独立 issue
+- **`absIndex` 与分页 offset 的一致性依赖 SQLite planner**：`/songs/ids`（一次全排）与
+  `/songs?limit&offset`（可能走 bounded sorter）是两个查询，并列 `added_at` 下的相对顺序全靠
+  planner 恰好一致（实测 350 / 30000 首均一致）。真要收紧就得给 `applyOrder` 默认排序补 `, id DESC`
+  ——那会动所有 `/songs` 分页调用方，属独立 issue。同理 `ListSongIDsOrdered` 与 `GetPlaylistSongsPaginated`
+  都只按 `position ASC` 无次级键，仅在同歌单出现重复 position（并发 reorder 中断）时才会错位
+- **客户端起播 = 首曲直起 + 后台环形补齐**：历史条目自带完整 `Song`，先用它当队列**零请求**出声，
+  再后台拉有序 ID 列表（歌单 `GET /playlists/{id}/song-ids`、分面 `GET /songs/ids`）`indexOf` 定位，
+  依次补「目标之后」与回卷的「开头…目标之前」。`currentIndex` 全程为 0 不动，
+  不牵连随机模式的 `_playedIndices` / `_preSelectedNextIndex`；歌单与 7 个分面走同一条代码路径
+- **只有 `type=play` 落库**：写入挂在既有打点端点 `POST /songs/{id}/played` 的 `context_type`/`context_key`
+  参数上（不新开第二条打点通道，客户端零额外请求）。`finish` 是同一首歌的重复写；**`skip` 尤其危险**——
+  它上报的是**上一首**歌，此时客户端上下文可能已切到新歌单，会把上一首错记到新上下文名下。
+  前端对 skip/finish 不传 context，后端也只认 `play`，双重保险。落库失败只 `slog.Warn`，**响应码永远 204**
+- **上限 50 条，upsert + 裁剪同事务**：去重靠 `UNIQUE(context_type, context_key, song_id)` + `ON CONFLICT DO UPDATE`，
+  不在应用层查重。裁剪用 `id NOT IN (... ORDER BY played_at DESC, id DESC LIMIT ?)`——`played_at` 秒级会撞，
+  `id DESC` 做确定性 tie-break。`MaxPlayHistoryPerContext` 是 Go 常量，**不要**做成配置项
+- **`context_key` 是 TEXT，无法对 playlists 建外键**：删歌单靠 `PlaylistService.clearPlayHistory` 显式清理。
+  **批量删除时只能清理真正被删掉的歌单**——仓储层会跳过 `built_in`，若无脑遍历入参 ids 就会把「收藏」
+  的历史一并清空（实现时踩过，已由 `TestPlaylistDeleteClearsPlayHistory` 覆盖）
+- **`sourcePlaylistId` 不能改签名**：它是 JS 插件公开契约（`plugin_host_dispatch.dart` 导出 `source_playlist_id`）
+  且有 5 处「正在播放」高亮消费点。前端泛化成 `PlaybackContext` 时把它降级为**派生 getter**，
+  故上述消费点零改动。prefs 读兼容旧 `player_source_playlist_id`、写时双 key 并存，保证 Android 热更回滚安全
 
 ### HLS 电台代理模式（/settings/hls-proxy）
 

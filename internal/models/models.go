@@ -311,6 +311,24 @@ type Playlist struct {
 	UpdatedAt   time.Time `json:"updated_at" example:"2024-01-01T12:00:00Z"`            // 最后更新时间
 }
 
+// PlayContextPlaylist 是「歌单」这个播放上下文的类型标识。
+// 其余合法取值为歌曲分面维度（artist/album/genre/year/decade/language/style），
+// 由 database.IsSongFacetField 判定 —— 校验入口见 services.IsValidPlayContextType。
+const PlayContextPlaylist = "playlist"
+
+// PlayHistoryEntry 某播放上下文内的一条单曲播放历史。
+type PlayHistoryEntry struct {
+	Song      *Song     `json:"song"`                                     // 歌曲详情
+	PlayedAt  time.Time `json:"played_at" example:"2024-01-01T12:00:00Z"` // 最后一次播放时间
+	PlayCount int       `json:"play_count" example:"3"`                   // 在该上下文内的累计播放次数
+}
+
+// PlayHistoryListResponse 播放历史查询响应。
+type PlayHistoryListResponse struct {
+	Items []PlayHistoryEntry `json:"items"`              // 播放记录，按最后播放时间倒序
+	Total int                `json:"total" example:"12"` // 本次返回的条数（上限 50，故与 items 长度一致）
+}
+
 // Validate 验证歌单数据有效性（用于创建场景，需要校验 type）
 func (p *Playlist) Validate() error {
 	// 验证名称

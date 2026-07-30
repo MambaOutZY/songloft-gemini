@@ -179,9 +179,22 @@ Removes a song from a playlist.
 
 **Section source**: `internal/handlers/playlist.go`
 
+### GET /api/v1/playlists/{id}/song-ids
+
+Returns all song IDs in the playlist. The order is **strictly identical** to the default order of `GET /playlists/{id}/songs` (`position` ascending), and it is not paginated. The shape matches `GET /songs/ids`.
+
+Purpose: when a client needs to know "what position a song holds in the playlist" (e.g. to continue playing from a song in the play history), it fetches the ordered ID array from this endpoint and takes the index, which can be used directly as the `offset` for `/playlists/{id}/songs` -- avoiding the need to fetch every song object just for that.
+
+- **Authentication**: Bearer Token
+- **Path parameter**: `id` (int)
+- **200**: `{"ids": [1, 2, 3], "total": 3}`
+- **400**: Invalid ID | **500**: Server error
+
 ### POST /api/v1/playlists/{id}/touch
 
-Updates the playlist's `updated_at` field, recording the last played time. Called by the frontend when playing a playlist, to implement "recently played" sorting.
+Updates the playlist's `updated_at` field as a **playlist-level, coarse-grained** "last played time". Called by the frontend when playing a playlist, to implement "recently played" sorting.
+
+> Note: `updated_at` is also refreshed by updates such as renaming or changing the cover, so this "recently played" signal is polluted. For **precise, song-level play history**, see [Play History API](播放历史%20API.md) (`GET /play-history?context_type=playlist&context_key={id}`).
 
 - **Authentication**: Bearer Token
 - **Path parameter**: `id` (int)

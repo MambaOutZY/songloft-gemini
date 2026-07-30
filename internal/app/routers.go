@@ -55,7 +55,9 @@ func (a *App) setupAPIV1Router() {
 	songHandler.SetDownloadActivity(a.downloadActivity)
 	songHandler.SetConfigService(a.configService)
 	songHandler.SetURLResolver(a.urlResolver)
+	songHandler.SetPlayHistoryRecorder(a.playHistoryService)
 	playlistHandler := handlers.NewPlaylistHandler(a.playlistService, a.songService)
+	playHistoryHandler := handlers.NewPlayHistoryHandler(a.playHistoryService)
 	configHandler := handlers.NewConfigHandler(a.configService)
 	scanHandler := handlers.NewScanHandler(a.songService, a.scanner, a.configService)
 	fingerprintService := services.NewFingerprintService(a.db.SongRepository())
@@ -166,6 +168,7 @@ func (a *App) setupAPIV1Router() {
 
 			// 歌单内歌曲操作
 			r.Get("/playlists/{id}/songs", playlistHandler.GetPlaylistSongs)
+			r.Get("/playlists/{id}/song-ids", playlistHandler.GetPlaylistSongIDs)
 			r.Post("/playlists/{id}/songs", playlistHandler.AddSongToPlaylist)
 			r.Put("/playlists/{id}/songs/reorder", playlistHandler.ReorderPlaylistSongs)
 			r.Delete("/playlists/{id}/songs/{songId}", playlistHandler.RemoveSongFromPlaylist)
@@ -173,6 +176,11 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/playlists/{id}/touch", playlistHandler.TouchPlaylist)
 			r.Post("/playlists/{id}/cover", playlistHandler.UploadPlaylistCover)
 			r.Get("/playlists/{id}/cover", playlistHandler.GetPlaylistCover)
+
+			// 播放历史（按播放上下文：歌单 / 歌手 / 专辑 / 其余分面维度）
+			r.Get("/play-history", playHistoryHandler.GetPlayHistory)
+			r.Delete("/play-history", playHistoryHandler.ClearPlayHistory)
+			r.Delete("/play-history/entry", playHistoryHandler.DeletePlayHistoryEntry)
 
 			r.Get("/settings/hls-proxy", hlsHandler.GetProxySetting)
 			r.Put("/settings/hls-proxy", hlsHandler.UpdateProxySetting)

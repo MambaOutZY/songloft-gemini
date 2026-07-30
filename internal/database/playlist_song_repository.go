@@ -311,6 +311,20 @@ func replaceSongInPlaylistTx(ctx context.Context, q *sqlc.Queries, playlistID, o
 	return nil
 }
 
+// ListSongIDsOrdered 返回歌单内全部歌曲 ID，顺序与 GetPlaylistSongs 分页查询严格一致
+// （均为 position ASC）。客户端用它做「某首歌在歌单里排第几」的定位，因此这里
+// 不能额外加 tie-break 列，否则算出的下标当作分页 offset 用时会错位。
+func (r *PlaylistSongRepository) ListSongIDsOrdered(ctx context.Context, playlistID int64) ([]int64, error) {
+	ids, err := r.queries.ListPlaylistSongIDsOrdered(ctx, playlistID)
+	if err != nil {
+		return nil, fmt.Errorf("list playlist song ids: %w", err)
+	}
+	if ids == nil {
+		return []int64{}, nil
+	}
+	return ids, nil
+}
+
 func (r *PlaylistSongRepository) runInTx(ctx context.Context, fn func(*sqlc.Queries) error) error {
 	if sqlDB, ok := r.db.(*sql.DB); ok {
 		tx, err := sqlDB.BeginTx(ctx, nil)

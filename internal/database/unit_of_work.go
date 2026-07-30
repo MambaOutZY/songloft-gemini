@@ -7,4 +7,5 @@ type UnitOfWork struct {
 	Songs         *SongRepository
 	Playlists     *PlaylistRepository
 	PlaylistSongs *PlaylistSongRepository
+	PlayHistory   *PlayHistoryRepository
 }

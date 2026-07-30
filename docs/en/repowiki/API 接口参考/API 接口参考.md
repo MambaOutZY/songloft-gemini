@@ -19,12 +19,13 @@ This document is based on the following source files:
 3. [API Group Index](#3-api-group-index)
    - [Song Management](#31-song-management)
    - [Playlist Management](#32-playlist-management)
-   - [Authentication](#33-authentication)
-   - [Configuration and Settings](#34-configuration-and-settings)
-   - [Scan Management](#35-scan-management)
-   - [Cache Management](#36-cache-management)
-   - [Plugin Management](#37-plugin-management)
-   - [System Management](#38-system-management)
+   - [Play History](#33-play-history)
+   - [Authentication](#34-authentication)
+   - [Configuration and Settings](#35-configuration-and-settings)
+   - [Scan Management](#36-scan-management)
+   - [Cache Management](#37-cache-management)
+   - [Plugin Management](#38-plugin-management)
+   - [System Management](#39-system-management)
 
 ---
 
@@ -164,7 +165,17 @@ Covers: CRUD and batch operations (list/filter/add remote songs/radio/clean/batc
 
 Covers: CRUD and batch operations (list/create/update/delete/batch delete/reorder), playlist song management (add/reorder/remove/last played time), cover upload and retrieval, and data import/export (JSON format, with song deduplication matching).
 
-### 3.3 Authentication
+### 3.3 Play History
+
+> See [Play History API](播放历史%20API.md)
+
+| Prefix | Endpoints | Description |
+|------|--------|------|
+| `/api/v1/play-history` | 3 | Records and queries recently played songs per playback context (playlist / artist / album / other facet dimensions) |
+
+Covers: querying a context's play history (with full song details, capped at 50 entries, not paginated), clearing a context, and removing a single entry. Writing hooks into the `context_type` + `context_key` parameters of `POST /songs/{id}/played`; there is no dedicated write endpoint.
+
+### 3.4 Authentication
 
 > See [Authentication API](认证%20API.md) for details
 
@@ -174,7 +185,7 @@ Covers: CRUD and batch operations (list/create/update/delete/batch delete/reorde
 
 Covers: public endpoints (login to obtain a token pair, refresh token) and authorized endpoints (logout, list/view/revoke active tokens).
 
-### 3.4 Configuration and Settings
+### 3.5 Configuration and Settings
 
 > See [Configuration and Settings API](配置与设置%20API.md) for details
 
@@ -185,7 +196,7 @@ Covers: public endpoints (login to obtain a token pair, refresh token) and autho
 
 Covers: generic KV configuration CRUD (admin editor), 10 business settings (HLS proxy/music path/scan strategy/auto scan/log level/plugin registries/HTTP proxy/tab configuration). Business settings are strongly-typed JSON with built-in defaults, and PUT can trigger side effects.
 
-### 3.5 Scan Management
+### 3.6 Scan Management
 
 > See [Scan Management API](扫描管理%20API.md) for details
 
@@ -195,7 +206,7 @@ Covers: generic KV configuration CRUD (admin editor), 10 business settings (HLS 
 
 Covers: scan control (trigger/progress/cancel), directory browsing (directory tree/directory name list), and batch audio fingerprint computation (status/start/progress).
 
-### 3.6 Cache Management
+### 3.7 Cache Management
 
 > See [Cache Management API](缓存管理%20API.md) for details
 
@@ -205,7 +216,7 @@ Covers: scan control (trigger/progress/cancel), directory browsing (directory tr
 
 Covers: cache statistics and manual cleanup, reading/updating cache configuration (directory path, LRU limit), and pre-validating a cache directory (writability + disk space).
 
-### 3.7 Plugin Management
+### 3.8 Plugin Management
 
 > See [Plugin Management API](插件管理%20API.md) for details
 
@@ -218,7 +229,7 @@ Covers: cache statistics and manual cleanup, reading/updating cache configuratio
 
 Covers: lifecycle management (install/update/delete/enable/disable/check for updates/batch update), plugin registry refresh and installation, runtime routes (static page SPA fallback + QuickJS sandbox API forwarding + direct file access), and common resources (theme CSS/JS/fonts).
 
-### 3.8 System Management
+### 3.9 System Management
 
 > See [System Management API](系统管理%20API.md) for details
 

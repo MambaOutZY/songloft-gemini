@@ -76,6 +76,8 @@ Access stack: **goose migrations + sqlc fixed SQL + squirrel dynamic SQL + Repos
 - **Error semantics** → repository misses uniformly return `database.ErrNotFound`; services distinguish with `errors.Is`
 - **Testing** → use `testutil.OpenMemoryDB(t)` to run a real `:memory:` DB + real Repository; **do not** hand-write a mockDB
 - **Built-in data** → migrations preload playlists id=1 "Favorites" and id=2 "Radio Favorites" (`labels=["built_in"]`), plus default config for `music_path / jwt_secret / source_*`. Remember to subtract these when asserting row counts in tests
+- **Never write CJK comments after `-- name:` in `queries/*.sql`** → sqlc embeds query comments into generated code as doc comments **byte-wise**; multi-byte characters get truncated into invalid UTF-8 and `make sqlc` fails outright (`error generating code: illegal UTF-8 encoding`). Put such comments on the Go repository method instead
+- **Qualify outer columns in self-referencing subqueries** → in `DELETE FROM t WHERE col = ? AND id NOT IN (SELECT x.id FROM t x ...)`, a bare outer `col` is rejected by sqlc as `column reference is ambiguous`; write `t.col`
 
 ---
 
@@ -408,6 +410,52 @@ what happens when they are missing: "scan reports completed but the CPU stays pi
   after upgrading they need to be recomputed
 - `IsChromaprintAvailable` honors the `ffmpeg_path` config injected via `SetFingerprintFFmpegPath` instead of
   only searching PATH
+
+### Play history (play_history -- per playback context)
+
+Each "playback context" independently remembers the songs recently played in it (songloft-org/songloft#333).
+A context is `(context_type, context_key)`: playlists are `("playlist", "<id>")`, facet dimensions are
+`("artist", "Jay Chou")` and the like, reusing the 7 dimensions of `songFacetColumn` -- **no separate enum**.
+Read all of the following before touching this area.
+
+- **Ordinals are unreliable, so the read endpoint does not return "which track number"**: facet lists go through
+  `GET /songs?artist=X` with a default ordering of `added_at DESC`, but `added_at` is a second-precision
+  `DATETIME` and a bulk scan inserts sequentially in one transaction → hundreds or thousands of songs end up with
+  **identical** `added_at`; `applyOrder` (`filters.go`) emits a single-column `ORDER BY` with **no `id` tie-breaker**.
+  Computing "the Nth song" from that is mathematically indeterminate and would start the wrong song. **Do not**
+  add a tie-breaker to `applyOrder` for this -- that changes existing pagination behavior and is a separate issue
+- **`absIndex` matching the pagination offset relies on the SQLite planner**: `/songs/ids` (one full sort) and
+  `/songs?limit&offset` (may use a bounded sorter) are two different queries, and their relative order among tied
+  `added_at` values holds only because the planner happens to agree (verified consistent at 350 and 30000 songs).
+  Tightening this would require adding `, id DESC` to `applyOrder`'s default ordering -- which affects every `/songs`
+  pagination caller and is a separate issue. Likewise `ListSongIDsOrdered` and `GetPlaylistSongsPaginated` both order
+  by `position ASC` with no secondary key; they only diverge if a playlist ends up with duplicate positions
+  (e.g. an interrupted concurrent reorder)
+- **Client playback = play the first song immediately, fill circularly in the background**: the history entry carries
+  the full `Song`, so it becomes the queue and starts playing with **zero requests**; the background then fetches the
+  ordered ID list (`GET /playlists/{id}/song-ids` for playlists, `GET /songs/ids` for facets), locates it via
+  `indexOf`, and appends "everything after the target" followed by the wrapped "beginning…up to the target".
+  `currentIndex` stays 0 throughout, so random mode's `_playedIndices` / `_preSelectedNextIndex` are untouched;
+  playlists and all 7 facets share one code path
+- **Only `type=play` is persisted**: writing hooks into the `context_type`/`context_key` parameters of the existing
+  reporting endpoint `POST /songs/{id}/played` (no second reporting channel, zero extra client requests). `finish`
+  is a duplicate write for the same song; **`skip` is especially dangerous** -- it reports the **previous** song, and
+  by then the client's context may have switched to a new playlist, filing the previous song under the wrong context.
+  The frontend omits the context for skip/finish and the backend only accepts `play` -- a double safeguard. A write
+  failure only produces `slog.Warn`; **the status code is always 204**
+- **50-entry cap, upsert + trim in one transaction**: deduplication relies on `UNIQUE(context_type, context_key, song_id)`
+  plus `ON CONFLICT DO UPDATE`, not application-level lookups. The trim uses
+  `id NOT IN (... ORDER BY played_at DESC, id DESC LIMIT ?)` -- `played_at` collides at second precision, so `id DESC`
+  is the deterministic tie-breaker. `MaxPlayHistoryPerContext` is a Go constant; **do not** turn it into a config item
+- **`context_key` is TEXT, so no foreign key to playlists is possible**: playlist deletion relies on
+  `PlaylistService.clearPlayHistory` clearing it explicitly. **Batch deletion must only clear playlists that were
+  actually removed** -- the repository layer skips `built_in`, so blindly iterating the input ids would also wipe the
+  history of "Favorites" (hit during implementation; now covered by `TestPlaylistDeleteClearsPlayHistory`)
+- **`sourcePlaylistId` must keep its signature**: it is a public JS-plugin contract
+  (`plugin_host_dispatch.dart` exports `source_playlist_id`) and has 5 "now playing" highlight consumers. When the
+  frontend generalized to `PlaybackContext` it was demoted to a **derived getter**, so those consumers needed zero
+  changes. Prefs reads fall back to the legacy `player_source_playlist_id` and writes maintain both keys, keeping
+  Android hot-update rollback safe
 
 ### HLS radio proxy mode (/settings/hls-proxy)
 

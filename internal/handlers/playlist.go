@@ -242,9 +242,45 @@ func (h *PlaylistHandler) UpdatePlaylist(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, existing)
 }
 
+// GetPlaylistSongIDs 返回歌单内全部歌曲 ID（有序、不分页）
+// @Summary 获取歌单歌曲 ID 列表
+// @Description 返回歌单内全部歌曲的 ID，顺序与 GET /playlists/{id}/songs 的默认顺序（position 升序）严格一致，不分页。
+// @Description 用途：客户端需要知道「某首歌在歌单里排第几」时（如从播放历史里的某首歌接着往下播），用本端点拿到有序 ID 数组后取下标，即可直接作为 /playlists/{id}/songs 的 offset 使用，避免为此拉取全部歌曲对象。
+// @Description 形态与 GET /songs/ids 对齐。
+// @Tags 歌单管理
+// @Produce json
+// @Param id path int true "歌单 ID"
+// @Success 200 {object} map[string]any "成功返回 {ids:[1,2,3], total:3}"
+// @Failure 400 {object} map[string]string "无效的歌单 ID"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Security BearerAuth
+// @Router /playlists/{id}/song-ids [get]
+func (h *PlaylistHandler) GetPlaylistSongIDs(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "无效的歌单ID", err)
+		return
+	}
+
+	ids, err := h.playlistService.SongIDsOrdered(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取歌单歌曲 ID 列表失败", err)
+		return
+	}
+	if ids == nil {
+		ids = []int64{}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"ids":   ids,
+		"total": len(ids),
+	})
+}
+
 // TouchPlaylist 更新歌单的最后播放时间
 // @Summary 更新歌单最后播放时间
-// @Description 仅更新歌单的 updated_at 字段，用于记录最后播放时间
+// @Description 仅更新歌单的 updated_at 字段，作为歌单级的粗粒度「最后播放时间」，也会被改名/换封面等更新操作刷新。
+// @Description 歌曲级的精确播放历史见 GET /play-history?context_type=playlist&context_key={id}。
 // @Tags 歌单管理
 // @Accept json
 // @Produce json

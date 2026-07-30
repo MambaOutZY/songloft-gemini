@@ -42,6 +42,11 @@ type CoverSearcher interface {
 	SearchCover(ctx context.Context, title, artist, album string, fingerprint string, isrc string) (string, error)
 }
 
+// PlayHistoryRecorder 记录「某播放上下文内播了某首歌」（由 PlayHistoryService 实现）
+type PlayHistoryRecorder interface {
+	Record(ctx context.Context, contextType, contextKey string, songID int64, playedAt time.Time) error
+}
+
 // SongHandler 歌曲处理器
 type SongHandler struct {
 	songService       *services.SongService
@@ -52,6 +57,7 @@ type SongHandler struct {
 	playActivity      *playactivity.Registry // 跟踪进行中的 play/prefetch/transcode/reassign 工作，用户切歌时一次性 cancel
 	getMusicPath      func() string          // 获取 music_path（由 scanner.GetMusicPath 注入）
 	playBroadcaster   PlayEventBroadcaster   // JS 插件播放事件广播（可选，nil 安全）
+	playHistory       PlayHistoryRecorder    // 播放历史落库（可选，nil 安全）
 	lyricSearcher     LyricSearcher          // 歌词提供者搜索（可选，nil 安全）
 	coverSearcher     CoverSearcher          // 封面提供者搜索（可选，nil 安全）
 	metadataRefresher *services.MetadataRefresher
@@ -91,6 +97,11 @@ func (h *SongHandler) SetGetMusicPath(fn func() string) {
 // SetPlayBroadcaster 注入 JS 插件播放事件广播器。
 func (h *SongHandler) SetPlayBroadcaster(b PlayEventBroadcaster) {
 	h.playBroadcaster = b
+}
+
+// SetPlayHistoryRecorder 注入播放历史记录器。
+func (h *SongHandler) SetPlayHistoryRecorder(r PlayHistoryRecorder) {
+	h.playHistory = r
 }
 
 // SetLyricSearcher 注入歌词搜索器（由 JS 插件管理器实现）。
@@ -2287,11 +2298,14 @@ func (h *SongHandler) GetDuplicates(w http.ResponseWriter, r *http.Request) {
 // SongPlayed 通知歌曲播放事件
 // @Summary 通知歌曲播放事件
 // @Description 客户端在歌曲开始播放、播放完成或被跳过时调用此端点，后端将事件广播给已订阅播放事件的 JS 插件（通过 songloft.events.onPlayEvent 注册）。source 参数标识调用来源，如 songloft-player（官方客户端）、miot（小爱音箱插件）等。type 参数标识事件类型：play（开始播放）、finish（播放完成）、skip（用户跳过）。
+// @Description 副作用：当 type=play 且同时传入合法的 context_type + context_key 时，额外把该歌曲写入对应播放上下文的播放历史（见 GET /play-history），同一上下文内按歌曲去重、只保留最近 50 条。仅 type=play 会落库：finish 是同一首歌的重复信息，而 skip 上报的是上一首歌、此时上下文可能已切换，会记错归属。落库失败只记日志，不影响响应码。
 // @Tags 歌曲管理
 // @Produce json
 // @Param id path int true "歌曲 ID"
 // @Param source query string false "调用来源标识，如 songloft-player、miot"
 // @Param type query string false "事件类型：play、finish、skip，默认 finish" Enums(play, finish, skip)
+// @Param context_type query string false "播放上下文类型，仅 type=play 时生效：playlist 或分面维度（artist/album/genre/year/decade/language/style）" Enums(playlist, artist, album, genre, year, decade, language, style)
+// @Param context_key query string false "播放上下文标识，仅 type=play 时生效：playlist 传歌单 ID，分面维度传该维度取值（如歌手名）"
 // @Success 204 "无内容"
 // @Failure 400 {object} models.ErrorResponse "无效的歌曲 ID 或事件类型"
 // @Failure 404 {object} models.ErrorResponse "歌曲不存在"
@@ -2323,6 +2337,20 @@ func (h *SongHandler) SongPlayed(w http.ResponseWriter, r *http.Request) {
 	if h.playBroadcaster != nil {
 		source := r.URL.Query().Get("source")
 		go h.playBroadcaster.BroadcastPlayEvent(song.ID, song.Title, song.Artist, eventType, source)
+	}
+
+	// 播放历史只认 type=play：finish 是同一首歌的重复写入，而 skip 上报的是上一首歌，
+	// 此时客户端的播放上下文可能已经切换，会把上一首错记到新上下文名下。
+	// 同步执行（2 条 SQL，亚毫秒）——放进 goroutine 会让 r.Context() 提前取消。
+	if h.playHistory != nil && eventType == "play" {
+		contextType := r.URL.Query().Get("context_type")
+		contextKey := r.URL.Query().Get("context_key")
+		if contextType != "" && contextKey != "" {
+			if err := h.playHistory.Record(r.Context(), contextType, contextKey, song.ID, time.Now()); err != nil {
+				slog.Warn("记录播放历史失败",
+					"song_id", song.ID, "context_type", contextType, "context_key", contextKey, "error", err)
+			}
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
