@@ -221,6 +221,7 @@ type LocalPathInfo struct {
 	SongID        int64
 	Duration      float64
 	CueSourcePath string
+	LyricSource   string
 }
 
 // ListLocalPaths 返回所有本地歌曲的 file_path → LocalPathInfo 映射，用于扫描去重。
@@ -234,7 +235,7 @@ func (r *SongRepository) ListLocalPaths(ctx context.Context) (map[string]LocalPa
 		if row.CueSourcePath != "" {
 			continue
 		}
-		paths[row.FilePath] = LocalPathInfo{SongID: row.ID, Duration: row.Duration, CueSourcePath: row.CueSourcePath}
+		paths[row.FilePath] = LocalPathInfo{SongID: row.ID, Duration: row.Duration, CueSourcePath: row.CueSourcePath, LyricSource: row.LyricSource}
 	}
 	return paths, nil
 }

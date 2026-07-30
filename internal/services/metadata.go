@@ -19,6 +19,7 @@ import (
 	"github.com/hanxi/tag"
 
 	"songloft/internal/httputil"
+	"songloft/internal/models"
 )
 
 // MetadataConfig 元数据提取配置
@@ -189,7 +190,7 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 
 			if lyrics := tagMeta.Lyrics(); lyrics != "" {
 				metadata.Lyric = lyrics
-				metadata.LyricSource = "embedded"
+				metadata.LyricSource = models.LyricSourceEmbedded
 			}
 
 			metadata.ISRC = extractISRC(tagMeta.Raw())
@@ -269,7 +270,7 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 				if metadata.Lyric == "" {
 					if lyric := pickTag(tags, "lyrics", "LYRICS", "unsynced_lyrics"); lyric != "" {
 						metadata.Lyric = lyric
-						metadata.LyricSource = "embedded"
+						metadata.LyricSource = models.LyricSourceEmbedded
 					}
 				}
 				// 标签分类维度兜底（tag 库不支持的格式如 WMA/APE 走这里）
@@ -342,13 +343,9 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 	slog.Info("mergeTitle title", "fileName", fileName, "title", metadata.Title, "duration", metadata.Duration)
 
 	// 提取歌词（优先从 .lrc 文件覆盖内嵌歌词）
-	lrcFile, err := m.FindLyricFile(filePath)
-	if err == nil && lrcFile != "" {
-		lyricContent, err := m.ReadLyricFile(lrcFile)
-		if err == nil {
-			metadata.Lyric = lyricContent
-			metadata.LyricSource = "file"
-		}
+	if lrc := ReadSidecarLyric(filePath); lrc != "" {
+		metadata.Lyric = lrc
+		metadata.LyricSource = models.LyricSourceFile
 	}
 
 	return metadata, nil
@@ -774,28 +771,19 @@ func (m *MetadataExtractor) generateCoverPath(coverData []byte, ext string) stri
 	return filepath.Join(m.config.CoverStoragePath, dir1, dir2, filename)
 }
 
-// FindLyricFile 查找对应的歌词文件
+// FindLyricFile 查找对应的歌词文件（委托到 FindSidecarLyricFile）
 func (m *MetadataExtractor) FindLyricFile(audioFilePath string) (string, error) {
-	// 构建 .lrc 文件路径
-	ext := filepath.Ext(audioFilePath)
-	lrcPath := strings.TrimSuffix(audioFilePath, ext) + ".lrc"
-
-	// 检查文件是否存在
-	if _, err := os.Stat(lrcPath); err == nil {
-		return lrcPath, nil
-	}
-
-	return "", nil
+	p, _ := FindSidecarLyricFile(audioFilePath)
+	return p, nil
 }
 
-// ReadLyricFile 读取歌词文件内容
+// ReadLyricFile 读取歌词文件内容（委托到 ReadSidecarLyric 的底层解码）
 func (m *MetadataExtractor) ReadLyricFile(lrcPath string) (string, error) {
 	content, err := os.ReadFile(lrcPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read lyric file: %w", err)
 	}
-
-	return tag.FixEncoding(content), nil
+	return decodeBytes(content), nil
 }
 
 // IsFFProbeAvailable 检查 ffprobe 是否可用

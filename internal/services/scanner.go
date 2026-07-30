@@ -61,7 +61,8 @@ func (s *Scanner) ScanFiles(ctx context.Context, onProgress func(count int)) ([]
 // ScanResult 扫描结果
 type ScanResult struct {
 	AudioFiles []string
-	CueFiles   []string // .cue 文件绝对路径
+	CueFiles   []string            // .cue 文件绝对路径
+	LyricDirs  map[string]struct{} // 含 .lrc 文件的目录集合
 }
 
 // ScanFilesWithCue 扫描音频文件和 .cue 文件（整个音乐根目录）。
@@ -79,7 +80,7 @@ func (s *Scanner) ScanFilesWithCueInDirs(ctx context.Context, roots []string, on
 		roots = []string{s.config.MusicPath}
 	}
 
-	result := &ScanResult{}
+	result := &ScanResult{LyricDirs: make(map[string]struct{})}
 	visited := make(map[string]bool)
 
 	scanned := 0
@@ -154,6 +155,8 @@ func (s *Scanner) scanDirWithCue(ctx context.Context, dirPath string, visited ma
 				}
 			} else if strings.EqualFold(filepath.Ext(entryPath), ".cue") {
 				result.CueFiles = append(result.CueFiles, entryPath)
+			} else if strings.EqualFold(filepath.Ext(entryPath), ".lrc") {
+				result.LyricDirs[dirPath] = struct{}{}
 			}
 		}
 	}

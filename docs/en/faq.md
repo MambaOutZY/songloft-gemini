@@ -328,6 +328,17 @@ A:
 
 ---
 
+### Q: Local .lrc lyrics not showing / edited .lrc not taking effect?
+
+A:
+- Make sure the `.lrc` filename matches the audio file (e.g. `song.mp3` → `song.lrc`). Case variants (`.LRC`/`.Lrc`) and `song.mp3.lrc` forms are all supported.
+- A newly placed `.lrc` file takes effect on the **next scan** (no need to check "re-import").
+- For immediate effect, tap "Re-fetch lyrics" in the player page (the client clears its local cache and sends a `refresh` request).
+- If you've manually adjusted the timeline (`manual` lyrics), sidecar `.lrc` will NOT override your manual version — this is by design.
+- Empty (0-byte) `.lrc` files are not recognized as valid lyrics.
+
+---
+
 ## Getting Help
 
 - **GitHub Issues**: [https://github.com/songloft-org/songloft/issues](https://github.com/songloft-org/songloft/issues)

@@ -328,6 +328,17 @@ A:
 
 ---
 
+### Q: 本地 .lrc 歌词文件不显示 / 改了 .lrc 不生效怎么办？
+
+A:
+- 确认 `.lrc` 文件名与音频文件名一致（如 `song.mp3` 对应 `song.lrc`），大小写扩展名（`.LRC`/`.Lrc`）和 `song.mp3.lrc` 形式均已支持。
+- 后放的 `.lrc` 文件在**下次扫描**时自动生效（不需要勾选「重新导入」）。
+- 如需立刻生效，在播放页点「重新抓取歌词」（客户端会先清本地缓存再带 `refresh` 请求）。
+- 若曾手动调整过时间轴（`manual` 歌词），旁挂 `.lrc` 不会覆盖手调版本——这是设计行为。
+- 空文件（0 字节）的 `.lrc` 不会被识别为有效歌词。
+
+---
+
 ## 获取帮助
 
 - **GitHub Issues**: [https://github.com/songloft-org/songloft/issues](https://github.com/songloft-org/songloft/issues)

@@ -736,3 +736,51 @@ func TestScanFilesWithCueInDirs_SkipsMissingRootScansRest(t *testing.T) {
 		t.Errorf("expected a1.mp3 scanned from existing root, got %v", result.AudioFiles)
 	}
 }
+
+func TestScanFilesWithCue_LyricDirs(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create subdirs with and without lrc
+	withLrc := filepath.Join(dir, "with_lrc")
+	noLrc := filepath.Join(dir, "no_lrc")
+	os.MkdirAll(withLrc, 0755)
+	os.MkdirAll(noLrc, 0755)
+
+	os.WriteFile(filepath.Join(withLrc, "song.mp3"), []byte("fake"), 0644)
+	os.WriteFile(filepath.Join(withLrc, "song.lrc"), []byte("[00:01]hi"), 0644)
+	os.WriteFile(filepath.Join(withLrc, "other.LRC"), []byte("[00:02]hi"), 0644) // uppercase variant
+	os.WriteFile(filepath.Join(noLrc, "track.mp3"), []byte("fake"), 0644)
+
+	scanner := NewScanner(&ScanConfig{
+		MusicPath:        dir,
+		SupportedFormats: []string{"mp3"},
+	})
+
+	ctx := context.Background()
+	result, err := scanner.ScanFilesWithCue(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// withLrc dir should be in LyricDirs
+	if _, ok := result.LyricDirs[withLrc]; !ok {
+		t.Errorf("expected %q in LyricDirs, got %v", withLrc, result.LyricDirs)
+	}
+
+	// noLrc dir should NOT be in LyricDirs
+	if _, ok := result.LyricDirs[noLrc]; ok {
+		t.Errorf("expected %q NOT in LyricDirs", noLrc)
+	}
+
+	// lrc files should NOT be in AudioFiles
+	for _, f := range result.AudioFiles {
+		if filepath.Ext(f) == ".lrc" || filepath.Ext(f) == ".LRC" {
+			t.Errorf("lrc file %q should not be in AudioFiles", f)
+		}
+	}
+
+	// Should have exactly 2 audio files
+	if len(result.AudioFiles) != 2 {
+		t.Errorf("expected 2 audio files, got %d: %v", len(result.AudioFiles), result.AudioFiles)
+	}
+}

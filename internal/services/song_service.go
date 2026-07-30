@@ -467,7 +467,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 		}
 
 		info, exists := existingPaths[filePath]
-		if exists && !reimport && info.Duration > 0 {
+		if exists && !reimport && info.Duration > 0 && !needsSidecarLyricImport(info, filePath, scanResult.LyricDirs) {
 			s.scanProgressManager.UpdateProgress(filePath, ProgressUpdateSkipped)
 			continue
 		}
@@ -797,7 +797,7 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 				if r.metadata.Track != "" {
 					song.Track = r.metadata.Track
 				}
-				if song.LyricSource != models.LyricSourceManual {
+				if shouldApplyScanLyric(song, r.metadata.Lyric) {
 					models.ApplyLyricToSong(song, r.metadata.Lyric, r.metadata.LyricSource)
 				}
 				song.FileSize = r.fileSize
@@ -1129,6 +1129,24 @@ func (s *SongService) UpdateLyrics(ctx context.Context, id int64, lyric, lyricSo
 	}
 
 	return WriteSongTags(song.FilePath, song), nil
+}
+
+// SyncSidecarLyric writes sidecar .lrc content into DB without rewriting audio file tags.
+// Unlike UpdateLyrics, it does NOT call WriteSongTags — the .lrc file IS the persistent copy;
+// embedding it into the audio tag would leave a stale copy if the user later deletes the .lrc.
+// Idempotent: skips DB write if content and source already match.
+func (s *SongService) SyncSidecarLyric(ctx context.Context, id int64, lyricPayloadJSON string) error {
+	song, err := s.songs.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if song.LyricSource == models.LyricSourceManual {
+		return nil
+	}
+	if song.Lyric == lyricPayloadJSON && song.LyricSource == models.LyricSourceFile {
+		return nil
+	}
+	return s.songs.UpdateLyrics(ctx, id, lyricPayloadJSON, models.LyricSourceFile, "")
 }
 
 // UpdateSongDuration 按 song ID 回填时长（仅在原 duration 为 0 时生效）。

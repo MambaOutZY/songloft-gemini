@@ -347,6 +347,28 @@ curl -s -X POST http://127.0.0.1:3000/function \
   而 `ShouldExcludeDir` 是**按路径任一层级的目录名**匹配的，于是整个 `/tmp/...` 根目录被排除。
   表现是扫描「成功完成」但 `discovered_files=0`，**不报错、不打 warn**，极易误判为自己的改动坏了
 
+### 旁挂歌词（.lrc）
+
+- **匹配规则**（`FindSidecarLyricFile`）：`<base>.lrc` / `.LRC` / `.Lrc`，然后 `<含扩展名>.lrc` / `.LRC` / `.Lrc`。
+  前者优先。**禁止**改成 `ReadDir` + `EqualFold` 遍历（O(歌曲数×目录项数) 不可接受）。
+- **空文件视作未命中**：`st.Size()==0` 或目录同名均跳过。理由：防止空 lrc 把 `lyric_source` 打成 `file` +
+  `lyric=""` 而前端永不请求、插件也无法兜底的死角。
+- **编码处理**（`ReadSidecarLyric`）：UTF-16 LE/BE 按 BOM 识别 → `x/text/encoding/unicode` 解码；
+  其余走 `tag.FixEncoding`（GBK 系修正）。
+- **扫描跳过的三级短路**（`needsSidecarLyricImport`）：
+  ① `LyricSource ∈ {file, manual}` → false（无 IO）；
+  ② 目录不在 `ScanResult.LyricDirs` → false（内存 map）；
+  ③ 该歌曲对应的 lrc 确实存在 → true（最多 6 次 Stat）。
+  收敛性：命中后 `lyric_source=file` → 下一轮走 ① 短路。
+- **运行时优先级链**（`GetSongLyric` handler）：
+  sidecar .lrc > DB url > DB payload > 歌词搜索插件。`manual` 不被旁挂覆盖（`SidecarLyricForSong` 排除）。
+- **`SyncSidecarLyric` 不回写音频标签**：.lrc 本身就是持久化载体，嵌入标签后用户删 lrc 会留下删不掉的过期副本；
+  且 `WriteSongTags` 是重建模式会读写封面二进制，性能代价大。
+- **`shouldApplyScanLyric` 护栏**：`manual` 不覆盖；新歌词为空时不抹掉库中已有歌词/远程URL。
+  这是行为变更（以往重新导入可清空歌词），已写入 CHANGELOG。
+- **旁挂命中会整体替换**插件带来的翻译/罗马音（`tlyric`/`rlyric`/`lxlyric`），不做"主歌词用文件+翻译沿用插件"的合并——
+  两份歌词时间轴不同源，错位比没有翻译更糟。
+
 ### tag 写入（pkg/tag）
 
 - `tag.WriteTag(filePath, opts)` 按扩展名 dispatch，所有格式均使用临时文件 + `os.Rename` 原子写入

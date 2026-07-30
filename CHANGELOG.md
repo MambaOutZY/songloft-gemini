@@ -1,3 +1,13 @@
+## [Unreleased]
+### :bug: Bug Fixes
+- **lyric**: 本地 .lrc 歌词文件优先适配 — 支持大小写扩展名（`.LRC`/`.Lrc`）及 `<文件名>.lrc` 变体；
+  已入库歌曲旁后放 .lrc 下次扫描即生效；运行时 GET /lyric 旁挂优先于插件歌词；
+  0 字节 .lrc 不再导致前端无法请求歌词 *(fixes songloft-org/songloft#334)*
+
+### :warning: Breaking Changes
+- **lyric**: 扫描/重新导入时若读不到歌词，不再清空库中已有歌词（含插件 `scraped`、`url` 来源的
+  `lyric_remote_url`）。要清空歌词请使用 `PUT /api/v1/songs/{id}/lyrics` 接口。
+
 ## [v2.11.0] - 2026-07-22
 ### :sparkles: New Features
 - [`7dc4d92`](https://github.com/songloft-org/songloft/commit/7dc4d9288f024440da761bf9cca73a446a6894cc) - **jsplugin**: 为 JS 插件 SDK 增加 TCP Socket API *(PR [#276](https://github.com/songloft-org/songloft/pull/276) by [@hanxi](https://github.com/hanxi))*

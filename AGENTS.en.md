@@ -358,6 +358,30 @@ changed; after clicking "Stop computing", use `pgrep -x ffmpeg` to confirm the c
   the entire `/tmp/...` root gets excluded. The symptom is a scan that "completes successfully" with
   `discovered_files=0` — **no error, no warning** — easy to misread as your own change breaking things
 
+### Sidecar lyrics (.lrc)
+
+- **Matching rules** (`FindSidecarLyricFile`): `<base>.lrc` / `.LRC` / `.Lrc`, then `<full filename>.lrc` / `.LRC` / `.Lrc`.
+  The base variant wins. **Do NOT** switch to `ReadDir` + `EqualFold` traversal (O(songs × dir entries) is unacceptable).
+- **Empty files are treated as not found**: `st.Size()==0` or a same-named directory is skipped. Reason: prevents
+  an empty lrc from setting `lyric_source=file` + `lyric=""` which blocks frontend requests and plugin fallback.
+- **Encoding handling** (`ReadSidecarLyric`): UTF-16 LE/BE detected by BOM → decoded via `x/text/encoding/unicode`;
+  otherwise `tag.FixEncoding` (GBK fix).
+- **Three-level scan skip short-circuit** (`needsSidecarLyricImport`):
+  ① `LyricSource ∈ {file, manual}` → false (no IO);
+  ② directory not in `ScanResult.LyricDirs` → false (in-memory map);
+  ③ lrc file actually exists for this song → true (at most 6 Stats).
+  Convergence: once imported, `lyric_source=file` → next scan hits ① short-circuit.
+- **Runtime priority chain** (`GetSongLyric` handler):
+  sidecar .lrc > DB url > DB payload > lyric search plugin. `manual` is not overridden by sidecar
+  (`SidecarLyricForSong` excludes it).
+- **`SyncSidecarLyric` does not write back to audio tags**: the .lrc file IS the persistent copy; embedding
+  it into tags would leave a stale copy if the user deletes the .lrc. Also `WriteSongTags` is a full
+  rebuild mode that reads/writes cover binary — heavy for a GET request.
+- **`shouldApplyScanLyric` guard**: `manual` is never overwritten; empty new lyric does not wipe existing
+  DB lyric/remote URL. This is a behavior change (previously re-import could clear lyrics), documented in CHANGELOG.
+- **Sidecar hit replaces plugin translations** (`tlyric`/`rlyric`/`lxlyric`) entirely — no "main lyric from
+  file + translation from plugin" merging because misaligned timelines are worse than missing translation.
+
 ### Tag writing (pkg/tag)
 
 - `tag.WriteTag(filePath, opts)` dispatches by file extension; all formats write atomically with a temp file + `os.Rename`

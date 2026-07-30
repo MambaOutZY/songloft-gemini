@@ -1945,7 +1945,7 @@ func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, so
 //	  - url:走 LyricFetcher 解包插件返回的 envelope,取出 data
 //
 // @Summary 获取歌曲歌词
-// @Description 根据 song.ID 返回 LyricPayload JSON，含 lyric/tlyric/rlyric/lxlyric。传 refresh=1 时强制重新抓取：跳过库中自动获取的旧歌词(空/scraped/cached)重跑歌词搜索插件，响应挂 no-store 不缓存；file/embedded/manual 等权威歌词不被覆盖。
+// @Description 根据 song.ID 返回 LyricPayload JSON，含 lyric/tlyric/rlyric/lxlyric。优先级：旁挂 .lrc 文件 > DB url > DB payload > 歌词搜索插件。manual 歌词不被旁挂覆盖。传 refresh=1 时强制重新抓取：跳过库中自动获取的旧歌词(空/scraped/cached)重跑歌词搜索插件，响应挂 no-store 不缓存；file/embedded/manual 等权威歌词不被覆盖。
 // @Tags 歌曲管理
 // @Produce json
 // @Param id path int true "歌曲 ID"
@@ -1979,7 +1979,20 @@ func (h *SongHandler) GetSongLyric(w http.ResponseWriter, r *http.Request) {
 		song.LyricSource == models.LyricSourceManual
 
 	var payload models.LyricPayload
-	if song.LyricSource == models.LyricSourceURL {
+	var sidecarHit bool
+
+	// Sidecar .lrc file takes priority over all DB sources (except manual).
+	if sidecar := services.SidecarLyricForSong(song); sidecar != "" {
+		sidecarHit = true
+		payload = models.LyricPayloadFromLRC(sidecar)
+		if m := payload.MarshalString(); m != song.Lyric || song.LyricSource != models.LyricSourceFile {
+			go func() {
+				if err := h.songService.SyncSidecarLyric(context.Background(), song.ID, m); err != nil {
+					slog.Warn("SyncSidecarLyric failed", "songId", song.ID, "error", err)
+				}
+			}()
+		}
+	} else if song.LyricSource == models.LyricSourceURL {
 		if song.LyricRemoteURL != "" && h.lyricFetcher != nil {
 			p, err := h.lyricFetcher.Fetch(ctx, song.LyricRemoteURL)
 			if err != nil {
@@ -2016,7 +2029,11 @@ func (h *SongHandler) GetSongLyric(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !refresh {
-		w.Header().Set("Cache-Control", "public, max-age=31536000")
+		if sidecarHit {
+			w.Header().Set("Cache-Control", "public, max-age=600")
+		} else {
+			w.Header().Set("Cache-Control", "public, max-age=31536000")
+		}
 	}
 	respondJSON(w, http.StatusOK, payload)
 }
