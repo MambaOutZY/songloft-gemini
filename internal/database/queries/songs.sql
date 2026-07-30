@@ -155,13 +155,16 @@ SELECT id, type, title, artist, album, duration, file_path, url,
 FROM songs WHERE cache_path != '';
 
 -- name: ListSongsNeedingMetadata :many
-SELECT id, plugin_entry_path, source_data, url,
+SELECT id, type, file_path, cache_path,
     title, artist, album, duration,
     bit_rate, sample_rate, format, cover_path, cover_url
 FROM songs
-WHERE type = 'remote' AND (
+WHERE (
     duration = 0 OR duration IS NULL
     OR bit_rate = 0 OR sample_rate = 0 OR format = ''
+) AND (
+    (type = 'local' AND file_path != '' AND cue_source_path = '')
+    OR (type = 'remote' AND cache_path != '')
 );
 
 -- name: UpdateSongMetadata :exec

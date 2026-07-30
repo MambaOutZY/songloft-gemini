@@ -6199,14 +6199,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "对所有元数据缺失的远程歌曲，通过 ffprobe 探测时长、比特率、采样率、格式及标签并回填。已在运行时返回 409。",
+                "description": "对所有元数据缺失且本地有文件的歌曲（本地歌曲及已缓存的网络歌曲）从文件提取时长、比特率、采样率、格式及标签并回填。未缓存的网络歌曲不参与，其元数据在播放缓存落盘后自动回填。已在运行时返回 409。",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "歌曲管理"
                 ],
-                "summary": "刷新远程歌曲元数据",
+                "summary": "刷新歌曲元数据",
                 "responses": {
                     "202": {
                         "description": "已启动",

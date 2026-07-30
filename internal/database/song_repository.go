@@ -1120,7 +1120,7 @@ func boolToInt64(b bool) int64 {
 	return 0
 }
 
-// ListSongsNeedingMetadata 返回所有元数据缺失的远程歌曲（用于批量元数据探测）。
+// ListSongsNeedingMetadata 返回本地有文件且元数据缺失的歌曲（本地歌曲或已缓存的网络歌曲，用于批量本地提取）。
 func (r *SongRepository) ListSongsNeedingMetadata(ctx context.Context) ([]sqlc.ListSongsNeedingMetadataRow, error) {
 	return r.queries.ListSongsNeedingMetadata(ctx)
 }

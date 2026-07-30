@@ -558,30 +558,33 @@ func (q *Queries) ListSongsByFingerprint(ctx context.Context, fingerprint string
 }
 
 const listSongsNeedingMetadata = `-- name: ListSongsNeedingMetadata :many
-SELECT id, plugin_entry_path, source_data, url,
+SELECT id, type, file_path, cache_path,
     title, artist, album, duration,
     bit_rate, sample_rate, format, cover_path, cover_url
 FROM songs
-WHERE type = 'remote' AND (
+WHERE (
     duration = 0 OR duration IS NULL
     OR bit_rate = 0 OR sample_rate = 0 OR format = ''
+) AND (
+    (type = 'local' AND file_path != '' AND cue_source_path = '')
+    OR (type = 'remote' AND cache_path != '')
 )
 `
 
 type ListSongsNeedingMetadataRow struct {
-	ID              int64
-	PluginEntryPath string
-	SourceData      string
-	Url             string
-	Title           string
-	Artist          string
-	Album           string
-	Duration        float64
-	BitRate         int64
-	SampleRate      int64
-	Format          string
-	CoverPath       string
-	CoverUrl        string
+	ID         int64
+	Type       string
+	FilePath   string
+	CachePath  string
+	Title      string
+	Artist     string
+	Album      string
+	Duration   float64
+	BitRate    int64
+	SampleRate int64
+	Format     string
+	CoverPath  string
+	CoverUrl   string
 }
 
 func (q *Queries) ListSongsNeedingMetadata(ctx context.Context) ([]ListSongsNeedingMetadataRow, error) {
@@ -595,9 +598,9 @@ func (q *Queries) ListSongsNeedingMetadata(ctx context.Context) ([]ListSongsNeed
 		var i ListSongsNeedingMetadataRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.PluginEntryPath,
-			&i.SourceData,
-			&i.Url,
+			&i.Type,
+			&i.FilePath,
+			&i.CachePath,
 			&i.Title,
 			&i.Artist,
 			&i.Album,

@@ -162,63 +162,54 @@ func (d *MetadataRefresher) run(ctx context.Context) {
 }
 
 func (d *MetadataRefresher) processOne(ctx context.Context, row sqlc.ListSongsNeedingMetadataRow) {
-	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	extractCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	url := row.Url
-	if row.PluginEntryPath != "" && row.SourceData != "" {
-		song := &models.Song{
-			ID:              row.ID,
-			PluginEntryPath: row.PluginEntryPath,
-			SourceData:      row.SourceData,
-			URL:             row.Url,
-		}
-		resolved, err := d.resolveURL(probeCtx, song)
-		if err != nil {
-			slog.Debug("metadata refresh: resolve url failed", "songId", row.ID, "error", err)
-			d.incFailed()
-			return
-		}
-		url = resolved
+	// 只处理本地有文件的歌曲：本地歌曲用 file_path，网络歌曲用已落地的 cache_path。
+	// 未缓存的网络歌曲不参与批量刷新（播放缓存落盘后由 RefreshSongFromFile 自动回填），
+	// 避免批量触发插件 URL 解析（可能整批挂死在上游超时上）。
+	filePath := row.FilePath
+	if row.Type == models.TypeRemote {
+		filePath = row.CachePath
 	}
 
-	if url == "" {
-		d.incFailed()
-		return
-	}
-
-	probe, err := d.extractor.ProbeMetadataFromURL(probeCtx, url)
+	metadata, err := d.extractor.Extract(extractCtx, filePath)
 	if err != nil {
-		slog.Debug("metadata refresh: probe failed", "songId", row.ID, "error", err)
+		slog.Warn("metadata refresh: extract failed", "songId", row.ID, "filePath", filePath, "error", err)
 		d.incFailed()
 		return
 	}
 
-	// 封面处理：tag 库已在 ProbeMetadataFromURL 内提取，此处用 ffmpeg 兜底
-	coverPath := probe.CoverPath
-	if coverPath == "" && row.CoverPath == "" && row.CoverUrl == "" {
-		if cp, err := d.extractor.ExtractCoverFromURL(probeCtx, url); err == nil {
+	title := metadata.Title
+	if row.Type == models.TypeRemote {
+		// 缓存文件名是 `{songID}.{plugin_entry_path}_{dedup_key}`，不是真实歌名
+		title = dropFilenameFallbackTitle(title, filePath)
+	}
+
+	coverPath := ""
+	if metadata.HasCover && row.CoverPath == "" && row.CoverUrl == "" {
+		if cp, err := d.extractor.SaveCover(row.ID, metadata); err == nil {
 			coverPath = cp
 		} else {
-			slog.Debug("metadata refresh: cover extraction skipped", "songId", row.ID, "error", err)
+			slog.Debug("metadata refresh: save cover failed", "songId", row.ID, "error", err)
 		}
 	}
 
 	if err := d.updateMeta(ctx, sqlc.UpdateSongMetadataParams{
-		Column1:    probe.Duration,
-		Duration:   probe.Duration,
-		Column3:    int64(probe.BitRate),
-		BitRate:    int64(probe.BitRate),
-		Column5:    int64(probe.SampleRate),
-		SampleRate: int64(probe.SampleRate),
-		Column7:    probe.Format,
-		Format:     probe.Format,
-		Column9:    probe.Title,
-		Title:      probe.Title,
-		Column11:   probe.Artist,
-		Artist:     probe.Artist,
-		Column13:   probe.Album,
-		Album:      probe.Album,
+		Column1:    metadata.Duration,
+		Duration:   metadata.Duration,
+		Column3:    int64(metadata.BitRate),
+		BitRate:    int64(metadata.BitRate),
+		Column5:    int64(metadata.SampleRate),
+		SampleRate: int64(metadata.SampleRate),
+		Column7:    metadata.Format,
+		Format:     metadata.Format,
+		Column9:    title,
+		Title:      title,
+		Column11:   metadata.Artist,
+		Artist:     metadata.Artist,
+		Column13:   metadata.Album,
+		Album:      metadata.Album,
 		Column15:   coverPath,
 		CoverPath:  coverPath,
 		ID:         row.ID,
@@ -228,18 +219,20 @@ func (d *MetadataRefresher) processOne(ctx context.Context, row sqlc.ListSongsNe
 		return
 	}
 
-	if d.updateTags != nil && (probe.Artist != "" || probe.Album != "" || (d.shouldOverrideTitle() && probe.Title != "")) {
+	// tag 覆盖只针对网络歌曲；本地歌曲扫描时已提取过标签，这里仅填空缺（updateMeta 已完成）
+	if row.Type == models.TypeRemote && d.updateTags != nil &&
+		(metadata.Artist != "" || metadata.Album != "" || (d.shouldOverrideTitle() && title != "")) {
 		tagTitle := ""
 		if d.shouldOverrideTitle() {
-			tagTitle = probe.Title
+			tagTitle = title
 		}
 		if err := d.updateTags(ctx, sqlc.UpdateSongTagFieldsParams{
 			Column1: tagTitle,
 			Title:   tagTitle,
-			Column3: probe.Artist,
-			Artist:  probe.Artist,
-			Column5: probe.Album,
-			Album:   probe.Album,
+			Column3: metadata.Artist,
+			Artist:  metadata.Artist,
+			Column5: metadata.Album,
+			Album:   metadata.Album,
 			ID:      row.ID,
 		}); err != nil {
 			slog.Warn("metadata refresh: update tag fields failed", "songId", row.ID, "error", err)
