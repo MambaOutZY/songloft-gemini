@@ -376,7 +376,7 @@ func (h *JSPluginHandler) handleRegistryInstall(w http.ResponseWriter, r *http.R
 
 	if zipData == nil {
 		downloadURL := req.DownloadURL
-		if req.GithubProxy != "" {
+		if req.GithubProxy != "" && jsplugin.IsGitHubURL(downloadURL) {
 			proxyPrefix := req.GithubProxy
 			if proxyPrefix[len(proxyPrefix)-1] != '/' {
 				proxyPrefix += "/"

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -428,15 +429,32 @@ func (pm *PackageManager) syncManifestMetadata(ctx context.Context, existing *JS
 	}
 }
 
-// applyProxy 将代理前缀应用到 URL 上，与 handlers.applyGithubProxy 行为一致。
+// applyProxy 将 GitHub 代理前缀应用到 URL 上。
+// 仅对 GitHub 相关域名生效，非 GitHub URL 原样返回。
 func applyProxy(rawURL, proxyPrefix string) string {
 	if proxyPrefix == "" {
+		return rawURL
+	}
+	if !IsGitHubURL(rawURL) {
 		return rawURL
 	}
 	if proxyPrefix[len(proxyPrefix)-1] != '/' {
 		proxyPrefix += "/"
 	}
 	return proxyPrefix + rawURL
+}
+
+// IsGitHubURL 判断 URL 是否为 GitHub 相关域名。
+func IsGitHubURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Host)
+	return host == "github.com" ||
+		host == "raw.githubusercontent.com" ||
+		host == "objects.githubusercontent.com" ||
+		strings.HasSuffix(host, ".github.io")
 }
 
 // CheckUpdate 检查远程更新（通过 plugin.json 中的 update_url 或 download_url）。
