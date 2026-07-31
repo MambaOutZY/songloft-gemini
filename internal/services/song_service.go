@@ -53,6 +53,7 @@ type SongRepository interface {
 	ListDuplicateGroups(ctx context.Context) ([]database.DuplicateGroup, error)
 	ListFacet(ctx context.Context, field string, f *database.FacetFilter) ([]database.Facet, error)
 	CountFacet(ctx context.Context, field, keyword string) (int64, error)
+	ListDistinctNames(ctx context.Context, field string) ([]string, error)
 }
 
 // Transactor 提供 UnitOfWork 事务执行入口，
@@ -335,6 +336,19 @@ func (s *SongService) CountFacet(ctx context.Context, field, keyword string) (in
 		return 0, fmt.Errorf("failed to count facet %q: %w", field, err)
 	}
 	return total, nil
+}
+
+// ListDistinctNames 返回某维度（title/artist）下曲库全部去重、非空取值。
+// field 支持 title/artist；未知 field 返回 database.ErrNotFound。
+func (s *SongService) ListDistinctNames(ctx context.Context, field string) ([]string, error) {
+	names, err := s.songs.ListDistinctNames(ctx, field)
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("failed to list distinct names %q: %w", field, err)
+	}
+	return names, nil
 }
 
 // Search 搜索歌曲

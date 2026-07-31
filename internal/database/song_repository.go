@@ -1082,6 +1082,44 @@ func (r *SongRepository) CountFacet(ctx context.Context, field, keyword string) 
 	return n, nil
 }
 
+// ListDistinctNames 返回某维度（title/artist）下曲库全部去重、非空取值，按取值升序。
+// 不分页、不带计数与封面，供第三方客户端一次性拉取曲库歌名/歌手名做本地搜索匹配。
+// 未知 field 返回 ErrNotFound，交由 handler 转 400。
+func (r *SongRepository) ListDistinctNames(ctx context.Context, field string) ([]string, error) {
+	col, ok := songNameColumn[field]
+	if !ok {
+		return nil, ErrNotFound
+	}
+
+	sb := sq.Select("DISTINCT " + col).
+		From("songs").
+		Where(sq.NotEq{col: ""}).
+		OrderBy(col + " ASC")
+
+	query, args, err := sb.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build distinct %s sql: %w", field, err)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("distinct %s: %w", field, err)
+	}
+	defer rows.Close()
+
+	out := []string{}
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, fmt.Errorf("scan distinct %s: %w", field, err)
+		}
+		out = append(out, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate distinct %s: %w", field, err)
+	}
+	return out, nil
+}
+
 // UpdateCachePath 更新歌曲的缓存文件路径。
 func (r *SongRepository) UpdateCachePath(ctx context.Context, id int64, cachePath string) error {
 	return r.queries.UpdateCachePath(ctx, sqlc.UpdateCachePathParams{

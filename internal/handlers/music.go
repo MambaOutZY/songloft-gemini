@@ -505,6 +505,49 @@ func (h *SongHandler) ListSongFacets(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// songNameFields 是 /songs/names 支持的维度白名单。
+var songNameFields = map[string]struct{}{
+	"title": {}, "artist": {},
+}
+
+// ListSongNames 返回曲库中某维度（歌名/歌手名）的全部去重取值，无冗余字段。
+// @Summary 曲库歌名/歌手名清单
+// @Description 一次性返回曲库中指定维度的全部去重、非空取值（按名称升序），不分页、无计数、无封面等冗余字段。
+// @Description 支持维度：title(歌名)/artist(歌手名)。供 TV 等第三方客户端拉取曲库名录后本地搜索匹配，替代「分页拉全部歌曲再自行去重」的浪费。
+// @Description artist 按曲库原始整串返回（不按 / 、等分隔符拆分），返回的名字可直接回填 /songs?artist=<value> 精确过滤。
+// @Tags 歌曲管理
+// @Produce json
+// @Param field query string true "维度" Enums(title, artist)
+// @Success 200 {object} map[string]any "成功返回 {field, names:[...], total}"
+// @Failure 400 {object} map[string]string "缺少或不支持的 field"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Security BearerAuth
+// @Router /songs/names [get]
+func (h *SongHandler) ListSongNames(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	field := r.URL.Query().Get("field")
+	if _, ok := songNameFields[field]; !ok {
+		respondError(w, http.StatusBadRequest, "不支持的维度 field", nil)
+		return
+	}
+
+	names, err := h.songService.ListDistinctNames(ctx, field)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取曲库名录失败", err)
+		return
+	}
+	if names == nil {
+		names = []string{}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"field": field,
+		"names": names,
+		"total": len(names),
+	})
+}
+
 // GetSong 获取单个歌曲
 // @Summary 获取单个歌曲详情
 // @Description 根据歌曲ID获取详细信息

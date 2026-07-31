@@ -6107,6 +6107,63 @@
                 }
             }
         },
+        "/songs/names": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "一次性返回曲库中指定维度的全部去重、非空取值（按名称升序），不分页、无计数、无封面等冗余字段。\n支持维度：title(歌名)/artist(歌手名)。供 TV 等第三方客户端拉取曲库名录后本地搜索匹配，替代「分页拉全部歌曲再自行去重」的浪费。\nartist 按曲库原始整串返回（不按 / 、等分隔符拆分），返回的名字可直接回填 /songs?artist=\u003cvalue\u003e 精确过滤。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "曲库歌名/歌手名清单",
+                "parameters": [
+                    {
+                        "enum": [
+                            "title",
+                            "artist"
+                        ],
+                        "type": "string",
+                        "description": "维度",
+                        "name": "field",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功返回 {field, names:[...], total}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "缺少或不支持的 field",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/songs/radio": {
             "post": {
                 "security": [

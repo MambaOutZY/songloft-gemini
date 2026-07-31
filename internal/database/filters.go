@@ -126,7 +126,20 @@ var (
 		"year":     "year",
 		"decade":   "(year / 10) * 10",
 	}
+	// songNameColumn 把 /songs/names 的 field 映射到固定 SQL 列名。
+	// 仅使用映射值拼接列名（绝不拼用户输入），防 SQL 注入 —— 同 songFacetColumn 范式。
+	songNameColumn = map[string]string{
+		"title":  "title",
+		"artist": "artist",
+	}
 )
+
+// IsSongNameField 判断给定字符串是否为受支持的 /songs/names 维度（title/artist）。
+// 对外导出以便 handlers 复用同一份维度清单，避免各层各写一份枚举而漂移。
+func IsSongNameField(field string) bool {
+	_, ok := songNameColumn[field]
+	return ok
+}
 
 // IsSongFacetField 判断给定字符串是否为受支持的歌曲分面维度。
 // 对外导出以便 models / handlers 复用同一份维度清单，避免各层各写一份枚举而漂移。

@@ -158,6 +158,45 @@ func TestListFacetSearchSortPaginate(t *testing.T) {
 	}
 }
 
+func TestListDistinctNames(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	seedFacetSongs(t, db)
+	repo := db.SongRepository()
+	ctx := context.Background()
+
+	// title：5 首歌名各不相同，去重后 5 条，按名称升序
+	titles, err := repo.ListDistinctNames(ctx, "title")
+	if err != nil {
+		t.Fatalf("distinct title: %v", err)
+	}
+	if len(titles) != 5 {
+		t.Fatalf("expected 5 titles, got %d (%+v)", len(titles), titles)
+	}
+	for i := 1; i < len(titles); i++ {
+		if titles[i-1] > titles[i] {
+			t.Fatalf("titles not ascending: %+v", titles)
+		}
+	}
+
+	// artist：周杰伦重复应去重 → Adele/Beyond/周杰伦/无标签 共 4 条，整串不拆分
+	artists, err := repo.ListDistinctNames(ctx, "artist")
+	if err != nil {
+		t.Fatalf("distinct artist: %v", err)
+	}
+	if len(artists) != 4 {
+		t.Fatalf("expected 4 distinct artists, got %d (%+v)", len(artists), artists)
+	}
+	if artists[0] != "Adele" || artists[1] != "Beyond" {
+		t.Fatalf("artists not ascending: %+v", artists)
+	}
+
+	// 未知维度返回 ErrNotFound
+	if _, err := repo.ListDistinctNames(ctx, "album"); err != ErrNotFound {
+		t.Fatalf("expected ErrNotFound for unsupported field, got %v", err)
+	}
+}
+
 func TestSongFilterByTag(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
