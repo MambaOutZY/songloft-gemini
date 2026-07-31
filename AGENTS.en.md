@@ -356,6 +356,54 @@ changed; after clicking "Stop computing", use `pgrep -x ffmpeg` to confirm the c
 
 ## Business Pitfalls Summary (Important — not in the code)
 
+### Plugin store entry_path collisions (identity)
+
+`entry_path` is nowhere near as simple as a "plugin ID" — it is simultaneously the registry
+dedup key, the install-state match key, the `js_plugins.entry_path` UNIQUE constraint, the ZIP
+filename (`<entryPath>.jsplugin.zip`), the static directory name
+(`jsplugins_data/<entryPath>/static`), the route prefix (`/api/v1/jsplugin/{entryPath}/*`), the
+manager/scheduler in-memory map key, and the ownership key behind
+`plugin_storage.plugin_entry_path` / `songs.plugin_entry_path`. Two plugins from different
+authors can absolutely collide on one entry_path (songloft-org/songloft#339). Read all of the
+below before touching this area.
+
+- **Two plugins sharing an entry_path cannot coexist locally** — that is a data-layer fact, not
+  a UI limitation. #339 only fixed the store layer (show both rows, resolve install state per
+  row, require confirmation before replacing). Real coexistence needs a genuine plugin id with
+  entry_path demoted to a disambiguable route prefix, which means touching the DB constraint,
+  the on-disk layout, routing, `EntryPathFromZipName`, the orphan cleanup in
+  `SyncPluginsFromDirectory`, plus migrations for `plugin_storage` / `songs`
+- **Identity = normalized author, falling back to the GitHub `owner/repo` from `update_url`**
+  (`internal/jsplugin/identity.go`). Author normalization must strip `<email>` and `(notes)`
+  before lowercasing — the same plugin is commonly written as `hanxi` in one registry and
+  `Hanxi <a@b.com>` in another, and skipping normalization splits it into two store rows.
+  **Non-GitHub self-hosted URLs are deliberately not inferred**: their path layout is arbitrary,
+  so `/plugins/a/` and `/plugins/b/` would read as two repos and split one plugin's two mirrors
+- **`SameIdentity` returns true when either side is empty** (treated as the same plugin). Better
+  to miss a conflict than to invent one and block a legitimate upgrade just because the other
+  side has no author
+- **The cross-registry dedup key deliberately excludes the source URL**
+  (`FetchAndMergeMulti`): the official registry and community aggregators routinely list the
+  same plugin, and folding the source into the key would show it several times in "All" mode.
+  Identity already separates genuinely different plugins
+- **The manual-upload path deliberately skips conflict detection**: `InstallFromUpload` keeps its
+  original behavior, and only store installs go through
+  `InstallFromUploadWithOptions(RejectIdentityConflict: true)`. A manual upload is an explicit
+  user-chosen file, and an author-spelling change during normal plugin iteration must not fail it
+- **On conflict, return before writing anything**: `package.go` used to silently fall through to
+  `Update` on a collision — overwriting the ZIP, re-extracting after `os.RemoveAll(staticDir)`,
+  and rewriting the DB row in place (keeping the original ID and status). The original plugin was
+  destroyed without a word, the newcomer inherited all of its `plugin_storage` data, and songs
+  imported by the original (`songs.plugin_entry_path`) were reattributed to the newcomer
+- **The store's `has_update` must use `CompareVersion(...) > 0`, never string `!=`**: on a
+  collision the two versions differ by definition, so string comparison shows "update available"
+  forever, and clicking it swaps the local plugin for a different author's plugin
+- **Frontend in-place install-state updates must match on `(entryPath, identity)`**
+  (`RegistryPluginEntry.matches`): matching on entryPath alone lights up every same-named row as
+  "installed". List item `key`s use `rowKey` (`entryPath|identity`) rather than the index —
+  `_RegistryPluginItem` holds local `_installing` state, and index-based Element reuse makes the
+  spinner jump to another row
+
 ### Scan title rules
 
 - tag has a title → use `tag.Title` directly

@@ -346,6 +346,42 @@ curl -s -X POST http://127.0.0.1:3000/function \
 
 ## 业务踩坑总结（重要 — 不在代码里）
 
+### 插件商店的 entry_path 撞名（identity）
+
+`entry_path` 不是「插件 ID」那么单纯 —— 它同时是 registry 去重键、安装态匹配键、
+`js_plugins.entry_path` UNIQUE 约束、ZIP 文件名（`<entryPath>.jsplugin.zip`）、static 目录名
+（`jsplugins_data/<entryPath>/static`）、路由前缀（`/api/v1/jsplugin/{entryPath}/*`）、
+manager/scheduler 的内存 map 键，以及 `plugin_storage.plugin_entry_path` /
+`songs.plugin_entry_path` 的归属键。两个不同作者的插件完全可能撞上同一个 entry_path
+（songloft-org/songloft#339）。改这块前先读完下面几条。
+
+- **本地无法共存同 entry_path 的两个插件**，这是数据层事实而非 UI 限制。#339 只修了商店层
+  （让两条都显示、安装态各自准确、覆盖前二次确认）。真要共存得引入真正的 plugin id、把
+  entry_path 降级为可消歧的路由前缀，要动 DB 约束、磁盘布局、路由、`EntryPathFromZipName`、
+  `SyncPluginsFromDirectory` 的孤儿清理，还要迁移 `plugin_storage` / `songs`
+- **身份（identity）= 规范化 author，author 为空时用 `update_url` 的 GitHub `owner/repo` 兜底**
+  （`internal/jsplugin/identity.go`）。author 规范化要剥掉 `<邮箱>` 与 `(备注)` 再转小写
+  ——同一插件在不同源里写成 `hanxi` / `Hanxi <a@b.com>` 很常见，不归一会把它分裂成两条商店条目。
+  **非 GitHub 的自托管 URL 刻意不推断仓库**：那种路径布局任意，`/plugins/a/` 与 `/plugins/b/`
+  会被当成两个仓库，把同一插件的两个镜像地址分裂开
+- **`SameIdentity` 任一方为空时返回 true**（视为同一插件）。宁可漏报冲突，也不能因为对方缺
+  author 就误报冲突拦住用户的正常升级
+- **跨源去重键刻意不含订阅源 URL**（`FetchAndMergeMulti`）：官方源与社区聚合源经常同时收录
+  同一个插件，把源并入键会让它在「全部」模式里重复显示多遍。identity 已足够区分真正不同的插件
+- **手动上传路径刻意不做冲突检测**：`InstallFromUpload` 保持原行为，只有商店安装走
+  `InstallFromUploadWithOptions(RejectIdentityConflict: true)`。手动上传是用户明确指定文件、
+  意图清楚，且插件迭代中 author 写法变动不应导致上传失败
+- **冲突时必须在写任何东西之前返回**：以前 `package.go` 撞名就静默走 `Update`——覆盖 ZIP、
+  `os.RemoveAll(staticDir)` 后重新解压、原地改写 DB 记录（保留原 ID 与 status）。结果是原插件被
+  无声销毁，新插件继承了它在 `plugin_storage` 里的全部数据，原插件导入的歌曲
+  （`songs.plugin_entry_path`）也被记账到新插件名下
+- **商店的 `has_update` 必须用 `CompareVersion(...) > 0`，不能用字符串 `!=`**：撞名时两边版本号
+  本就不同，字符串比较会永久显示「可更新」，用户点下去就把本地插件换成了另一个作者的插件
+- **前端就地更新安装态要按 `(entryPath, identity)` 匹配**（`RegistryPluginEntry.matches`）：
+  只比 entryPath 会把同名的其他条目一起点亮成「已安装」。列表项的 `key` 用 `rowKey`
+  （`entryPath|identity`）而非 index——`_RegistryPluginItem` 持有 `_installing` 本地状态，
+  按 index 复用 Element 会让 loading 圈跑到别的条目上
+
 ### scan 标题规则
 
 - tag 有 title → 直接用 `tag.Title`

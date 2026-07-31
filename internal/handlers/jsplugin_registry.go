@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -165,6 +166,18 @@ type registryPluginEntry struct {
 	// SourceURL 该插件所属订阅源 URL（仅「全部」聚合模式返回），
 	// 安装时回传给后端以按源解析私有源 token。
 	SourceURL string `json:"source_url,omitempty"`
+	// SourceName 该插件所属订阅源名称（仅「全部」聚合模式返回），
+	// 供 UI 区分 entry_path 相同的两个条目。
+	SourceName string `json:"source_name,omitempty"`
+	// Identity 是 entry_path 之外的身份维度（规范化 author，或 GitHub 仓库兜底）。
+	// entry_path 撞名时前端据 (entry_path, identity) 做稳定行标识与就地状态更新。
+	// 为空表示无法判定身份（此时仅按 entry_path 判定）。
+	Identity string `json:"identity,omitempty"`
+	// Conflict 为 true 表示本地已装了同 entry_path 但**不同身份**的插件。
+	// 此时 installed=false（这不是同一个插件），安装它会覆盖掉本地那个。
+	Conflict bool `json:"conflict,omitempty"`
+	// ConflictWith 描述占用该 entry_path 的本地插件，可直接展示给用户。
+	ConflictWith string `json:"conflict_with,omitempty"`
 }
 
 // registryRefreshResponse 刷新注册表响应。
@@ -178,7 +191,9 @@ type registryRefreshResponse struct {
 
 // handleRegistryRefresh 拉取订阅源的插件列表
 // @Summary 刷新插件注册表
-// @Description 拉取订阅源（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。默认拉取单个 registry_url，可选传入 token 字段访问需要认证的私有源（如 GitHub 私有仓库 PAT）。当 all_sources=true 时忽略 registry_url/token，改为聚合已保存的所有启用订阅源（各源用自身存储的 token），跨源按 entry_path 去重、高版本优先。
+// @Description 拉取订阅源（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。默认拉取单个 registry_url，可选传入 token 字段访问需要认证的私有源（如 GitHub 私有仓库 PAT）。当 all_sources=true 时忽略 registry_url/token，改为聚合已保存的所有启用订阅源（各源用自身存储的 token）。
+// @Description 去重键为 entry_path + identity（identity = 规范化 author，author 为空时用 updateUrl 的 GitHub owner/repo 兜底）：entry_path 相同但作者不同的插件会各自成行，同一插件被多个源收录时仍只显示一条（保留高版本）。
+// @Description 若某条目的 entry_path 已被本地一个**不同作者**的插件占用，返回 installed=false、conflict=true，并在 conflict_with 中描述占用者；此时安装该插件需要用户确认覆盖。
 // @Tags JS插件管理
 // @Accept json
 // @Produce json
@@ -232,8 +247,9 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	// 获取已安装插件，构建 entryPath -> version 映射
+	// 获取已安装插件，构建 entryPath -> 已安装信息映射
 	installedMap := h.buildInstalledMap(r.Context())
+	sourceNames := h.buildSourceNames()
 
 	// 搜索过滤
 	search := strings.ToLower(strings.TrimSpace(req.Search))
@@ -257,12 +273,10 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 			Icon:        entry.Icon,
 			DownloadURL: entry.DownloadURL,
 			SourceURL:   entry.SourceURL,
+			SourceName:  sourceNames[entry.SourceURL],
+			Identity:    jsplugin.PluginIdentity(entry.Author, entry.UpdateURL),
 		}
-		if installedVer, ok := installedMap[entry.EntryPath]; ok {
-			p.Installed = true
-			p.InstalledVersion = installedVer
-			p.HasUpdate = entry.Version != installedVer
-		}
+		resolveInstallState(&p, installedMap)
 		filtered = append(filtered, p)
 	}
 
@@ -287,17 +301,81 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 	})
 }
 
-func (h *JSPluginHandler) buildInstalledMap(ctx context.Context) map[string]string {
-	installed := make(map[string]string)
+// resolveInstallState 按 entry_path + 身份判定商店条目的安装状态，就地写入 p。
+//
+// 本地同一个 entry_path 物理上只能装一个插件，所以只能按 entry_path 查；但查到的
+// 未必就是「这一条」——entry_path 可能被另一个作者的插件占用（#339）。三种结果：
+//   - 没查到 → 未安装
+//   - 查到且身份一致 → 已安装，按版本号判断是否可更新
+//   - 查到但身份不同 → conflict（不是同一个插件，安装它会替换本地那个）
+func resolveInstallState(p *registryPluginEntry, installed map[string]installedPlugin) {
+	inst, ok := installed[p.EntryPath]
+	if !ok {
+		return
+	}
+	if !jsplugin.SameIdentity(p.Identity, inst.Identity) {
+		p.Conflict = true
+		p.ConflictWith = inst.describe()
+		return
+	}
+	p.Installed = true
+	p.InstalledVersion = inst.Version
+	// 用版本号比较而非字符串不等：撞名时两边版本号不同，字符串比较会永久
+	// 显示「可更新」，用户点下去就把本地插件覆盖掉了。
+	p.HasUpdate = jsplugin.CompareVersion(p.Version, inst.Version) > 0
+}
+
+// installedPlugin 已安装插件在商店比对时需要的信息。
+type installedPlugin struct {
+	Name     string
+	Author   string
+	Version  string
+	Identity string
+}
+
+// describe 返回可直接展示给用户的「谁占用了这个 entry_path」描述。
+func (p installedPlugin) describe() string {
+	if p.Author != "" {
+		return fmt.Sprintf("%s（作者：%s）v%s", p.Name, p.Author, p.Version)
+	}
+	return fmt.Sprintf("%s v%s", p.Name, p.Version)
+}
+
+// buildInstalledMap 构建 entry_path -> 已安装插件信息的映射。
+// key 只用 entry_path：本地同一个 entry_path 物理上只能装一个插件
+// （DB UNIQUE + 同名 ZIP + 同名 static 目录 + 同一路由前缀）。
+func (h *JSPluginHandler) buildInstalledMap(ctx context.Context) map[string]installedPlugin {
+	installed := make(map[string]installedPlugin)
 	plugins, err := h.repo.GetAll(ctx)
 	if err != nil {
 		slog.Warn("failed to load installed plugins for registry comparison", "error", err)
 		return installed
 	}
 	for _, p := range plugins {
-		installed[p.EntryPath] = p.Version
+		installed[p.EntryPath] = installedPlugin{
+			Name:     p.Name,
+			Author:   p.Author,
+			Version:  p.Version,
+			Identity: jsplugin.PluginIdentity(p.Author, p.UpdateURL),
+		}
 	}
 	return installed
+}
+
+// buildSourceNames 返回订阅源 URL -> 源名称的映射，供商店条目标注来源。
+// entry_path 撞名时这是用户区分两条条目的主要依据。
+func (h *JSPluginHandler) buildSourceNames() map[string]string {
+	var cfg pluginRegistriesSetting
+	if err := h.configService.GetJSON(pluginRegistriesConfigKey, &cfg); err != nil {
+		cfg = defaultPluginRegistries
+	}
+	names := make(map[string]string, len(cfg.Registries))
+	for _, src := range cfg.Registries {
+		if src.Name != "" {
+			names[src.URL] = src.Name
+		}
+	}
+	return names
 }
 
 // --- Registry: POST /api/v1/jsplugins/registry/install ---
@@ -310,6 +388,9 @@ type registryInstallRequest struct {
 	// SourceURL 插件所属订阅源 URL。「全部」聚合模式安装时回传：
 	// 当未显式提供 token 时，后端据此从 plugin_registries 配置解析该源的 token。
 	SourceURL string `json:"source_url,omitempty"`
+	// Overwrite 为 true 时允许覆盖掉本地已装的同 entry_path 但不同作者的插件。
+	// 默认 false：这种情况返回 409，由前端二次确认后带该字段重发。
+	Overwrite bool `json:"overwrite,omitempty"`
 }
 
 // resolveSourceToken 根据订阅源 URL 从配置中查出其存储的 token。
@@ -332,7 +413,8 @@ func (h *JSPluginHandler) resolveSourceToken(sourceURL string) string {
 
 // handleRegistryInstall 从注册表 download_url 安装插件
 // @Summary 从注册表安装插件
-// @Description 从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理（含 api.github.com 私有仓库 Release 资源的下载，代理端需开启 FORWARD_AUTHORIZATION_API 才会转发 token）。可选传入 token 字段用于从需要认证的私有源下载；若未提供 token 但提供了 source_url（「全部」聚合模式），后端会自动从 plugin_registries 配置解析该源存储的 token。
+// @Description 从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在且属于同一作者，则自动走更新路径。支持 GitHub 代理（含 api.github.com 私有仓库 Release 资源的下载，代理端需开启 FORWARD_AUTHORIZATION_API 才会转发 token）。可选传入 token 字段用于从需要认证的私有源下载；若未提供 token 但提供了 source_url（「全部」聚合模式），后端会自动从 plugin_registries 配置解析该源存储的 token。
+// @Description 若 entry_path 已被本地一个**不同作者**的插件占用，返回 409 且不做任何写入（不落盘、不动 static 目录、不改数据库）。前端应向用户说明会替换原插件后，带 overwrite=true 重发本请求。
 // @Tags JS插件管理
 // @Accept json
 // @Produce json
@@ -340,6 +422,7 @@ func (h *JSPluginHandler) resolveSourceToken(sourceURL string) string {
 // @Success 200 {object} jsPluginUploadResponse "安装结果（更新已有插件）"
 // @Success 201 {object} jsPluginUploadResponse "安装结果（新插件）"
 // @Failure 400 {object} models.ErrorResponse "请求格式错误"
+// @Failure 409 {object} models.ErrorResponse "entry_path 已被另一个作者的插件占用，需用户确认后带 overwrite=true 重试"
 // @Failure 500 {object} models.ErrorResponse "下载或安装失败"
 // @Security BearerAuth
 // @Router /jsplugins/registry/install [post]
@@ -383,7 +466,21 @@ func (h *JSPluginHandler) handleRegistryInstall(w http.ResponseWriter, r *http.R
 		zipData = data
 	}
 
-	plugin, wasUpdate, err := h.packageMgr.InstallFromUpload(zipData)
+	plugin, wasUpdate, err := h.packageMgr.InstallFromUploadWithOptions(zipData, jsplugin.InstallOptions{
+		RejectIdentityConflict: !req.Overwrite,
+	})
+	// entry_path 被另一个作者的插件占用：拒绝并让前端二次确认，而不是静默覆盖。
+	var conflict *jsplugin.EntryPathConflictError
+	if errors.As(err, &conflict) {
+		respondError(w, http.StatusConflict, fmt.Sprintf(
+			"插件标识 %q 已被本地插件 %s 占用。继续安装会替换它，且原插件的数据将被新插件继承。",
+			conflict.EntryPath, installedPlugin{
+				Name:    conflict.ExistingName,
+				Author:  conflict.ExistingAuthor,
+				Version: conflict.ExistingVersion,
+			}.describe()), nil)
+		return
+	}
 	if err != nil {
 		respondJSON(w, http.StatusOK, jsPluginUploadResponse{
 			Total:   1,

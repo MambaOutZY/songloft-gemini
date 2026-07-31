@@ -107,3 +107,103 @@ func TestDownloadGitHubReleaseAsset_AssetNotFound(t *testing.T) {
 		t.Fatal("expected error for missing asset, got nil")
 	}
 }
+
+// --- 商店安装状态判定（#339） ---
+
+func installedAlice() map[string]installedPlugin {
+	return map[string]installedPlugin{
+		"demo": {Name: "Demo by Alice", Author: "Alice", Version: "1.0.0", Identity: "alice"},
+	}
+}
+
+func TestResolveInstallState_NotInstalled(t *testing.T) {
+	p := registryPluginEntry{EntryPath: "other", Version: "1.0.0", Identity: "bob"}
+	resolveInstallState(&p, installedAlice())
+	if p.Installed || p.Conflict || p.HasUpdate {
+		t.Errorf("expected clean state, got %+v", p)
+	}
+}
+
+func TestResolveInstallState_SameIdentityUpToDate(t *testing.T) {
+	p := registryPluginEntry{EntryPath: "demo", Version: "1.0.0", Identity: "alice"}
+	resolveInstallState(&p, installedAlice())
+	if !p.Installed {
+		t.Error("expected installed=true")
+	}
+	if p.HasUpdate {
+		t.Error("expected has_update=false for identical version")
+	}
+	if p.Conflict {
+		t.Error("expected conflict=false for same identity")
+	}
+	if p.InstalledVersion != "1.0.0" {
+		t.Errorf("expected installed_version 1.0.0, got %q", p.InstalledVersion)
+	}
+}
+
+func TestResolveInstallState_SameIdentityHasUpdate(t *testing.T) {
+	p := registryPluginEntry{EntryPath: "demo", Version: "2.0.0", Identity: "alice"}
+	resolveInstallState(&p, installedAlice())
+	if !p.Installed || !p.HasUpdate {
+		t.Errorf("expected installed with update, got %+v", p)
+	}
+}
+
+// TestResolveInstallState_OlderRemoteIsNotUpdate 回归：以前用字符串 != 判定，
+// 商店版本比本地旧时也会显示「可更新」，点下去会把本地降级。
+func TestResolveInstallState_OlderRemoteIsNotUpdate(t *testing.T) {
+	p := registryPluginEntry{EntryPath: "demo", Version: "0.9.0", Identity: "alice"}
+	resolveInstallState(&p, installedAlice())
+	if !p.Installed {
+		t.Error("expected installed=true")
+	}
+	if p.HasUpdate {
+		t.Error("expected has_update=false when registry version is older")
+	}
+}
+
+// TestResolveInstallState_DifferentIdentityConflicts 是 #339 的核心断言：
+// 装了 Alice 的 demo 之后，Bob 的同名 demo 必须显示为冲突，而不是「已安装」。
+func TestResolveInstallState_DifferentIdentityConflicts(t *testing.T) {
+	p := registryPluginEntry{EntryPath: "demo", Version: "3.0.0", Identity: "bob"}
+	resolveInstallState(&p, installedAlice())
+	if p.Installed {
+		t.Error("expected installed=false for a different plugin sharing the entry_path")
+	}
+	if p.HasUpdate {
+		t.Error("expected has_update=false: it is not an update, it is a replacement")
+	}
+	if !p.Conflict {
+		t.Fatal("expected conflict=true")
+	}
+	if !strings.Contains(p.ConflictWith, "Alice") || !strings.Contains(p.ConflictWith, "1.0.0") {
+		t.Errorf("conflict_with should describe the occupying plugin, got %q", p.ConflictWith)
+	}
+}
+
+// TestResolveInstallState_UnknownIdentityTreatedAsSame 验证身份无法判定时
+// 保守视为同一插件（宁可漏报冲突，也不误报拦住正常更新）。
+func TestResolveInstallState_UnknownIdentityTreatedAsSame(t *testing.T) {
+	installed := map[string]installedPlugin{
+		"demo": {Name: "Demo", Version: "1.0.0", Identity: ""},
+	}
+	p := registryPluginEntry{EntryPath: "demo", Version: "2.0.0", Identity: "alice"}
+	resolveInstallState(&p, installed)
+	if p.Conflict {
+		t.Error("expected no conflict when identity is undecidable")
+	}
+	if !p.Installed || !p.HasUpdate {
+		t.Errorf("expected installed with update, got %+v", p)
+	}
+}
+
+func TestInstalledPluginDescribe(t *testing.T) {
+	withAuthor := installedPlugin{Name: "Demo", Author: "Alice", Version: "1.0.0"}
+	if got := withAuthor.describe(); !strings.Contains(got, "Alice") || !strings.Contains(got, "Demo") {
+		t.Errorf("unexpected describe output: %q", got)
+	}
+	noAuthor := installedPlugin{Name: "Demo", Version: "1.0.0"}
+	if got := noAuthor.describe(); strings.Contains(got, "作者") {
+		t.Errorf("should omit author section when empty, got %q", got)
+	}
+}

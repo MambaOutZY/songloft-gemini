@@ -197,7 +197,20 @@ The `includes` field lets one registry reference others, recursively downloading
 
 ### Deduplication Rules
 
-When the same `entryPath` appears in multiple registries (including nested ones), the entry with the **higher version number** is kept. Versions are compared segment by segment numerically after splitting on `.`.
+Deduplication keys on **plugin identity**, not on `entryPath` alone:
+
+- **Identity = `entryPath` + author.** The author comes from the `author` field in `plugin.json` and is normalized before comparison (case-insensitive, with `<email>` and `(notes)` stripped), so `hanxi` and `Hanxi <a@b.com>` count as the same person.
+- When `author` is empty, identity falls back to the GitHub repository (`owner/repo`) that `updateUrl` points at. Self-hosted URLs are not inferred — their path layout is arbitrary, so repository ownership cannot be derived reliably.
+- When neither yields an identity, deduplication falls back to `entryPath` alone.
+
+Consequently:
+
+| Case | Result |
+|------|--------|
+| The same plugin listed in several registries (including nested ones) | Merged into one entry, keeping the **higher version** (versions are compared segment by segment numerically after splitting on `.`) |
+| Two plugins sharing an `entryPath` but from **different authors** | **Each gets its own entry**, both visible and installable in the store |
+
+> **Two plugins with the same `entryPath` cannot coexist locally.** `entryPath` is simultaneously the plugin's install directory name, route prefix, and data ownership key, so only one plugin per `entryPath` can be installed. If the plugin you want collides with an installed one, the store marks that entry as conflicting and names the plugin occupying the identifier; choosing "Replace" and confirming swaps the original out, and **the replacement inherits the original plugin's stored data**. To spare your users this dilemma, pick a sufficiently distinctive `entryPath` when publishing a plugin.
 
 ---
 

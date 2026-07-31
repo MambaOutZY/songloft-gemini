@@ -1653,7 +1653,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在则自动走更新路径。支持 GitHub 代理（含 api.github.com 私有仓库 Release 资源的下载，代理端需开启 FORWARD_AUTHORIZATION_API 才会转发 token）。可选传入 token 字段用于从需要认证的私有源下载；若未提供 token 但提供了 source_url（「全部」聚合模式），后端会自动从 plugin_registries 配置解析该源存储的 token。",
+                "description": "从注册表中的 download_url 下载 ZIP 并安装插件。如果 entry_path 已存在且属于同一作者，则自动走更新路径。支持 GitHub 代理（含 api.github.com 私有仓库 Release 资源的下载，代理端需开启 FORWARD_AUTHORIZATION_API 才会转发 token）。可选传入 token 字段用于从需要认证的私有源下载；若未提供 token 但提供了 source_url（「全部」聚合模式），后端会自动从 plugin_registries 配置解析该源存储的 token。\n若 entry_path 已被本地一个**不同作者**的插件占用，返回 409 且不做任何写入（不落盘、不动 static 目录、不改数据库）。前端应向用户说明会替换原插件后，带 overwrite=true 重发本请求。",
                 "consumes": [
                     "application/json"
                 ],
@@ -1694,6 +1694,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/models.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "entry_path 已被另一个作者的插件占用，需用户确认后带 overwrite=true 重试",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "下载或安装失败",
                         "schema": {
@@ -1710,7 +1716,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "拉取订阅源（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。默认拉取单个 registry_url，可选传入 token 字段访问需要认证的私有源（如 GitHub 私有仓库 PAT）。当 all_sources=true 时忽略 registry_url/token，改为聚合已保存的所有启用订阅源（各源用自身存储的 token），跨源按 entry_path 去重、高版本优先。",
+                "description": "拉取订阅源（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。默认拉取单个 registry_url，可选传入 token 字段访问需要认证的私有源（如 GitHub 私有仓库 PAT）。当 all_sources=true 时忽略 registry_url/token，改为聚合已保存的所有启用订阅源（各源用自身存储的 token）。\n去重键为 entry_path + identity（identity = 规范化 author，author 为空时用 updateUrl 的 GitHub owner/repo 兜底）：entry_path 相同但作者不同的插件会各自成行，同一插件被多个源收录时仍只显示一条（保留高版本）。\n若某条目的 entry_path 已被本地一个**不同作者**的插件占用，返回 installed=false、conflict=true，并在 conflict_with 中描述占用者；此时安装该插件需要用户确认覆盖。",
                 "consumes": [
                     "application/json"
                 ],
@@ -8142,6 +8148,10 @@ const docTemplate = `{
                 "github_proxy": {
                     "type": "string"
                 },
+                "overwrite": {
+                    "description": "Overwrite 为 true 时允许覆盖掉本地已装的同 entry_path 但不同作者的插件。\n默认 false：这种情况返回 409，由前端二次确认后带该字段重发。",
+                    "type": "boolean"
+                },
                 "source_url": {
                     "description": "SourceURL 插件所属订阅源 URL。「全部」聚合模式安装时回传：\n当未显式提供 token 时，后端据此从 plugin_registries 配置解析该源的 token。",
                     "type": "string"
@@ -8155,6 +8165,14 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "author": {
+                    "type": "string"
+                },
+                "conflict": {
+                    "description": "Conflict 为 true 表示本地已装了同 entry_path 但**不同身份**的插件。\n此时 installed=false（这不是同一个插件），安装它会覆盖掉本地那个。",
+                    "type": "boolean"
+                },
+                "conflict_with": {
+                    "description": "ConflictWith 描述占用该 entry_path 的本地插件，可直接展示给用户。",
                     "type": "string"
                 },
                 "description": {
@@ -8175,6 +8193,10 @@ const docTemplate = `{
                 "icon": {
                     "type": "string"
                 },
+                "identity": {
+                    "description": "Identity 是 entry_path 之外的身份维度（规范化 author，或 GitHub 仓库兜底）。\nentry_path 撞名时前端据 (entry_path, identity) 做稳定行标识与就地状态更新。\n为空表示无法判定身份（此时仅按 entry_path 判定）。",
+                    "type": "string"
+                },
                 "installed": {
                     "type": "boolean"
                 },
@@ -8182,6 +8204,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "source_name": {
+                    "description": "SourceName 该插件所属订阅源名称（仅「全部」聚合模式返回），\n供 UI 区分 entry_path 相同的两个条目。",
                     "type": "string"
                 },
                 "source_url": {

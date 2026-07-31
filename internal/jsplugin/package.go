@@ -43,10 +43,43 @@ func NewPackageManager(pluginsDir, dataDir string, repo Repository) *PackageMana
 	}
 }
 
+// InstallOptions 控制安装时的冲突处理策略。
+type InstallOptions struct {
+	// RejectIdentityConflict 为 true 时，若 entryPath 已被**另一个作者/仓库**的插件占用，
+	// 直接返回 *EntryPathConflictError 而不覆盖（不落盘、不动 static 目录、不改 DB）。
+	// 供插件商店安装使用：商店里可能同时列出两个 entryPath 相同的不同插件（#339），
+	// 静默覆盖会销毁前一个插件并让它的 plugin_storage 数据被后者继承。
+	RejectIdentityConflict bool
+}
+
+// EntryPathConflictError 表示 entryPath 已被另一个身份的插件占用。
+type EntryPathConflictError struct {
+	EntryPath       string
+	ExistingName    string
+	ExistingAuthor  string
+	ExistingVersion string
+	IncomingName    string
+	IncomingAuthor  string
+}
+
+func (e *EntryPathConflictError) Error() string {
+	return fmt.Sprintf("entry_path %q already used by a different plugin: existing=%q by %q v%s, incoming=%q by %q",
+		e.EntryPath, e.ExistingName, e.ExistingAuthor, e.ExistingVersion, e.IncomingName, e.IncomingAuthor)
+}
+
 // InstallFromUpload 从上传的字节安装插件
 // 流程：解析 ZIP → 读 plugin.json → 验证 manifest → 计算双层 hash → 保存 ZIP 到 pluginsDir → 写入数据库
 // 返回值 wasUpdate=true 表示 entryPath 已存在，本次是覆盖更新（保留原 ID 与状态）。
+//
+// 刻意不做身份冲突检测：手动上传 ZIP 与启动时的目录同步都走这里，用户明确指定了文件、
+// 意图清楚，且插件迭代中 author 写法变动不应导致上传失败。商店安装请用
+// InstallFromUploadWithOptions 并开启 RejectIdentityConflict。
 func (pm *PackageManager) InstallFromUpload(zipData []byte) (*JSPlugin, bool, error) {
+	return pm.InstallFromUploadWithOptions(zipData, InstallOptions{})
+}
+
+// InstallFromUploadWithOptions 同 InstallFromUpload，但可指定冲突处理策略。
+func (pm *PackageManager) InstallFromUploadWithOptions(zipData []byte, opts InstallOptions) (*JSPlugin, bool, error) {
 	// [1] 解析 plugin.json
 	manifest, err := readPluginManifestFromZip(zipData)
 	if err != nil {
@@ -67,6 +100,20 @@ func (pm *PackageManager) InstallFromUpload(zipData []byte) (*JSPlugin, bool, er
 	ctx := context.Background()
 	existing, err := pm.repo.GetByEntryPath(ctx, manifest.EntryPath)
 	if err == nil && existing != nil {
+		if opts.RejectIdentityConflict {
+			existingID := PluginIdentity(existing.Author, existing.UpdateURL)
+			incomingID := PluginIdentity(manifest.Author, manifest.UpdateURL)
+			if !SameIdentity(existingID, incomingID) {
+				return nil, false, &EntryPathConflictError{
+					EntryPath:       manifest.EntryPath,
+					ExistingName:    existing.Name,
+					ExistingAuthor:  existing.Author,
+					ExistingVersion: existing.Version,
+					IncomingName:    manifest.Name,
+					IncomingAuthor:  manifest.Author,
+				}
+			}
+		}
 		updated, updErr := pm.Update(existing.ID, zipData)
 		if updErr != nil {
 			return nil, false, updErr

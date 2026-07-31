@@ -93,8 +93,9 @@ func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string,
 	// [2] 并发解析所有 plugin.json URL
 	resolved := s.resolveAll(ctx, pluginURLs, githubProxy, token, &warnings)
 
-	// [3] 按 entry_path 去重（高版本优先），保持首次出现顺序（稳定序，避免分页跳序 #302）
-	plugins := make(map[string]int) // entry_path -> result 索引
+	// [3] 按 entry_path + 身份去重（高版本优先），保持首次出现顺序（稳定序，避免分页跳序 #302）。
+	// 只按 entry_path 去重会让「同名但不同作者」的插件互相吞掉（#339），故键里带上 identity。
+	plugins := make(map[string]int) // entry_path+identity -> result 索引
 	result := make([]RegistryEntry, 0, len(resolved))
 	for _, entry := range resolved {
 		if entry.EntryPath == "" || entry.DownloadURL == "" {
@@ -103,13 +104,14 @@ func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string,
 			}
 			continue
 		}
-		if idx, exists := plugins[entry.EntryPath]; exists {
-			if compareVersion(entry.Version, result[idx].Version) > 0 {
+		key := registryDedupKey(entry.EntryPath, entry.Author, entry.UpdateURL)
+		if idx, exists := plugins[key]; exists {
+			if CompareVersion(entry.Version, result[idx].Version) > 0 {
 				result[idx] = entry
 			}
 			continue
 		}
-		plugins[entry.EntryPath] = len(result)
+		plugins[key] = len(result)
 		result = append(result, entry)
 	}
 
@@ -120,7 +122,9 @@ func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string,
 // 每个源使用其自身的 Token 认证；单个源失败不中断其他源，错误并入 warnings。
 // 典型用于「全部」聚合模式：一次展示所有启用源的插件。
 func (s *RegistryService) FetchAndMergeMulti(ctx context.Context, sources []RegistryConfig, githubProxy string) ([]RegistryEntry, []string) {
-	merged := make(map[string]int) // entry_path -> result 索引
+	// 键为 entry_path + 身份，刻意不含源 URL：官方源与社区聚合源经常同时收录同一个插件，
+	// 若把源并入键，同一插件会在「全部」模式里重复显示多遍（#339 的反面）。
+	merged := make(map[string]int) // entry_path+identity -> result 索引
 	result := make([]RegistryEntry, 0)
 	var warnings []string
 
@@ -141,13 +145,14 @@ func (s *RegistryService) FetchAndMergeMulti(ctx context.Context, sources []Regi
 		// 保持首次出现顺序（稳定序，避免分页跳序 #302）
 		for _, entry := range entries {
 			entry.SourceURL = src.URL // 标记来源，供安装时按源解析 token
-			if idx, exists := merged[entry.EntryPath]; exists {
-				if compareVersion(entry.Version, result[idx].Version) > 0 {
+			key := registryDedupKey(entry.EntryPath, entry.Author, entry.UpdateURL)
+			if idx, exists := merged[key]; exists {
+				if CompareVersion(entry.Version, result[idx].Version) > 0 {
 					result[idx] = entry
 				}
 				continue
 			}
-			merged[entry.EntryPath] = len(result)
+			merged[key] = len(result)
 			result = append(result, entry)
 		}
 	}
@@ -329,9 +334,9 @@ func (s *RegistryService) fetchBody(ctx context.Context, rawURL string, githubPr
 	return body, nil
 }
 
-// compareVersion 比较两个版本号，返回 >0 表示 a 更大。
+// CompareVersion 比较两个版本号，返回 >0 表示 a 更大。
 // 支持 semver（1.2.3）和日期格式（2026.6.2），按 dot-separated 数值逐段比较。
-func compareVersion(a, b string) int {
+func CompareVersion(a, b string) int {
 	aParts := strings.Split(a, ".")
 	bParts := strings.Split(b, ".")
 

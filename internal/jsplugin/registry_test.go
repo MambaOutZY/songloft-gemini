@@ -27,9 +27,9 @@ func TestCompareVersion(t *testing.T) {
 		{"1.0.1", "1.0", 1},
 	}
 	for _, tt := range tests {
-		got := compareVersion(tt.a, tt.b)
+		got := CompareVersion(tt.a, tt.b)
 		if (tt.want > 0 && got <= 0) || (tt.want < 0 && got >= 0) || (tt.want == 0 && got != 0) {
-			t.Errorf("compareVersion(%q, %q) = %d, want sign %d", tt.a, tt.b, got, tt.want)
+			t.Errorf("CompareVersion(%q, %q) = %d, want sign %d", tt.a, tt.b, got, tt.want)
 		}
 	}
 }
@@ -117,6 +117,30 @@ func TestFetchAndMerge_StableOrder(t *testing.T) {
 	}
 }
 
+// servePluginJSONFull 提供带 author / updateUrl 的 plugin.json，用于身份（identity）相关用例。
+func servePluginJSONFull(name, entryPath, version, downloadURL, author, updateURL string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		manifest := PluginManifest{
+			Name:        name,
+			EntryPath:   entryPath,
+			Version:     version,
+			DownloadURL: downloadURL,
+			Author:      author,
+			UpdateURL:   updateURL,
+		}
+		json.NewEncoder(w).Encode(manifest)
+	}
+}
+
+// serveRegistryOf 返回一个只列出给定 plugin.json URL 的 registry JSON handler。
+func serveRegistryOf(pluginURLs ...string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(RegistryJSON{Plugins: pluginURLs})
+	}
+}
+
+// TestFetchAndMerge_Dedup 覆盖「两条都无 author / updateUrl」的退化路径：
+// 身份无法判定时仍按 entry_path 合并，保留高版本（与引入 identity 前行为一致）。
 func TestFetchAndMerge_Dedup(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/plugin.json", servePluginJSON("Plugin A v1", "plugin-a", "1.0.0", "https://example.com/a1.zip"))
@@ -722,5 +746,156 @@ func TestFetchAndMerge_EmptyPlugins(t *testing.T) {
 	}
 	if len(plugins) != 0 {
 		t.Errorf("expected 0 plugins, got %d", len(plugins))
+	}
+}
+
+// --- 身份（identity）去重：#339 同 entry_path 不同插件 ---
+
+// TestFetchAndMerge_SameEntryPathDifferentAuthor 验证同一个源里两个 entry_path 相同
+// 但作者不同的插件都会保留（#339：以前后者会被静默吞掉，用户根本看不到）。
+func TestFetchAndMerge_SameEntryPathDifferentAuthor(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/alice/plugin.json", servePluginJSONFull(
+		"Demo by Alice", "demo", "1.0.0", "https://example.com/alice.zip", "Alice", ""))
+	mux.HandleFunc("/bob/plugin.json", servePluginJSONFull(
+		"Demo by Bob", "demo", "2.0.0", "https://example.com/bob.zip", "Bob", ""))
+	pluginSrv := httptest.NewServer(mux)
+	defer pluginSrv.Close()
+
+	srv := httptest.NewServer(serveRegistryOf(
+		pluginSrv.URL+"/alice/plugin.json",
+		pluginSrv.URL+"/bob/plugin.json",
+	))
+	defer srv.Close()
+
+	svc := NewRegistryService()
+	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
+	if err != nil {
+		t.Fatalf("FetchAndMerge error: %v", err)
+	}
+	if len(plugins) != 2 {
+		t.Fatalf("expected 2 plugins for distinct authors, got %d", len(plugins))
+	}
+	// 保持声明顺序
+	if plugins[0].Author != "Alice" || plugins[1].Author != "Bob" {
+		t.Errorf("unexpected order: %q, %q", plugins[0].Author, plugins[1].Author)
+	}
+}
+
+// TestFetchAndMerge_SameAuthorDifferentSpelling 验证同一作者的不同写法不会把
+// 同一个插件分裂成两条（author 规范化），且仍按高版本合并。
+func TestFetchAndMerge_SameAuthorDifferentSpelling(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/plugin.json", servePluginJSONFull(
+		"Demo", "demo", "1.0.0", "https://example.com/v1.zip", "hanxi", ""))
+	mux.HandleFunc("/v2/plugin.json", servePluginJSONFull(
+		"Demo", "demo", "2.0.0", "https://example.com/v2.zip", "Hanxi <a@b.com>", ""))
+	pluginSrv := httptest.NewServer(mux)
+	defer pluginSrv.Close()
+
+	srv := httptest.NewServer(serveRegistryOf(
+		pluginSrv.URL+"/v1/plugin.json",
+		pluginSrv.URL+"/v2/plugin.json",
+	))
+	defer srv.Close()
+
+	svc := NewRegistryService()
+	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
+	if err != nil {
+		t.Fatalf("FetchAndMerge error: %v", err)
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("expected 1 plugin after author normalization, got %d", len(plugins))
+	}
+	if plugins[0].Version != "2.0.0" {
+		t.Errorf("expected version 2.0.0, got %s", plugins[0].Version)
+	}
+}
+
+// TestFetchAndMerge_NoAuthorDifferentRepo 验证 author 缺失时用 updateUrl 的
+// GitHub 仓库兜底区分身份。
+func TestFetchAndMerge_NoAuthorDifferentRepo(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/a/plugin.json", servePluginJSONFull(
+		"Demo A", "demo", "1.0.0", "https://example.com/a.zip", "",
+		"https://raw.githubusercontent.com/alice/demo/main/manifest.json"))
+	mux.HandleFunc("/b/plugin.json", servePluginJSONFull(
+		"Demo B", "demo", "1.0.0", "https://example.com/b.zip", "",
+		"https://raw.githubusercontent.com/bob/demo/main/manifest.json"))
+	pluginSrv := httptest.NewServer(mux)
+	defer pluginSrv.Close()
+
+	srv := httptest.NewServer(serveRegistryOf(
+		pluginSrv.URL+"/a/plugin.json",
+		pluginSrv.URL+"/b/plugin.json",
+	))
+	defer srv.Close()
+
+	svc := NewRegistryService()
+	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
+	if err != nil {
+		t.Fatalf("FetchAndMerge error: %v", err)
+	}
+	if len(plugins) != 2 {
+		t.Fatalf("expected 2 plugins for distinct repos, got %d", len(plugins))
+	}
+}
+
+// TestFetchAndMergeMulti_SamePluginAcrossSources 验证同一个插件被多个源收录时
+// 只显示一条——跨源去重键刻意不含源 URL，否则官方源 + 聚合源会让插件重复出现。
+func TestFetchAndMergeMulti_SamePluginAcrossSources(t *testing.T) {
+	pluginMux := http.NewServeMux()
+	pluginMux.HandleFunc("/plugin.json", servePluginJSONFull(
+		"Demo", "demo", "1.0.0", "https://example.com/demo.zip", "hanxi", ""))
+	pluginSrv := httptest.NewServer(pluginMux)
+	defer pluginSrv.Close()
+
+	srvA := httptest.NewServer(serveRegistryOf(pluginSrv.URL + "/plugin.json"))
+	defer srvA.Close()
+	srvB := httptest.NewServer(serveRegistryOf(pluginSrv.URL + "/plugin.json"))
+	defer srvB.Close()
+
+	svc := NewRegistryService()
+	plugins, warnings := svc.FetchAndMergeMulti(context.Background(), []RegistryConfig{
+		{URL: srvA.URL, Enabled: true},
+		{URL: srvB.URL, Enabled: true},
+	}, "")
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("expected 1 plugin across sources, got %d", len(plugins))
+	}
+	if plugins[0].SourceURL != srvA.URL {
+		t.Errorf("expected first source to win, got %q", plugins[0].SourceURL)
+	}
+}
+
+// TestFetchAndMergeMulti_SameEntryPathDifferentAuthorAcrossSources 验证跨源撞名
+// 但作者不同时两条都保留，且各自带上自己的 SourceURL（安装时据此解析 token）。
+func TestFetchAndMergeMulti_SameEntryPathDifferentAuthorAcrossSources(t *testing.T) {
+	pluginMux := http.NewServeMux()
+	pluginMux.HandleFunc("/alice/plugin.json", servePluginJSONFull(
+		"Demo by Alice", "demo", "1.0.0", "https://example.com/alice.zip", "Alice", ""))
+	pluginMux.HandleFunc("/bob/plugin.json", servePluginJSONFull(
+		"Demo by Bob", "demo", "3.0.0", "https://example.com/bob.zip", "Bob", ""))
+	pluginSrv := httptest.NewServer(pluginMux)
+	defer pluginSrv.Close()
+
+	srvA := httptest.NewServer(serveRegistryOf(pluginSrv.URL + "/alice/plugin.json"))
+	defer srvA.Close()
+	srvB := httptest.NewServer(serveRegistryOf(pluginSrv.URL + "/bob/plugin.json"))
+	defer srvB.Close()
+
+	svc := NewRegistryService()
+	plugins, _ := svc.FetchAndMergeMulti(context.Background(), []RegistryConfig{
+		{URL: srvA.URL, Enabled: true},
+		{URL: srvB.URL, Enabled: true},
+	}, "")
+	if len(plugins) != 2 {
+		t.Fatalf("expected 2 plugins across sources, got %d", len(plugins))
+	}
+	if plugins[0].SourceURL != srvA.URL || plugins[1].SourceURL != srvB.URL {
+		t.Errorf("unexpected source urls: %q, %q", plugins[0].SourceURL, plugins[1].SourceURL)
 	}
 }

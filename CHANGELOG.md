@@ -1,5 +1,16 @@
 ## [Unreleased]
 ### :bug: Bug Fixes
+- **jsplugin**: 修复插件商店中 `entry_path` 相同的多个插件只显示一个、且安装状态互相串台
+  （装了 A 却显示 B 已安装）。去重与安装态匹配改用「`entry_path` + 作者身份」
+  （作者规范化后比较，缺 author 时用 `updateUrl` 的 GitHub 仓库兜底），同名不同作者的插件
+  各自成行、各自计算安装状态；同一插件被多个源收录时仍只显示一条。
+  商店条目新增来源标注，`has_update` 改用版本号比较而非字符串不等
+  *(fixes songloft-org/songloft#339)*
+- **jsplugin**: 从商店安装时若 `entry_path` 已被**另一个作者**的插件占用，不再静默覆盖
+  （旧行为会删除原插件的 ZIP 与 static 目录、原地改写数据库记录，使新插件继承原插件在
+  `plugin_storage` 里的数据、原插件导入的歌曲也被记账到新插件名下）。现在返回 409
+  且不做任何写入，前端弹框说明会替换哪个插件，用户确认后才带 `overwrite=true` 覆盖。
+  手动上传 ZIP 的行为不变 *(fixes songloft-org/songloft#339)*
 - **lyric**: 本地 .lrc 歌词文件优先适配 — 支持大小写扩展名（`.LRC`/`.Lrc`）及 `<文件名>.lrc` 变体；
   已入库歌曲旁后放 .lrc 下次扫描即生效；运行时 GET /lyric 旁挂优先于插件歌词；
   0 字节 .lrc 不再导致前端无法请求歌词 *(fixes songloft-org/songloft#334)*
