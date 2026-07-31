@@ -16,14 +16,27 @@
 
     function applyTheme(th) {
         var d = document.documentElement;
-        d.dataset.theme = th;
+        // 用 setAttribute 而不是 d.dataset.theme：本脚本是 <head> 内的阻塞脚本，
+        // 在 WebF 里此刻 documentElement.dataset 还是 null，赋值会抛
+        // TypeError，而它会**中断整个 IIFE** —— window.SongloftPlugin 压根不会
+        // 定义，宿主桥连带全废（songloft-org/songloft#341 实测）。
+        // setAttribute 语义等价，且不依赖 dataset 何时就绪。
+        d.setAttribute('data-theme', th);
         d.classList.remove('theme-light', 'theme-dark');
         d.classList.add('theme-' + th);
         localStorage.setItem('songloft-theme', th);
         document.dispatchEvent(new CustomEvent('songloft-theme-change', { detail: { theme: th } }));
     }
 
-    applyTheme(initialTheme);
+    // 刻意包 try/catch：本文件是一个 IIFE，任何早期异常都会中断其余全部代码，
+    // 包括最后那段 window.SongloftPlugin 的定义 —— 表现是宿主桥整体静默失效，
+    // 极难归因（songloft-org/songloft#341 就踩过：dataset 在 WebF 里为 null）。
+    // 主题失效只是外观问题，不该连带打掉插件的宿主能力。
+    try {
+        applyTheme(initialTheme);
+    } catch (e) {
+        console.warn('[songloft] applyTheme failed, continuing:', e);
+    }
 
     if (params.has('theme')) {
         params.delete('theme');
@@ -151,7 +164,8 @@
      * @returns {'light' | 'dark'}
      */
     function getTheme() {
-        return document.documentElement.dataset.theme || 'light';
+        // 与 applyTheme 对称，不走 dataset（WebF 早期为 null，见 applyTheme 注释）
+        return document.documentElement.getAttribute('data-theme') || 'light';
     }
 
     /**
