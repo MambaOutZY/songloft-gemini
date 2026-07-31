@@ -58,6 +58,7 @@ func (a *App) setupAPIV1Router() {
 	songHandler.SetPlayHistoryRecorder(a.playHistoryService)
 	playlistHandler := handlers.NewPlaylistHandler(a.playlistService, a.songService)
 	playHistoryHandler := handlers.NewPlayHistoryHandler(a.playHistoryService)
+	themePackHandler := handlers.NewThemePackHandler(a.themePackService, a.configService)
 	configHandler := handlers.NewConfigHandler(a.configService)
 	scanHandler := handlers.NewScanHandler(a.songService, a.scanner, a.configService)
 	fingerprintService := services.NewFingerprintService(a.db.SongRepository())
@@ -182,6 +183,19 @@ func (a *App) setupAPIV1Router() {
 			r.Get("/play-history", playHistoryHandler.GetPlayHistory)
 			r.Delete("/play-history", playHistoryHandler.ClearPlayHistory)
 			r.Delete("/play-history/entry", playHistoryHandler.DeletePlayHistoryEntry)
+
+			// 主题包管理
+			r.Get("/theme-packs", themePackHandler.ListThemePacks)
+			r.Post("/theme-packs", themePackHandler.ImportThemePack)
+			r.Get("/theme-packs/active", themePackHandler.GetActiveThemePack)
+			r.Put("/theme-packs/active", themePackHandler.SetActiveThemePack)
+			r.Delete("/theme-packs/active", themePackHandler.ClearActiveThemePack)
+			r.Post("/theme-packs/catalog/refresh", themePackHandler.RefreshCatalog)
+			r.Post("/theme-packs/catalog/install", themePackHandler.InstallFromCatalog)
+			r.Get("/theme-packs/{themeID}", themePackHandler.GetThemePack)
+			r.Delete("/theme-packs/{themeID}", themePackHandler.DeleteThemePack)
+			r.Get("/settings/theme-catalog-url", themePackHandler.GetCatalogURLSetting)
+			r.Put("/settings/theme-catalog-url", themePackHandler.UpdateCatalogURLSetting)
 
 			r.Get("/settings/hls-proxy", hlsHandler.GetProxySetting)
 			r.Put("/settings/hls-proxy", hlsHandler.UpdateProxySetting)

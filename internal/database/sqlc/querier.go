@@ -28,6 +28,7 @@ type Querier interface {
 	CreateJSPlugin(ctx context.Context, arg CreateJSPluginParams) (int64, error)
 	CreatePlaylist(ctx context.Context, arg CreatePlaylistParams) (int64, error)
 	CreateSong(ctx context.Context, arg CreateSongParams) (int64, error)
+	CreateThemePack(ctx context.Context, arg CreateThemePackParams) error
 	CreateToken(ctx context.Context, arg CreateTokenParams) (int64, error)
 	DeleteAllPluginStorage(ctx context.Context, pluginEntryPath string) error
 	DeleteByCueSource(ctx context.Context, cueSourcePath string) (int64, error)
@@ -38,6 +39,7 @@ type Querier interface {
 	DeletePlaylistSongsByPlaylistID(ctx context.Context, playlistID int64) error
 	DeletePluginStorage(ctx context.Context, arg DeletePluginStorageParams) (int64, error)
 	DeleteSong(ctx context.Context, id int64) (int64, error)
+	DeleteThemePack(ctx context.Context, themeID string) (int64, error)
 	FindPlaylistByName(ctx context.Context, name string) (int64, error)
 	FindPlaylistByNameExcludeID(ctx context.Context, arg FindPlaylistByNameExcludeIDParams) (int64, error)
 	FindSongByDedupKey(ctx context.Context, arg FindSongByDedupKeyParams) (int64, error)
@@ -53,6 +55,7 @@ type Querier interface {
 	GetPluginStorageTotalSize(ctx context.Context, pluginEntryPath string) (int64, error)
 	GetSongByID(ctx context.Context, id int64) (Song, error)
 	GetSongTimestamps(ctx context.Context, id int64) (GetSongTimestampsRow, error)
+	GetThemePackByThemeID(ctx context.Context, themeID string) (ThemePack, error)
 	GetTokenByID(ctx context.Context, tokenID string) (GetTokenByIDRow, error)
 	InsertAutoCreatedPlaylist(ctx context.Context, arg InsertAutoCreatedPlaylistParams) (int64, error)
 	IsTokenRevoked(ctx context.Context, arg IsTokenRevokedParams) (bool, error)
@@ -72,6 +75,7 @@ type Querier interface {
 	ListSongsByFingerprint(ctx context.Context, fingerprint string) ([]ListSongsByFingerprintRow, error)
 	ListSongsNeedingMetadata(ctx context.Context) ([]ListSongsNeedingMetadataRow, error)
 	ListSongsWithCache(ctx context.Context) ([]Song, error)
+	ListThemePacks(ctx context.Context) ([]ThemePack, error)
 	MarkFingerprintAttempted(ctx context.Context, arg MarkFingerprintAttemptedParams) error
 	MaxPositionInPlaylist(ctx context.Context, playlistID int64) (int64, error)
 	RecordPlay(ctx context.Context, arg RecordPlayParams) error
@@ -99,6 +103,7 @@ type Querier interface {
 	UpdateSongPositionInPlaylist(ctx context.Context, arg UpdateSongPositionInPlaylistParams) (int64, error)
 	UpdateSongSource(ctx context.Context, arg UpdateSongSourceParams) error
 	UpdateSongTagFields(ctx context.Context, arg UpdateSongTagFieldsParams) error
+	UpdateThemePack(ctx context.Context, arg UpdateThemePackParams) error
 }
 
 var _ Querier = (*Queries)(nil)

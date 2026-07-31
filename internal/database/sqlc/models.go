@@ -135,3 +135,16 @@ type Song struct {
 	CueEndSeconds          float64
 	FingerprintAttemptedAt int64
 }
+
+type ThemePack struct {
+	ID            int64
+	ThemeID       string
+	Name          string
+	Version       string
+	Author        string
+	Description   string
+	SchemaVersion int64
+	RawJson       string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}

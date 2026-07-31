@@ -141,3 +141,8 @@ func (s *SQLiteDB) PlayHistoryRepository() *PlayHistoryRepository {
 func (s *SQLiteDB) PluginStorageRepository() *PluginStorageRepository {
 	return NewPluginStorageRepository(s.db)
 }
+
+// ThemePackRepository 返回主题包仓储
+func (s *SQLiteDB) ThemePackRepository() *ThemePackRepository {
+	return NewThemePackRepository(s.db)
+}

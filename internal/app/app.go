@@ -43,6 +43,7 @@ type App struct {
 	songService        *services.SongService
 	playlistService    *services.PlaylistService
 	playHistoryService *services.PlayHistoryService
+	themePackService   *services.ThemePackService
 	authService        *services.AuthService
 	upgradeService     *services.UpgradeService
 	cacheService       *services.CacheService
@@ -265,6 +266,7 @@ func (a *App) Init() error {
 	a.songService = services.NewSongService(db.SongRepository(), db, a.metadataExtractor, a.scanner, a.configService, db.PlaylistRepository())
 	a.backupService = services.NewBackupService(db)
 	a.playHistoryService = services.NewPlayHistoryService(db)
+	a.themePackService = services.NewThemePackService(db.ThemePackRepository(), a.configService)
 	// play_history 的 context_key 是 TEXT，无法对 playlists 建外键做级联，删歌单时需显式清理
 	a.playlistService.SetPlayHistoryCleaner(db.PlayHistoryRepository())
 
