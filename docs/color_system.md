@@ -6,6 +6,7 @@
 
 - [Flutter Material 3 颜色体系](#flutter-material-3-颜色体系)
 - [主题配置](#主题配置)
+- [主题包系统](#主题包系统)
 - [颜色使用规范](#颜色使用规范)
 - [响应式主题适配](#响应式主题适配)
 
@@ -20,17 +21,25 @@ Songloft Flutter 前端使用 **Material 3** 设计系统，通过 `ColorScheme.
 ```dart
 // songloft-player/lib/core/theme/app_theme.dart
 class AppTheme {
-  static const Color _seedColor = Color(0xFF415F91); // M3 Blue baseline
+  static const Color _defaultSeedColor = Color(0xFF415F91); // M3 Blue baseline
 
-  static ThemeData lightTheme({ScreenType screenType = ScreenType.mobile}) {
-    return _buildTheme(Brightness.light, screenType);
+  static ThemeData lightTheme({
+    ScreenType screenType = ScreenType.mobile,
+    ThemePack? themePack, // 可选主题包覆盖
+  }) {
+    return _buildTheme(Brightness.light, screenType, themePack);
   }
 
-  static ThemeData darkTheme({ScreenType screenType = ScreenType.mobile}) {
-    return _buildTheme(Brightness.dark, screenType);
+  static ThemeData darkTheme({
+    ScreenType screenType = ScreenType.mobile,
+    ThemePack? themePack,
+  }) {
+    return _buildTheme(Brightness.dark, screenType, themePack);
   }
 }
 ```
+
+当传入 `themePack` 时，seedColor 会被主题包中定义的颜色替换，从而生成完全不同的调色板。
 
 ### 优势
 
@@ -93,6 +102,48 @@ ThemeData(
   // ...
 )
 ```
+
+---
+
+## 主题包系统
+
+Songloft 支持通过 `.songloft-theme` 主题包自定义应用的配色和视觉样式。主题模式（亮色/暗色/跟随系统）和主题包相互独立——一个主题包同时定义亮色和暗色两套配色。
+
+### SongloftThemeExtension
+
+通过 `ThemeExtension` 机制注入主题包特有的自定义参数：
+
+```dart
+class SongloftThemeExtension extends ThemeExtension<SongloftThemeExtension> {
+  final List<Color>? playerGradientColors; // 播放器渐变色
+  final double cardRadius;                 // 卡片圆角
+  final double controlRadius;              // 控件圆角
+  final double navigationRadius;           // 导航圆角
+}
+```
+
+在组件中使用：
+
+```dart
+final ext = Theme.of(context).extension<SongloftThemeExtension>();
+if (ext?.playerGradientColors != null) {
+  // 使用主题包的渐变色
+}
+```
+
+### 主题包如何影响颜色系统
+
+当用户激活一个主题包时：
+
+1. **seedColor 被替换**：从主题包的 `light.seedColor` / `dark.seedColor` 生成新的完整调色板
+2. **surface/background 可覆盖**：如果主题包指定了 `backgroundColor` 或 `surfaceColor`，会 `copyWith` 覆盖自动生成的值
+3. **播放器渐变叠加**：`playerGradient` 定义的颜色以 40% 透明度叠加在封面动态取色之上
+4. **圆角半径**：`cardRadius`、`controlRadius`、`navigationRadius` 注入到组件主题中
+
+### 相关文档
+
+- 📖 [主题包制作指南](/theme-pack-guide) — 详细的主题制作流程和最佳实践
+- 🎨 [在线主题仓库](https://github.com/songloft-org/songloft-themes) — 社区主题包
 
 ---
 
@@ -199,6 +250,11 @@ Songloft 使用 `palette_generator` 库从歌曲封面图片中提取主色调�
 
 ## 更新日志
 
+- **2026-07-31**: 新增主题包系统
+  - 支持 `.songloft-theme` 主题包自定义配色、圆角、播放器渐变
+  - 新增 `SongloftThemeExtension` 自定义主题扩展
+  - `AppTheme.lightTheme()` / `darkTheme()` 接受可选 `ThemePack` 参数
+  - 在线主题目录：从 [songloft-themes](https://github.com/songloft-org/songloft-themes) 浏览安装
 - **2026-04-14**: 更新为 Flutter Material 3 颜色体系
   - 主前端迁移到 Flutter，使用 `ColorScheme.fromSeed` 自动配色
   - seedColor: M3 Blue baseline (`#415F91`)
