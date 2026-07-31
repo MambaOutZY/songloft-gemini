@@ -236,6 +236,14 @@
             typeof window.flutter_inappwebview.callHandler === 'function');
     }
 
+    // WebF 渲染引擎（songloft-org/songloft#341）：既没有 flutter_inappwebview，
+    // 也不是 iframe（WebF 无 iframe 实现，window.parent === window），所以必须
+    // 单独探测。走 WebF 自带的 methodChannel，语义与 callHandler 近乎一对一。
+    function isWebFHost() {
+        return !!(window.webf && window.webf.methodChannel &&
+            typeof window.webf.methodChannel.invokeMethod === 'function');
+    }
+
     // Web：插件页运行在宿主 iframe 内，走 postMessage 与父窗口通信。
     // 独立浏览器标签（parent === self）没有宿主，返回 false。
     function isIframeHost() {
@@ -247,7 +255,7 @@
     }
 
     function isHostAvailable() {
-        return isNativeHost() || isIframeHost();
+        return isWebFHost() || isNativeHost() || isIframeHost();
     }
 
     // ── Web/iframe postMessage 传输：请求/响应关联 ──
@@ -278,12 +286,53 @@
         else p.reject(new Error(msg.error || 'songloft host call failed'));
     }
 
+    // ── WebF methodChannel 传输 ──
+    //
+    // 请求体与响应体两端都是 JSON 字符串：WebF 的 method channel 对复杂对象的
+    // 序列化形态没有稳定契约，字符串是唯一两端都确定的载体。响应侧对 string
+    // 与 object 都做兼容，不假定其中一种。
+    function invokeViaWebF(ns, method, params) {
+        return window.webf.methodChannel
+            .invokeMethod(HOST_HANDLER, JSON.stringify({ ns: ns, method: method, params: params || null }))
+            .then(function(res) {
+                var parsed = res;
+                if (typeof parsed === 'string') {
+                    try { parsed = JSON.parse(parsed); } catch (e) { parsed = null; }
+                }
+                if (parsed && parsed.ok) return parsed.data;
+                throw new Error((parsed && parsed.error) || 'songloft host call failed');
+            });
+    }
+
+    // 宿主请求页面回退（songloft-org/songloft#341）。
+    //
+    // WebF 侧没有 canGoBack，宿主无法自行判断页面内还有没有历史，只能问页面。
+    // 返回 true 表示「已消费」，宿主就不再退出路由 / 退出应用。
+    // 只在 WebF 下注册：另外两条链路的宿主用各自 webview 的 canGoBack。
+    function registerWebFBackHandler() {
+        if (!isWebFHost()) return;
+        var mc = window.webf.methodChannel;
+        if (typeof mc.addMethodCallHandler !== 'function') return;
+        mc.addMethodCallHandler('requestBack', function() {
+            if (window.history && window.history.length > 1) {
+                window.history.back();
+                return true;
+            }
+            return false;
+        });
+    }
+
+    registerWebFBackHandler();
+
     /**
      * 调用宿主能力。约定返回 { ok, data } 或 { ok:false, error }。
-     * native 走 callHandler，Web/iframe 走 postMessage 关联。
+     * WebF 走 methodChannel，native 走 callHandler，Web/iframe 走 postMessage 关联。
      * @returns {Promise<any>}
      */
     function invokeHost(ns, method, params) {
+        if (isWebFHost()) {
+            return invokeViaWebF(ns, method, params);
+        }
         if (isNativeHost()) {
             return window.flutter_inappwebview
                 .callHandler(HOST_HANDLER, { ns: ns, method: method, params: params || null })
