@@ -318,11 +318,11 @@ docker-compose down
 
 If you run Home Assistant OS (HAOS), you can install Songloft as an **add-on** with one click — no manual `docker run` required.
 
-[![Add repository to your Home Assistant.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fsongloft-org%2Fsongloft)
+[![Add repository to your Home Assistant.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fsongloft-org%2Fhome-assistant-addon)
 
 Clicking the badge above opens the "Add add-on repository" dialog in your own Home Assistant; or do it manually:
 
-1. Go to **Settings → Add-ons → Add-on Store**, open the top-right menu **Repositories**, and add: `https://github.com/songloft-org/songloft`
+1. Go to **Settings → Add-ons → Add-on Store**, open the top-right menu **Repositories**, and add: `https://github.com/songloft-org/home-assistant-addon`
 2. After refreshing, find **Songloft** in the store and install it
 3. On the **Configuration** tab, set the admin username/password and music library path (defaults to `/media`), then start
 4. Use the **Open Web UI** button on the add-on page to access it

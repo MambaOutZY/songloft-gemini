@@ -169,18 +169,18 @@ export const INSTALL: InstallMethod[] = [
     icon: 'home',
     kind: 'external',
     note: {
-      zh: '点下方按钮在你的 HA 里弹出「添加加载项仓库」；或手动在「加载项商店 → 仓库」添加 https://github.com/songloft-org/songloft，再安装 Songloft。音乐放入 /media，数据持久化在加载项 /data。',
-      en: 'Click below to open the "Add add-on repository" dialog in your HA; or add https://github.com/songloft-org/songloft under "Add-on Store → Repositories", then install Songloft. Put music in /media; data persists in the add-on /data.',
+      zh: '点下方按钮在你的 HA 里弹出「添加加载项仓库」；或手动在「加载项商店 → 仓库」添加 https://github.com/songloft-org/home-assistant-addon，再安装 Songloft。音乐放入 /media，数据持久化在加载项 /data。',
+      en: 'Click below to open the "Add add-on repository" dialog in your HA; or add https://github.com/songloft-org/home-assistant-addon under "Add-on Store → Repositories", then install Songloft. Put music in /media; data persists in the add-on /data.',
     },
     external: [
       {
         label: { zh: '一键添加到 Home Assistant', en: 'Add to Home Assistant' },
-        url: 'https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fsongloft-org%2Fsongloft',
+        url: 'https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fsongloft-org%2Fhome-assistant-addon',
         primary: true,
       },
       {
         label: { zh: '加载项文档', en: 'Add-on docs' },
-        url: 'https://github.com/songloft-org/songloft/tree/main/addon',
+        url: 'https://github.com/songloft-org/home-assistant-addon',
       },
     ],
   },

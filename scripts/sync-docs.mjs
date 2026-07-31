@@ -16,6 +16,27 @@ const repoRoot = resolve(__dirname, '..');
 
 const REPO_BLOB_BASE = 'https://github.com/songloft-org/songloft/blob/main';
 
+// 子模块 → 其【独立仓库】的 blob 基址。
+// subdir 类同步项里未映射的相对链接，算出来的是「主仓库根视角」的路径
+// （如 'home-assistant-addon/songloft/config.yaml'），但那个路径在 GitHub 上的主仓库里
+// 只是个 gitlink，blob URL 必然 404。这里按前缀改写到子模块自己的仓库，
+// 并【剥掉前缀】——子模块内部路径不含它。
+const SUBMODULE_BLOB_BASES = [
+  { prefix: 'home-assistant-addon/', base: 'https://github.com/songloft-org/home-assistant-addon/blob/main' },
+  { prefix: 'songloft-player/', base: 'https://github.com/songloft-org/songloft-player/blob/main' },
+  { prefix: 'plugin-toolchain/', base: 'https://github.com/songloft-org/plugin-toolchain/blob/main' },
+];
+
+// repoPath 为「主仓库根视角」的路径，返回它在 GitHub 上真正可访问的 blob URL。
+function blobUrlFor(repoPath) {
+  for (const { prefix, base } of SUBMODULE_BLOB_BASES) {
+    if (repoPath.startsWith(prefix)) {
+      return `${base}/${repoPath.slice(prefix.length)}`;
+    }
+  }
+  return `${REPO_BLOB_BASE}/${repoPath}`;
+}
+
 const syncItems = [
   // 中文（根 → docs/ 根，root locale）
   { from: 'README.md',    to: 'docs/quick-start.md' },
@@ -37,8 +58,10 @@ const syncItems = [
   { from: 'songloft-player/docs/cn/backend_hotupdate.md',  to: 'docs/player/backend_hotupdate.md',  subdir: 'songloft-player/docs/cn' },
 
   // ── Home Assistant 加载项文档 → docs/addon/ ──
-  { from: 'addon/README.md',         to: 'docs/addon/index.md',       subdir: 'addon' },
-  { from: 'addon/songloft/DOCS.md',  to: 'docs/addon/user-guide.md',  subdir: 'addon/songloft' },
+  // 源在独立仓库 songloft-org/home-assistant-addon（子模块）；
+  // 目标路径刻意保持 docs/addon/ 不变 —— /addon/ 这个对外 URL 已进 sitemap，改了就是造死链。
+  { from: 'home-assistant-addon/README.md', to: 'docs/addon/index.md', subdir: 'home-assistant-addon' },
+  { from: 'home-assistant-addon/songloft/DOCS.md', to: 'docs/addon/user-guide.md', subdir: 'home-assistant-addon/songloft' },
 
   // ── 插件工具链文档 → docs/plugin-toolchain/ ──
   { from: 'plugin-toolchain/README.md',                    to: 'docs/plugin-toolchain/index.md',       subdir: 'plugin-toolchain' },
@@ -105,7 +128,7 @@ function buildLinkMap() {
 
 function rewriteSubdirLinks(content, { srcFile, subdir }) {
   const linkMap = buildLinkMap();
-  const srcDir = dirname(srcFile);         // e.g. 'addon' or 'tracely/docs'
+  const srcDir = dirname(srcFile);         // e.g. 'home-assistant-addon' or 'songloft-player/docs/cn'
   const dstFile = linkMap.get(srcFile);    // e.g. 'docs/addon/index.md'
   const dstDir = dirname(dstFile);         // e.g. 'docs/addon'
 
@@ -125,7 +148,7 @@ function rewriteSubdirLinks(content, { srcFile, subdir }) {
 
     // 解析相对路径为仓库根视角的绝对路径
     const resolvedSrc = resolve(repoRoot, srcDir, path)
-      .slice(repoRoot.length + 1); // 去掉 repoRoot 前缀，得到 'addon/songloft/DOCS.md' 之类
+      .slice(repoRoot.length + 1); // 去掉 repoRoot 前缀，得到 'home-assistant-addon/songloft/DOCS.md' 之类
 
     // 查找该路径是否在同步清单中
     const mappedDst = linkMap.get(resolvedSrc);
@@ -145,7 +168,7 @@ function rewriteSubdirLinks(content, { srcFile, subdir }) {
       const absInRepo = resolve(repoRoot, srcDir, path).slice(repoRoot.length + 1);
       // 同目录的 .md 文件可能存在于 docs 目标中但以不同名字（比如 README.md → index.md），
       // 这些已在上面 linkMap 中处理过了；到这里说明不在同步清单中，改指 GitHub
-      return `${open}${REPO_BLOB_BASE}/${absInRepo}${suffix}${close}`;
+      return `${open}${blobUrlFor(absInRepo)}${suffix}${close}`;
     }
 
     // 裸文件名（如 DOCS.md）——解析为同源目录下的文件
@@ -157,7 +180,7 @@ function rewriteSubdirLinks(content, { srcFile, subdir }) {
       return `${open}${normalized}${suffix}${close}`;
     }
 
-    return `${open}${REPO_BLOB_BASE}/${absInRepo}${suffix}${close}`;
+    return `${open}${blobUrlFor(absInRepo)}${suffix}${close}`;
   });
 }
 

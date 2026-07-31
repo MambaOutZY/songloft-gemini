@@ -8,7 +8,10 @@ on:
     paths:
       - 'docs/**'
       - 'scripts/**'
-      - 'addon/**'
+      # 子模块【裸路径，不带 /**】：子模块变更在 push event 里的路径就是 gitlink 本身
+      # （home-assistant-addon，不含斜杠），带 /** 的模式要求字面 '/'，永远匹配不上。
+      # 加载项文档进文档站 /addon/ 页，指针 bump 后要靠这条触发重新部署。
+      - 'home-assistant-addon'
       - 'README.md'
       - 'README.en.md'
       - 'CHANGELOG.md'
@@ -63,7 +66,7 @@ jobs:
           submodules: false
 
       - name: Checkout doc submodules
-        run: git submodule update --init --depth 1 songloft-player plugin-toolchain
+        run: git submodule update --init --depth 1 songloft-player plugin-toolchain home-assistant-addon
 
       - name: Set up Node.js
         uses: actions/setup-node@v2

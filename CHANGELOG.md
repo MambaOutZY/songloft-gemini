@@ -11,6 +11,13 @@
   `plugin_storage` 里的数据、原插件导入的歌曲也被记账到新插件名下）。现在返回 409
   且不做任何写入，前端弹框说明会替换哪个插件，用户确认后才带 `overwrite=true` 覆盖。
   手动上传 ZIP 的行为不变 *(fixes songloft-org/songloft#339)*
+- **addon**: Home Assistant 加载项拆为独立仓库
+  [songloft-org/home-assistant-addon](https://github.com/songloft-org/home-assistant-addon)，
+  修复「加载项商店 → 仓库」添加地址始终失败（`is not a valid app repository`）——
+  HA Supervisor 只在 git 仓库根目录查找 `repository.yaml`，而清单一直在 `addon/` 子目录。
+  顺带解决 Supervisor 递归 clone 会连带拉取主仓库全部子模块（约 60 MiB，实测 2 分钟）的问题，
+  新仓库无子模块、clone 为百 KiB 级。**用户请改用新地址**
+  `https://github.com/songloft-org/home-assistant-addon` *(fixes songloft-org/songloft#340)*
 - **lyric**: 本地 .lrc 歌词文件优先适配 — 支持大小写扩展名（`.LRC`/`.Lrc`）及 `<文件名>.lrc` 变体；
   已入库歌曲旁后放 .lrc 下次扫描即生效；运行时 GET /lyric 旁挂优先于插件歌词；
   0 字节 .lrc 不再导致前端无法请求歌词 *(fixes songloft-org/songloft#334)*

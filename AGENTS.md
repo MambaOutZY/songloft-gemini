@@ -23,7 +23,7 @@ Songloft 是自托管本地音乐服务器，支持**服务器部署**和**Bundl
 | `/plugin-toolchain` ([独立仓库](https://github.com/songloft-org/plugin-toolchain)) | TS + pnpm | JS 插件开发工具链（SDK / Builder / 脚手架） |
 | `/jsplugins-src` | TS | JS 插件源码（子模块集合，每个插件在自己仓库下分发 release） |
 | `/pkg/tag` | Go | 音频元数据**读写**库（基于上游 tag 库扩展 MP3/FLAC 写入） |
-| `/addon` | HA add-on | Home Assistant 加载项（薄层复用 Docker 镜像）。设计/踩坑/发版见 [addon/README.md](addon/README.md) |
+| `/home-assistant-addon` ([独立仓库](https://github.com/songloft-org/home-assistant-addon)) | HA add-on | Home Assistant 加载项（薄层复用 Docker 镜像，子模块）。**清单 `repository.yaml` 必须在那个仓库的根目录**，这就是拆出独立仓库的原因（#340）。设计/踩坑/版本同步见 [home-assistant-addon/README.md](home-assistant-addon/README.md) |
 | `/ffmpeg-builder` ([独立仓库](https://github.com/hanxi/ffmpeg-builder)) | Docker | 静态编译 ffmpeg/ffprobe 最小镜像构建器（子模块），供下载转码 / 音频指纹用 |
 | `/tracely` ([独立仓库](https://github.com/hanxi/tracely)) | Go + Vue | 自托管前端监控后端（安装/升级追踪），后端经其 Go SDK 上报；本地目录已 gitignore，SDK 依赖走 go.mod |
 

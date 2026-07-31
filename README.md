@@ -318,11 +318,11 @@ docker-compose down
 
 如果你在使用 Home Assistant OS（HAOS），可以把 Songloft 作为**加载项（Add-on）**一键安装，无需手动写 `docker run`。
 
-[![添加仓库到你的 Home Assistant。](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fsongloft-org%2Fsongloft)
+[![添加仓库到你的 Home Assistant。](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fsongloft-org%2Fhome-assistant-addon)
 
 点击上方徽章会直接在你的 HA 里弹出「添加加载项仓库」对话框；或手动操作：
 
-1. 「设置 → 加载项 → 加载项商店」，右上角菜单「仓库」，添加：`https://github.com/songloft-org/songloft`
+1. 「设置 → 加载项 → 加载项商店」，右上角菜单「仓库」，添加：`https://github.com/songloft-org/home-assistant-addon`
 2. 刷新后在商店里找到 **Songloft**，点击安装
 3. 到「配置」页填写管理员账号密码、音乐库路径（默认 `/media`），然后启动
 4. 点加载项详情页的「打开 Web UI」访问

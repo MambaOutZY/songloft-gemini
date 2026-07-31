@@ -23,7 +23,7 @@ Songloft is a self-hosted local music server that supports both **server deploym
 | `/plugin-toolchain` ([separate repo](https://github.com/songloft-org/plugin-toolchain)) | TS + pnpm | JS plugin development toolchain (SDK / Builder / scaffolding) |
 | `/jsplugins-src` | TS | JS plugin source code (a collection of submodules; each plugin distributes releases from its own repo) |
 | `/pkg/tag` | Go | Audio metadata **read/write** library (extends the upstream tag library with MP3/FLAC writing) |
-| `/addon` | HA add-on | Home Assistant add-on (thin layer reusing the Docker image). Design/pitfalls/release: see [addon/README.md](addon/README.md) |
+| `/home-assistant-addon` ([separate repo](https://github.com/songloft-org/home-assistant-addon)) | HA add-on | Home Assistant add-on (thin layer reusing the Docker image; submodule). **The `repository.yaml` manifest must sit at that repo's root** — which is exactly why it was split out (#340). Design/pitfalls/version sync: see [home-assistant-addon/README.md](home-assistant-addon/README.md) |
 | `/ffmpeg-builder` ([separate repo](https://github.com/hanxi/ffmpeg-builder)) | Docker | Minimal-image builder for statically compiled ffmpeg/ffprobe (submodule); used for download transcode / audio fingerprinting |
 | `/tracely` ([separate repo](https://github.com/hanxi/tracely)) | Go + Vue | Self-hosted frontend monitoring backend (install/upgrade tracking); the backend reports via its Go SDK. The local dir is gitignored, the SDK dependency comes from go.mod |
 

@@ -37,3 +37,6 @@
 [submodule "jsplugins-src/songloft-plugin-radio"]
 	path = jsplugins-src/songloft-plugin-radio
 	url = https://github.com/songloft-org/songloft-plugin-radio.git
+[submodule "home-assistant-addon"]
+	path = home-assistant-addon
+	url = https://github.com/songloft-org/home-assistant-addon.git
