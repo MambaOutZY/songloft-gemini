@@ -209,6 +209,7 @@ Songloft 文档站（`docs/`）用 **VitePress + 自定义主题**（`docs/.vite
 
 - **自定义落地页（改数据，不改 markdown）**：首页 `docs/index.md` 仅一行 `<Landing />`，内容由结构化数据 `docs/.vitepress/data/*.ts`（安装方式 `downloads.ts`、功能 `features.ts`、文案 `landing-i18n.ts`）驱动，由 `docs/.vitepress/theme/components/landing/*.vue` 渲染。改落地页 → 改 `data/*.ts`（双语 `{zh,en}` 字段）；图标要对齐组件里的映射表（如 `LandingInstaller.vue` 的 `ICONS`）。
 - **自动生成页（禁止手改）**：`docs/quick-start.md`、`docs/en/quick-start.md`、`docs/changelog.md` 由 `scripts/sync-docs.mjs` 从根 `README.md` / `README.en.md` / `CHANGELOG.md` 生成，已被 `docs/.gitignore` 忽略。要改正文 → 改源 `README` / `CHANGELOG`，`docs:dev` / `docs:build` 会先跑 `sync` 重新生成。**手改会被覆盖且不入库**。
+- **子模块同步页（同样禁止手改，但源在别的仓库）**：`docs/addon/`、`docs/player/`、`docs/plugin-toolchain/` 由 `sync-docs.mjs` 分别从 `home-assistant-addon/`、`songloft-player/docs/cn/`、`plugin-toolchain/` **子模块**同步，也都被 `docs/.gitignore` 忽略。要改正文 → **去对应子模块仓库改，再回主仓库 bump 子模块指针**（`git submodule update --remote <path>` + commit），否则文档站永远显示旧内容。两个要点：① `to:` 目标路径与源路径**刻意解耦**（如 `home-assistant-addon/README.md` → `docs/addon/index.md`），因为 `/addon/` 这类对外 URL 已进 sitemap，不能跟着源仓库改名；② 子模块未 checkout 时 `sync` 只 warn 不 fail，页面会**静默消失**，所以 `static.yml` 的 submodule init 列表必须包含它们。
 - **repowiki（`docs/repowiki/` — 手动维护）**：入库的 markdown 即**唯一真实来源**，任何工具（AI/人）直接编辑并 commit 即可。改代码相关内容时按需同步这些页面，与其他源文档一样对照代码保持准确。
 
 ---
