@@ -84,6 +84,10 @@ func (h *JSPluginHandler) UpdateRegistriesSetting(w http.ResponseWriter, r *http
 		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
 		return
 	}
+	// 源列表变了：让缓存里按旧配置拉取的结果立刻作废，腾出条目配额。
+	if h.registrySvc != nil {
+		h.registrySvc.InvalidateCache()
+	}
 	respondJSON(w, http.StatusOK, req)
 }
 
@@ -148,6 +152,9 @@ type registryRefreshRequest struct {
 	Search      string `json:"search"`
 	GithubProxy string `json:"github_proxy"`
 	Token       string `json:"token,omitempty"`
+	// Force 为 true 时绕过服务端缓存强制重新拉取。供「刷新」按钮使用；
+	// 翻页与搜索不应设置它，否则每翻一页都会重拉整棵注册表树。
+	Force bool `json:"force,omitempty"`
 }
 
 // registryPluginEntry 注册表插件条目（含安装状态）。
@@ -194,6 +201,7 @@ type registryRefreshResponse struct {
 // @Description 拉取订阅源（含递归 includes），去重合并后返回分页的可用插件列表。每个插件标注是否已安装及是否有更新。默认拉取单个 registry_url，可选传入 token 字段访问需要认证的私有源（如 GitHub 私有仓库 PAT）。当 all_sources=true 时忽略 registry_url/token，改为聚合已保存的所有启用订阅源（各源用自身存储的 token）。
 // @Description 去重键为 entry_path + identity（identity = 规范化 author，author 为空时用 updateUrl 的 GitHub owner/repo 兜底）：entry_path 相同但作者不同的插件会各自成行，同一插件被多个源收录时仍只显示一条（保留高版本）。
 // @Description 若某条目的 entry_path 已被本地一个**不同作者**的插件占用，返回 installed=false、conflict=true，并在 conflict_with 中描述占用者；此时安装该插件需要用户确认覆盖。
+// @Description 拉取结果在服务端缓存 5 分钟：分页与搜索都在缓存的完整列表上做切片/过滤，不会重复拉取远端。传 force=true 绕过缓存强制重拉（供「刷新」按钮使用，翻页与搜索不要传）。安装状态（installed/has_update/conflict）不受缓存影响，每次请求都从数据库实时计算。
 // @Tags JS插件管理
 // @Accept json
 // @Produce json
@@ -220,7 +228,8 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 		req.PageSize = 20
 	}
 
-	svc := jsplugin.NewRegistryService()
+	// 复用 handler 持有的 RegistryService：结果在 TTL 内缓存，翻页与搜索都在
+	// 缓存的完整列表上做切片/过滤，不再重拉整棵注册表树。force=true 时绕过缓存。
 	var (
 		entries  []jsplugin.RegistryEntry
 		warnings []string
@@ -237,10 +246,10 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 				enabled = append(enabled, src)
 			}
 		}
-		entries, warnings = svc.FetchAndMergeMulti(r.Context(), enabled, req.GithubProxy)
+		entries, warnings = h.registrySvc.FetchAndMergeMultiCached(r.Context(), enabled, req.GithubProxy, req.Force)
 	} else {
 		var err error
-		entries, warnings, err = svc.FetchAndMerge(r.Context(), req.RegistryURL, req.GithubProxy, req.Token)
+		entries, warnings, err = h.registrySvc.FetchAndMergeCached(r.Context(), req.RegistryURL, req.GithubProxy, req.Token, req.Force)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "拉取注册表失败", err)
 			return

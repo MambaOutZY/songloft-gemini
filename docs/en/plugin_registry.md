@@ -271,7 +271,12 @@ location /registry/ {
 | Maximum size per JSON | 2 MB | Larger files are rejected |
 | Request timeout per URL | 15 seconds | On timeout, the URL is skipped (logged as a warning) |
 | Circular references | Auto-detected | A → B → A won't loop forever; already-visited URLs are automatically skipped |
+| Result cache | 5 minutes | Fetch results are cached server-side, so paging and searching in the store don't re-fetch the remote |
 
 - URLs in `plugins` must point to valid `plugin.json` files
+- **Remember to hit "Refresh" while iterating on a registry**: store paging and search both operate on the
+  complete list cached server-side, so after editing your registry files plain paging won't show the change.
+  The refresh button bypasses the cache and re-fetches (the cache also expires on its own after 5 minutes).
+  Plugin install state is unaffected by the cache and is always computed live
 - If the registry file is hosted on GitHub, users in mainland China can select a GitHub mirror accelerator (preset or custom) in the Plugin Store, or configure a general proxy (e.g. `http://192.168.1.1:7890`) under "Settings → System → HTTP Proxy" to speed up access
 - A failed fetch of one `includes` or `plugins` entry does not affect the loading of other registries and plugins

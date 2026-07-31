@@ -59,11 +59,12 @@ type RegistryJSON struct {
 }
 
 // RegistryService 处理注册表的拉取、递归解析和去重合并。
+// 可安全并发复用：内部无共享可变状态（proxyDown 按次调用传递，缓存自带锁）。
 type RegistryService struct {
 	httpClient *http.Client
-	// proxyDown 记忆本次拉取操作内 GitHub 代理是否已失效（传输层错误），
-	// 置位后后续请求直接直连，避免几十个请求逐个等代理超时。
-	proxyDown atomic.Bool
+	// cache 缓存拉取结果，让翻页/搜索不必重拉整棵注册表树。
+	cacheMu sync.Mutex
+	cache   map[string]*registryCacheEntry
 }
 
 // NewRegistryService 创建 RegistryService。
@@ -79,9 +80,15 @@ func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string,
 	visited := make(map[string]bool)
 	var warnings []string
 
+	// proxyDown 记忆本次拉取内 GitHub 代理是否已失效（传输层错误），置位后后续请求
+	// 直接直连，避免几十个请求逐个等代理超时。**必须是每次调用的局部状态**：
+	// RegistryService 现在是长生命周期单例，挂在结构体上会让代理一次失败后永久
+	// 直连（代理恢复也不再尝试），且并发请求之间互相干扰。
+	proxyDown := new(atomic.Bool)
+
 	// [1] 递归拉取所有 registry JSON，收集 plugin.json URL
 	var pluginURLs []string
-	if err := s.fetchRecursive(ctx, registryURL, githubProxy, token, 0, visited, &pluginURLs, &warnings); err != nil {
+	if err := s.fetchRecursive(ctx, registryURL, githubProxy, token, proxyDown, 0, visited, &pluginURLs, &warnings); err != nil {
 		return nil, warnings, err
 	}
 
@@ -91,7 +98,7 @@ func (s *RegistryService) FetchAndMerge(ctx context.Context, registryURL string,
 	}
 
 	// [2] 并发解析所有 plugin.json URL
-	resolved := s.resolveAll(ctx, pluginURLs, githubProxy, token, &warnings)
+	resolved := s.resolveAll(ctx, pluginURLs, githubProxy, token, proxyDown, &warnings)
 
 	// [3] 按 entry_path + 身份去重（高版本优先），保持首次出现顺序（稳定序，避免分页跳序 #302）。
 	// 只按 entry_path 去重会让「同名但不同作者」的插件互相吞掉（#339），故键里带上 identity。
@@ -164,6 +171,7 @@ func (s *RegistryService) fetchRecursive(
 	url string,
 	githubProxy string,
 	token string,
+	proxyDown *atomic.Bool,
 	depth int,
 	visited map[string]bool,
 	pluginURLs *[]string,
@@ -180,7 +188,7 @@ func (s *RegistryService) fetchRecursive(
 	}
 	visited[canonicalURL] = true
 
-	registry, err := s.fetchJSON(ctx, url, githubProxy, token)
+	registry, err := s.fetchJSON(ctx, url, githubProxy, token, proxyDown)
 	if err != nil {
 		if depth == 0 {
 			return fmt.Errorf("fetch registry %s: %w", url, err)
@@ -199,7 +207,7 @@ func (s *RegistryService) fetchRecursive(
 		if token != "" && sameHost(url, includeURL) {
 			includeToken = token
 		}
-		if err := s.fetchRecursive(ctx, includeURL, githubProxy, includeToken, depth+1, visited, pluginURLs, warnings); err != nil {
+		if err := s.fetchRecursive(ctx, includeURL, githubProxy, includeToken, proxyDown, depth+1, visited, pluginURLs, warnings); err != nil {
 			return err
 		}
 	}
@@ -208,7 +216,7 @@ func (s *RegistryService) fetchRecursive(
 }
 
 // resolveAll 并发拉取所有 plugin.json URL，返回解析后的 RegistryEntry 列表。
-func (s *RegistryService) resolveAll(ctx context.Context, pluginURLs []string, githubProxy string, token string, warnings *[]string) []RegistryEntry {
+func (s *RegistryService) resolveAll(ctx context.Context, pluginURLs []string, githubProxy string, token string, proxyDown *atomic.Bool, warnings *[]string) []RegistryEntry {
 	if len(pluginURLs) == 0 {
 		return nil
 	}
@@ -228,7 +236,7 @@ func (s *RegistryService) resolveAll(ctx context.Context, pluginURLs []string, g
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			entry, err := s.resolvePluginJSON(ctx, rawURL, githubProxy, token)
+			entry, err := s.resolvePluginJSON(ctx, rawURL, githubProxy, token, proxyDown)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -245,8 +253,8 @@ func (s *RegistryService) resolveAll(ctx context.Context, pluginURLs []string, g
 
 // resolvePluginJSON 拉取远程 plugin.json 并映射到 RegistryEntry。
 // 如果 plugin.json 中 download_url 为空但 updateUrl 有值，链式拉取 updateUrl 获取 download_url（兼容旧版插件）。
-func (s *RegistryService) resolvePluginJSON(ctx context.Context, rawURL string, githubProxy string, token string) (RegistryEntry, error) {
-	body, err := s.fetchBody(ctx, rawURL, githubProxy, token)
+func (s *RegistryService) resolvePluginJSON(ctx context.Context, rawURL string, githubProxy string, token string, proxyDown *atomic.Bool) (RegistryEntry, error) {
+	body, err := s.fetchBody(ctx, rawURL, githubProxy, token, proxyDown)
 	if err != nil {
 		return RegistryEntry{}, err
 	}
@@ -278,7 +286,7 @@ func (s *RegistryService) resolvePluginJSON(ctx context.Context, rawURL string, 
 
 	// 兼容旧版插件：如果 plugin.json 未直接提供 download_url，通过 updateUrl 链式获取
 	if entry.DownloadURL == "" && entry.UpdateURL != "" {
-		if updateBody, err := s.fetchBody(ctx, entry.UpdateURL, githubProxy, token); err != nil {
+		if updateBody, err := s.fetchBody(ctx, entry.UpdateURL, githubProxy, token, proxyDown); err != nil {
 			slog.Debug("chain fetch updateUrl failed", "entryPath", entry.EntryPath, "updateUrl", entry.UpdateURL, "error", err)
 		} else {
 			var updateManifest PluginManifest
@@ -292,8 +300,8 @@ func (s *RegistryService) resolvePluginJSON(ctx context.Context, rawURL string, 
 	return entry, nil
 }
 
-func (s *RegistryService) fetchJSON(ctx context.Context, url string, githubProxy string, token string) (*RegistryJSON, error) {
-	body, err := s.fetchBody(ctx, url, githubProxy, token)
+func (s *RegistryService) fetchJSON(ctx context.Context, url string, githubProxy string, token string, proxyDown *atomic.Bool) (*RegistryJSON, error) {
+	body, err := s.fetchBody(ctx, url, githubProxy, token, proxyDown)
 	if err != nil {
 		return nil, err
 	}
@@ -306,14 +314,14 @@ func (s *RegistryService) fetchJSON(ctx context.Context, url string, githubProxy
 	return &registry, nil
 }
 
-func (s *RegistryService) fetchBody(ctx context.Context, rawURL string, githubProxy string, token string) ([]byte, error) {
+func (s *RegistryService) fetchBody(ctx context.Context, rawURL string, githubProxy string, token string, proxyDown *atomic.Bool) ([]byte, error) {
 	var header http.Header
 	if token != "" {
 		header = http.Header{"Authorization": []string{"Bearer " + token}}
 	}
 
 	resp, err := httputil.GetWithGithubProxyFallback(ctx, s.httpClient, rawURL, githubProxy,
-		httputil.GithubGetOptions{Header: header, ProxyDown: &s.proxyDown})
+		httputil.GithubGetOptions{Header: header, ProxyDown: proxyDown})
 	if err != nil {
 		return nil, fmt.Errorf("http get: %w", err)
 	}

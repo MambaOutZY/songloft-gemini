@@ -42,6 +42,9 @@ type JSPluginHandler struct {
 	sourceMetrics *source.SourceMetrics
 	configService *services.ConfigService
 	db            database.DB
+	// registrySvc 长生命周期持有：它内部缓存注册表拉取结果，让商店翻页/搜索
+	// 不必重拉整棵注册表树。每请求新建会让缓存永远命不中。
+	registrySvc *jsplugin.RegistryService
 }
 
 // NewJSPluginHandler 创建 JS 插件管理处理器
@@ -53,6 +56,7 @@ func NewJSPluginHandler(packageMgr *jsplugin.PackageManager, repo jsplugin.Repos
 		sourceMetrics: sourceMetrics,
 		configService: configService,
 		db:            db,
+		registrySvc:   jsplugin.NewRegistryService(),
 	}
 }
 

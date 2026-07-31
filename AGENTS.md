@@ -382,6 +382,28 @@ manager/scheduler 的内存 map 键，以及 `plugin_storage.plugin_entry_path` 
   （`entryPath|identity`）而非 index——`_RegistryPluginItem` 持有 `_installing` 本地状态，
   按 index 复用 Element 会让 loading 圈跑到别的条目上
 
+### 插件商店的结果缓存
+
+商店的分页与搜索都在**完整插件列表**上做（服务端切片 + 子串过滤），所以每次翻页、每次改搜索词
+都会触发一次完整的注册表拉取——最多 500 个 `plugin.json`、8 并发、单请求 15s 超时。
+`registry_cache.go` 给拉取结果加了 5 分钟的进程内 TTL 缓存。
+
+- **`RegistryService` 必须由 handler 长生命周期持有**（`JSPluginHandler.registrySvc`）。
+  以前是每个 HTTP 请求 `NewRegistryService()`，那样缓存永远命不中
+- **`proxyDown` 因此必须是每次调用的局部变量**，不能挂在 `RegistryService` 上。它记忆
+  「GitHub 代理本次已失效」，作为单例字段会让代理一次失败后**永久直连**（代理恢复也不再尝试），
+  且并发请求互相干扰。私有方法签名都带 `proxyDown *atomic.Bool` 就是为此
+- **缓存键必须含所有影响结果的输入**：模式（单源/全部）、源 URL、token、源顺序、`github_proxy`。
+  源顺序不能省——`FetchAndMergeMulti` 按源顺序决定同版本插件由哪个源胜出。**token 进键前要
+  哈希**，缓存键会进日志与调试输出，不能带明文凭据
+- **刻意不缓存安装状态**：`installed` / `has_update` / `conflict` 每次请求都由
+  `buildInstalledMap` 从 DB 实时算，所以装完插件立刻翻页也能看到状态更新，无需失效缓存
+- **失败不写缓存**（也不动既有缓存）：否则一次网络抖动会把错误状态粘住整个 TTL。
+  `FetchAndMergeMulti` 不返回 error（单源失败只进 warnings），所以那条路径改为**空结果不缓存**
+- **前端只有「刷新」与「拉取失败重试」传 `force: true`**；翻页、搜索、首次加载、源切换都不传。
+  源切换与改源配置靠缓存键变化自然重拉，`UpdateRegistriesSetting` 另外显式 `InvalidateCache()`
+  腾出条目配额
+
 ### scan 标题规则
 
 - tag 有 title → 直接用 `tag.Title`

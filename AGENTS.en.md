@@ -404,6 +404,36 @@ below before touching this area.
   `_RegistryPluginItem` holds local `_installing` state, and index-based Element reuse makes the
   spinner jump to another row
 
+### Plugin store result cache
+
+Store paging and search both operate on the **complete plugin list** (server-side slicing +
+substring filtering), so every page turn and every search-term edit used to trigger a full
+registry fetch — up to 500 `plugin.json` files, 8 concurrent, 15s timeout each.
+`registry_cache.go` adds a 5-minute in-process TTL cache over fetch results.
+
+- **`RegistryService` must be held long-term by the handler** (`JSPluginHandler.registrySvc`).
+  It used to be `NewRegistryService()` per HTTP request, which would never hit the cache
+- **`proxyDown` therefore must be a per-call local**, not a `RegistryService` field. It remembers
+  "the GitHub proxy has failed during this fetch"; as a singleton field it would pin the service
+  to **direct connections forever** after one failure (never retrying even once the proxy
+  recovers) and let concurrent requests interfere. That's why the private method signatures all
+  carry `proxyDown *atomic.Bool`
+- **The cache key must include every input that affects the result**: mode (single/all), registry
+  URLs, tokens, source order, and `github_proxy`. Source order cannot be omitted —
+  `FetchAndMergeMulti` uses it to decide which registry wins for equal versions. **Hash the token
+  before putting it in the key**: cache keys reach logs and debug output and must not carry
+  plaintext credentials
+- **Install state is deliberately not cached**: `installed` / `has_update` / `conflict` are
+  recomputed from the DB by `buildInstalledMap` on every request, so paging right after an
+  install still shows fresh state and no invalidation is needed
+- **Failures are not cached** (and don't disturb an existing entry): otherwise one network blip
+  would pin the error for a whole TTL. `FetchAndMergeMulti` returns no error (per-source failures
+  only become warnings), so that path instead **declines to cache an empty result**
+- **Only "refresh" and "retry after failure" pass `force: true`** on the frontend; paging,
+  search, initial load, and source switching do not. Source switching and config edits re-fetch
+  naturally because the cache key changes; `UpdateRegistriesSetting` additionally calls
+  `InvalidateCache()` to free up entry quota
+
 ### Scan title rules
 
 - tag has a title → use `tag.Title` directly
