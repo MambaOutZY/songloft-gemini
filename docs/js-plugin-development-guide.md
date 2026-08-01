@@ -993,6 +993,92 @@ if (isClient()) {
 
 插件 JS 可通过 `SongloftPlugin.onThemeChange(callback)` 监听主题变化做额外处理。
 
+### WebF 渲染引擎与原生元素
+
+新版客户端在部分平台上用 [WebF](https://openwebf.com/)（自研 W3C 运行时，纯 Flutter 渲染）替代系统 WebView 渲染插件页。WebF **不是浏览器**，有一批 HTML/CSS 能力缺失，主程序的 `common.js` 会统一垫掉常见缺口（空 `img src`、`<details>` 折叠等），并给 `<html>` 加上 `webf-engine` class 供插件按引擎分叉：
+
+```css
+html.webf-engine .only-in-webf { display: block; }
+```
+
+#### WebF 下内联 SVG 的真实限制
+
+WebF 的 `<svg>` 实现是：把整棵 svg 子树**重新序列化成字符串**，交给 `flutter_svg` 渲染。因此：
+
+- svg 的子节点只作数据存在，**没有真实 box** —— 拿不到布局（`getBoundingClientRect()` 无意义）
+- 单个 `<path>` / `<circle>` **无法单独做 CSS 动画、也无法命中测试**（点不到）
+- **任何子节点的属性 / 样式 / 子树变更都会触发整棵 SVG 重建**（重新拼字符串 + 重新解析 + 重新光栅化）
+
+结论：**高频更新的内联 SVG 在 WebF 下性能最差**。典型反例就是「每秒改 `stroke-dashoffset` 的 SVG 进度环」—— 每一次进度变化都在重建整棵 SVG。
+
+#### `<songloft-progress-ring>` —— 原生环形进度条
+
+为此主程序提供了一个原生元素：进度变化只走一次 Flutter `CustomPaint` 重绘，没有字符串序列化、没有 SVG 重解析。
+
+```html
+<songloft-progress-ring value="30" max="100" stroke-width="5"
+                        style="width:48px;height:48px"></songloft-progress-ring>
+```
+
+```js
+// 进度更新就是改属性，没有其它 API
+document.querySelector('songloft-progress-ring').setAttribute('value', '65');
+```
+
+属性一览：
+
+| 属性 | 默认值 | 说明 |
+|------|--------|------|
+| `value` | `0` | 当前进度值 |
+| `min` | `0` | 区间下界 |
+| `max` | `100` | 区间上界。`max <= min` 是退化区间，按 0 处理（只画轨道） |
+| `stroke-width` | `4` | 线宽（px），夹到 `(0, 短边/2]` |
+| `color` | CSS `color` 的值 | 进度弧颜色，**只接受具体色值**（见下） |
+| `track-color` | 进度色的 24% 不透明度 | 轨道颜色 |
+| `line-cap` | `butt` | 设为 `round` 得圆头端点 |
+
+- **尺寸**走 CSS `width` / `height`（未指定时为 36×36），`display` 默认 `inline-block`
+- 弧从 12 点方向起顺时针增长
+- **非法值一律夹紧或忽略，不会抛异常**：`value="oops"` 当 0，越界 value 夹到 `[min, max]`，负 `stroke-width` 夹到最小值
+- **暂不支持不确定态（indeterminate）动画**，需要转圈请自己用 CSS 动画包一层容器
+
+#### 颜色如何跟随主题
+
+Flutter 侧拿不到插件页的 `--md-*` CSS 变量，所以颜色由**页面**决定，两条路：
+
+```css
+/* ① 推荐：CSS color 属性（currentColor 语义）。
+   这是唯一能跟着 --md-* 变量走的路 —— 用户在主程序里切换亮/暗主题时，
+   环的颜色会跟着重绘。 */
+songloft-progress-ring {
+    color: var(--md-primary);
+}
+```
+
+```html
+<!-- ② 需要「进度色与文字色不同」或颜色由 JS 算出来时，用属性覆盖 -->
+<songloft-progress-ring value="30" color="#4caf50" track-color="#e0e0e0"
+                        style="width:48px;height:48px"></songloft-progress-ring>
+```
+
+`color` 是可继承属性，所以**什么都不配也能跟主题**：它会取继承来的文字色，而 `common.css` 已把文字色绑到 `--md-on-surface`。
+
+两个已实测的坑（不要踩）：
+
+- **属性里写 `var(--md-primary)` 不生效**：WebF 的属性值不经过 CSS 变量展开，元素会按「无效颜色」忽略它并退回 ①。要跟变量就用 CSS `color`。
+- **`getComputedStyle(el).getPropertyValue('--md-primary')` 在 WebF 下一律返回空串**：WebF 的 getComputedStyle 不暴露自定义属性，所以「用 JS 读变量再写进属性」这条常见套路走不通。
+
+#### 兼容性与降级
+
+- 该元素**只在 WebF 渲染面下存在**。在普通浏览器、系统 WebView（旧版客户端）里它是未知标签，会渲染成一个空盒子 —— 主程序**不会**把插件里的 SVG 自动替换成它（SVG 是任意图形，机械判定「哪个 svg 是进度环」必然误伤正常 SVG），替换与降级都由插件自己控制
+- 需要两端都好看时，两套实现共存 + 用 `html.webf-engine` 二选一：
+
+```css
+.ring-native { display: none; }                        /* 默认藏起原生元素 */
+html.webf-engine .ring-native { display: inline-block; }
+html.webf-engine .ring-svg { display: none; }          /* WebF 下藏起 SVG 版 */
+```
+
 ### 访问路径
 
 安装后，静态文件通过以下路径访问（注意：运行时路由是单数 `jsplugin`，与管理 API `/api/v1/jsplugins`（复数）不同）：

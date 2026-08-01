@@ -994,6 +994,93 @@ When the theme changes (the user switches it in the main program's settings), `c
 
 Plugin JS can listen for theme changes via `SongloftPlugin.onThemeChange(callback)` to perform additional handling.
 
+### The WebF Rendering Engine and Native Elements
+
+On some platforms, newer clients render plugin pages with [WebF](https://openwebf.com/) (an in-house W3C runtime rendered entirely by Flutter) instead of the system WebView. WebF **is not a browser** and lacks a number of HTML/CSS capabilities. The main program's `common.js` shims the common gaps (empty `img src`, `<details>` collapsing, etc.) and adds a `webf-engine` class to `<html>` so plugins can branch on the engine:
+
+```css
+html.webf-engine .only-in-webf { display: block; }
+```
+
+#### Real limitations of inline SVG under WebF
+
+WebF implements `<svg>` by **re-serializing the whole svg subtree into a string** and handing it to `flutter_svg`. Consequently:
+
+- SVG child nodes exist as data only and have **no real box** — you cannot get layout from them (`getBoundingClientRect()` is meaningless)
+- An individual `<path>` / `<circle>` **cannot be animated with CSS on its own, nor hit-tested** (it is not clickable)
+- **Any change to a child's attributes / styles / subtree rebuilds the entire SVG** (re-serialize the string, re-parse, re-rasterize)
+
+Conclusion: **frequently updated inline SVG performs worst under WebF**. The textbook counter-example is "an SVG progress ring whose `stroke-dashoffset` changes every second" — every progress step rebuilds the whole SVG.
+
+#### `<songloft-progress-ring>` — a native progress ring
+
+For this reason the main program provides a native element: a progress change costs exactly one Flutter `CustomPaint` repaint, with no string serialization and no SVG re-parsing.
+
+```html
+<songloft-progress-ring value="30" max="100" stroke-width="5"
+                        style="width:48px;height:48px"></songloft-progress-ring>
+```
+
+```js
+// Updating progress means setting an attribute; there is no other API
+document.querySelector('songloft-progress-ring').setAttribute('value', '65');
+```
+
+Attributes:
+
+| Attribute | Default | Description |
+|-----------|---------|-------------|
+| `value` | `0` | Current progress value |
+| `min` | `0` | Lower bound |
+| `max` | `100` | Upper bound. `max <= min` is a degenerate range and is treated as 0 (track only) |
+| `stroke-width` | `4` | Stroke width in px, clamped to `(0, shorter side / 2]` |
+| `color` | value of CSS `color` | Progress arc color; **accepts concrete color values only** (see below) |
+| `track-color` | progress color at 24% opacity | Track color |
+| `line-cap` | `butt` | Set to `round` for rounded caps |
+
+- **Size** comes from CSS `width` / `height` (36×36 when unspecified); `display` defaults to `inline-block`
+- The arc starts at the 12 o'clock position and grows clockwise
+- **Invalid values are always clamped or ignored, never thrown**: `value="oops"` counts as 0, out-of-range values are clamped to `[min, max]`, a negative `stroke-width` is clamped to the minimum
+- **Indeterminate animation is not supported yet**; wrap the element in a CSS animation if you need a spinner
+
+#### How the color follows the theme
+
+The Flutter side cannot read the plugin page's `--md-*` CSS variables, so the color is decided by the **page**, in one of two ways:
+
+```css
+/* ① Recommended: the CSS color property (currentColor semantics).
+   This is the only path that tracks --md-* variables — when the user switches
+   between light and dark in the main program, the ring repaints accordingly. */
+songloft-progress-ring {
+    color: var(--md-primary);
+}
+```
+
+```html
+<!-- ② Override with attributes when the progress color must differ from the text
+     color, or when the color is computed in JS -->
+<songloft-progress-ring value="30" color="#4caf50" track-color="#e0e0e0"
+                        style="width:48px;height:48px"></songloft-progress-ring>
+```
+
+`color` is an inherited property, so **it follows the theme even with zero configuration**: it picks up the inherited text color, and `common.css` already binds the text color to `--md-on-surface`.
+
+Two verified pitfalls (do not step in them):
+
+- **Writing `var(--md-primary)` in the attribute does not work**: WebF does not expand CSS variables in attribute values, so the element treats it as an invalid color, ignores it, and falls back to ①. Use CSS `color` if you want to track a variable.
+- **`getComputedStyle(el).getPropertyValue('--md-primary')` always returns an empty string under WebF**: WebF's getComputedStyle does not expose custom properties, so the common trick of "read the variable in JS, then write it into the attribute" does not work.
+
+#### Compatibility and graceful degradation
+
+- The element **exists only on the WebF rendering surface**. In a regular browser or the system WebView (older clients) it is an unknown tag and renders as an empty box. The main program does **not** auto-replace SVG in plugins with it (SVG is arbitrary graphics; mechanically deciding "which svg is a progress ring" would inevitably break legitimate SVG) — replacement and fallback are entirely up to the plugin
+- When you need both to look right, ship both implementations and pick one via `html.webf-engine`:
+
+```css
+.ring-native { display: none; }                        /* hide the native element by default */
+html.webf-engine .ring-native { display: inline-block; }
+html.webf-engine .ring-svg { display: none; }          /* hide the SVG version under WebF */
+```
+
 ### Access Paths
 
 After installation, static files are accessed via the following paths (note: the runtime route is the singular `jsplugin`, different from the management API `/api/v1/jsplugins`, which is plural):
