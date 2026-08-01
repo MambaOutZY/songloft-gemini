@@ -107,6 +107,10 @@ export default async () => {
       },
     },
 
+    // 分支临时交接件，不是产品文档：不建页、不进 sitemap、也刻意不做中英双语同步。
+    // songloft-org/songloft#341 落地后连同那个 md 一起删除（这条 srcExclude 也删掉）。
+    srcExclude: ['webf-migration-handoff.md'],
+
     sitemap: {
       hostname: 'https://songloft.hanxi.cc',
     },
@@ -130,6 +134,8 @@ export default async () => {
           collapsed: true,
           titleFromFile: true,
           ignoreIndexItem: true, // 首页 index.md（落地页）不进侧边栏
+          // 与上面的 srcExclude 配对：那页不建，侧边栏也不能留指向它的死链。
+          ignoreList: ['webf-migration-handoff'],
         }),
       ],
     },
