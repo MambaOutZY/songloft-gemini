@@ -720,6 +720,43 @@ html.embed .snackbar {
     outline-offset: -2px;
 }
 
+/* ── WebF 垫片层样式（songloft-org/songloft#341）──
+ *
+ * 只服务 common.js 里的 WebF 兼容垫片层，纯增量。
+ *
+ * 为什么用 class 而不是 `html.webf-engine ...` 复合选择器做作用域：
+ * 下面这些 class（.sl-details / .sl-details-summary / .sl-details-content /
+ * .sl-details-marker）**只由垫片在 WebF 下添加**，垫片本身已经关在
+ * isWebFEngine() 分支里，所以规则天然只在 WebF 生效。写成
+ * `html.webf-engine .sl-details-summary` 反而额外依赖 WebF 正确解析「根元素
+ * class + 后代」组合，多一个失效点、零收益。（垫片仍会在 WebF 下给
+ * <html> 加 `webf-engine` class，供插件写自己的 WebF-only 规则用。）
+ * 浏览器与系统 WebView 下 <details> 是原生实现、垫片不跑，这段永不匹配。
+ *
+ * 颜色一律走 --md-* 变量 —— 这是把折叠做成 CSS/JS 垫片而不是 Flutter 组件的
+ * 主要理由：变量在 html[data-theme] 里已有亮/暗两套，主题切换自动跟随。
+ * 优先级刻意留低（单 class = 0,1,0），插件自己的 `.x summary`（0,1,1）能盖掉。
+ */
+.sl-details-summary {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    color: var(--md-primary);
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.sl-details-marker {
+    font-size: 20px;
+    line-height: 1;
+    color: var(--md-on-surface-variant);
+}
+
+.sl-details-content {
+    display: block;
+}
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

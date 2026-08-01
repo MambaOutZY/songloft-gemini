@@ -46,52 +46,289 @@
         history.replaceState(null, '', cleanUrl);
     }
 
-    // ── 空 img src 的兜底（仅 WebF 引擎，songloft-org/songloft#341）──
+    // ════════════════════════════════════════════════════════════════════════
+    // WebF 兼容垫片层（songloft-org/songloft#341）
+    // ════════════════════════════════════════════════════════════════════════
     //
-    // 按 HTML 规范，src="" 是无效值，浏览器不会为它发请求。WebF 却把空 src
+    // WebF 是自研 W3C 运行时，有一批 HTML/CSS 能力缺失。本文件由后端注入到**每个**
+    // 插件页，而插件是独立仓库、第三方可自由发布 —— 我们改不了别人的插件，所以这里
+    // 是统一垫掉这些缺口的唯一位置。
+    //
+    // 三条铁律（common.js 由后端服务给**所有**客户端版本和普通浏览器）：
+    //   ① 纯增量 ② 特性探测 ③ 全部关在 isWebFEngine() 分支里。
+    // 绝不能改变浏览器与系统 WebView 下的既有行为。
+    //
+    // ── 两个时机，刻意分开 —— 不是代码风格，是能力边界 ────────────────────
+    //
+    //   installEarly()   立即执行。common.js 是 <head> 内的阻塞脚本，此刻 <body>
+    //                    还没解析。**原型 / 属性访问器级的拦截只能放这里**：它必须
+    //                    早于插件自己的脚本安装，晚一步就漏掉别人已经跑过的赋值。
+    //                    代价是不能碰 DOM —— 那时候还没有 DOM。
+    //
+    //   applyOnReady()   DOMContentLoaded 后执行。**就地替换 / 改造元素只能放这里**：
+    //                    要等解析器把节点建出来才有东西可改。
+    //
+    // ── 两类垫片的分界线（已经踩过的坑）────────────────────────────────────
+    //
+    // 判据是「这个缺口会不会在**解析期**就产生不可撤销的副作用（发请求 / 起解码）」：
+    //
+    //   会 → applyOnReady **根本来不及**。静态 HTML 里 <img src=""> 的加载在解析期
+    //        就已发起，早于任何脚本能跑的时机，所以那一项最终是在服务端 injectHTMLHead
+    //        里把属性剥掉的（internal/jsplugin/routes.go 的 stripEmptySrcAttrs）；
+    //        这里只剩「运行时 img.src = ''」那条访问器路径和一道 DOM 兜底扫描。
+    //   不会 → <details>、<table> 这类纯渲染 / 交互缺口不触发任何资源加载，
+    //        晚到 DOMContentLoaded 再改造完全没有副作用，就地替换是最省事的做法。
+    //
+    // 加新垫片时先回答这个问题，再决定挂到哪个数组里。
+
+    function isWebFEngine() {
+        return !!window.webf;
+    }
+
+    // 每个垫片各自包 try/catch，一个失败不能拖垮其它垫片。
+    // 理由与上面 applyTheme 处相同、但后果更严重：本文件是一个 IIFE，任一垫片抛出
+    // 都会中断其余**全部**代码，包括文件末尾 window.SongloftPlugin 的定义 —— 表现是
+    // 宿主桥整体静默失效，极难归因（#341 就踩过：dataset 在 WebF 里为 null 抛
+    // TypeError）。垫片失效只意味着「某个元素退回 WebF 的原生表现」，绝不该连带
+    // 打掉插件的宿主能力。
+    function runShims(shims, phase) {
+        for (var i = 0; i < shims.length; i++) {
+            try {
+                shims[i].apply();
+            } catch (e) {
+                console.warn('[songloft] shim "' + shims[i].name + '" failed (' + phase + '):', e);
+            }
+        }
+    }
+
+    // 按标签名收集元素并快照成数组。
+    //
+    // 两点讲究：① 优先 querySelectorAll，但对 WebF 里**未注册的标签**
+    // （details/summary 落到 _UnknownHTMLElement）不敢假定类型选择器一定能匹配，
+    // 拿到空结果时退回 getElementsByTagName；② 一律拷成普通数组 ——
+    // getElementsByTagName 返回 live 集合，垫片会改 DOM，边改边遍历不安全。
+    function collectByTag(tag) {
+        var list = null;
+        try {
+            list = document.querySelectorAll(tag);
+        } catch (e) {
+            list = null;
+        }
+        if (!list || !list.length) {
+            try {
+                list = document.getElementsByTagName(tag);
+            } catch (e) {
+                list = null;
+            }
+        }
+        var out = [];
+        if (list) {
+            for (var i = 0; i < list.length; i++) out.push(list[i]);
+        }
+        return out;
+    }
+
+    // ── 垫片：空 img src（early 段 —— 属性访问器）──────────────────────────
+    //
+    // 按 HTML 规范 src="" 是无效值，浏览器不会为它发请求。WebF 却把空 src
     // **解析成当前文档 URL**，于是把插件页自己的 HTML 抓回来当图片解码，报
     // 「Failed to decode image ... (mime=text/html)」。实测命中 miot / stats /
     // music-feed 等多个插件，所以在宿主侧统一挡掉，而不是逐个插件改。
-    //
-    // 两条路径要分别处理：HTML 里写死的 src="" 由解析器设的是**属性**，
-    // 运行时的 img.src = '' 走的是**属性访问器**，一个补丁盖不住两者。
-    // 整段只在 WebF 下生效，不改变浏览器与系统 WebView 的既有行为。
-    if (window.webf) {
-        // 运行时：拦下把 src 置空的赋值（改为移除属性，语义上等价于「没有图」）
-        try {
+    var emptyImgSrcAccessorShim = {
+        name: 'img-src-accessor',
+        apply: function() {
             var imgProto = window.HTMLImageElement && window.HTMLImageElement.prototype;
-            var srcDesc = imgProto &&
-                Object.getOwnPropertyDescriptor(imgProto, 'src');
-            if (srcDesc && srcDesc.set && srcDesc.configurable) {
-                Object.defineProperty(imgProto, 'src', {
-                    configurable: true,
-                    enumerable: srcDesc.enumerable,
-                    get: srcDesc.get,
-                    set: function(value) {
-                        if (value === '' || value === null || value === undefined) {
-                            this.removeAttribute('src');
-                            return;
-                        }
-                        srcDesc.set.call(this, value);
+            var srcDesc = imgProto && Object.getOwnPropertyDescriptor(imgProto, 'src');
+            if (!srcDesc || !srcDesc.set || !srcDesc.configurable) return;
+            Object.defineProperty(imgProto, 'src', {
+                configurable: true,
+                enumerable: srcDesc.enumerable,
+                get: srcDesc.get,
+                set: function(value) {
+                    // 改为移除属性，语义上等价于「没有图」
+                    if (value === '' || value === null || value === undefined) {
+                        this.removeAttribute('src');
+                        return;
                     }
-                });
+                    srcDesc.set.call(this, value);
+                }
+            });
+        }
+    };
+
+    // ── 垫片：空 img src（ready 段 —— DOM 兜底扫描）─────────────────────────
+    //
+    // 服务端 stripEmptySrcAttrs 已经剥掉插件页里写死的 src=""，这道扫描是兜底：
+    // 覆盖「插件运行时用 innerHTML 插进来的 <img src="">」——那条路径既不过服务端
+    // 正则，也不过上面的属性访问器（innerHTML 走的是解析器，不是 setter）。
+    var emptyImgSrcSweepShim = {
+        name: 'img-src-sweep',
+        apply: function() {
+            var imgs = collectByTag('img');
+            for (var i = 0; i < imgs.length; i++) {
+                if (imgs[i].getAttribute('src') === '') imgs[i].removeAttribute('src');
             }
-        } catch (e) {
-            console.warn('[songloft] img.src guard unavailable:', e);
+        }
+    };
+
+    // ── 垫片：<details> / <summary>（ready 段 —— 就地改造）─────────────────
+    //
+    // WebF 的两份标签注册表（bridge/core/html/html_tag_names.json5 与 Dart 的
+    // element_registry.dart）里都没有 details/summary，它们降级为 _UnknownHTMLElement
+    // （display:block）：子内容照常渲染成块，但**没有折叠交互、没有 open 属性语义、
+    // 没有三角标记** —— 也就是「详情」永远是摊开的。
+    //
+    // 刻意**不**把 details/summary 换成 div：真实插件按标签名选样式（lxmusic 的
+    // `.import-results-details summary { cursor:pointer; color:var(--md-primary) }`），
+    // 换标签会静默丢掉这些样式，插件里的 querySelector('summary') 也会失配。
+    // 所以保留原元素（连带 class / style / id 都不动），只做四件事：
+    //   ① 把非 summary 的子节点收进一个可整体折叠的容器
+    //   ② 给 summary 挂 click / 键盘切换
+    //   ③ 补 open 属性访问器，让 el.open = true 真的能展开
+    //   ④ 插一个 Material Symbols 连字做三角标记（实测在 WebF 下可用）
+    //
+    // 纯 CSS/JS，不写任何 Dart：样式走 common.css 里既有的 --md-* 变量，因此自动
+    // 跟随主题切换 —— 做成 Flutter 组件就拿不到插件页的主题变量了，这是不做成
+    // 原生组件的主要理由。
+    var DETAILS_MARK = 'data-sl-details-shim';
+
+    function shimOneDetails(el) {
+        // 幂等：applyShims 可被插件在动态插入 HTML 后重复调用
+        if (el.hasAttribute(DETAILS_MARK)) return;
+        el.setAttribute(DETAILS_MARK, '');
+
+        var content = document.createElement('div');
+        content.className = 'sl-details-content';
+
+        // 第一个 <summary> 当触发器，其余子节点（含文本节点）全进 content。
+        // 先把 childNodes 快照成数组：appendChild 会改动这个 live 集合。
+        var kids = [];
+        for (var i = 0; i < el.childNodes.length; i++) kids.push(el.childNodes[i]);
+
+        var summary = null;
+        for (var j = 0; j < kids.length; j++) {
+            var node = kids[j];
+            if (!summary && node.nodeType === 1 && node.tagName &&
+                node.tagName.toLowerCase() === 'summary') {
+                summary = node;
+                continue;
+            }
+            content.appendChild(node);
+        }
+        el.appendChild(content);
+
+        // 没写 <summary> 时规范要求显示 "Details"。这里补一个同名元素，否则折叠后
+        // 内容永远打不开 —— 宁可多一行占位文字，也不能做出打不开的黑洞。
+        if (!summary) {
+            summary = document.createElement('summary');
+            summary.textContent = 'Details';
+            el.insertBefore(summary, content);
+        }
+        el.classList.add('sl-details');
+        summary.classList.add('sl-details-summary');
+        summary.setAttribute('role', 'button');
+        if (!summary.getAttribute('tabindex')) summary.setAttribute('tabindex', '0');
+
+        var marker = document.createElement('span');
+        marker.className = 'material-symbols-outlined sl-details-marker';
+        marker.setAttribute('aria-hidden', 'true');
+        summary.insertBefore(marker, summary.firstChild);
+
+        // 尊重原有 open 属性的初始状态
+        var open = el.hasAttribute('open');
+
+        function render() {
+            // 刻意写死 'block' 而不是复位成 ''：WebF 对「把 inline style 置空
+            // 是否等于撤销声明」没有稳定表现，content 是我们自己建的 div，
+            // block 就是它的正确显示值。
+            content.style.display = open ? 'block' : 'none';
+            // 三角用连字文本切换，而不是 CSS transform 旋转：WebF 的 transform /
+            // 伪元素 content 支持面不确定，换字是最稳的一条路。
+            marker.textContent = open ? 'arrow_drop_down' : 'arrow_right';
+            summary.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open) el.setAttribute('open', '');
+            else el.removeAttribute('open');
         }
 
-        // 静态：解析器设的属性，DOM 就绪后扫一遍
-        var sweepEmptyImgSrc = function() {
+        function toggle() {
+            open = !open;
+            render();
+            // 与规范对齐：状态变化派发 toggle（浏览器里插件本来就能收到这个事件，
+            // 垫片不补的话 WebF 下监听 toggle 的插件会静默失灵）
             try {
-                var imgs = document.querySelectorAll('img[src=""]');
-                for (var i = 0; i < imgs.length; i++) imgs[i].removeAttribute('src');
-            } catch (e) { /* 扫描失败不致命 */ }
-        };
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', sweepEmptyImgSrc);
-        } else {
-            sweepEmptyImgSrc();
+                el.dispatchEvent(new CustomEvent('toggle', { bubbles: false }));
+            } catch (e) { /* 事件构造不可用不影响折叠本身 */ }
         }
+
+        render();
+        summary.addEventListener('click', toggle);
+        summary.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggle();
+            }
+        });
+
+        // open 在浏览器里是反射属性（details.open = true 即展开），WebF 的未知元素
+        // 没有这层语义。补个访问器，让插件既有的 el.open 读写照常工作。
+        try {
+            Object.defineProperty(el, 'open', {
+                configurable: true,
+                get: function() { return open; },
+                set: function(v) {
+                    var next = !!v;
+                    if (next === open) return;
+                    open = next;
+                    render();
+                }
+            });
+        } catch (e) {
+            // 访问器装不上时仍可点击展开，不致命
+            console.warn('[songloft] details.open accessor unavailable:', e);
+        }
+    }
+
+    var detailsShim = {
+        name: 'details',
+        apply: function() {
+            var list = collectByTag('details');
+            for (var i = 0; i < list.length; i++) {
+                // 逐元素兜底：页面里某个畸形 details 不该让其余的一起失去折叠
+                try {
+                    shimOneDetails(list[i]);
+                } catch (e) {
+                    console.warn('[songloft] details shim skipped one element:', e);
+                }
+            }
+        }
+    };
+
+    // ── 垫片注册表 ─────────────────────────────────────────────────────────
+    var earlyShims = [emptyImgSrcAccessorShim];
+    var readyShims = [emptyImgSrcSweepShim, detailsShim];
+
+    function installEarly() {
+        if (!isWebFEngine()) return;
+        // 根 class：给 common.css 与插件 CSS 一个 WebF-only 的作用域钩子。
+        // 只在这里加，所以 `html.webf-engine` 在浏览器 / 系统 WebView 下永不出现。
+        try {
+            document.documentElement.classList.add('webf-engine');
+        } catch (e) {
+            console.warn('[songloft] webf-engine root class unavailable:', e);
+        }
+        runShims(earlyShims, 'early');
+    }
+
+    function applyOnReady() {
+        if (!isWebFEngine()) return;
+        runShims(readyShims, 'ready');
+    }
+
+    installEarly();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', applyOnReady);
+    } else {
+        applyOnReady();
     }
 
     window.addEventListener('message', function(e) {
@@ -468,6 +705,9 @@
         announce: announce,
         hideDecorationIcons: hideDecorationIcons,
         enhanceClickableElements: enhanceClickableElements,
+        // 重跑 WebF 垫片的 ready 段。插件用 innerHTML 动态插入内容（新的 <details>
+        // 等）后调用即可；幂等，且在浏览器 / 系统 WebView 下是彻底的 no-op。
+        applyShims: applyOnReady,
         host: host,
         player: player
     };
