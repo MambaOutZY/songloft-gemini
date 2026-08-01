@@ -46,6 +46,54 @@
         history.replaceState(null, '', cleanUrl);
     }
 
+    // ── 空 img src 的兜底（仅 WebF 引擎，songloft-org/songloft#341）──
+    //
+    // 按 HTML 规范，src="" 是无效值，浏览器不会为它发请求。WebF 却把空 src
+    // **解析成当前文档 URL**，于是把插件页自己的 HTML 抓回来当图片解码，报
+    // 「Failed to decode image ... (mime=text/html)」。实测命中 miot / stats /
+    // music-feed 等多个插件，所以在宿主侧统一挡掉，而不是逐个插件改。
+    //
+    // 两条路径要分别处理：HTML 里写死的 src="" 由解析器设的是**属性**，
+    // 运行时的 img.src = '' 走的是**属性访问器**，一个补丁盖不住两者。
+    // 整段只在 WebF 下生效，不改变浏览器与系统 WebView 的既有行为。
+    if (window.webf) {
+        // 运行时：拦下把 src 置空的赋值（改为移除属性，语义上等价于「没有图」）
+        try {
+            var imgProto = window.HTMLImageElement && window.HTMLImageElement.prototype;
+            var srcDesc = imgProto &&
+                Object.getOwnPropertyDescriptor(imgProto, 'src');
+            if (srcDesc && srcDesc.set && srcDesc.configurable) {
+                Object.defineProperty(imgProto, 'src', {
+                    configurable: true,
+                    enumerable: srcDesc.enumerable,
+                    get: srcDesc.get,
+                    set: function(value) {
+                        if (value === '' || value === null || value === undefined) {
+                            this.removeAttribute('src');
+                            return;
+                        }
+                        srcDesc.set.call(this, value);
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn('[songloft] img.src guard unavailable:', e);
+        }
+
+        // 静态：解析器设的属性，DOM 就绪后扫一遍
+        var sweepEmptyImgSrc = function() {
+            try {
+                var imgs = document.querySelectorAll('img[src=""]');
+                for (var i = 0; i < imgs.length; i++) imgs[i].removeAttribute('src');
+            } catch (e) { /* 扫描失败不致命 */ }
+        };
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', sweepEmptyImgSrc);
+        } else {
+            sweepEmptyImgSrc();
+        }
+    }
+
     window.addEventListener('message', function(e) {
         if (!e.data || !e.data.type) return;
         if (e.data.type === 'songloft-theme' && (e.data.theme === 'light' || e.data.theme === 'dark')) {
