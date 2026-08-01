@@ -37,6 +37,7 @@ jobs:
     outputs:
       version: ${{ steps.parse.outputs.version }}
       version_tag: ${{ steps.parse.outputs.version_tag }}
+      release_tag: ${{ steps.parse.outputs.release_tag }}
       is_prerelease: ${{ steps.parse.outputs.is_prerelease }}
       release_title: ${{ steps.parse.outputs.release_title }}
       previous_tag: ${{ steps.prev-tag.outputs.previous_tag }}
@@ -68,8 +69,20 @@ jobs:
           BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
           GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
+          # RELEASE_TAG 只用于 GitHub release 的 tag 名与 Docker 镜像 tag 后缀。
+          # 刻意与 VERSION / VERSION_TAG 分开：VERSION=dev 会驱动 Makefile 的
+          # -tags dev，VERSION_TAG 是客户端的 FRONTEND_VERSION，两者语义不能动。
+          # WebF 实验分支（songloft-org/songloft#341）发到独立 tag，避免覆盖共享
+          # dev 预发布 —— 那是 dev 渠道客户端热更新检查的目标。
+          # 本分支合并回 main 前必须删掉这段。
+          RELEASE_TAG="${VERSION}"
+          if [[ "${GITHUB_REF}" != refs/tags/v* && "${GITHUB_REF#refs/heads/}" == worktree-webf-plugin-render ]]; then
+            RELEASE_TAG="dev-webf"
+          fi
+
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "version_tag=${VERSION_TAG}" >> $GITHUB_OUTPUT
+          echo "release_tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
           echo "is_prerelease=${IS_PRERELEASE}" >> $GITHUB_OUTPUT
           echo "release_title=${RELEASE_TITLE}" >> $GITHUB_OUTPUT
           echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
@@ -250,13 +263,16 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           BUILD_TIME: ${{ needs.prepare.outputs.build_time }}
           GIT_COMMIT: ${{ needs.prepare.outputs.git_commit }}
+          # 下载地址必须用 release_tag 而不是 VERSION：WebF 实验分支的产物挂在
+          # dev-webf 这个独立 release 下，用 VERSION 会拼出不存在的路径。
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         run: |
           cat > version.json <<EOF
           {
             "version": "${VERSION}",
             "git_commit": "${GIT_COMMIT}",
             "build_time": "${BUILD_TIME}",
-            "download_url_prefix": "https://github.com/${{ env.RELEASE_REPO }}/releases/download/${VERSION}/songloft",
+            "download_url_prefix": "https://github.com/${{ env.RELEASE_REPO }}/releases/download/${RELEASE_TAG}/songloft",
             "release_notes": "Release ${VERSION}"
           }
           EOF
@@ -330,8 +346,9 @@ jobs:
             LITE_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}-lite,${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:lite"
           else
             # dispatch：仅打分支名标签
-            FULL_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}"
-            LITE_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}-lite"
+            # 用 release_tag 而非 version_tag：WebF 实验分支要避开共享的 :dev 镜像
+            FULL_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.release_tag }}"
+            LITE_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.release_tag }}-lite"
           fi
 
           echo "FULL_TAGS=${FULL_TAGS}" >> $GITHUB_OUTPUT
@@ -653,7 +670,9 @@ jobs:
       - name: Produce hot-update patch assets (frontend zip + backend so)
         env:
           REPO: ${{ env.RELEASE_REPO }}
-          TAG: ${{ needs.prepare.outputs.version }}
+          # 用 release_tag：补丁资产挂在实际的 release 下（WebF 分支是 dev-webf），
+          # 用 version 会让 manifest 里的 patchUrl/soUrl 指向不存在的路径。
+          TAG: ${{ needs.prepare.outputs.release_tag }}
           SEMVER: ${{ needs.prepare.outputs.version_tag }}
           GIT_COMMIT: ${{ needs.prepare.outputs.git_commit }}
           BUILD_TIME: ${{ needs.prepare.outputs.build_time }}
@@ -1084,6 +1103,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_TITLE: ${{ needs.prepare.outputs.release_title }}
           IS_PRERELEASE: ${{ needs.prepare.outputs.is_prerelease }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         run: |
           cd release-files
 
@@ -1092,9 +1112,9 @@ jobs:
           echo "Uploading ${#FILES[@]} files..."
 
           # 检查 release 是否已存在，存在则删除
-          if gh release view "${VERSION}" --repo "${{ env.RELEASE_REPO }}" > /dev/null 2>&1; then
-            echo "Release ${VERSION} already exists, deleting..."
-            gh release delete "${VERSION}" --repo "${{ env.RELEASE_REPO }}" --yes
+          if gh release view "${RELEASE_TAG}" --repo "${{ env.RELEASE_REPO }}" > /dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists, deleting..."
+            gh release delete "${RELEASE_TAG}" --repo "${{ env.RELEASE_REPO }}" --yes
           fi
 
           # 构建 Release Notes（用 heredoc 避免 changelog 内容被 shell 展开执行）
@@ -1115,14 +1135,14 @@ jobs:
 
           # 创建 Release
           if [[ "${IS_PRERELEASE}" == "true" ]]; then
-            gh release create "${VERSION}" \
+            gh release create "${RELEASE_TAG}" \
               --repo "${{ env.RELEASE_REPO }}" \
               --title "${RELEASE_TITLE}" \
               --notes "${RELEASE_NOTES}" \
               --prerelease \
               "${FILES[@]}"
           else
-            gh release create "${VERSION}" \
+            gh release create "${RELEASE_TAG}" \
               --repo "${{ env.RELEASE_REPO }}" \
               --title "${RELEASE_TITLE}" \
               --notes "${RELEASE_NOTES}" \
