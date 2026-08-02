@@ -1,4 +1,17 @@
 ## [Unreleased]
+### :sparkles: New Features
+- **jsplugin**: 插件页渲染引擎改为**逐插件声明**。`plugin.json` 新增可选字段 `renderEngine`
+  （`webview` / `webf`，缺失或空串等同 `webview`），插件列表 API 以 `render_engine` 返回；
+  非法取值在清单校验阶段报错、插件装不上。原生客户端据此为声明 `webf` 的插件启用
+  [WebF](https://openwebf.com/) 渲染面（纯 Flutter 渲染，替代系统 WebView），
+  其余插件保持系统 WebView 不变。客户端设置页里原先的全局渲染引擎开关随之移除 ——
+  能力缺口是逐页面的，只有插件作者能验证自己的页面。
+  官方插件 miot（智能音箱）、downloader（歌曲下载）、lyrics（歌词搜索）已标记为 `webf`。
+  Web 端不受影响（WebF 不支持 Flutter Web，浏览器里永远走 iframe）；
+  Linux 端 WebF 仅支持 x86-64 + glibc ≥ 2.38，arm64 / NAS / 树莓派等环境拿不到 WebF 渲染面。
+  字段语义与作者须知见「JS 插件开发指南 · renderEngine 渲染引擎声明」
+  *(songloft-org/songloft#341)*
+
 ### :zap: Performance Improvements
 - **jsplugin**: 插件商店拉取结果服务端缓存 5 分钟，翻页与搜索不再重复拉取整棵注册表树
   （以前每翻一页都会重新递归拉取，最多 500 个 `plugin.json`、8 并发、单请求 15s 超时）。

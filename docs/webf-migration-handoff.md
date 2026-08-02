@@ -11,7 +11,9 @@
 
 ## 0. 一句话现状
 
-WebF 渲染引擎已经**能在真机上跑起来插件页**（运行时开关，默认仍是系统 WebView），
+WebF 渲染引擎已经**能在真机上跑起来插件页**，选择方式已从「客户端全局运行时开关」改为
+**每个插件在 `plugin.json` 里用 `renderEngine` 声明**（默认仍是 `webview`，见 §2.4 —— 这是一次
+**用户决策反转**，改之前的文档写的是「不按插件排除」）。
 排错闭环已建立（页面 JS 错误与 console 会进客户端日志），
 「垫片层（JS 侧）+ 自定义元素（Dart 侧）」两套补缺机制的**框架已就位并各有一个已验证的实例**。
 剩下的是**按缺口逐项补组件**（Step 3–6）+ 上游报 bug + 许可文档。
@@ -24,15 +26,15 @@ WebF 渲染引擎已经**能在真机上跑起来插件页**（运行时开关�
 
 | 仓库 | 分支 | 本地 HEAD | 远端 HEAD | 状态 |
 |---|---|---|---|---|
-| 父仓库 `songloft` | `worktree-webf-plugin-render` | `629d39a` | `03b7606` | **本地领先 2 个提交**，且 `songloft-player` 指针待 bump（`git status` 显示 ` M songloft-player`） |
-| `songloft-player` | `feat/webf-plugin-render` | `9c56833` | `4fe5d16` | **本地领先 2 个提交** |
+| 父仓库 `songloft` | `worktree-webf-plugin-render` | `05ea69a` | `05ea69a` | 已同步（Step 1 / Step 2 的提交与 `songloft-player` 指针 bump 都已推送） |
+| `songloft-player` | `feat/webf-plugin-render` | `9c56833` | `9c56833` | 已同步 |
 | `plugin-toolchain` | `feat/webf-transport-doc` | `a6fa726` | 已推 | 干净 |
 
 工作目录：`/home/ejoydev/work/mimusic/.claude/worktrees/webf-plugin-render`（git worktree，
 **不要 `cd` 回主仓库根**）。
 
-**下一步要做的第一件事**：把 Step 1 / Step 2 的 4 个提交推上去（player 先推，再在父仓库
-`git add songloft-player` bump 指针并提交，然后推父仓库）。
+上一版这里写的「下一步是把 Step 1 / Step 2 的 4 个提交推上去」**已完成**。之后又做了「按插件声明
+渲染引擎」（§2.4），那一轮的提交状态以 `git log` 为准 —— 表里的三个 HEAD 只反映到 Step 2 结束时。
 
 ### ⚠️ 合并前必须撤掉的临时改动
 
@@ -59,7 +61,7 @@ WebF 渲染引擎已经**能在真机上跑起来插件页**（运行时开关�
 | player `41c67f1` | 加 `webf: ^0.24.27` 依赖 + `NOTICE` 声明 GPL-3.0。提交带 `!`，因为改了 `GeneratedPluginRegistrant` → **原生契约哈希变化 → 本次必须整包发版**（见 player `AGENTS.md` 的 Kotlin 冻结规则第 5 条） |
 | player `1656d91` | **抽出引擎无关的渲染层** `lib/features/home/presentation/render/`。顺带消除了 `plugin_tab_page_native.dart` 与 `plugin_webview_page_native.dart` 各持一份的 token 注入脚本 / 20s 超时 / 错误 UI / `_reloadSeq` 重复代码。这一步**行为零变化** |
 | player `f559130` | WebF 渲染面 + 图标字体预注册 |
-| player `d03007d` | 运行时开关 pref `plugin_render_engine`（默认 `webview`），设置页「扩展」段的 `SegmentedButton`，`kIsWeb` 时隐藏 |
+| player `d03007d` | 运行时开关 pref `plugin_render_engine`（默认 `webview`），设置页「扩展」段的 `SegmentedButton`，`kIsWeb` 时隐藏。**⚠️ 已被后一轮改动整体移除**（开关与 pref 都不再存在），改为逐插件 `renderEngine`，见 §2.4 |
 | 父 `1fe44f8` | `common.js` 加**第三条**宿主传输（WebF methodChannel）+ `requestBack` 回报 |
 | toolchain `a6fa726` | client-sdk 传输列表文档同步 |
 
@@ -112,6 +114,35 @@ SongloftPlugin.applyShims   导出，供插件动态插入 HTML 后手动重跑�
 
 **这个目录只允许依赖 `flutter` 与 `webf`** —— 因为验证探针（另一个 package）会把它整目录拷进去编译，
 拷不动产品的其他依赖。约束写在两边的头注释里，`analysis_options.yaml` 也为此排除了 `probe_main.dart`。
+
+### 2.4 引擎选择改为逐插件声明（**决策反转，2026-08-02**）
+
+> ⚠️ **这一节记录的是一次用户决策反转。** 本文档更早的版本在 §4「明确不做（用户已定）」里
+> 第一条写的是「**按插件排除引擎**（在 `plugin.json` 里标记某插件不用 WebF）—— 用户明确说
+> 『不按插件排除』」，配套实现是 player 的**全局运行时开关**（`d03007d`）。
+> **用户后来推翻了这个决定**：现在正是「按插件在 `plugin.json` 里声明」，而**全局开关被删掉**。
+> 保留这段历史是为了防止后续 agent 照旧文档把设计回滚回去 —— 看到「不按插件排除」字样时，
+> 请以本节为准。
+
+**反转的理由**：WebF 是 0.x beta、能力缺口是**逐页面**的（某个插件用了 `<table>` / `input[type=range]`
+就在 WebF 下坏，别的插件完全不受影响）。全局开关只能表达「全都用」或「全都不用」，
+既让已验证可用的插件被没验证的插件拖住，又要求终端用户去理解「渲染引擎」这个他们不该关心的概念。
+逐插件声明把决定权交给**唯一有能力验证的人 —— 插件作者**。
+
+**现在的机制（契约，不要自己改名）**：
+
+- `plugin.json` 字段 **`renderEngine`**，可选，取值 `"webview"` / `"webf"`；**缺失或空串 = `webview`**（宿主默认）
+- 插件列表 API 返回 snake_case 的 **`render_engine`**
+- 非法取值在后端 **`ValidateManifest`** 阶段报错 → **插件装不上**，不静默回退
+- 客户端设置页里原有的全局引擎开关（`plugin_render_engine` pref + `SegmentedButton`）**已删除**
+- **Web 端不受该字段影响**：WebF 不支持 Flutter Web（39 处无条件 `import 'dart:ffi'`，是编译失败非降级），
+  Web 永远走 iframe 路径
+- 三个官方插件（miot 智能音箱、downloader 歌曲下载、lyrics 歌词搜索）本轮标记为 `webf`
+- 用户文档：`docs/js-plugin-development-guide.md` §3「renderEngine 渲染引擎声明」+ 英文版同章节
+  （双语铁律），§8 的 WebF 章节开头也改成「逐插件选择」的措辞并交叉引用 §3
+
+**风险敞口**：不再有任何全局回退开关。页面在 WebF 下坏掉时，用户的处置只有「禁用该插件」或
+「等插件作者发一个把 `renderEngine` 改回 `webview` 的版本」。这是用户明确接受的取舍，见 §6。
 
 ---
 
@@ -186,6 +217,16 @@ CSS Grid **已实现**（experimental，193 KB 实现，issue 原文写"不支�
 
 ## 4. 未完成（按建议顺序）
 
+### ✅ 插队做掉的一轮：引擎选择改为逐插件声明（2026-08-02，已完成）
+
+去掉客户端全局引擎开关，改成 `plugin.json` 的 `renderEngine` 字段；三个官方插件（miot / downloader /
+lyrics）标记为 `webf`；插件开发指南中英双语 + CHANGELOG 已同步。**这是一次决策反转**，
+机制与理由见 §2.4，**不要**按本文档旧版的「明确不做 · 按插件排除引擎」把它回滚。
+它不改变下面 Step 3–6 的任何结论：缺口清单（§3.3）与命中面完全不变，只是「哪些插件会暴露在
+这些缺口下」现在由插件自己声明。
+
+**Step 3（`<songloft-slider>`）仍未做，仍然是下一个要做的**（见下）。
+
 ### Step 3 — `<songloft-slider>` 替换 `input[type=range]`（task #15，**下一个要做的**）
 
 - **命中面极小：只有 miot 2 处。** 别为它做通用化过度设计
@@ -229,7 +270,10 @@ CSS Grid **已实现**（experimental，193 KB 实现，issue 原文写"不支�
 
 ### 明确不做（用户已定）
 
-- **按插件排除引擎**（在 `plugin.json` 里标记某插件不用 WebF）—— 用户明确说「不按插件排除」
+- ~~**按插件排除引擎**（在 `plugin.json` 里标记某插件不用 WebF）—— 用户明确说「不按插件排除」~~
+  → **这一条已被用户推翻，现在正是按插件在 `plugin.json` 里声明 `renderEngine`**，
+  且**全局运行时开关已删除**。机制与反转理由见 §2.4。划掉而不删除，是为了让照着旧版文档
+  行动的人能发现结论变了
 - **Web 端迁移** —— WebF 不支持 Flutter Web（39 处无条件 `import 'dart:ffi'`，是编译失败非降级），
   iframe 路径**永久保留**，渲染路径 2 → 3 条
 - **Linux 插件页缺口** —— WebF Linux 仅 x86-64 + glibc ≥ 2.38、无 arm64，覆盖不到 NAS /
@@ -311,8 +355,15 @@ HOST_NETWORK=1 PROBE_URL='http://127.0.0.1:58191/api/v1/jsplugin/miot/?embed=&th
   `SongloftPlugin.applyShims()`，但对"追加单个子节点"这种用法无解
 - miot `index.html:1378` 引外部 CDN `marked.min.js`（builder 不打包），离线/内网下 Markdown
   渲染静默失效 —— **与 WebF 无关的既有问题**，顺手记一笔
-- **上游风险**：WebF 0.x beta，main 分支自 2026-04-19 静默至今，30 天下载量 1172，
-  最后 9 个版本几乎全是 flex/inline 布局的正确性修复 → 这是**必须保留运行时回退开关**的直接理由
+- **上游风险（缓解手段已变，风险本身没消失）**：WebF 0.x beta，main 分支自 2026-04-19 静默至今，
+  30 天下载量 1172，最后 9 个版本几乎全是 flex/inline 布局的正确性修复。
+  本文档旧版据此写的结论是「这是**必须保留运行时回退开关**的直接理由」——
+  **用户已明确放弃全局回退开关**（见 §2.4），风险敞口改由三件事承担：
+  ① 默认 `webview`（不声明就不暴露）；② 逐插件显式声明、由插件作者自己验证；
+  ③ 出问题时用户可禁用该插件、或等作者发版把 `renderEngine` 改回 `webview`。
+  如实记下来：**上游一旦回归性变坏，没有任何"一键全局切回"的手段**，只能逐插件改 manifest 重新发版；
+  受影响插件的用户在新版发出来之前只能禁用插件。这是已知且被接受的取舍，**不要**据此擅自把
+  全局开关加回去
 
 ---
 

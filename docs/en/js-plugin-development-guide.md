@@ -254,6 +254,7 @@ static/              # Static assets directory (optional)
 | `main` | string | Yes | Entry file path (must end in `.js`) |
 | `minHostVersion` | string | No | Minimum host version requirement |
 | `permissions` | string[] | Yes | Permission list (may be an empty array `[]`) |
+| `renderEngine` | string | No | Engine the client uses to render the plugin page: `webview` / `webf`; missing or empty string means `webview`. See [renderEngine — Declaring the Rendering Engine](#renderengine--declaring-the-rendering-engine) |
 | `updateUrl` | string | No | Remote update check URL |
 | `download_url` | string | No | Plugin download URL |
 | `entryHash` | string | Yes | `sha256(main.js)` as 64-character lowercase hex, generated automatically by `@songloft/plugin-builder`; do not edit manually |
@@ -267,6 +268,43 @@ static/              # Static assets directory (optional)
 - Must start with a lowercase letter
 - Regex: `^[a-z][a-z0-9-]*$`
 - Examples: `example-basic`, `music-sync`, `metadata-helper`
+
+### renderEngine — Declaring the Rendering Engine
+
+Native clients have two paths for rendering a plugin page: the system WebView, and [WebF](https://openwebf.com/) (a W3C runtime rendered entirely by Flutter). Which one is used **is declared by the plugin itself in `plugin.json`** — the host has **no** global engine switch, and plugins do not affect each other.
+
+```json
+{
+  "entryPath": "my-plugin",
+  "renderEngine": "webf"
+}
+```
+
+| Value | Meaning |
+|-------|---------|
+| field missing / `""` | Same as `webview`, i.e. the host default |
+| `"webview"` | Rendered by the system WebView (default) |
+| `"webf"` | Rendered by WebF |
+
+- **Any other value is invalid**: the backend fails it during `ValidateManifest`, so the plugin **cannot be installed** (it does *not* silently fall back to `webview`)
+- The plugin list API returns the value in the snake_case field `render_engine`
+- The field can change between versions: to stop using WebF, publish a new version that sets it back to `webview` (or drops it)
+
+#### When to declare `webf`
+
+**Only declare it once the plugin page has been verified to actually work under WebF.** WebF is not a browser and lacks a number of HTML/CSS capabilities (built-in elements, `env()`, `window.open`, `URL.createObjectURL`, …). The capability boundary, the gaps already shimmed by the host, and the native elements available to you are documented in [§8 · The WebF Rendering Engine and Native Elements](#the-webf-rendering-engine-and-native-elements) — that section is what you judge "can my page run on WebF" against; do **not** conclude anything from how it looks in a browser alone.
+
+What you take on by declaring it:
+
+- **Verifying every page yourself** under WebF, rendering and interaction alike — especially tables, sliders, file pickers and external links, which tend to degrade silently
+- Using the `html.webf-engine` class (added automatically by the host) when you need to branch on the engine; see [§8 · The WebF Rendering Engine and Native Elements](#the-webf-rendering-engine-and-native-elements)
+- WebF is currently **0.x beta**. The host keeps **no global fallback switch**: if your page breaks under WebF, all a user can do is **disable your plugin**, or wait for you to ship a version that switches back to `webview`. Treat that as the cost of declaring `webf`
+
+#### Platform limits (read before declaring)
+
+- **The web build (Songloft Web in a browser) is completely unaffected by this field**: WebF does not support Flutter Web, so the web build **always** uses the iframe path. Declaring `webf` changes nothing there
+- **Linux coverage is narrow**: WebF on Linux requires x86-64 with glibc ≥ 2.38 and has **no arm64** build — NAS boxes, Debian 12 and Raspberry Pi are all outside that range and never get the WebF rendering surface
+- Therefore **the plugin page must remain usable in the system WebView / a regular browser**: `webf` means "use a better rendering surface on the platforms that support it", not "a license to write the page for WebF only"
 
 ---
 
@@ -996,7 +1034,7 @@ Plugin JS can listen for theme changes via `SongloftPlugin.onThemeChange(callbac
 
 ### The WebF Rendering Engine and Native Elements
 
-On some platforms, newer clients render plugin pages with [WebF](https://openwebf.com/) (an in-house W3C runtime rendered entirely by Flutter) instead of the system WebView. WebF **is not a browser** and lacks a number of HTML/CSS capabilities. The main program's `common.js` shims the common gaps (empty `img src`, `<details>` collapsing, etc.) and adds a `webf-engine` class to `<html>` so plugins can branch on the engine:
+On some platforms, newer clients can render plugin pages with [WebF](https://openwebf.com/) (an in-house W3C runtime rendered entirely by Flutter) instead of the system WebView. **This is a per-plugin choice**: only plugins that declare `"renderEngine": "webf"` in `plugin.json` get the WebF rendering surface; the default is still the system WebView, and the web build always uses the iframe path — see [§3 · renderEngine — Declaring the Rendering Engine](#renderengine--declaring-the-rendering-engine) for the field semantics and platform limits. WebF **is not a browser** and lacks a number of HTML/CSS capabilities. The main program's `common.js` shims the common gaps (empty `img src`, `<details>` collapsing, etc.) and adds a `webf-engine` class to `<html>` so plugins can branch on the engine:
 
 ```css
 html.webf-engine .only-in-webf { display: block; }

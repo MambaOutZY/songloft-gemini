@@ -254,6 +254,7 @@ static/              # 静态资源目录（可选）
 | `main` | string | 是 | 入口文件路径（必须以 `.js` 结尾） |
 | `minHostVersion` | string | 否 | 最低宿主版本要求 |
 | `permissions` | string[] | 是 | 权限列表（可为空数组 `[]`） |
+| `renderEngine` | string | 否 | 客户端渲染插件页用的引擎，`webview` / `webf`，缺失或空串等同 `webview`。详见 [renderEngine 渲染引擎声明](#renderengine-渲染引擎声明) |
 | `updateUrl` | string | 否 | 远程更新检查 URL |
 | `download_url` | string | 否 | 插件下载 URL |
 | `entryHash` | string | 是 | `sha256(main.js)` 64 位小写 hex，由 `@songloft/plugin-builder` 自动生成，请勿手动编辑 |
@@ -267,6 +268,43 @@ static/              # 静态资源目录（可选）
 - 必须以小写字母开头
 - 正则：`^[a-z][a-z0-9-]*$`
 - 示例：`example-basic`、`music-sync`、`metadata-helper`
+
+### renderEngine 渲染引擎声明
+
+原生客户端渲染插件页有两条路径：系统 WebView，和 [WebF](https://openwebf.com/)（纯 Flutter 渲染的 W3C 运行时）。用哪条**由插件自己在 `plugin.json` 里声明**——宿主侧**没有**全局引擎开关，插件之间互不影响。
+
+```json
+{
+  "entryPath": "my-plugin",
+  "renderEngine": "webf"
+}
+```
+
+| 取值 | 含义 |
+|------|------|
+| 字段缺失 / `""` | 等同 `webview`，即宿主默认 |
+| `"webview"` | 系统 WebView 渲染（默认） |
+| `"webf"` | WebF 渲染 |
+
+- **其它取值一律非法**：后端 `ValidateManifest` 阶段直接报错，插件**装不上**（不会静默回退到 `webview`）
+- 插件列表 API 以 snake_case 的 `render_engine` 字段返回该值
+- 该字段可随版本改：不想再用 WebF 就发一个把它改回 `webview`（或删掉）的新版本
+
+#### 什么时候该声明 `webf`
+
+**只有插件页在 WebF 下已经实测可用时才声明。** WebF 不是浏览器，有一批 HTML/CSS 能力缺失（内建元素、`env()`、`window.open`、`URL.createObjectURL` 等），能力边界、已垫掉的缺口、以及可用的原生元素见 [§8 · WebF 渲染引擎与原生元素](#webf-渲染引擎与原生元素)——那一节是判断「我的页面能不能上 WebF」的依据，**不要**只按浏览器里的表现下结论。
+
+声明之后作者要承担的事：
+
+- **自己验证**每个页面在 WebF 下的渲染与交互，包括表格、滑块、文件选择、外链跳转这类容易静默降级的控件
+- 需要按引擎分叉时用 `html.webf-engine` class（主程序自动加），见 [§8 · WebF 渲染引擎与原生元素](#webf-渲染引擎与原生元素)
+- WebF 目前是 **0.x beta**。宿主**不保留任何全局回退开关**：页面在 WebF 下出问题时，用户能做的只是**禁用这个插件**，或等你发一个改回 `webview` 的版本。把这条当成声明 `webf` 的成本
+
+#### 平台限制（声明前必看）
+
+- **Web 端（浏览器里的 Songloft Web）完全不受该字段影响**：WebF 不支持 Flutter Web，Web 端**永远**走 iframe 路径。声明 `webf` 不会改变 Web 端的任何行为
+- **Linux 端覆盖面很窄**：WebF Linux 仅支持 x86-64 且 glibc ≥ 2.38，**没有 arm64**——NAS、Debian 12、树莓派等常见环境都在覆盖之外，拿不到 WebF 渲染面
+- 因此**插件页必须在系统 WebView / 普通浏览器里同样可用**：`webf` 是「在支持的平台上换一个更好的渲染面」，不是「只为 WebF 写页面」的许可
 
 ---
 
@@ -995,7 +1033,7 @@ if (isClient()) {
 
 ### WebF 渲染引擎与原生元素
 
-新版客户端在部分平台上用 [WebF](https://openwebf.com/)（自研 W3C 运行时，纯 Flutter 渲染）替代系统 WebView 渲染插件页。WebF **不是浏览器**，有一批 HTML/CSS 能力缺失，主程序的 `common.js` 会统一垫掉常见缺口（空 `img src`、`<details>` 折叠等），并给 `<html>` 加上 `webf-engine` class 供插件按引擎分叉：
+新版客户端在部分平台上可以用 [WebF](https://openwebf.com/)（自研 W3C 运行时，纯 Flutter 渲染）替代系统 WebView 渲染插件页。**这是逐插件选择的**：只有在 `plugin.json` 里声明 `"renderEngine": "webf"` 的插件才走 WebF 渲染面，默认仍是系统 WebView，Web 端永远走 iframe——字段语义与平台限制见 [§3 · renderEngine 渲染引擎声明](#renderengine-渲染引擎声明)。WebF **不是浏览器**，有一批 HTML/CSS 能力缺失，主程序的 `common.js` 会统一垫掉常见缺口（空 `img src`、`<details>` 折叠等），并给 `<html>` 加上 `webf-engine` class 供插件按引擎分叉：
 
 ```css
 html.webf-engine .only-in-webf { display: block; }
