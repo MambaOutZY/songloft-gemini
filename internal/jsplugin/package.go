@@ -184,6 +184,7 @@ func (pm *PackageManager) InstallFromUploadWithOptions(zipData []byte, opts Inst
 		Icon:           manifest.Icon,
 		UpdateURL:      manifest.UpdateURL,
 		DownloadURL:    manifest.DownloadURL,
+		RenderEngine:   manifest.RenderEngine,
 		Status:         JSPluginStatusActive,
 		ZipHash:        zipHash,
 		EntryHash:      entryHash,
@@ -296,6 +297,7 @@ func (pm *PackageManager) Update(pluginID int64, zipData []byte) (*JSPlugin, err
 	existing.PublicPaths = manifest.PublicPaths
 	existing.ExternalPaths = manifest.ExternalPaths
 	existing.Icon = manifest.Icon
+	existing.RenderEngine = manifest.RenderEngine
 	existing.UpdateURL = manifest.UpdateURL
 	existing.DownloadURL = manifest.DownloadURL
 	existing.ZipHash = zipHash
@@ -467,6 +469,14 @@ func (pm *PackageManager) syncManifestMetadata(ctx context.Context, existing *JS
 	}
 	if existing.UpdateURL != manifest.UpdateURL {
 		existing.UpdateURL = manifest.UpdateURL
+		dirty = true
+	}
+	// renderEngine 只写在 plugin.json 里，而 zipHash 刻意排除 plugin.json，
+	// 所以「只改渲染引擎声明」的重打包不会走 Update，必须在这里补偿同步，
+	// 否则用户换 zip 后引擎声明会静默保持旧值。
+	// 非法取值不落库（保留原值），与 ValidateManifest 的拒绝语义一致。
+	if IsValidRenderEngine(manifest.RenderEngine) && existing.RenderEngine != manifest.RenderEngine {
+		existing.RenderEngine = manifest.RenderEngine
 		dirty = true
 	}
 	if dirty {

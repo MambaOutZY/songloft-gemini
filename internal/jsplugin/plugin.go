@@ -46,6 +46,30 @@ type PluginManifest struct {
 	EntryHash string `json:"entryHash"`
 	// ZipHash 为 zip 内除 plugin.json 外所有文件的规范化 sha256，必填。
 	ZipHash string `json:"zipHash"`
+	// RenderEngine 声明插件页面由哪个引擎渲染（songloft-org/songloft#341）。
+	// 可选，取值只允许 RenderEngineWebView / RenderEngineWebF；
+	// 缺失或空串表示「跟随宿主默认」（当前默认系统 WebView）。
+	RenderEngine string `json:"renderEngine,omitempty"`
+}
+
+// 插件页渲染引擎取值（plugin.json 的 renderEngine 字段 / DB 的 render_engine 列）。
+// 空串同样合法，语义为「跟随宿主默认」，故刻意不定义 RenderEngineDefault 常量以免
+// 被误当成需要落库的具体值。
+const (
+	// RenderEngineWebView 使用客户端系统 WebView 渲染（宿主默认）。
+	RenderEngineWebView = "webview"
+	// RenderEngineWebF 使用 WebF 渲染。
+	RenderEngineWebF = "webf"
+)
+
+// IsValidRenderEngine 判断 renderEngine 取值是否合法。空串合法（= 跟随宿主默认）。
+func IsValidRenderEngine(v string) bool {
+	switch v {
+	case "", RenderEngineWebView, RenderEngineWebF:
+		return true
+	default:
+		return false
+	}
 }
 
 var (
@@ -96,6 +120,12 @@ func ValidateManifest(m *PluginManifest) error {
 	// permissions: 必填（可为空数组）
 	if m.Permissions == nil {
 		return fmt.Errorf("permissions is required (can be empty array)")
+	}
+
+	// renderEngine: 可选，只允许 "" / "webview" / "webf"
+	if !IsValidRenderEngine(m.RenderEngine) {
+		return fmt.Errorf("renderEngine must be %q or %q (or omitted), got %q",
+			RenderEngineWebView, RenderEngineWebF, m.RenderEngine)
 	}
 
 	// entryHash / zipHash: 必填，64 位小写 hex。

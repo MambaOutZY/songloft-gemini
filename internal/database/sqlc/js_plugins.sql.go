@@ -13,8 +13,8 @@ const createJSPlugin = `-- name: CreateJSPlugin :execlastid
 INSERT INTO js_plugins (name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
     status, zip_hash, entry_hash, file_mod_time, file_path, public_paths, icon,
-    external_paths)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    external_paths, render_engine)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateJSPluginParams struct {
@@ -38,6 +38,7 @@ type CreateJSPluginParams struct {
 	PublicPaths    string
 	Icon           string
 	ExternalPaths  string
+	RenderEngine   string
 }
 
 func (q *Queries) CreateJSPlugin(ctx context.Context, arg CreateJSPluginParams) (int64, error) {
@@ -62,6 +63,7 @@ func (q *Queries) CreateJSPlugin(ctx context.Context, arg CreateJSPluginParams) 
 		arg.PublicPaths,
 		arg.Icon,
 		arg.ExternalPaths,
+		arg.RenderEngine,
 	)
 	if err != nil {
 		return 0, err
@@ -82,7 +84,7 @@ const getJSPluginByEntryPath = `-- name: GetJSPluginByEntryPath :one
 SELECT id, name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
     status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at,
-    public_paths, icon, external_paths
+    public_paths, icon, external_paths, render_engine
 FROM js_plugins WHERE entry_path = ?
 `
 
@@ -113,6 +115,7 @@ func (q *Queries) GetJSPluginByEntryPath(ctx context.Context, entryPath string) 
 		&i.PublicPaths,
 		&i.Icon,
 		&i.ExternalPaths,
+		&i.RenderEngine,
 	)
 	return i, err
 }
@@ -121,7 +124,7 @@ const getJSPluginByID = `-- name: GetJSPluginByID :one
 SELECT id, name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
     status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at,
-    public_paths, icon, external_paths
+    public_paths, icon, external_paths, render_engine
 FROM js_plugins WHERE id = ?
 `
 
@@ -152,6 +155,7 @@ func (q *Queries) GetJSPluginByID(ctx context.Context, id int64) (JsPlugin, erro
 		&i.PublicPaths,
 		&i.Icon,
 		&i.ExternalPaths,
+		&i.RenderEngine,
 	)
 	return i, err
 }
@@ -160,7 +164,7 @@ const listJSPlugins = `-- name: ListJSPlugins :many
 SELECT id, name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
     status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at,
-    public_paths, icon, external_paths
+    public_paths, icon, external_paths, render_engine
 FROM js_plugins ORDER BY id
 `
 
@@ -197,6 +201,7 @@ func (q *Queries) ListJSPlugins(ctx context.Context) ([]JsPlugin, error) {
 			&i.PublicPaths,
 			&i.Icon,
 			&i.ExternalPaths,
+			&i.RenderEngine,
 		); err != nil {
 			return nil, err
 		}
@@ -216,7 +221,7 @@ UPDATE js_plugins SET name = ?, version = ?, description = ?, author = ?,
     homepage = ?, license = ?, entry_path = ?, main = ?, min_host_version = ?,
     permissions = ?, update_url = ?, download_url = ?, status = ?,
     zip_hash = ?, entry_hash = ?, file_mod_time = ?, file_path = ?,
-    public_paths = ?, icon = ?, external_paths = ?
+    public_paths = ?, icon = ?, external_paths = ?, render_engine = ?
 WHERE id = ?
 `
 
@@ -241,6 +246,7 @@ type UpdateJSPluginParams struct {
 	PublicPaths    string
 	Icon           string
 	ExternalPaths  string
+	RenderEngine   string
 	ID             int64
 }
 
@@ -266,6 +272,7 @@ func (q *Queries) UpdateJSPlugin(ctx context.Context, arg UpdateJSPluginParams) 
 		arg.PublicPaths,
 		arg.Icon,
 		arg.ExternalPaths,
+		arg.RenderEngine,
 		arg.ID,
 	)
 	return err
