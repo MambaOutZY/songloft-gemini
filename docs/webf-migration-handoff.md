@@ -5,7 +5,12 @@
 > `srcExclude`）。#341 落地后请连同这份文档一起删除。
 >
 > 面向对象：接手这条分支继续做的下一个 agent / 开发者。
-> 最后更新：2026-08-02。
+> 最后更新：2026-08-02（Step 5 完成、Step 4 方案重设计、第 7 条上游缺陷、许可合规主体完成）。
+>
+> **配套的三份临时件**（同样从文档站排除、同样在 #341 落地后一起删）：
+> `docs/webf-recon-step456.md`（Step 4/5/6 预研，证伪了两条既定方案）、
+> `docs/webf-step4-design.md`（Step 4 四方案对比与选型）、
+> `docs/webf-upstream-issues.md`（7 条上游缺陷草稿）。
 
 ---
 
@@ -16,25 +21,43 @@ WebF 渲染引擎已经**能在真机上跑起来插件页**，选择方式已�
 **用户决策反转**，改之前的文档写的是「不按插件排除」）。
 排错闭环已建立（页面 JS 错误与 console 会进客户端日志），
 「垫片层（JS 侧）+ 自定义元素（Dart 侧）」两套补缺机制的**框架已就位并各有一个已验证的实例**。
-剩下的是**按缺口逐项补组件**（Step 4–6，Step 1–3 已完成）+ 上游报 bug + 许可文档。
+**已完成**：Step 1（JS 垫片框架）、Step 2（Dart 自定义元素框架 + `<songloft-progress-ring>`）、
+Step 3（`<songloft-slider>`）、Step 5（安全区 `--sl-safe-*`，见 §2.5）、许可合规（GPL-3.0 全文
+随 release 产物 + `NOTICE`）。
+**进行中**：Step 4（`<table>` → CSS Grid，方案已重设计）、Step 6（三项经桥下沉）、
+上游 7 条缺陷报告起草。
+
+⚠️ **本文档已发生过多次「旧版结论被证伪 / 被用户推翻」**。三处最容易踩的：
+① 引擎选择**不是**全局开关而是逐插件声明（§2.4，用户决策反转）；
+② Step 4 **不是**标签改写而是 CSS Grid（§4）；
+③ Step 5 **不是**垫片改写 `env()` 而是宿主注入变量（§2.5）。
+读到与这三条矛盾的文字时，以被引用的那一节为准。
 
 ---
 
 ## 1. 分支与推送状态
 
-三个仓库都在独立分支上，**都还没合进 main**：
+**六个仓库**参与本次改动。宿主三仓在独立分支上、**都还没合进 main**；三个插件仓**已在 `main` 上
+且已发版**（因为插件的 release 工作流从默认分支构建，不发版 `renderEngine` 就不会到用户手里）。
 
-| 仓库 | 分支 | 本地 HEAD | 远端 HEAD | 状态 |
-|---|---|---|---|---|
-| 父仓库 `songloft` | `worktree-webf-plugin-render` | `05ea69a` | `05ea69a` | 已同步（Step 1 / Step 2 的提交与 `songloft-player` 指针 bump 都已推送） |
-| `songloft-player` | `feat/webf-plugin-render` | `9c56833` | `9c56833` | 已同步 |
-| `plugin-toolchain` | `feat/webf-transport-doc` | `a6fa726` | 已推 | 干净 |
+| 仓库 | 分支 | HEAD（截至 2026-08-02 本节更新时） |
+|---|---|---|
+| 父仓库 `songloft` | `worktree-webf-plugin-render` | `8055506` |
+| `songloft-player` | `feat/webf-plugin-render` | `3035b6a` |
+| `plugin-toolchain` | `feat/webf-transport-doc` | `8f25a43` |
+| `songloft-plugin-miot` | **`main`** | `0e0d945`（**尚未发版**，见下） |
+| `songloft-plugin-downloader` | **`main`** | `a99e279`（已发 v2026.8.2） |
+| `songloft-plugin-lyrics` | **`main`** | `84d90fe`（已发 v2026.8.2） |
+
+⚠️ **这张表天生会过期，别信它、去跑 `git log`。** 本文档前几版都栽在这里 —— 表里的 HEAD 只反映
+到写下它的那一刻，而分支一直在动。留着它只是为了给「哪些仓库参与了」提供索引。
+
+⚠️ **miot 有已提交但未发版的改动**（Step 3 的滑块适配 `e3173a0`、Step 5 的安全区 `0e0d945`）。
+release zip 里的 `static/` 还是 v2026.8.2 那份，所以**竖向音量条按默认横向渲染、安全区 3 处仍是
+`env()`**。刻意攒到 Step 4/6 做完一并发一次，避免每步各发一版。
 
 工作目录：`/home/ejoydev/work/mimusic/.claude/worktrees/webf-plugin-render`（git worktree，
 **不要 `cd` 回主仓库根**）。
-
-上一版这里写的「下一步是把 Step 1 / Step 2 的 4 个提交推上去」**已完成**。之后又做了「按插件声明
-渲染引擎」（§2.4），那一轮的提交状态以 `git log` 为准 —— 表里的三个 HEAD 只反映到 Step 2 结束时。
 
 ### ⚠️ 合并前必须撤掉的临时改动
 
@@ -165,6 +188,54 @@ SongloftPlugin.applyShims   导出，供插件动态插入 HTML 后手动重跑�
 **风险敞口**：不再有任何全局回退开关。页面在 WebF 下坏掉时，用户的处置只有「禁用该插件」或
 「等插件作者发一个把 `renderEngine` 改回 `webview` 的版本」。这是用户明确接受的取舍，见 §6。
 
+**这一条还有一个没预料到的正面副作用**：它把后续每一步的**命中面**都大幅收窄了 —— 只有显式声明
+`webf` 的插件才暴露在缺口下。Step 4 因此从「downloader + radio 两个插件」塌缩成「downloader 一个」，
+Step 5 从「6 个插件 10 处」塌缩成「miot 3 处」，Step 6 的 `input[type=file]` 直接变成**零暴露**。
+评估任何缺口的紧迫性时，**先查 `plugin.json` 的 `renderEngine` 取值**，别照 §3.3 那张表的
+「命中的插件」一栏直接下结论。
+
+### 2.5 Step 5 — 安全区 `--sl-safe-*`（**已完成 2026-08-02**）
+
+父 `8055506` + player `3035b6a` + miot `0e0d945`。
+
+**交接文档旧版写的方案（垫片把 CSS 里的 `env()` 改写成 `var()`）已证伪**，两个**独立**死因：
+
+① **CSSOM 没有可用的写入面**：`cssText` 只有 getter，`CSSStyleRule` 既不暴露 `selectorText`
+也不暴露 `.style`；唯一写入面是 `insertRule`/`deleteRule`/`replaceSync` 这种「整条规则进出」，
+而 `cssText` 是从解析结果**重建**的（简写已展开、WebF 不认识的属性已丢），往返即有损；
+`@media` 里的规则 `cssText` 是**空串**且没有 `.cssRules`，delete+insert 会**不可逆地摧毁**它。
+另外 `enableBlink: true` 时 `document.styleSheets` 直接返回空。
+
+② **即便能改写也救不了命中面**：miot 的 3 处 `env()` 全都套在 `calc()` / `max()` 里，而
+**WebF 没有实现 CSS `max()` / `min()`**（`css/values/calc.dart` 只认 calc 与 clamp），
+换成 `var()` 照样是死的。
+
+**现在的机制**：`common.css` 给 `--sl-safe-{top,right,bottom,left}` 备默认值 ——
+`:root` 把它们绑到 `env()`（浏览器 / 系统 WebView 拿原生真值，**行为与改动前完全一致**），
+`html.webf-engine` 覆盖成确定的 `0px`；宿主再用 `MediaQuery.viewPadding` 的真值经既有的
+`_pushToPage` / `window.postMessage` 通道写成 `documentElement` 的**内联**自定义属性覆盖。
+插件侧只有一种写法：`var(--sl-safe-bottom)`。
+
+**刻意没照预研建议的「`:root` 直接预置 `0px`」**：那会让浏览器与系统 WebView（**默认引擎**，
+绝大多数插件走这条）永久丢掉原生 `env()`，是实打实的回归。
+
+**三条实测事实**（探针第 17 / 17b 组钉住，`out/flutter.log`）：
+
+- **`var(--未定义, env(...))` 求值为 `0`**，连 `env()` 自己的内层兜底都取不到
+  （`G(var-fb-env)=0`，而对照的裸 var fallback `F(var-fb)=17` 是通的）
+  → **「一份 CSS 带 `env()` 兜底通吃三端」不可用**，必须按引擎给默认值
+- **`max()` 是死的**（`C(max)=0`）
+- **`clamp()` 的参数里可以塞 `var()`**（`D(clamp+var)=30`、`J(clamp-min)=24`，
+  后者证明夹紧真的发生、不是穿透）。⚠️ **这一条与源码判读相反** —— clamp 分支是逐个参数走
+  `CSSLength.parseLength`，而它不认 `var(...)`，只有 `calc()` 内部有专门的 `CalcVariableNode`。
+  **以实测为准**，`common.css` 的注释里写明了「别照源码把它改回不支持」。
+  于是 `clamp(MIN,VAL,MAX) ≡ max(MIN,min(VAL,MAX))` 成了 `max()` 的等价替换，
+  miot 的 `.fp-controls` 就是这么改的（**浏览器侧零行为变化**，不需要按引擎分叉）
+
+**未验证**（如实记）：真机刘海（容器里 `MediaQuery.viewPadding` 恒为 0，验的是「注入通道 +
+CSS 求值」这一层，注入的是人为非零值）、转屏 / 键盘触发重推、外层 `SafeArea` 不会双重内缩
+（源码级结论，`media_query.dart:946-951`）。
+
 ---
 
 ## 3. WebF 硬约束与已确诊缺陷（**接手前必读，能省掉大量返工**）
@@ -189,7 +260,7 @@ SongloftPlugin.applyShims   导出，供插件动态插入 HTML 后手动重跑�
   （`common.js` 的 `requestBack` handler 判 `history.length`）
 - `window.postMessage` 在 WebF 是**同窗口自发自收** → `common.js` 的接收侧一行都不用改
 
-### 3.2 已确诊的 WebF 上游缺陷（task #12 待报）
+### 3.2 已确诊的 WebF 上游缺陷（**7 条**，task #12 起草中）
 
 1. **`css/font_face.dart:396`** URL 加载分支用 `bundle.data!.buffer.asByteData()`（取**整个底层
    buffer**、无视视图 offset/length），而 `data:` 分支 `:375` 用的是正确的
@@ -213,6 +284,20 @@ SongloftPlugin.applyShims   导出，供插件动态插入 HTML 后手动重跑�
    不是布局塌陷。判据已固化在验证探针**第 14b 组**（把那一行染成黄色：整行不出现任何黄色即复现）。
    对插件的杀伤力**不止「滑块没了」，而是「同行内容全没」** —— 作者看到的是「一行莫名空白」，
    既没有报错也没有可疑元素，归因难度比「多了个文本框」高一个量级。
+7. **grid 把 `position: sticky` 当脱流处理**（Step 4 重设计时从源码判定，见
+   `docs/webf-step4-design.md` §3 Step 1 的完整判据）。`rendering/grid.dart:347-351` 的
+   `_isPositionedGridChild()` 把 sticky 与 absolute/fixed **归成同一类**，而这个判据被用在
+   **13 处**排除逻辑上（`:385 :471 :872 :913 :2250 :3052 :3077 :3363 :3643 :3925 :4034 :4477`），
+   其中 `:2250` 就是**构建 grid item 列表**本身、`:3052`/`:3363` 是**固有宽度计算**。
+   于是 sticky 子项**既不占格子、也不参与列轨道定宽**。
+   `:1948-1972` 的注释写着「their placeholders can reserve correct space」，但
+   **`placeholder` 在整个 `grid.dart` 里只出现在 3 条注释里、没有任何实现**。
+   **对照组证明这是 grid 路径独有的缺陷、不是 WebF 全局不支持 sticky**：`rendering/flow.dart`
+   的在流排除判据（`:425 :1212 :1342`）**只判 `isSelfPositioned()`、不含 sticky**，
+   所以块级/流式布局下 sticky 正确留在流内并占据空间（符合 CSS 规范）。
+   而 `applyStickyChildOffset` 在 grid 路径上照样会调（`:4592`），所以**它会「贴住」，
+   只是以脱流方式贴住** —— 这是最难归因的失败形态：看起来 sticky 生效了，实际列宽全错、
+   还盖住了一行数据。
 
 ### 3.3 缺口清单与真实命中面（已交叉验证）
 
@@ -221,9 +306,9 @@ SongloftPlugin.applyShims   导出，供插件动态插入 HTML 后手动重跑�
 
 | 缺口 | 命中的插件 | 现状 |
 |---|---|---|
-| `<table>` 元素**根本不存在**（退化成嵌套 `display:block`） | downloader、radio | **Step 4 待做** |
+| `<table>` 元素**根本不存在**（退化成嵌套 `display:block`；且 `display:table/table-row/table-cell` 也救不了 —— `css/display.dart` 的 `CSSDisplay` 枚举**没有任何 table 值**，`resolveDisplay` 的 `default` 返回 `CSSDisplay.inline`，比 block **更糟**） | **实际只有** downloader（`webf`）；radio 虽有表格但未声明 = `webview`，**进不到 WebF** | **Step 4 实施中**。原定的「垫片改写成 `<webf-table>`」**已证伪**，改走 CSS Grid，方案见 `docs/webf-step4-design.md` |
 | `input[type=range]` **整行不绘制**（源码层面是落到 `TextField`，但实测一个像素都不画，连同行兄弟文字一起消失 —— 见 §3.2 第 6 条） | **仅** miot（2 处） | ✅ Step 3 已提供 `<songloft-slider>` + `common.js` 的 `rangeSliderShim` **自动**替换（隐藏原 input 并双向同步，插件 JS 零改动）。**插件侧仍需两件事**：竖向滑块在原 input 上写 `data-sl-orientation="vertical"`（垫片不猜朝向），以及补几行几何 CSS（新标签匹配不到 `input[type=range]` 选择器，垫片只拷 inline style 不拷 class）。miot 已适配 |
-| `env(safe-area-inset-*)` 不求值（`style_declaration.dart:736`，upstream #907 open） | miot 3、dav 3、subsonic 1、cloudflared 1、hostc 1、ytdlp 1 | **Step 5 待做** |
+| `env(safe-area-inset-*)` 不求值（`css/keywords.dart` 里那 6 个 `SAFE_AREA_INSET*` / `ENV` 常量是**全库无引用的死常量**，连解析入口都没有；upstream #907 open） | 声明 `webf` 的插件里**只有** miot（3 处）。dav / subsonic / cloudflared / hostc / ytdlp 虽有 `env()` 但都未声明 = `webview`，**不暴露** | ✅ **Step 5 已完成**：宿主注入 `--sl-safe-*` 四个 CSS 变量，插件统一写 `var(--sl-safe-bottom)`。原定的「垫片把 `env()` 改写成 `var()`」**已证伪**（见 §2.5） |
 | `window.open` 是 no-op（`window.cc:157-168` 两个重载都 `return this`，不抛错） | **仅** miot `js/auth.js:95`（小米账号二次验证） | **Step 6 待做** |
 | `input[type=file]` 静默变文本框 | ytdlp、radio、lxmusic 各 1 | **Step 6 待做** |
 | `URL.createObjectURL` 不存在（`Blob` 有，无入口产 `blob:`） | **仅** miot `js/playback.js:422`、`js/fullscreen-player.js:201` | **Step 6 待做** |
@@ -264,33 +349,81 @@ Step 3 小节；对插件作者的说明已写进插件开发指南（中英双�
 顺带产出：`input[type=range]` 的真实缺陷比旧版文档记载的严重得多（**整行不绘制**，不是
 「变文本框」），已补进 §3.2 第 6 条 —— 上游报 bug（task #12）时请按那一条的措辞写。
 
-### Step 4 — `<table>` 垫片（task #16，**下一个要做的**）
+### Step 4 — `<table>`（task #16，**实施中**）
 
-- 命中 downloader、radio
-- WebF **自带** `<webf-table>` / `<webf-table-header>` / `<webf-table-row>` / `<webf-table-cell>`，
-  垫片做的是**标签改写**而非从零实现
-- 注意 radio 还叠了 sticky 表头
+> ⚠️ **本文档旧版写的「WebF 自带 `<webf-table>` 系列标签，垫片做的是标签改写而非从零实现」
+> 已被证伪。看到那句话时以本节与 `docs/webf-step4-design.md` 为准。**
 
-### Step 5 — `env(safe-area-inset-*)` 垫片（task #19）
+**证伪理由**：`<webf-table>` 的 `build` 只读**直接 `childNodes`**（`html/table.dart:188-189` 的
+`firstWhereOrNull` / `whereType`），`<thead>`/`<tbody>` 不拆就是**一张空表，且不报错不打日志**；
+而 downloader 恰好靠 `#tbody` + `innerHTML` 渲染行 —— 保留 `<tbody>` 得空表，拆掉插件 JS 抛
+`TypeError`。WebF 又**没有 `MutationObserver`**。更要命的是 `colspan`/`rowspan` 零支持是
+**Flutter `Table` widget 的天花板，不是 WebF 没做，上游修也修不了**。
 
-- Dart 侧读 `MediaQuery.padding`，经桥注入 CSS 变量（如 `--sl-safe-top`），
-  垫片把 `env(safe-area-inset-top)` 改写成 `var(--sl-safe-top)`
-- 命中 6 个插件共 10 处，是**收益/成本比最高**的一项
+**现在的方案**：CSS Grid（`docs/webf-step4-design.md` 的方案 B'）。WebF 的 Grid 是**已实现**的
+（`fr` / `minmax()` / `repeat()` / `auto-fill` / `auto-fit` / `grid-auto-flow` / `span` 全在
+`css/grid.dart`），且这是唯一「浏览器 / 系统 WebView / WebF **三条路径共用一套代码**」的方案
+—— 自写元素与垫片方案都要靠 `webf-engine` class 分叉两套模板，而 WebF 那份**在本机永远跑不到**
+（glibc 2.35 < 2.38），双份实现 + 单份可测最易腐化。
 
-### Step 6 — 三项经桥下沉（task #18）
+**必须按「双容器 + 同步列宽」写，不要写单容器 + 纯 `fr`** —— grid 子项上的 `position: sticky`
+不可用，判据见 §3.2 第 7 条。
 
-- `window.open` → Dart `url_launcher`（miot 小米二次验证登录）
-- `input[type=file]` → Dart `file_picker`（ytdlp、radio）
-- `URL.createObjectURL` → `data:` URL 或落盘（miot 带鉴权头拉封面 ×2）
+**紧迫性**：命中面只有 downloader 一张表（radio 未声明 `renderEngine` = `webview`，进不到 WebF），
+但 **downloader 已带 `renderEngine: "webf"` 发版**（v2026.8.2），是目前**唯一已发布、
+用户可见的 WebF 回归**。
 
-### task #3 — 许可合规文档
+### ✅ Step 5 — 安全区（task #19，**已完成 2026-08-02**）
 
-`songloft-player/NOTICE` **已完成**（新增「DISTRIBUTION LICENSE — PLEASE READ」段 + WebF 列为第 1 项，
-其余重新编号到 8 含 Material Symbols）。**剩下**：README / docs 的许可章节，
-且必须遵守**文档双语同步铁律**（`README.md` ↔ `README.en.md`）。
-另外 GPLv3 强制要求 release 产物随附 GPL-3.0 全文与「完整对应源码」获取方式，**这条还没做**。
+实现与三条实测事实见 **§2.5**。原定的「垫片改写 `env()` → `var()`」已证伪，改走
+「宿主只注入变量、插件写 `var(--sl-safe-*)`」。
 
-### task #12 — 给 WebF 上游报 §3.2 里的 6 条
+### Step 6 — 三项经桥下沉（task #18，**实施中**）
+
+**优先级**（预研与设计文档已定，按这个顺序）：
+
+1. **`window.open`** —— miot 小米账号二次验证登录，**功能性阻塞**。WebF 的 `window.open` 是
+   no-op（`window.cc` 两个重载都 `return this`，**不抛错**）。预研 §3.3 查明产品这边也不是
+   no-op，而是**没设 `WebFNavigationDelegate` 落到无条件 cancel**，约 8 行可解（骨架在预研里）
+2. **`URL.createObjectURL`** —— miot 带鉴权头拉封面 ×2。WebF 有 `Blob` 但没有产 `blob:` 的入口。
+   改 `data:` URL，**注意 `createObjectURL` 是同步的而 blob→base64 是异步的，所以必须改 miot
+   的调用点**，不能只做一个假的同步垫片
+3. **`input[type=file]`** —— **当前零暴露**（radio 是 `webview`；ytdlp / lxmusic 拿不到源码且
+   从未标 `webf`）。桥形状与垫片形状已定形，见 `docs/webf-step4-design.md` §2.3 / §2.4：
+   桥返回 `{name, size, text}`、**主载荷是 UTF-8 解码后的字符串**（不返回 path），
+   垫片**必须同时拦 `click` 事件与覆写实例 `click` 方法**（radio 是「隐藏 input + 外部按钮代点」）
+
+`file_picker: ^10.3.10` **早就在 `pubspec.yaml` 里了**，所以用它的原生契约哈希代价是**零**。
+⚠️ 但**绝不要 bump 它的版本**：版本号进哈希，而它是 caret 约束，**一次 `pub upgrade` 就会静默改变**。
+
+顺带还有一件小事（`docs/webf-step4-design.md` §1.9）：给 `common.js` 加一个**只警告不改写**的
+表格垫片，把「插件用了 `<table>` 但它压根不存在」这个**完全静默**的失败
+（`element_registry.dart` 的日志默认关）变成一行指路的 `console.warn`。
+
+### ✅ task #3 — 许可合规（**主体已完成 2026-08-02**）
+
+`songloft-player/NOTICE`、双语 README / docs 的许可章节、GPL-3.0 全文随 release 产物、
+「完整对应源码」获取方式（`CORRESPONDING-SOURCE.txt`）均已落地。
+
+**三个非显而易见的决策，改这块前先读**：
+
+1. **`LICENSES/GPL-3.0.txt` 刻意不叫 `COPYING` / `LICENSE-*`、也刻意不放仓库根**：
+   GitHub 的 licensee **只扫仓库根**，双许可仓库在根上放第二份 license 会让它判成
+   `NOASSERTION`，README 的 shields 徽章会从 Apache-2.0 变成 "unknown"。
+2. **父仓库与 `songloft-player` 各存一份**（35147 字节，md5 相同）。不是冗余：父仓库的
+   `create-release` job checkout 的是 **`ref: main`**、**且不 init 子模块**，拿不到 player 那份。
+3. **workflow 里用 `git show ${GITHUB_SHA}:LICENSES/GPL-3.0.txt` 而不是 `cp`**：同上，
+   那个 job 的工作区是 main 而不是被构建的那个 commit。用 `cp` 会在 `dev-webf` 阶段
+   （main 上还没有这个文件时）**直接搞坏 create-release**。
+
+**剩下的挂账项**（都不阻塞合并）：把 license 文本嵌进每个安装包内部（APK / IPA / DMG / MSIX
+都是签名容器，塞进去要动签名流程）、App 内「开源许可」页、首次真实 release 后确认
+`CORRESPONDING-SOURCE.txt` 里的版本号没有回落成 `unknown`。
+
+### task #12 — 给 WebF 上游报 §3.2 里的 **7** 条
+
+草稿在 `docs/webf-upstream-issues.md`（同为分支临时件）。
+**未经用户确认不要向 `openwebf/webf` 提交** —— 那是对第三方仓库的外发动作。
 
 ### 明确不做（用户已定）
 
@@ -361,7 +494,19 @@ HOST_NETWORK=1 PROBE_URL='http://127.0.0.1:58191/api/v1/jsplugin/miot/?embed=&th
 - **`DIAGNOSE`** 最终落到 Dart 的 `bool.fromEnvironment`，它**只认字面 `"true"`**，
   传 `1` 会被静默当 false（`run.sh` 已做归一化）
 - **两列布局的纵向预算有限**，加检查组前先确认新行不会把已有行挤出截图
-- **`[diag]` 在 Step 2 那轮跑没有输出**，原因未查明（既有探针问题，不影响 Step 1/2 的结论）
+- ~~**`[diag]` 在 Step 2 那轮跑没有输出**，原因未查明~~ → **Step 5 已查明**：
+  `WebFController.onLoad` 在 `WebF.fromControllerName` 这条挂载路径下**可能永不触发** ——
+  `checkCompleted()` 在 `document.hasPendingRequest` 为真时**直接 return**
+  （`launcher/controller.dart:1734`），而探针页第 11 组那两个 `<img src="">` 会被 WebF 请求成
+  **文档自身 URL**、解码失败挂住。诊断脚本挂在 `onLoad` 上，所以一行都没跑。
+  探针已改成「页面在确定时点经 methodChannel 主动叫 Dart」（与 `slDrag` 同套路），不再依赖 `onLoad`。
+  **⚠️ 对产品的含义**：`_pageReady` 就是在 `onLoad` 里置 true，所以安全区、主题、播放状态
+  **三条推送共享同一个闸**。真实插件页由后端 `stripEmptySrcAttrs` 剥掉空 `src`、且页面能正常结束
+  loading（否则会撞 20s 超时 UI），所以生产上这个闸**应当**会开 —— 但**没有实机验证**。
+  新加依赖页面 ready 时序的桥之前，先确认这个闸会开，或学 Step 5 / `slDrag` 让页面主动叫 Dart
+- **探针第 16 组本身是 flaky 的**：Step 5 实测 5 次里 2 次 `sldRect=0x0`（滑块被静默漏出拖动目标，
+  **表现与「事件没通」一模一样**）。不改一行重跑就好了，probe.html 原有注释已描述过这个失效模式。
+  **不要**把它的偶发失败误判成自己的改动坏了
 - 断言铁律（与仓库既有的无头浏览器验证一致）：**截图只证明"渲染对了"**，
   交互是否真生效必须落在后端可观测状态上（`curl` 对应 `/settings/<name>`、`play_history` 有无新记录等）。
   数进程用 `pgrep -x`，**不要** `ps -ef | grep | wc -l`
