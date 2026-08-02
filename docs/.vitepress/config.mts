@@ -93,7 +93,9 @@ export default async () => {
       ],
 
       footer: {
-        message: '基于 <a href="https://github.com/songloft-org/songloft/blob/main/LICENSE">Apache 2.0</a> 协议开源',
+        // 源码与客户端二进制的许可不同，不能只写一个 Apache 2.0：客户端二进制链接了
+        // GPL-3.0-only 的 WebF（songloft-org/songloft#341），整体按 GPL-3.0 分发。
+        message: '源码基于 <a href="https://github.com/songloft-org/songloft/blob/main/LICENSE">Apache 2.0</a> 协议开源；客户端二进制含 <a href="https://github.com/openwebf/webf">WebF</a>，按 <a href="https://github.com/songloft-org/songloft/blob/main/LICENSES/GPL-3.0.txt">GPL-3.0</a> 分发',
         copyright: `Copyright © 2025-${new Date().getFullYear()} <a href="https://github.com/hanxi">涵曦</a>`,
       },
 

@@ -8,6 +8,36 @@ You may obtain a copy of the License at
     http://www.apache.org/licenses/LICENSE-2.0
 
 ================================================================================
+DISTRIBUTION LICENSE — CLIENT BINARIES (PLEASE READ)
+================================================================================
+
+The Go server (source, binaries, Docker images) is Apache-2.0, as is all
+source code in this repository.
+
+The Flutter CLIENT binaries released from this repository -- the bundled
+builds named `songloft-bundled-*`, which embed the Go backend -- link against
+WebF (GPL-3.0-only, no linking exception) to render JS plugin pages, exactly
+like the standard client released from songloft-org/songloft-player.
+Apache-2.0 is one-way compatible with GPLv3, so the combination is permitted,
+but each such client binary is governed AS A WHOLE by the GNU General Public
+License, version 3.
+
+Recipients of a client binary therefore receive it under GPL-3.0 (not
+Apache-2.0) and are entitled to the complete corresponding source code:
+
+    https://github.com/songloft-org/songloft          (server / this repo)
+    https://github.com/songloft-org/songloft-player   (Flutter client)
+    https://github.com/openwebf/webf                  (WebF)
+
+Every release attaches LICENSE-GPL-3.0.txt (full license text, also in this
+repository at LICENSES/GPL-3.0.txt) and CORRESPONDING-SOURCE.txt, which names
+the tag and the exact commit SHAs the binaries were built from.
+
+This does NOT extend to the server: `songloft-linux-*` / `songloft-darwin-*` /
+`songloft-windows-*` binaries and the Docker images contain no WebF and remain
+Apache-2.0. The Web frontend bundle likewise contains no WebF.
+
+================================================================================
 THIRD-PARTY COMPONENTS
 ================================================================================
 
@@ -63,13 +93,16 @@ distributed under BSD-3-Clause.
 --------------------------------------------------------------------------------
 5. Flutter Client  (songloft-org/songloft-player, separate repository)
 --------------------------------------------------------------------------------
-The Flutter client embeds `just_audio_media_kit`, which in turn depends on
+The Flutter client links WebF (GPL-3.0-only) on native platforms; see the
+"DISTRIBUTION LICENSE -- CLIENT BINARIES" section above, which applies to the
+`songloft-bundled-*` artifacts released from this repository.
+
+The client also embeds `just_audio_media_kit`, which in turn depends on
 libmpv / FFmpeg. libmpv is distributed under LGPL-2.1+ and FFmpeg is
-distributed under LGPL-2.1+ (with optional GPL components). If you
-distribute binaries that statically link any GPL-licensed component,
-your distribution is governed by the GPL. Check the upstream build flags
-and refer to the client repository for source-availability obligations
-under LGPL section 4 / GPL section 3.
+distributed under LGPL-2.1+ (with optional GPL components); the builds we
+bundle deliberately exclude GPL-only FFmpeg components. See the client
+repository's NOTICE for the per-component breakdown and for the
+source-availability obligations under LGPL section 4 / GPL section 6.
 
 --------------------------------------------------------------------------------
 6. JS Plugin Toolchain  (songloft-org/plugin-toolchain, separate repository)
