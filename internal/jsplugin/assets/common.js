@@ -593,9 +593,62 @@
         }
     };
 
+    // ── 垫片：安全区内边距 --sl-safe-*（宿主注入，songloft-org/songloft#341）───
+    //
+    // WebF 不实现 `env(safe-area-inset-*)`（`css/keywords.dart` 里那 6 个
+    // SAFE_AREA_INSET* / ENV 常量全库无引用，连解析入口都不存在），于是刘海屏 /
+    // 圆角屏 / 手势条上插件页会顶到状态栏或被下巴切掉。
+    //
+    // **刻意不做「把 CSS 里的 env() 自动改写成 var()」**，那条路已核实不可行：
+    //   ① 写入面不存在 —— CSSOM 的 `cssText` 只有 getter，`CSSStyleRule` 既不暴露
+    //      `selectorText` 也不暴露 `.style`；唯一写入面是 insertRule/deleteRule/
+    //      replaceSync 这种「整条规则进出」，而 `cssText` 是从解析结果**重建**的
+    //      （简写被展开、WebF 不认识的属性已丢），往返即有损；`@media` 里的规则
+    //      `cssText` 是空串且没有 `.cssRules`，delete+insert 会不可逆地摧毁它。
+    //   ② 即便能改写也救不了命中面 —— 真实插件的 env() 全都套在 calc() / max()
+    //      里，而 WebF **没有实现 CSS max() / min()**，换成 var() 照样是死的。
+    // 所以改成「宿主只注入变量，插件作者直接写 var(--sl-safe-*)」：默认值由
+    // common.css 承担（三种环境各自的取值见那边的注释），这里只负责把宿主推来的
+    // 真实 inset 写成 documentElement 的**内联**自定义属性（内联优先级最高，
+    // 覆盖 common.css 的默认值）。
+    //
+    // 关在 isWebFEngine() 里：浏览器与系统 WebView 下 env() 是原生支持的，
+    // common.css 的 :root 默认值已经把变量绑到 env() 上，宿主也不会推这条消息。
+    var SAFE_AREA_SIDES = ['top', 'right', 'bottom', 'left'];
+    // 记住最后一次收到的值：消息可能早于 DOM 就绪到达（宿主在 onLoad 回调里推，
+    // 而 WebF 的 documentElement.style 在 <head> 阻塞脚本期的可用性不敢假定 ——
+    // dataset 在那时就是 null，见 applyTheme 的注释）。存下来由 ready 相补一次。
+    var lastSafeArea = null;
+
+    function applySafeAreaInsets(insets) {
+        if (!insets || typeof insets !== 'object') return;
+        lastSafeArea = insets;
+        var de = document.documentElement;
+        // 特性探测而不是假定：setProperty 拿不到就静默留给 ready 相重试。
+        if (!de || !de.style || typeof de.style.setProperty !== 'function') return;
+        for (var i = 0; i < SAFE_AREA_SIDES.length; i++) {
+            var side = SAFE_AREA_SIDES[i];
+            var v = insets[side];
+            // 只接受有限非负数字。宿主推的是 MediaQuery.viewPadding 的逻辑像素，
+            // 单位固定 px；拿到别的形态（字符串 / NaN / 负数）一律跳过而不是写进去，
+            // 免得把一个非法值盖在 common.css 的合法默认值上。
+            if (typeof v !== 'number' || !isFinite(v) || v < 0) continue;
+            de.style.setProperty('--sl-safe-' + side, v + 'px');
+        }
+    }
+
+    var safeAreaShim = {
+        name: 'safe-area',
+        apply: function () {
+            // DOM 就绪后补写一次。宿主的推送时机（onLoad）与本函数的先后没有保证，
+            // 没收到过值时什么都不做 —— 默认值在 common.css 里，不需要 JS 兜。
+            if (lastSafeArea) applySafeAreaInsets(lastSafeArea);
+        }
+    };
+
     // ── 垫片注册表 ─────────────────────────────────────────────────────────
     var earlyShims = [emptyImgSrcAccessorShim];
-    var readyShims = [emptyImgSrcSweepShim, detailsShim, rangeSliderShim];
+    var readyShims = [emptyImgSrcSweepShim, detailsShim, rangeSliderShim, safeAreaShim];
 
     function installEarly() {
         if (!isWebFEngine()) return;
@@ -627,6 +680,16 @@
             applyTheme(e.data.theme);
         } else if (e.data.type === 'songloft-player-state') {
             dispatchPlayerState(e.data.state);
+        } else if (e.data.type === 'songloft-safe-area') {
+            // WebF-only（浏览器 / 系统 WebView 下 env() 原生可用，宿主也不推这条）。
+            // try/catch 是必须的：本监听器里抛出会吞掉同一条消息的后续处理，
+            // 而安全区失效只该是「少几像素内边距」，不该连带打掉别的消息通道。
+            if (!isWebFEngine()) return;
+            try {
+                applySafeAreaInsets(e.data.insets);
+            } catch (err) {
+                console.warn('[songloft] safe-area apply failed:', err);
+            }
         } else if (e.data.type === 'songloft-host-reply') {
             // 安全：host 回执只接受来自父窗口的消息（native 顶层 parent===self 亦成立）。
             if (e.source && e.source !== window.parent) return;

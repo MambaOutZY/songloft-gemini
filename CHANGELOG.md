@@ -20,6 +20,17 @@
   `data-sl-no-slider` 可退出该垫片。仅 WebF 渲染面生效，浏览器与系统 WebView 下行为不变。
   官方插件 miot 的音量条已适配。属性契约与适配示例见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
   *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下补齐安全区（刘海屏 / 圆角屏 / 手势条）。WebF 压根不实现
+  CSS `env(safe-area-inset-*)`（连解析入口都不存在），写 `env()` 的插件页在这些设备上会顶到状态栏
+  或被下巴切掉。现在客户端把真实安全区（`MediaQuery.viewPadding`）注入成四个 CSS 变量
+  `--sl-safe-top` / `--sl-safe-right` / `--sl-safe-bottom` / `--sl-safe-left`，转屏、进退全屏、
+  页面重挂都会重推；`common.css` 给这四个变量备了默认值，**普通浏览器与系统 WebView 下它们就等于
+  `env()` 本身**，所以插件只写一种形式 `var(--sl-safe-bottom)` 即可三端通吃、行为不变。
+  **不做自动改写**——CSSOM 没有可用的写入面（`cssText` 只读、规则不暴露 `selectorText` 与 `.style`、
+  `@media` 内的规则完全不可达），且真实写法都套在 `calc()` / `max()` 里，而 WebF 同样没有实现
+  `max()` / `min()`（`clamp()` 可用，可作等价替换）。官方插件 miot 的 3 处已适配。
+  变量语义与 `max()` 的替换写法见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
+  *(songloft-org/songloft#341)*
 - **jsplugin**: WebF 渲染面下新增原生环形进度条元素 `<songloft-progress-ring>`。WebF 的 `<svg>` 是把
   整棵子树重新序列化后交给 `flutter_svg` 渲染，任何子节点变更都会让整棵 SVG 重新拼串 + 重新解析 +
   重新光栅化，所以「每秒改 `strokeDashoffset` 的 SVG 进度环」在 WebF 下是最差的一类写法；新元素的

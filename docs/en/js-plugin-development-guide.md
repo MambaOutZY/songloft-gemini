@@ -1202,6 +1202,55 @@ Theme-following colors behave exactly as with `<songloft-progress-ring>` (CSS `c
 - The shim **only runs on the WebF rendering surface**: in a regular browser or the system WebView, the native `input[type=range]` keeps working and nothing about the page changes. A hand-written `<songloft-slider>` is an unknown tag (an empty box) outside WebF, so if you need both to look right, ship two implementations and pick one via `html.webf-engine`, just like the progress ring
 - **A vertical slider inside a vertical scrolling container may lose the gesture**: the slider uses a drag gesture on the same axis as its orientation and therefore **competes** with scrolling (which is the correct behavior — otherwise the page would scroll and the slider would move at the same time). Who wins depends on the gesture arena's "the deeper hit accepts first" ordering. miot's volume panel is a popup layer, so it is unaffected; test it for real before putting one inside a long list
 
+#### Safe areas: use `--sl-safe-*`, never `env(safe-area-inset-*)`
+
+**WebF does not implement CSS `env()` at all** — it is not a matter of imprecise evaluation, the parsing entry point simply does not exist. So on notched / rounded-corner / gesture-bar devices, a plugin page that writes `env(safe-area-inset-bottom)` will **run under the status bar or get clipped by the home indicator**.
+
+The host therefore injects the real safe area (Flutter's `MediaQuery.viewPadding`) as four CSS variables, and plugins uniformly use `var()`:
+
+| Variable | Meaning |
+|------|------|
+| `--sl-safe-top` | Top inset (status bar / notch) |
+| `--sl-safe-right` | Right inset (landscape notch / rounded corner) |
+| `--sl-safe-bottom` | Bottom inset (home gesture bar) |
+| `--sl-safe-left` | Left inset |
+
+```css
+/* Recommended: one stylesheet for all three runtimes, no forking needed */
+.player-bar {
+    padding: 6px 16px calc(4px + var(--sl-safe-bottom));
+}
+```
+
+`common.css` already declares defaults for all four on `:root`, so **every runtime yields a defined value and plugins only ever write one form**:
+
+| Runtime | Value of `var(--sl-safe-bottom)` |
+|------|------|
+| Regular browser / system WebView (default engine) | `env(safe-area-inset-bottom, 0px)`, i.e. the native value (`0px` on desktop browsers) |
+| WebF + new client | The real `MediaQuery.viewPadding` pushed by the host (re-pushed on rotation, entering/leaving fullscreen, and page remount) |
+| WebF + older client (does not push safe areas) | `0px`, equivalent to "no safe area" — the same as not doing any of this |
+
+So: **just write `var(--sl-safe-bottom)`; do not bolt an `env()` fallback onto it.**
+
+Three hard constraints, all verified on WebF:
+
+- **`var(--x, env(...))` evaluates to `0` under WebF** — the fallback chain dies at `env()`, and even `env()`'s own inner fallback (the `19px` in `env(safe-area-inset-bottom, 19px)`) is unreachable. So it is not a "safer" spelling; it merely throws away the variable's default value
+- **WebF does not implement CSS `max()` / `min()`**, and the whole declaration is dropped (not just the safe-area term). To express "at least 24px, more if the safe area is larger", replace `max(24px, ...)` with `clamp()`:
+
+  ```css
+  /* clamp(MIN, VAL, MAX) is by definition max(MIN, min(VAL, MAX)), so for any
+     safe area <= 96px it is exactly equivalent to max(24px, …) (real devices
+     top out around 34px). Zero behavior change in browsers, verified on WebF. */
+  .fp-controls {
+      padding-bottom: clamp(24px, var(--sl-safe-bottom), 96px);
+  }
+  ```
+
+  When you only want "a fixed gap on top of the safe area", `calc()` is more direct: `calc(24px + var(--sl-safe-bottom))`
+- **`clamp()` works and accepts `var()` in its arguments** (verified), but avoid every other CSS math function outside `calc()` (`max` / `min` / `round` / `mod`, …)
+
+Note that the injected value is **whatever is left for the page to handle**: the client already consumes part of the safe area with an outer `SafeArea` (the plugin tab page consumes top / left / right and leaves the bottom to the page), so you will not get double padding where the host has already inset the surface.
+
 ### Access Paths
 
 After installation, static files are accessed via the following paths (note: the runtime route is the singular `jsplugin`, different from the management API `/api/v1/jsplugins`, which is plural):

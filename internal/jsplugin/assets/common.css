@@ -103,6 +103,56 @@ html[data-theme="dark"] {
     --md-shadow-3: 0 4px 8px rgba(0,0,0,.42), 0 2px 8px rgba(0,0,0,.36);
 }
 
+/* ── 安全区内边距变量 --sl-safe-*（songloft-org/songloft#341）──
+ *
+ * 刘海屏 / 圆角屏 / 手势条的安全区。**插件请一律写 `var(--sl-safe-bottom)`，
+ * 不要直接写 `env(safe-area-inset-bottom)`** —— WebF 渲染引擎压根不实现 `env()`
+ * （`css/keywords.dart` 里那 6 个 SAFE_AREA_INSET* / ENV 常量全库无引用，
+ * 连解析入口都没有），写 env() 的插件页在 WebF 下会顶到状态栏 / 被下巴切掉。
+ *
+ * 三种环境下这四个变量都有确定值，插件侧只有一种写法：
+ *   ① 普通浏览器 / 系统 WebView（默认引擎）→ 下面 :root 里的 env() 原生求值，
+ *      拿到真实 inset（桌面浏览器上就是 0px）
+ *   ② WebF + 新客户端 → html.webf-engine 先把它压成 0px（因为 env() 在 WebF 里
+ *      既不求值也没有兜底，留着它会让 calc() 拿到一个非长度的字符串），
+ *      随后宿主用 MediaQuery.viewPadding 的真值经 common.js 写到
+ *      documentElement 的**内联样式**上覆盖（内联优先级最高）
+ *   ③ WebF + 旧客户端（不推安全区消息）→ 停在 0px，等价于「没有安全区」，
+ *      与今天的表现一致，不会更糟
+ *
+ * `html.webf-engine`（0,1,1）优先级高于 `:root`（0,1,0），且刻意**写在 :root
+ * 之后** —— 这样无论 WebF 是按优先级还是按源码顺序裁决，结论都一样。
+ * 那个 class 由 common.js 的 installEarly() 只在 WebF 下加。
+ *
+ * ⚠️ WebF 的两条已实测边界，写插件 CSS 时必须绕开：
+ *   - **没有 `max()` / `min()`**（`css/values/calc.dart` 只认 calc 与 clamp），
+ *     `max(24px, var(--sl-safe-bottom))` 整条声明是死的 —— 这跟 env() 无关，
+ *     换成 var() 也救不回来
+ *   - 想表达「至少留 24px，安全区更大时按安全区」，用 **`clamp()`**：
+ *     `clamp(24px, var(--sl-safe-bottom), 96px)`。clamp 的定义就是
+ *     `max(MIN, min(VAL, MAX))`，对任何 ≤ MAX 的安全区与 `max(24px, …)` 完全等价
+ *     （真机安全区最大也就 iPhone 的 34px 上下，96px 只是个够不到的上限）。
+ *     **`clamp()` 的参数里可以塞 `var()`** —— 探针第 17 组实测 D=30 / J=24
+ *     （J 那条证明夹紧真的发生、不是穿透）。
+ *     ⚠️ 光读源码会得出相反结论：clamp 分支是逐个参数走 `CSSLength.parseLength`，
+ *     而它不认 `var(...)`，只有 calc() 内部有专门的 `CalcVariableNode`。
+ *     实测推翻了这个判读（含 var 的整值应是先被样式系统替换过），
+ *     **以实测为准**，别照源码把它改回「不支持」
+ */
+:root {
+    --sl-safe-top: env(safe-area-inset-top, 0px);
+    --sl-safe-right: env(safe-area-inset-right, 0px);
+    --sl-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --sl-safe-left: env(safe-area-inset-left, 0px);
+}
+
+html.webf-engine {
+    --sl-safe-top: 0px;
+    --sl-safe-right: 0px;
+    --sl-safe-bottom: 0px;
+    --sl-safe-left: 0px;
+}
+
 /* ── Reset ── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 

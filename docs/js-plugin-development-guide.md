@@ -1200,6 +1200,55 @@ songloft-slider {
 - 垫片**只在 WebF 渲染面下跑**：普通浏览器与系统 WebView 里原生 `input[type=range]` 照常工作，页面不会有任何变化。手写 `<songloft-slider>` 时它在非 WebF 环境是未知标签（空盒子），需要两端都好看就像进度环那样两套实现 + `html.webf-engine` 二选一
 - **竖向滑块放进竖向滚动容器里可能抢不到手势**：滑块用与朝向同轴的 drag 手势与滚动**竞争**（这是正确行为，否则会出现「页面在滚 + 滑块同时在动」），胜负依赖手势竞技场的「命中更深者先接受」。miot 的音量面板是弹出层所以不受影响；真要放进长列表里请实测
 
+#### 安全区：用 `--sl-safe-*`，不要写 `env(safe-area-inset-*)`
+
+**WebF 完全没有实现 CSS 的 `env()`** —— 不是求值不准，是连解析入口都不存在。所以刘海屏 / 圆角屏 / 手势条设备上，写 `env(safe-area-inset-bottom)` 的插件页会**顶到状态栏或被下巴切掉**。
+
+主程序改为把真实安全区（Flutter 的 `MediaQuery.viewPadding`）注入成四个 CSS 变量，插件侧统一写 `var()`：
+
+| 变量 | 语义 |
+|------|------|
+| `--sl-safe-top` | 上安全区（状态栏 / 刘海） |
+| `--sl-safe-right` | 右安全区（横屏刘海 / 圆角） |
+| `--sl-safe-bottom` | 下安全区（Home 手势条） |
+| `--sl-safe-left` | 左安全区 |
+
+```css
+/* 推荐写法：一份 CSS 通吃三种运行环境，不需要分叉 */
+.player-bar {
+    padding: 6px 16px calc(4px + var(--sl-safe-bottom));
+}
+```
+
+`common.css` 已经在 `:root` 上给这四个变量备好了默认值，所以**三种环境下都有确定值，插件只写一种形式**：
+
+| 环境 | `var(--sl-safe-bottom)` 的值 |
+|------|------|
+| 普通浏览器 / 系统 WebView（默认渲染引擎） | `env(safe-area-inset-bottom, 0px)`，即原生真值（桌面浏览器上是 `0px`） |
+| WebF + 新版客户端 | 宿主注入的真实 `MediaQuery.viewPadding`（转屏 / 进退全屏 / 页面重挂都会重推） |
+| WebF + 旧版客户端（不推安全区） | `0px`，等价于「无安全区」，与不做这件事时的表现一致 |
+
+因此：**只写 `var(--sl-safe-bottom)` 就够了，不要再画蛇添足加 `env()` 兜底。**
+
+三条已实测的硬约束（都在 WebF 下踩过）：
+
+- **`var(--x, env(...))` 这种带 `env()` 兜底的写法在 WebF 下求值为 `0`** —— fallback 链在 `env()` 处断掉，连 `env()` 自己的内层兜底（`env(safe-area-inset-bottom, 19px)` 里的 `19px`）也取不到。所以它不是「更安全的写法」，只是把变量的默认值白白覆盖掉
+- **WebF 没有实现 CSS `max()` / `min()`**，整条声明会失效（不只是安全区那一项）。想表达「至少留 24px，安全区更大时按安全区」，把 `max(24px, ...)` 换成 `clamp()`：
+
+  ```css
+  /* clamp(MIN, VAL, MAX) 的定义就是 max(MIN, min(VAL, MAX))，
+     对任何 ≤ 96px 的安全区与 max(24px, …) 完全等价（真机最大约 34px）。
+     浏览器侧零行为变化，WebF 侧实测可用。 */
+  .fp-controls {
+      padding-bottom: clamp(24px, var(--sl-safe-bottom), 96px);
+  }
+  ```
+
+  只想「安全区之上再加固定间距」时用 `calc()` 更直白：`calc(24px + var(--sl-safe-bottom))`
+- **`clamp()` 可用、参数里也能塞 `var()`**（已实测），但 `calc()` 之外的其它 CSS 数学函数（`max` / `min` / `round` / `mod` 等）都不要用
+
+注意宿主注入的值是**剩给页面自己处理**的那部分：客户端外层已有 `SafeArea` 消化掉一部分安全区（插件 Tab 页消化了上 / 左 / 右，把下方留给页面），所以不会出现「上层让开了、页面又内缩一次」的双重留白。
+
 ### 访问路径
 
 安装后，静态文件通过以下路径访问（注意：运行时路由是单数 `jsplugin`，与管理 API `/api/v1/jsplugins`（复数）不同）：
