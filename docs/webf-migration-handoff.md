@@ -16,7 +16,7 @@ WebF 渲染引擎已经**能在真机上跑起来插件页**，选择方式已�
 **用户决策反转**，改之前的文档写的是「不按插件排除」）。
 排错闭环已建立（页面 JS 错误与 console 会进客户端日志），
 「垫片层（JS 侧）+ 自定义元素（Dart 侧）」两套补缺机制的**框架已就位并各有一个已验证的实例**。
-剩下的是**按缺口逐项补组件**（Step 3–6）+ 上游报 bug + 许可文档。
+剩下的是**按缺口逐项补组件**（Step 4–6，Step 1–3 已完成）+ 上游报 bug + 许可文档。
 
 ---
 
@@ -75,7 +75,7 @@ WebF 渲染引擎已经**能在真机上跑起来插件页**，选择方式已�
 | player `4fe5d16` | 关掉 WebF 的 HTTP 缓存（`enableHttpCache: false`）+ **转发页面 JS 错误与 console 到 `debugPrint`**。后半段才是关键：`Bytecode are not valid to execute.` 是**次级症状**（前面有未捕获 JS 异常污染了 QuickJS 上下文），它既不带 URL 也不带原始异常，没有 `onJSError` / `onJSLog` 转发根本无法归因 |
 | player `17c736d` | 探针加跨表 CSS 变量用例 + 页面内省能力（`DIAGNOSE=1`） |
 
-### 2.3 补缺机制（Step 1 / Step 2）
+### 2.3 补缺机制（Step 1 / Step 2 / Step 3）
 
 **Step 1 — JS 垫片层**（父 `28fe3f0` + player `d92b915` 回归用例）
 
@@ -114,6 +114,27 @@ SongloftPlugin.applyShims   导出，供插件动态插入 HTML 后手动重跑�
 
 **这个目录只允许依赖 `flutter` 与 `webf`** —— 因为验证探针（另一个 package）会把它整目录拷进去编译，
 拷不动产品的其他依赖。约束写在两边的头注释里，`analysis_options.yaml` 也为此排除了 `probe_main.dart`。
+
+**Step 3 — 两套机制合用的第一个例子：`<songloft-slider>`**（提交状态以 `git log` 为准）
+
+- Dart 侧 `elements/songloft_slider.dart` —— `<songloft-slider>`，属性
+  `value/min/max/step/orientation/disabled/color/track-color`，`CustomPaint` 绘制，
+  颜色同样走 CSS `color`（currentColor）。**不用 Material `Slider`** 有两条硬伤理由：它从宿主
+  App 的 `Theme` 取色（跟不上插件页的 `--md-*`）；它内部是 `HorizontalDragGestureRecognizer`，
+  套 `RotatedBox` 转 90° 后竖向拖动的**全局水平位移是 0**，识别器永不接受 → 拖不动
+- JS 侧 `common.js` 的 `rangeSliderShim`（ready 相）—— 扫 `input[type=range]`，在其后插入滑块、
+  **隐藏**原 input（`.sl-range-hidden` + inline `display:none`）、遮蔽 `.value` / `.disabled` /
+  `matches(':active')`，滑块的 `input`/`change` 转派到原 input（冒泡）。**verified-or-abort**：
+  `.value` 访问器装不上（哨兵往返自检失败）就删滑块、还原 input、退回原生表现 —— 刻意不写
+  「退化成定时轮询」的第二条路（那条在本环境永远跑不到、也就永远测不到）
+- **三道防抖闸**（拖动中不被插件的轮询回写覆盖）：垫片的 `dragging` 标志（带 1500ms 兜底清除）、
+  `matches(':active')` 遮蔽、Dart 侧 `_dragging` 时忽略外部 `value`。缺任何一道都会出现
+  「手指还没抬起把手就跳回去」
+- **手势用与朝向同轴的 drag + `onDown` 定位**，不用 `onTap`（会赢掉 WebF 唯一那个 tap
+  recognizer，DOM `click` 就不再派发了）、不用裸 `Listener`（不进竞技场 → 滚动与滑块同时响应）、
+  不用 pan（`kPanSlop` = 2×`kTouchSlop`，同轴竞争必输给滚动）
+- 插件侧成本：竖向必须写 `data-sl-orientation`（不猜朝向），且要补几行几何 CSS（垫片只拷 inline
+  style 不拷 class）。miot 已适配，`data-sl-no-slider` 是退出开关
 
 ### 2.4 引擎选择改为逐插件声明（**决策反转，2026-08-02**）
 
@@ -184,6 +205,14 @@ SongloftPlugin.applyShims   导出，供插件动态插入 HTML 后手动重跑�
    有「失败即删缓存、退回原始 JS」的自愈，前者没有，于是脚本静默不执行
 4. **`Bytecode are not valid to execute.` 不带任何归因信息**（无 URL、无原始异常）
 5. **`documentElement.dataset` 在 `<head>` 阻塞脚本期是 `null`**
+6. **`input[type=range]` 那一整行根本不绘制**（Step 3 实测发现，**比本文档旧版记载的「静默变文本框」严重得多**）。
+   源码层面「变文本框」没写错：`html/form/input.dart:251-268` 的 `createInput` switch 没有 range 分支，
+   落到 `default` → `createInputWidget()` → 一个 Flutter `TextField`。但容器里实测的表现是
+   **那一行一个像素都不画** —— 没有文本框，**同一行的兄弟文字与该行自己的 `background` 一起消失**。
+   而**盒模型完全正常**（实测 `tagRect=118x40` / `rawRect=120x24`），所以这是**纯绘制层问题**，
+   不是布局塌陷。判据已固化在验证探针**第 14b 组**（把那一行染成黄色：整行不出现任何黄色即复现）。
+   对插件的杀伤力**不止「滑块没了」，而是「同行内容全没」** —— 作者看到的是「一行莫名空白」，
+   既没有报错也没有可疑元素，归因难度比「多了个文本框」高一个量级。
 
 ### 3.3 缺口清单与真实命中面（已交叉验证）
 
@@ -193,7 +222,7 @@ SongloftPlugin.applyShims   导出，供插件动态插入 HTML 后手动重跑�
 | 缺口 | 命中的插件 | 现状 |
 |---|---|---|
 | `<table>` 元素**根本不存在**（退化成嵌套 `display:block`） | downloader、radio | **Step 4 待做** |
-| `input[type=range]` 静默变文本框 | **仅** miot（2 处） | **Step 3 待做** |
+| `input[type=range]` **整行不绘制**（源码层面是落到 `TextField`，但实测一个像素都不画，连同行兄弟文字一起消失 —— 见 §3.2 第 6 条） | **仅** miot（2 处） | ✅ Step 3 已提供 `<songloft-slider>` + `common.js` 的 `rangeSliderShim` **自动**替换（隐藏原 input 并双向同步，插件 JS 零改动）。**插件侧仍需两件事**：竖向滑块在原 input 上写 `data-sl-orientation="vertical"`（垫片不猜朝向），以及补几行几何 CSS（新标签匹配不到 `input[type=range]` 选择器，垫片只拷 inline style 不拷 class）。miot 已适配 |
 | `env(safe-area-inset-*)` 不求值（`style_declaration.dart:736`，upstream #907 open） | miot 3、dav 3、subsonic 1、cloudflared 1、hostc 1、ytdlp 1 | **Step 5 待做** |
 | `window.open` 是 no-op（`window.cc:157-168` 两个重载都 `return this`，不抛错） | **仅** miot `js/auth.js:95`（小米账号二次验证） | **Step 6 待做** |
 | `input[type=file]` 静默变文本框 | ytdlp、radio、lxmusic 各 1 | **Step 6 待做** |
@@ -222,25 +251,20 @@ CSS Grid **已实现**（experimental，193 KB 实现，issue 原文写"不支�
 去掉客户端全局引擎开关，改成 `plugin.json` 的 `renderEngine` 字段；三个官方插件（miot / downloader /
 lyrics）标记为 `webf`；插件开发指南中英双语 + CHANGELOG 已同步。**这是一次决策反转**，
 机制与理由见 §2.4，**不要**按本文档旧版的「明确不做 · 按插件排除引擎」把它回滚。
-它不改变下面 Step 3–6 的任何结论：缺口清单（§3.3）与命中面完全不变，只是「哪些插件会暴露在
+它不改变下面 Step 4–6 的任何结论：缺口清单（§3.3）与命中面完全不变，只是「哪些插件会暴露在
 这些缺口下」现在由插件自己声明。
 
-**Step 3（`<songloft-slider>`）仍未做，仍然是下一个要做的**（见下）。
+### ✅ Step 3 — `<songloft-slider>` 替换 `input[type=range]`（task #15，**已完成 2026-08-02**）
 
-### Step 3 — `<songloft-slider>` 替换 `input[type=range]`（task #15，**下一个要做的**）
+**这一项不再是「下一个要做的」——下一个是 Step 4（`<table>` 垫片）。** 实现细节见 §2.3 的
+Step 3 小节；对插件作者的说明已写进插件开发指南（中英双语）与 CHANGELOG。落地形态与当初的
+建议一致：Dart 侧新元素 + `common.js` 的 ready 垫片，**原 `<input>` 保留在 DOM 里只是隐藏**，
+`input` / `change` 事件双向打通（`dispatchEvent` 已实测通，值走 `event.data`）。
 
-- **命中面极小：只有 miot 2 处。** 别为它做通用化过度设计
-- 做法：Dart 侧 MD3 风格 `<songloft-slider>` 自定义元素 + `common.js` 里的 ready 垫片扫
-  `input[type=range]`
-- **强烈建议：不要把原 `<input>` 从 DOM 里移除。** 把它**隐藏**并与 `<songloft-slider>`
-  双向同步 —— 这是 Step 1 的教训：插件按标签名 `querySelector` 并直接读 `.value`，
-  换掉标签会静默打断插件自己的 JS
-- 必须派发 **`input` 与 `change` DOM 事件**（这是本项目第一次真用 `dispatchEvent`，
-  **需要实测证明 JS 侧确实收到**，不能假定）
-- 验收：容器里渲染 miot 真实页面（起本机后端，见 §5），拖动滑块后**在后端可观测状态上断言**
-  （音量/进度真的变了），不能只看截图
+顺带产出：`input[type=range]` 的真实缺陷比旧版文档记载的严重得多（**整行不绘制**，不是
+「变文本框」），已补进 §3.2 第 6 条 —— 上游报 bug（task #12）时请按那一条的措辞写。
 
-### Step 4 — `<table>` 垫片（task #16）
+### Step 4 — `<table>` 垫片（task #16，**下一个要做的**）
 
 - 命中 downloader、radio
 - WebF **自带** `<webf-table>` / `<webf-table-header>` / `<webf-table-row>` / `<webf-table-cell>`，
@@ -266,7 +290,7 @@ lyrics）标记为 `webf`；插件开发指南中英双语 + CHANGELOG 已同步
 且必须遵守**文档双语同步铁律**（`README.md` ↔ `README.en.md`）。
 另外 GPLv3 强制要求 release 产物随附 GPL-3.0 全文与「完整对应源码」获取方式，**这条还没做**。
 
-### task #12 — 给 WebF 上游报 §3.2 里的 5 条
+### task #12 — 给 WebF 上游报 §3.2 里的 6 条
 
 ### 明确不做（用户已定）
 

@@ -1119,6 +1119,89 @@ html.webf-engine .ring-native { display: inline-block; }
 html.webf-engine .ring-svg { display: none; }          /* hide the SVG version under WebF */
 ```
 
+#### `<songloft-slider>` — a native slider (stand-in for `input[type=range]`)
+
+**Most plugins have to do nothing at all.** WebF does not implement `input[type=range]` — measured behavior is that the whole line **paints zero pixels** under WebF: no slider, no text box, and the sibling text on that line plus the line's own `background` disappear along with it. So the main program's `common.js` shim automatically does the following under WebF:
+
+1. Scan every `input[type="range"]` on the page and insert a `<songloft-slider>` **after** each input;
+2. **Hide** the original `<input>` (add the `.sl-range-hidden` class plus inline `display:none`) instead of **removing** it;
+3. Keep the two in sync, both ways.
+
+Your existing plugin JS therefore needs **no changes at all**:
+
+- Reading and writing `el.value` works as before (the shim installs accessors on the instance; JS writes are pushed to the slider, except while the user is dragging)
+- `el.disabled = true / false` works as before (the slider dims and stops responding to gestures)
+- `el.addEventListener('input' / 'change', ...)` works as before (slider interaction dispatches **bubbling** `input` / `change` events on the original input)
+- `el.matches(':active')` works as before (returns `true` while dragging). This is the standard way plugins detect "the user is dragging, don't overwrite with polled state"; a hidden input can never truly enter `:active` under WebF, so the shim also shadows `matches`
+
+The shim is idempotent (marked with `data-sl-range-shim`); after inserting HTML dynamically, call `SongloftPlugin.applyShims()` to give the new range inputs a slider. If the `.value` accessor cannot be installed (the sentinel round-trip self-check fails), the shim **gives up entirely**: it removes the slider, restores the original input, and logs a `console.warn` — falling back to WebF's native behavior is better than "the input is hidden and the value no longer syncs".
+
+Attributes (the shim transcribes these from the original input; supply them yourself when you write the element by hand). The shim also carries over `aria-label` and the original input's inline `style`, and adds the `.sl-range-slider` class plus `data-sl-for="<id of the original input>"` to the slider:
+
+| Attribute | Default | Description |
+|-----------|---------|-------------|
+| `value` | `min` | Current value |
+| `min` | `0` | Lower bound |
+| `max` | `100` | Upper bound. `max <= min` is a degenerate range: the thumb stays at the start and drags are ignored |
+| `step` | `1` | Step size. `any` or `<= 0` means continuous |
+| `orientation` | `horizontal` | Set to `vertical` for a vertical slider (**min at the bottom, max at the top**) |
+| `disabled` | absent | Present means disabled (`false` / `0` are the exception and count as enabled). When disabled the whole element is drawn at 38% opacity and ignores gestures |
+| `color` | value of CSS `color` | Color of the filled track and the thumb; **accepts concrete color values only** |
+| `track-color` | fill color at 24% opacity | Color of the unfilled track |
+
+- **Size** comes from CSS `width` / `height`; when unspecified it falls back per orientation to **160×28 horizontal / 28×160 vertical**, and `display` defaults to `inline-block`
+- Events: dragging and **tapping the track** (a tap moves the thumb to the tap position, same as a browser) both dispatch `input`; releasing dispatches `change`. The new value is carried in `event.data` (a string; integers have no `.0`)
+- **The element does not write back its own `value` attribute during interaction** — the page owns the truth. So when you use the element directly, read the value from `event.data` and **do not** read `getAttribute('value')` (that is only whatever you last pushed into it)
+- `min` / `max` / `step` must be written as **attributes**: WebF does not implement property reflection for these three, so `el.min` reads back as an empty string
+- Invalid values are always ignored with a note in the client log, never thrown
+
+##### Vertical sliders: `data-sl-orientation` must be declared explicitly
+
+The shim does **not** guess the orientation — spell it out on the original `<input>`:
+
+```html
+<input type="range" id="volumeSlider" min="0" max="100" value="50"
+       aria-label="Volume" data-sl-orientation="vertical">
+```
+
+Why it cannot be inferred: in a browser a vertical range is usually produced with `transform: rotate(-90deg)`, but WebF's `getComputedStyle` coverage is unreliable (it does not even expose custom properties), and inferring from transform means **a wrong guess is a silently wrong orientation** — far worse than requiring one declaration.
+
+If you do not want the slider (you want WebF's native behavior, or your plugin already handles that range itself), add `data-sl-no-slider` and the shim skips it:
+
+```html
+<input type="range" data-sl-no-slider>
+```
+
+##### Plugins usually need a few lines of CSS
+
+`<songloft-slider>` is a **new tag**, so it does not match your existing `input[type="range"]` selectors and inherits none of their geometry. The shim copies only the original input's **inline `style`** (so things like `style="width:100%"` keep working automatically) and **deliberately does not copy classes** — those classes usually carry rules that make a native range *look* like a slider (`-webkit-appearance`, `::-webkit-slider-thumb`, `accent-color`), and copying them would only drag in meaningless or harmful declarations.
+
+It still works without any CSS; you just get the element's default size (160×28 horizontal), which rarely fits your layout. Three selectors are available: `songloft-slider`, the `.sl-range-slider` class added by the shim, and `[data-sl-for="<id of the original input>"]` (the original id stays on the input and is never moved to the slider).
+
+How the first-party miot plugin actually does it (vertical volume bar, originally `width: 110px` + `rotate(-90deg)`):
+
+```css
+songloft-slider {
+    color: var(--md-primary);
+}
+
+/* A vertical element paints vertically on its own — no transform needed;
+   what used to be the pre-rotation width is now the height. */
+.volume-panel .volume-slider-wrap songloft-slider {
+    width: 28px;
+    height: 110px;
+}
+```
+
+These rules never match in a browser or the system WebView (there is no `songloft-slider` element there), so they are purely additive and do not need to be wrapped in `html.webf-engine`.
+
+Theme-following colors behave exactly as with `<songloft-progress-ring>` (CSS `color` / currentColor works, **writing `var()` in the attribute does not**) — see [How the color follows the theme](#how-the-color-follows-the-theme) above; it is not repeated here.
+
+##### Where it applies, and one known residual risk
+
+- The shim **only runs on the WebF rendering surface**: in a regular browser or the system WebView, the native `input[type=range]` keeps working and nothing about the page changes. A hand-written `<songloft-slider>` is an unknown tag (an empty box) outside WebF, so if you need both to look right, ship two implementations and pick one via `html.webf-engine`, just like the progress ring
+- **A vertical slider inside a vertical scrolling container may lose the gesture**: the slider uses a drag gesture on the same axis as its orientation and therefore **competes** with scrolling (which is the correct behavior — otherwise the page would scroll and the slider would move at the same time). Who wins depends on the gesture arena's "the deeper hit accepts first" ordering. miot's volume panel is a popup layer, so it is unaffected; test it for real before putting one inside a long list
+
 ### Access Paths
 
 After installation, static files are accessed via the following paths (note: the runtime route is the singular `jsplugin`, different from the management API `/api/v1/jsplugins`, which is plural):

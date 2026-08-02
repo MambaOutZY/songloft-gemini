@@ -11,6 +11,21 @@
   Linux 端 WebF 仅支持 x86-64 + glibc ≥ 2.38，arm64 / NAS / 树莓派等环境拿不到 WebF 渲染面。
   字段语义与作者须知见「JS 插件开发指南 · renderEngine 渲染引擎声明」
   *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下的滑块补齐。WebF 没有实现 `input[type=range]`（实测那一整行一个像素
+  都不画：既没有滑块也没有文本框，同一行的兄弟文字与行背景会一起消失），现在客户端提供原生元素
+  `<songloft-slider>`，`common.js` 垫片会自动把每个 `input[type="range"]` **隐藏**并在其后插入滑块、
+  双向同步 `.value` / `.disabled` / `input` 与 `change` 事件 / `matches(':active')`——原 `<input>` 仍留在
+  DOM 里，**插件既有 JS 无需改动**。竖向滑块需在原 input 上声明 `data-sl-orientation="vertical"`
+  （不自动推断朝向），并按新标签补几行几何 CSS（垫片只拷 inline style、不拷 class）；
+  `data-sl-no-slider` 可退出该垫片。仅 WebF 渲染面生效，浏览器与系统 WebView 下行为不变。
+  官方插件 miot 的音量条已适配。属性契约与适配示例见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
+  *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下新增原生环形进度条元素 `<songloft-progress-ring>`。WebF 的 `<svg>` 是把
+  整棵子树重新序列化后交给 `flutter_svg` 渲染，任何子节点变更都会让整棵 SVG 重新拼串 + 重新解析 +
+  重新光栅化，所以「每秒改 `strokeDashoffset` 的 SVG 进度环」在 WebF 下是最差的一类写法；新元素的
+  进度变化只走一次重绘。颜色默认跟随 CSS `color`（currentColor），因此零配置即跟随主题。
+  **不做自动替换**——插件需自己改用该标签（内联 SVG 是任意图形，机械判定「这个 svg 是进度环」必然
+  误伤）。仅 WebF 渲染面生效 *(songloft-org/songloft#341)*
 
 ### :zap: Performance Improvements
 - **jsplugin**: 插件商店拉取结果服务端缓存 5 分钟，翻页与搜索不再重复拉取整棵注册表树

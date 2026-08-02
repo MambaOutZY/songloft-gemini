@@ -1117,6 +1117,89 @@ html.webf-engine .ring-native { display: inline-block; }
 html.webf-engine .ring-svg { display: none; }          /* WebF 下藏起 SVG 版 */
 ```
 
+#### `<songloft-slider>` —— 原生滑块（`input[type=range]` 的替身）
+
+**大多数插件什么都不用做。** WebF 没有实现 `input[type=range]`——实测那一整行在 WebF 下**一个像素都不画**：既没有滑块也没有文本框，同一行的兄弟文字与该行自己的 `background` 会一起消失。所以主程序的 `common.js` 垫片在 WebF 下会自动：
+
+1. 扫描页面里所有 `input[type="range"]`，在每个 input **后面**插入一个 `<songloft-slider>`；
+2. 把原 `<input>` **隐藏**（加 `.sl-range-hidden` class + inline `display:none`）而**不是移除**；
+3. 双向同步两者。
+
+因此插件既有的 JS **一行都不用改**：
+
+- `el.value` 读写照常（垫片在实例上装了访问器；JS 写入会同步给滑块，拖动期间除外）
+- `el.disabled = true / false` 照常（滑块会跟着变灰并停止响应手势）
+- `el.addEventListener('input' / 'change', ...)` 照常（滑块的交互会在原 input 上派发**冒泡的** `input` / `change`）
+- `el.matches(':active')` 照常（拖动中返回 `true`）。这条是插件「用户正在拖，别用轮询结果覆盖」的标准写法；隐藏后的 input 在 WebF 里永远进不了真正的 `:active`，所以垫片遮蔽了 `matches`
+
+垫片幂等（`data-sl-range-shim` 标记），动态插入 HTML 后调 `SongloftPlugin.applyShims()` 即可给新出现的 range 补上滑块。若 `.value` 的访问器装不上（哨兵往返自检失败），垫片会**整体放弃**：删掉滑块、还原原 input、打一条 `console.warn` —— 宁可退回 WebF 的原生表现，也不要「input 被隐藏了、值又同步不上」。
+
+属性一览（走垫片时由垫片从原 input 转写；手写该元素时自己给）。垫片还会一并转写 `aria-label` 与原 input 的 inline `style`，并给滑块加上 `.sl-range-slider` class 和 `data-sl-for="<原 input 的 id>"`：
+
+| 属性 | 默认值 | 说明 |
+|------|--------|------|
+| `value` | `min` | 当前值 |
+| `min` | `0` | 区间下界 |
+| `max` | `100` | 区间上界。`max <= min` 是退化区间，停在起点且不响应拖动 |
+| `step` | `1` | 步长。`any` 或 `<= 0` 视为连续 |
+| `orientation` | `horizontal` | 设为 `vertical` 得竖向滑块（**min 在下、max 在上**） |
+| `disabled` | 不存在 | 存在即禁用（`false` / `0` 例外，视为未禁用）。禁用时整体 38% 不透明度且不响应手势 |
+| `color` | CSS `color` 的值 | 已填充轨道 + 把手的颜色，**只接受具体色值** |
+| `track-color` | 填充色的 24% 不透明度 | 未填充轨道的颜色 |
+
+- **尺寸**走 CSS `width` / `height`；未指定时按朝向兜底为**横向 160×28 / 竖向 28×160**，`display` 默认 `inline-block`
+- 事件：拖动与**点击轨道**（点击会让把手跳到点击处，与浏览器一致）都派发 `input`，抬手派发 `change`；新值放在 `event.data` 里（字符串，整数不带 `.0`）
+- **交互期元素不回写自己的 `value` 属性**——真值由页面侧持有。所以直接使用该元素时请从 `event.data` 取值，**不要**读 `getAttribute('value')`（那只是你上一次推给它的值）
+- `min` / `max` / `step` 必须写成**属性**：WebF 没实现这三个的属性反射，`el.min` 读出来是空串
+- 非法值一律忽略并在客户端日志里留一条提示，不抛异常
+
+##### 竖向滑块：必须显式声明 `data-sl-orientation`
+
+垫片**不猜**朝向，要竖向就在原 `<input>` 上写出来：
+
+```html
+<input type="range" id="volumeSlider" min="0" max="100" value="50"
+       aria-label="音量" data-sl-orientation="vertical">
+```
+
+为什么不能自动推断：浏览器里的竖向 range 通常是 `transform: rotate(-90deg)` 转出来的，而 WebF 的 `getComputedStyle` 支持面不可靠（连自定义属性都不暴露），读 transform 反推**猜错了是静默的错朝向**——比要求一行声明糟得多。
+
+不想要滑块（想保留 WebF 的原生表现，或插件自己已经处理了这个 range）就写 `data-sl-no-slider`，垫片会跳过它：
+
+```html
+<input type="range" data-sl-no-slider>
+```
+
+##### 插件通常需要补几行 CSS
+
+`<songloft-slider>` 是**新标签**，匹配不到插件原有的 `input[type="range"]` 选择器，因此拿不到原有几何。垫片只把原 input 的 **inline `style`** 拷过去（`style="width:100%"` 这种因此自动生效），**刻意不拷 class**——class 上挂的往往是「让原生 range 长得像滑块」的规则（`-webkit-appearance`、`::-webkit-slider-thumb`、`accent-color`），拷过来只会带进无意义甚至有害的声明。
+
+不补 CSS 也能用，只是拿到元素默认尺寸（横向 160×28）、不合版面。可用的三个选择器：`songloft-slider`、垫片加的 class `.sl-range-slider`、以及 `[data-sl-for="<原 input 的 id>"]`（原 id 留在 input 上，不会挪到滑块上）。
+
+第一方插件 miot 的实际写法（竖向音量条，原本是 `width: 110px` + `rotate(-90deg)`）：
+
+```css
+songloft-slider {
+    color: var(--md-primary);
+}
+
+/* 竖向元素自己就是竖着画的，不需要 transform；
+   原来 rotate 前的 width 现在对应 height */
+.volume-panel .volume-slider-wrap songloft-slider {
+    width: 28px;
+    height: 110px;
+}
+```
+
+这些规则在浏览器 / 系统 WebView 下永不匹配（那儿没有 `songloft-slider` 元素），属纯增量，不必包在 `html.webf-engine` 里。
+
+颜色跟随主题的结论与 `<songloft-progress-ring>` 完全一致（CSS `color` / currentColor 走得通，**属性里写 `var()` 不生效**），见上面「[颜色如何跟随主题](#颜色如何跟随主题)」，不再重复。
+
+##### 生效范围与一个已知残留风险
+
+- 垫片**只在 WebF 渲染面下跑**：普通浏览器与系统 WebView 里原生 `input[type=range]` 照常工作，页面不会有任何变化。手写 `<songloft-slider>` 时它在非 WebF 环境是未知标签（空盒子），需要两端都好看就像进度环那样两套实现 + `html.webf-engine` 二选一
+- **竖向滑块放进竖向滚动容器里可能抢不到手势**：滑块用与朝向同轴的 drag 手势与滚动**竞争**（这是正确行为，否则会出现「页面在滚 + 滑块同时在动」），胜负依赖手势竞技场的「命中更深者先接受」。miot 的音量面板是弹出层所以不受影响；真要放进长列表里请实测
+
 ### 访问路径
 
 安装后，静态文件通过以下路径访问（注意：运行时路由是单数 `jsplugin`，与管理 API `/api/v1/jsplugins`（复数）不同）：
