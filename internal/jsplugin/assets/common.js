@@ -303,9 +303,299 @@
         }
     };
 
+    // ── 垫片：input[type=range] → <songloft-slider>（ready 段）────────────
+    //
+    // WebF 的 <input> 实现（html/form/input.dart:251-268 的 createInput switch）
+    // 只认 radio/checkbox/button/submit/date/time/hidden，**没有 range 分支**，
+    // 于是 input[type=range] 落到 default 走 TextField —— 插件页里的音量条在 WebF
+    // 下会变成一个可编辑文本框。而且 min/max/step 在 WebF 里**完全没有实现**，
+    // 只是普通 DOM 属性，对渲染与取值零影响。
+    //
+    // 纯 JS 补不出滑块：mousedown/mousemove/pointerdown/pointermove 在 WebF 里
+    // **压根不存在**（全 lib 零命中），touchstart/touchmove 有实现但只对
+    // <webf-toucharea> 生效（enableTouchEvent 默认 false）。所以拖动必须由 Dart
+    // 侧的自定义元素 <songloft-slider> 提供，这里只做「就地嫁接」。
+    //
+    // ── 为什么保留原 <input>（不换标签）────────────────────────────────
+    //
+    // 插件按 id/标签名 querySelector 后**直接读写 .value**（miot 光是音量条就有
+    // 9 处，含 5 处写入），还有 `.disabled = x` 与 `addEventListener('input')`。
+    // 换掉标签会静默打断插件自己的 JS —— 这是 Step 1 <details> 垫片留下的教训。
+    // 所以：原 input 留在 DOM 里当**数据宿主**（插件眼里的唯一真值），
+    // <songloft-slider> 只当**视图**，两边双向同步。
+    //
+    // ── 架构依据（都是 scripts/webf-verify 第 14 组实测出来的，不是推断）──
+    //
+    //   ① `Object.defineProperty(input, 'value', {...})` **能**遮蔽 WebF 的原生
+    //      访问器（实测 shadowV=ok：哨兵写 77 读回 77）。实测还发现 .value 本来就是
+    //      **实例上的 own 访问器**且 configurable=true（ownDesc=function/cfg=true）。
+    //      所以 JS→滑块方向可以**事件驱动**，不需要轮询 diff .value。
+    //      **判据必须是哨兵往返**，不能只看 defineProperty 有没有抛异常：QuickJS 的
+    //      exotic get_own_property 处理器优先级高于普通 own property，描述符装上了
+    //      也可能读写照旧走原生。下面 install() 里那段自检就是为此。
+    //   ② `input.matches` 同样能遮蔽（shadowM=true/true，且能委托回原实现）。
+    //      这条用来复原 `el.matches(':active')` 的语义 —— 见下面 dragging 处的注释。
+    //   ③ `querySelectorAll('input[type=range]')` 可用（qsa=2）。仍留一条
+    //      getElementsByTagName 的退路，与 collectByTag 同一种保守。
+    //   ④ Dart→JS 的 dispatchEvent 通得过，且 `event.data` 能带回新值
+    //      （15b 的 Hdata/Vdata）。
+    //
+    // ── 遮蔽失败就整体放弃（verified-or-abort）─────────────────────────
+    //
+    // 如果 ① 的自检没过，就**把滑块删掉、原 input 还原**，退回 WebF 的原生表现
+    // （那个文本框）。刻意**不写**「退化成定时轮询」的第二条路：那条路在本环境里
+    // 永远跑不到，也就永远测不到，属于「看起来周全、实际未经验证」的代码。
+    // 而「隐藏了 input、又同步不上」比「难看但能用」严重得多 —— 插件会读到永远
+    // 不变的值。
+    var RANGE_MARK = 'data-sl-range-shim';
+    var RANGE_OPT_OUT = 'data-sl-no-slider';
+    // 兜底清 dragging 的时间。正常情况下滑块一定会在抬手时派 change，
+    // 但万一元素被插件在拖动中途 innerHTML 掉了，change 就永远不来，
+    // dragging 卡住 true 之后所有 JS→滑块同步都会被抑制（滑块从此跟不上插件状态）。
+    var RANGE_DRAG_TIMEOUT_MS = 1500;
+
+    function collectRangeInputs() {
+        var list = [];
+        try {
+            var found = document.querySelectorAll('input[type="range"]');
+            for (var i = 0; i < found.length; i++) list.push(found[i]);
+        } catch (e) {
+            list = [];
+        }
+        if (!list.length) {
+            var all = collectByTag('input');
+            for (var j = 0; j < all.length; j++) {
+                var t = all[j].getAttribute('type');
+                if (t && t.toLowerCase() === 'range') list.push(all[j]);
+            }
+        }
+        return list;
+    }
+
+    // 派发一个「像浏览器那样」的事件给原 input，好让插件既有的监听器照常跑。
+    // bubbles:true 是因为浏览器里 input/change 都冒泡，插件可能监听在祖先上；
+    // WebF 的 Event 构造若不认第二个参数，退回无参形态（只丢冒泡，不致命）。
+    function fireOnInput(input, type) {
+        var ev;
+        try {
+            ev = new Event(type, { bubbles: true });
+        } catch (e) {
+            try { ev = new Event(type); } catch (e2) { return; }
+        }
+        input.dispatchEvent(ev);
+    }
+
+    function shimOneRange(input) {
+        // 幂等：applyShims 可被插件在动态插入 HTML 后重复调用
+        if (input.hasAttribute(RANGE_MARK)) return;
+        // 插件的正式退出开关：某些 range 就是想保持原生表现（或插件自己已经处理了）
+        if (input.hasAttribute(RANGE_OPT_OUT)) return;
+        // 游离节点没地方插滑块。**在打标记之前**判掉：打了标记再失败，下一轮
+        // applyShims 会跳过它，那个 input 就永久停在 WebF 的文本框形态了。
+        if (!input.parentNode) return;
+        input.setAttribute(RANGE_MARK, '');
+
+        var slider = document.createElement('songloft-slider');
+        slider.className = 'sl-range-slider';
+
+        // 几何：**不拷 class**，只拷 inline style。
+        //
+        // 新标签匹配不到插件 CSS 里 `input[type="range"]` 那些选择器，所以尺寸
+        // （miot 的 110x28 + rotate(-90deg)）拿不到。三条路里选了这条：
+        //   ✗ 拷 class + 让插件写 `input[type=range], songloft-slider { ... }`
+        //     —— class 上挂的往往是「让文本框长得像滑块」的规则
+        //     （-webkit-appearance / ::-webkit-slider-thumb / accent-color），
+        //     拷过来只会带进无意义甚至有害的声明。
+        //   ✗ 读 computed transform 反推朝向 —— WebF 的 getComputedStyle 支持面
+        //     不可靠（实测连自定义属性都不暴露），猜错了是静默的错朝向。
+        //   ✓ 拷 inline style（那是作者对**这一个元素**的显式意图，如
+        //     miot #scheduleVolume 的 width:100%）+ 朝向由插件用
+        //     data-sl-orientation 显式声明 + 其余几何由插件针对
+        //     `songloft-slider` / `.sl-range-slider` / `[data-sl-for=...]` 另写一份。
+        // 代价：插件必须补几行 CSS。miot 是第一方插件，可接受；第三方插件不补的话
+        // 拿到的是本元素的默认尺寸（横向 160x28），能用、只是不合版面。
+        var inlineStyle = input.getAttribute('style');
+        if (inlineStyle) slider.setAttribute('style', inlineStyle);
+
+        // 朝向：**只认显式声明**，不猜。
+        var orientation = input.getAttribute('data-sl-orientation');
+        if (orientation) slider.setAttribute('orientation', orientation);
+
+        // min/max/step 必须自己从 attribute 读 —— WebF 没实现这三个属性反射
+        // （实测 el.min 是空串，不是 "0"）。
+        var passthrough = ['min', 'max', 'step', 'aria-label'];
+        for (var p = 0; p < passthrough.length; p++) {
+            var v = input.getAttribute(passthrough[p]);
+            if (v !== null) slider.setAttribute(passthrough[p], v);
+        }
+        // 给插件 CSS 一个精确选择器（原 input 的 id 留在 input 上不能挪走）
+        if (input.id) slider.setAttribute('data-sl-for', input.id);
+
+        var store = input.value;
+        if (store === null || store === undefined || store === '') {
+            store = input.getAttribute('value') || '0';
+        }
+        store = String(store);
+        slider.setAttribute('value', store);
+        if (input.disabled) slider.setAttribute('disabled', '');
+
+        // 插在原 input 之后：位置、DOM 顺序、flex 里的排布都最接近它替代的那个元素
+        if (input.nextSibling) input.parentNode.insertBefore(slider, input.nextSibling);
+        else input.parentNode.appendChild(slider);
+
+        var dragging = false;
+        var dragTimer = null;
+
+        function pushToSlider() {
+            slider.setAttribute('value', store);
+        }
+
+        // ── ① .value 遮蔽 + 自检 ──────────────────────────────────────
+        var nativeDesc = null;
+        var installed = false;
+        var origValue = store;
+        // 自检期间不回推滑块。**这不是洁癖**：不挡的话哨兵字符串会被
+        // setAttribute('value','sl-probe') 写到滑块上，Dart 侧当即打一条
+        // 「不是有效数字」的警告，滑块的值也脏了（实测踩过）。
+        var booting = true;
+        try {
+            nativeDesc = Object.getOwnPropertyDescriptor(input, 'value');
+            Object.defineProperty(input, 'value', {
+                configurable: true,
+                get: function () { return store; },
+                set: function (v) {
+                    store = (v === null || v === undefined) ? '' : String(v);
+                    // 拖动期间**不回推**滑块：插件通常会定时轮询设备状态并回写滑块
+                    // （miot js/playback.js:400-408），浏览器里它靠
+                    // `el.matches(':active')` 判断「用户正在拖，别覆盖」，而隐藏后的
+                    // input 永远进不了 :active。这里连同下面的 matches 遮蔽是双保险；
+                    // 第三道闸在 Dart 侧（拖动中忽略外部 value），所以哪怕这两层都
+                    // 失效，把手也不会在用户手指还没抬起时跳回去。
+                    if (!dragging && !booting) pushToSlider();
+                }
+            });
+            // 哨兵往返自检，见本段顶部注释 ①
+            var probe = 'sl-probe';
+            input.value = probe;
+            installed = (input.value === probe);
+        } catch (e) {
+            installed = false;
+        }
+        booting = false;
+        // 复原用本地变量，而不是读回 slider.getAttribute('value')：
+        // 那边只能拿到我们刚才写进去的东西，多一次跨语言往返、多一个失效点。
+        store = origValue;
+        if (!installed) {
+            // verified-or-abort：还原现场，退回 WebF 的原生表现。
+            // 注意哨兵那一行在遮蔽没生效时是**真的写进了原生存储**，所以除了
+            // 恢复描述符，还必须把原值写回去，否则输入框里会留下哨兵字符串。
+            try {
+                if (nativeDesc) Object.defineProperty(input, 'value', nativeDesc);
+                else delete input.value;
+                input.value = origValue;
+            } catch (e2) { /* 还原失败也只能到此为止 */ }
+            try { slider.parentNode.removeChild(slider); } catch (e3) {}
+            input.removeAttribute(RANGE_MARK);
+            console.warn('[songloft] range shim aborted: input.value not interceptable');
+            return;
+        }
+
+        // ── ② matches(':active') 遮蔽（best-effort）───────────────────
+        // 语义：拖动中 :active 为真。这是插件用来判断「用户正在操作，别用轮询结果
+        // 覆盖」的标准写法，而隐藏后的 input 在 WebF 里永远不会置 isActive
+        // （element.dart:245 的 pseudo 标志只由落在它自己身上的指针事件驱动，
+        // 而它已经 display:none 了）。装不上只损失这一条便利，不影响主流程。
+        try {
+            var nativeMatches = input.matches;
+            if (typeof nativeMatches === 'function') {
+                Object.defineProperty(input, 'matches', {
+                    configurable: true,
+                    writable: true,
+                    value: function (selector) {
+                        if (dragging && typeof selector === 'string' &&
+                            selector.indexOf(':active') >= 0) return true;
+                        return nativeMatches.call(input, selector);
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn('[songloft] range shim: matches(":active") not interceptable:', e);
+        }
+
+        // ── ③ .disabled 遮蔽（best-effort）───────────────────────────
+        // 插件写 `input.disabled = !hasDevice`（miot js/utils.js:96）要能传导到滑块。
+        // 装不上就只是滑块不变灰、仍可拖，不阻塞主流程。
+        try {
+            var disabledState = !!input.disabled;
+            Object.defineProperty(input, 'disabled', {
+                configurable: true,
+                get: function () { return disabledState; },
+                set: function (v) {
+                    disabledState = !!v;
+                    if (disabledState) slider.setAttribute('disabled', '');
+                    else slider.removeAttribute('disabled');
+                }
+            });
+        } catch (e) {
+            console.warn('[songloft] range shim: disabled not interceptable:', e);
+        }
+
+        // ── 隐藏原 input ─────────────────────────────────────────────
+        // 加 class（样式在 common.css 的 WebF 垫片段）**并**写 inline display：
+        // 前者可被插件覆盖调试，后者保证即使 CSS 没加载上也一定隐藏。
+        // 隐藏不影响取值：WebF 把 live value 存在**元素**上（base_input.dart:44
+        // 的 `String _value`），不在 widget state 里，所以 widget 不建也不丢。
+        input.classList.add('sl-range-hidden');
+        try { input.style.display = 'none'; } catch (e) {}
+
+        // ── 滑块 → 原 input ──────────────────────────────────────────
+        slider.addEventListener('input', function (e) {
+            dragging = true;
+            if (dragTimer) clearTimeout(dragTimer);
+            dragTimer = setTimeout(function () { dragging = false; }, RANGE_DRAG_TIMEOUT_MS);
+            // Dart 侧把新值塞在 event.data 里（与 WebF 自己的 <input> 同一种写法，
+            // 实测通：探针 15b 的 Hdata/Vdata）。
+            //
+            // 刻意**不做**「拿不到 data 就退回读 slider.getAttribute('value')」的兜底：
+            // 那个属性只反映我们上一次**推给**滑块的值，拖动期间压根不会更新，
+            // 拿它当兜底等于把把手往回拽。宁可这一次不同步（并留一条日志），
+            // 也不要写一个方向相反的"兜底"。
+            var next = (e && e.data !== undefined && e.data !== null && e.data !== '')
+                ? e.data : null;
+            if (next === null) {
+                console.warn('[songloft] range shim: slider input event carried no data');
+                return;
+            }
+            // 直接改 store 而不是走 input.value = ...：后者会触发上面的 setter，
+            // 把值再回推给滑块，绕一圈没意义。
+            store = String(next);
+            fireOnInput(input, 'input');
+        });
+        slider.addEventListener('change', function () {
+            dragging = false;
+            if (dragTimer) { clearTimeout(dragTimer); dragTimer = null; }
+            fireOnInput(input, 'change');
+        });
+    }
+
+    var rangeSliderShim = {
+        name: 'range-slider',
+        apply: function () {
+            var list = collectRangeInputs();
+            for (var i = 0; i < list.length; i++) {
+                // 逐元素兜底：页面里某个畸形 range 不该让其余的一起失去滑块
+                try {
+                    shimOneRange(list[i]);
+                } catch (e) {
+                    console.warn('[songloft] range shim skipped one element:', e);
+                }
+            }
+        }
+    };
+
     // ── 垫片注册表 ─────────────────────────────────────────────────────────
     var earlyShims = [emptyImgSrcAccessorShim];
-    var readyShims = [emptyImgSrcSweepShim, detailsShim];
+    var readyShims = [emptyImgSrcSweepShim, detailsShim, rangeSliderShim];
 
     function installEarly() {
         if (!isWebFEngine()) return;

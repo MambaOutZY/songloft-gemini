@@ -757,6 +757,25 @@ html.embed .snackbar {
     display: block;
 }
 
+/* range 垫片（common.js 的 rangeSliderShim）：原 <input type=range> 被隐藏，
+ * 由 <songloft-slider> 顶上（原 input 仍留在 DOM 里当数据宿主，插件读写不受影响）。
+ *
+ * 只这一条 display:none 是必须的；垫片同时还写了 inline style.display='none'
+ * 做双保险（CSS 没加载上也一定隐藏）。保留 class 形态是为了让插件在调试时能用
+ * 更高优先级把原 input 显示回来看一眼。
+ *
+ * 刻意**不在这里给 songloft-slider 定颜色 / 尺寸**：
+ *   - 颜色：元素默认取 CSS `color`（currentColor），而上面已把文字色绑到
+ *     --md-on-surface，所以零配置就跟随主题。想用主色的插件自己写
+ *     `songloft-slider { color: var(--md-primary) }` —— 定在这里反而会因为
+ *     加作用域而抬高优先级，把插件的覆盖压掉。
+ *   - 尺寸：Dart 侧按朝向给了兜底（横 160x28 / 竖 28x160）；插件要精确版面时
+ *     针对 `songloft-slider` / `.sl-range-slider` / `[data-sl-for="<原 id>"]` 自己写。
+ */
+.sl-range-hidden {
+    display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
