@@ -509,6 +509,58 @@ Step 3 小节；对插件作者的说明已写进插件开发指南（中英双�
 都是签名容器，塞进去要动签名流程）、App 内「开源许可」页、首次真实 release 后确认
 `CORRESPONDING-SOURCE.txt` 里的版本号没有回落成 `unknown`。
 
+#### ⛔ 缺陷台账：许可步骤炸掉了 player 的第一次 release（2026-08-03 已修）
+
+上面那条挂账项「首次真实 release 后确认版本号没回落」**已经兑现，而且比预想的更糟**：
+版本号不是回落成占位符，而是**整个 `Create Release` job 失败**。
+player release run `30784825599`：8 个构建 job 全绿，只有 `Create Release` 挂掉，报
+`awk: fatal: cannot open file 'pubspec.lock' for reading: No such file or directory`，
+位置 `songloft-player/.github/workflows/build-and-release.yml` 的
+`Attach GPL-3.0 license text + corresponding source notice`。两层缺陷叠加：
+
+1. **`pubspec.lock` 不入库**（`songloft-player/.gitignore:49`），而 `Create Release` 是**独立
+   job 的全新 checkout**、**不跑 `flutter pub get`** → 那个文件在 CI 里**必然不存在**。
+   本机能跑通纯粹因为本地有 lock。
+2. **兜底那行是死代码**（关键）：紧跟其后的
+   `[ -n "$WEBF_VERSION" ] || WEBF_VERSION="see pubspec.lock"` 永远执行不到。
+   判据：GitHub Actions `run:` 的默认 shell 是 `bash -e`（失败日志里就写着
+   `shell: /usr/bin/bash -e {0}`），而 `VAR=$(失败命令)` 里命令的非零退出码会成为**赋值语句
+   本身**的退出码，`-e` 立刻中止整步。本意是「取不到版本号就填占位符」，
+   实际是「取不到就炸掉整个 release」。**这是个会反复踩的通用陷阱，不限于许可步骤。**
+
+**修法**（不动 `.gitignore`，那是仓库策略、未获授权）：版本号主来源改成**入库的
+`pubspec.yaml`**，`pubspec.lock` 恰好存在时才升级成精确解析版本；所有命令替换加 `|| true`、
+文件存在性用 `[ -f ]` 守卫；三条分支都保证有值，末路兜底指向本次 run 的构建日志 URL。
+产出文本**必须区分两种语义**：lock 给的是「本次构建真正链接的解析版本」，yaml 给的是
+「版本**约束** `^0.24.27`」—— GPL §6 的对应源码声明里把约束当版本写是不诚实的。
+
+同时修掉父仓库 `.github/workflows/release.yml` 里的**死指针**：原文写
+`version : see songloft-player/pubspec.lock at the commit above`，
+而该路径在那个 commit 上**根本不存在**（同样被 gitignore），等于让 GPL 接收者去找一个
+不存在的文件。改为指向子模块里**入库的** `pubspec.yaml` 的 `webf:` 约束 + 构建日志 URL，
+并写明那是约束而非解析版本。
+
+**根因不是这两处文本，是验证方式**：许可相关的 workflow 步骤此前只做过 YAML 语法校验，
+**从没在 `bash -e` 下真跑过步骤正文**，所以 1 和 2 都没被发现。本次修复的验证做法（照抄即可）：
+用 YAML parser 把该 step 的 `run:` 正文抽成脚本、把 `${{ }}` 表达式换成测试值，
+在仓库外的 `mktemp -d` 里造最小环境（`LICENSES/GPL-3.0.txt` + `pubspec.yaml` + 一个假的
+`final-assets/` 产物），`bash -e` 跑「有 lock」「无 lock」「两者都无」「零产物」四条路径。
+反向验证也做了：同一 harness 跑**旧脚本**在无 lock 树上 `exit=2`、`CORRESPONDING-SOURCE.txt`
+根本没生成，与 CI 日志一致 —— 证明 harness 忠实，不是「换个说法就算修好」。
+
+**待用户决策的后续项**：把 `pubspec.lock` 入库能从根上消掉这两处（Flutter 官方对
+application package 的建议就是入库；它也确实属于 GPL 意义上「完整对应源码」的一部分；
+已确认两个 workflow 里**没有任何 `hashFiles` 依赖它**）。但那是仓库策略变更、
+有人是刻意加进 `.gitignore` 的，**未获授权不要自行改**。
+
+**未修但同类的写法**（本次不扩大范围）：player
+`build-and-release.yml:161/169/177/301` 的 `DEB_FILE/RPM_FILE/APPIMAGE_FILE/DMG_FILE=$(find dist ...)`
+同样是 `-e` 下的脆弱赋值（`dist/` 不存在时 `find` 退出 1 → 整步中止），
+但这四步都带 `continue-on-error: true`、打包本就是 best-effort，**失败不阻塞 release**，
+故只记录不改。每平台的 `cp LICENSES/GPL-3.0.txt ...`（`:152` Linux、`:230` Windows pwsh、
+`:294` macOS）路径都入库且必然存在，无此隐患；父仓库没有逐平台的许可拷贝步骤，
+只有 `release.yml:1079` 那一处 release 附件步骤。
+
 ### task #12 — 给 WebF 上游报 §3.2 里的 **7** 条
 
 草稿在 `docs/webf/upstream-issues.md`（同为分支临时件）。
@@ -675,3 +727,8 @@ HOST_NETWORK=1 PROBE_URL='http://127.0.0.1:58191/api/v1/jsplugin/miot/?embed=&th
 - 提交**禁止** `Co-Authored-By`；子仓库引用父仓库 issue 必须写完整路径 `songloft-org/songloft#341`
 - 子模块改动流程：子仓库提交 → 回主仓库 `git add <path>` bump 指针 → 主仓库提交
 - 本仓库 worktree 的 git stash 栈与主 checkout 共享 → **禁止**裸 `git stash` / `git stash pop`
+- workflow 的 `run:` 默认 shell 是 `bash -e` → `VAR=$(可能失败的命令)` 会**吃掉紧跟其后的兜底逻辑**
+  （赋值语句本身非零退出，整步中止）。必须写 `|| true`，文件存在性用 `[ -f ]` 守卫。
+  已在 §4 task #3 台账里兑现过一次真实事故
+- 改任何 workflow 的 `run:` 正文，**YAML 语法校验不算验证** → 把正文抽出来在
+  `bash -e` + 仓库外临时目录里真跑一遍，且要跑「依赖文件缺失」那条分支

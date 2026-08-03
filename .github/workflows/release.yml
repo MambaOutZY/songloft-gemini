@@ -1145,7 +1145,13 @@ jobs:
 
             WebF (rendering engine, GPL-3.0-only)
               https://github.com/openwebf/webf
-              version     : see songloft-player/pubspec.lock at the commit above
+              constraint  : the "webf:" entry in songloft-player/pubspec.yaml at
+              the client commit above -- that file is committed and readable
+              (it is a version CONSTRAINT, e.g. "^0.24.27", NOT the resolved
+              version: pubspec.lock is not committed to the client repository.
+              The exact version linked into this build appears in the
+              "flutter pub get" output of the build log below.)
+              build log   : ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
           To reproduce:
 
