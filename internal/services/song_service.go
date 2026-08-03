@@ -54,6 +54,7 @@ type SongRepository interface {
 	ListFacet(ctx context.Context, field string, f *database.FacetFilter) ([]database.Facet, error)
 	CountFacet(ctx context.Context, field, keyword string) (int64, error)
 	ListDistinctNames(ctx context.Context, field string) ([]string, error)
+	GetLibraryStats(ctx context.Context) (*database.LibraryStats, error)
 }
 
 // Transactor 提供 UnitOfWork 事务执行入口，
@@ -349,6 +350,11 @@ func (s *SongService) ListDistinctNames(ctx context.Context, field string) ([]st
 		return nil, fmt.Errorf("failed to list distinct names %q: %w", field, err)
 	}
 	return names, nil
+}
+
+// GetLibraryStats 返回曲库汇总统计信息。
+func (s *SongService) GetLibraryStats(ctx context.Context) (*database.LibraryStats, error) {
+	return s.songs.GetLibraryStats(ctx)
 }
 
 // Search 搜索歌曲

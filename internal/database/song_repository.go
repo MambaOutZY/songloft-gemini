@@ -1172,3 +1172,60 @@ func (r *SongRepository) UpdateMetadata(ctx context.Context, params sqlc.UpdateS
 func (r *SongRepository) UpdateTagFields(ctx context.Context, params sqlc.UpdateSongTagFieldsParams) error {
 	return r.queries.UpdateSongTagFields(ctx, params)
 }
+
+// LibraryStats 曲库汇总统计信息
+type LibraryStats struct {
+	TotalSongs    int64   `json:"total_songs"`
+	LocalSongs    int64   `json:"local_songs"`
+	RemoteSongs   int64   `json:"remote_songs"`
+	RadioSongs    int64   `json:"radio_songs"`
+	TotalDuration float64 `json:"total_duration"`
+	TotalFileSize int64   `json:"total_file_size"`
+	ArtistCount   int64   `json:"artist_count"`
+	AlbumCount    int64   `json:"album_count"`
+	GenreCount    int64   `json:"genre_count"`
+}
+
+// GetLibraryStats 返回曲库汇总统计（一次查询完成）。
+func (r *SongRepository) GetLibraryStats(ctx context.Context) (*LibraryStats, error) {
+	query := `
+		SELECT
+			COUNT(*) AS total_songs,
+			COALESCE(SUM(CASE WHEN type = 'local' THEN 1 ELSE 0 END), 0) AS local_songs,
+			COALESCE(SUM(CASE WHEN type = 'remote' THEN 1 ELSE 0 END), 0) AS remote_songs,
+			COALESCE(SUM(CASE WHEN type = 'radio' THEN 1 ELSE 0 END), 0) AS radio_songs,
+			COALESCE(SUM(duration), 0) AS total_duration,
+			COALESCE(SUM(file_size), 0) AS total_file_size
+		FROM songs
+	`
+	stats := &LibraryStats{}
+	err := r.db.QueryRowContext(ctx, query).Scan(
+		&stats.TotalSongs,
+		&stats.LocalSongs,
+		&stats.RemoteSongs,
+		&stats.RadioSongs,
+		&stats.TotalDuration,
+		&stats.TotalFileSize,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get library stats: %w", err)
+	}
+
+	// 分别查询去重后的歌手、专辑、流派数量
+	countQuery := `SELECT COUNT(DISTINCT artist) FROM songs WHERE artist != ''`
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&stats.ArtistCount); err != nil {
+		return nil, fmt.Errorf("count artists: %w", err)
+	}
+
+	countQuery = `SELECT COUNT(DISTINCT album) FROM songs WHERE album != ''`
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&stats.AlbumCount); err != nil {
+		return nil, fmt.Errorf("count albums: %w", err)
+	}
+
+	countQuery = `SELECT COUNT(DISTINCT genre) FROM songs WHERE genre != ''`
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&stats.GenreCount); err != nil {
+		return nil, fmt.Errorf("count genres: %w", err)
+	}
+
+	return stats, nil
+}

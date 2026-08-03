@@ -2415,3 +2415,21 @@ func (h *SongHandler) SongPlayed(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// GetLibraryStats 获取曲库汇总统计
+// @Summary 获取曲库汇总统计
+// @Description 返回曲库汇总信息，包括歌曲总数、各类型数量、总时长、总文件大小、歌手/专辑/流派数等
+// @Tags 歌曲管理
+// @Produce json
+// @Success 200 {object} database.LibraryStats "曲库汇总统计"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Security BearerAuth
+// @Router /songs/stats [get]
+func (h *SongHandler) GetLibraryStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.songService.GetLibraryStats(r.Context())
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取曲库统计失败", err)
+		return
+	}
+	respondJSON(w, http.StatusOK, stats)
+}

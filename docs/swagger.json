@@ -6454,6 +6454,40 @@
                 }
             }
         },
+        "/songs/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回曲库汇总信息，包括歌曲总数、各类型数量、总时长、总文件大小、歌手/专辑/流派数等",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "获取曲库汇总统计",
+                "responses": {
+                    "200": {
+                        "description": "曲库汇总统计",
+                        "schema": {
+                            "$ref": "#/definitions/database.LibraryStats"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/songs/{id}": {
             "get": {
                 "security": [
@@ -7555,6 +7589,336 @@
                 }
             }
         },
+        "/theme-packs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回所有已安装的主题包列表",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "主题包"
+                ],
+                "summary": "列出主题包",
+                "responses": {
+                    "200": {
+                        "description": "主题包列表",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.ThemePackListItem"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "接收 .songloft-theme JSON 内容，验证后存入。相同 ID 的主题包会被更新。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "主题包"
+                ],
+                "summary": "导入主题包",
+                "parameters": [
+                    {
+                        "description": "主题包 JSON（完整 .songloft-theme 文件内容）",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "导入成功",
+                        "schema": {
+                            "$ref": "#/definitions/services.ThemePackResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "格式错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/theme-packs/active": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前激活的主题包详情，无激活主题时返回 null",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "主题包"
+                ],
+                "summary": "获取激活主题包",
+                "responses": {
+                    "200": {
+                        "description": "激活主题包（可为 null）",
+                        "schema": {
+                            "$ref": "#/definitions/services.ThemePackResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "将指定主题包设为当前使用的主题",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "主题包"
+                ],
+                "summary": "设置激活主题包",
+                "parameters": [
+                    {
+                        "description": "激活请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "设置成功",
+                        "schema": {
+                            "$ref": "#/definitions/models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "主题包不存在",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "清除当前激活的主题包，恢复为默认主题",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "主题包"
+                ],
+                "summary": "恢复默认主题",
+                "responses": {
+                    "200": {
+                        "description": "已恢复默认主题",
+                        "schema": {
+                            "$ref": "#/definitions/models.SuccessResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/theme-packs/catalog/install": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "下载远程主题包 JSON，验证 SHA-256 后导入",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "主题包"
+                ],
+                "summary": "从在线目录安装主题包",
+                "parameters": [
+                    {
+                        "description": "安装请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "安装成功",
+                        "schema": {
+                            "$ref": "#/definitions/services.ThemePackResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "校验失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/theme-packs/catalog/refresh": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从远程 URL 获取主题目录索引，并标注各主题的安装状态",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "主题包"
+                ],
+                "summary": "获取在线主题目录",
+                "parameters": [
+                    {
+                        "description": "目录请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "目录响应",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
+        "/theme-packs/{themeID}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回主题包的完整信息，含主题配置数据",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "主题包"
+                ],
+                "summary": "获取主题包详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "主题包 ID",
+                        "name": "themeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "主题包详情",
+                        "schema": {
+                            "$ref": "#/definitions/services.ThemePackResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "主题包不存在",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除指定主题包，若为当前激活主题则同时恢复默认",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "主题包"
+                ],
+                "summary": "删除主题包",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "主题包 ID",
+                        "name": "themeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功",
+                        "schema": {
+                            "$ref": "#/definitions/models.SuccessResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "主题包不存在",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/upgrade/check": {
             "get": {
                 "security": [
@@ -7793,6 +8157,38 @@
         }
     },
     "definitions": {
+        "database.LibraryStats": {
+            "type": "object",
+            "properties": {
+                "album_count": {
+                    "type": "integer"
+                },
+                "artist_count": {
+                    "type": "integer"
+                },
+                "genre_count": {
+                    "type": "integer"
+                },
+                "local_songs": {
+                    "type": "integer"
+                },
+                "radio_songs": {
+                    "type": "integer"
+                },
+                "remote_songs": {
+                    "type": "integer"
+                },
+                "total_duration": {
+                    "type": "number"
+                },
+                "total_file_size": {
+                    "type": "integer"
+                },
+                "total_songs": {
+                    "type": "integer"
+                }
+            }
+        },
         "handlers.AutoScanSetting": {
             "type": "object",
             "properties": {
@@ -9077,6 +9473,64 @@
                 }
             }
         },
+        "models.ThemePackColors": {
+            "type": "object",
+            "properties": {
+                "backgroundColor": {
+                    "type": "string"
+                },
+                "seedColor": {
+                    "type": "string"
+                },
+                "surfaceColor": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ThemePackData": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "cardRadius": {
+                    "type": "number"
+                },
+                "controlRadius": {
+                    "type": "number"
+                },
+                "dark": {
+                    "$ref": "#/definitions/models.ThemePackColors"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "light": {
+                    "$ref": "#/definitions/models.ThemePackColors"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "navigationRadius": {
+                    "type": "number"
+                },
+                "playerGradient": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "schemaVersion": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
         "models.TokenInfo": {
             "type": "object",
             "properties": {
@@ -9492,6 +9946,73 @@
                 "ScanStatusCancelling",
                 "ScanStatusCancelled"
             ]
+        },
+        "services.ThemePackListItem": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "integer"
+                },
+                "theme_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.ThemePackResponse": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "data": {
+                    "$ref": "#/definitions/models.ThemePackData"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "integer"
+                },
+                "theme_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
         },
         "source.HealthClass": {
             "type": "string",
