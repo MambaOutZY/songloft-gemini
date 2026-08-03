@@ -27,6 +27,30 @@ Step 3（`<songloft-slider>`）、Step 5（安全区 `--sl-safe-*`，见 §2.5�
 **进行中**：Step 4（`<table>` → CSS Grid，方案已重设计）、Step 6（三项经桥下沉）、
 上游 7 条缺陷报告起草。
 
+### ⛔ 范围硬边界（用户 2026-08-03 明确划定）
+
+> **只处理 miot / downloader / lyrics 三个插件。其他插件的问题暂时一律不处理。**
+
+这不是「优先级低」，是**不做**。已据此停掉一项在跑的工作（lxmusic 的 WebF 布局崩溃根因分析），
+并删掉了它的产物。**不要**因为在下面看到某个插件的缺口就去动它。
+
+**这条边界的一个反直觉后果，务必读懂**：本分支已经建好、已测、已写文档的若干能力，
+**现在没有任何在范围内的消费者**：
+
+| 已建好的东西 | 原定消费者 | 现状 |
+|---|---|---|
+| `input[type=file]` 桥 + 垫片（Step 6） | radio、ytdlp、lxmusic | **在范围内的消费者为零** |
+| `<songloft-progress-ring>`（Step 2） | lxmusic 的进度环 | 同上（宿主本就不自动替换，需插件自己改用） |
+| `<details>` / `<summary>` 垫片（Step 1） | lxmusic | 同上（自动生效，留着无害） |
+| `<audio>` 下沉 | lxmusic | **永久搁置**（原本只是「刻意推迟」） |
+
+**这些已落地的东西不要删** —— 已提交、已测、已进双语文档，留着零成本，
+而且一旦将来把某个插件纳入范围就能直接用。但**也不要再去「补完」或扩展它们**
+（例如不要为了给 `input[type=file]` 找个用户而去改 radio）。
+
+同理，§3.3 缺口清单里那些只命中范围外插件的行（radio 的 `<table>`、dav / subsonic /
+cloudflared / hostc / ytdlp 的 `env()`），**现在都不是待办**。
+
 ⚠️ **本文档已发生过多次「旧版结论被证伪 / 被用户推翻」**。三处最容易踩的：
 ① 引擎选择**不是**全局开关而是逐插件声明（§2.4，用户决策反转）；
 ② Step 4 **不是**标签改写而是 CSS Grid（§4）；
@@ -518,7 +542,14 @@ HOST_NETWORK=1 PROBE_URL='http://127.0.0.1:58191/api/v1/jsplugin/miot/?embed=&th
 - **lxmusic 在 WebF 下有布局崩溃**：`Unsupported operation: Infinity or NaN toInt`、
   `Null check operator used on a null value`。lxmusic 未构建发布、也不在本分支的 `.gitmodules` 里
   （本分支只跟踪 miot / subsonic / cloudflared / dav / hostc / registry / downloader / lyrics / radio，
-  **lxmusic / bili / ytdlp 都不是跟踪的子模块**，要验证它们得先自己 clone）
+  **lxmusic / bili / ytdlp 都不是跟踪的子模块**，要验证它们得先自己 clone）。
+  → **⛔ 用户已明确划出范围外（2026-08-03），不处理。** 曾派 agent 查根因，中途按该决定停掉。
+  留这条只为「以后若把 lxmusic 纳入范围，知道有这么个坑」。
+  **注意它的普适性**：这两个异常是通用的 Flutter/WebF 布局崩溃，**不是 lxmusic 专属**，
+  理论上范围内插件写出同类 CSS 也会踩（典型可疑来源：未定尺寸下的百分比、`0/0` 或
+  `Infinity - Infinity` 落进 `.toInt()`）。目前**三个在范围内的插件都没有复现过**，
+  所以不主动追；**万一 miot / downloader / lyrics 出现这两条报错，请回到这里**，
+  别当成新问题从零查
 - **`<details>` 垫片的一个已知边界**：垫片跑完之后再给 `<details>` 追加直接子节点，
   那个节点会永久留在折叠容器外面（幂等标记会阻止重新包裹）。插件应在插完 HTML 后调
   `SongloftPlugin.applyShims()`，但对"追加单个子节点"这种用法无解
