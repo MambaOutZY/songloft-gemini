@@ -1,12 +1,12 @@
 # WebF 迁移 — Step 4 方案重设计 + Step 6 `input[type=file]` 定形（songloft-org/songloft#341）
 
 > **这是 songloft-org/songloft#341 的分支临时件。** 落地后连同
-> `docs/webf-migration-handoff.md`、`docs/webf-recon-step456.md` 一起删除。
+> `docs/webf/handoff.md`、`docs/webf/recon-step456.md` 一起删除。
 > **刻意不做中英双语同步**，也从文档站导航排除（`docs/.vitepress/config.mts` 的 `srcExclude`）。
 >
 > 面向对象：接手 Step 4 / Step 6 实施的下一个 agent。
-> 前置必读：`docs/webf-recon-step456.md` §2（Step 4 预研，**已证伪既定方案**）与 §3（Step 6 预研）、
-> `docs/webf-migration-handoff.md` §3.3 / §4。
+> 前置必读：`docs/webf/recon-step456.md` §2（Step 4 预研，**已证伪既定方案**）与 §3（Step 6 预研）、
+> `docs/webf/handoff.md` §3.3 / §4。
 > 最后更新：2026-08-02。
 
 **本文档的标注约定**（沿用预研文档）：
@@ -160,7 +160,7 @@
 
 ### 1.3 预研已证伪的死路（**引用，不重复论证**）+ 三条本轮新增的核实
 
-`docs/webf-recon-step456.md` §2 已经把下面这些走完了，**不要重新论证**：
+`docs/webf/recon-step456.md` §2 已经把下面这些走完了，**不要重新论证**：
 
 | 死路 | 结论 | 出处 |
 |---|---|---|

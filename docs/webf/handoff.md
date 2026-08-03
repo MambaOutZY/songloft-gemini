@@ -1,16 +1,22 @@
 # WebF 插件页渲染迁移 — 交接文档（songloft-org/songloft#341）
 
-> **这是分支临时交接件，不是产品文档。**
-> 刻意**不做**中英双语同步、也刻意从文档站导航里排除（见 `docs/.vitepress/config.mts` 的
-> `srcExclude`）。#341 落地后请连同这份文档一起删除。
+> **这是分支临时交接件，不是产品文档。** 它是 `docs/webf/` 目录的**主文档**。
+> 整个目录刻意**不做**中英双语同步、也整体从文档站排除
+> （`docs/.vitepress/config.mts` 的 `srcExclude: ['webf/**']`）。
+> **#341 落地后连同整个 `docs/webf/` 目录一起删除。**
 >
 > 面向对象：接手这条分支继续做的下一个 agent / 开发者。
-> 最后更新：2026-08-02（Step 5 完成、Step 4 方案重设计、第 7 条上游缺陷、许可合规主体完成）。
+> 最后更新：2026-08-03（Step 4/6 实测落地并发版、撤回 data URL 的过度更正、
+> 缺陷台账扩到 11 条、文档搬进 `docs/webf/`）。
 >
-> **配套的三份临时件**（同样从文档站排除、同样在 #341 落地后一起删）：
-> `docs/webf-recon-step456.md`（Step 4/5/6 预研，证伪了两条既定方案）、
-> `docs/webf-step4-design.md`（Step 4 四方案对比与选型）、
-> `docs/webf-upstream-issues.md`（7 条上游缺陷草稿）。
+> **同目录的配套件** —— 先读 [README.md](README.md)，它有导航、当前状态速览、
+> 以及**被推翻结论的完整清单**：
+> [recon-step456.md](recon-step456.md)（Step 4/5/6 预研，证伪了两条既定方案）、
+> [step4-design.md](step4-design.md)（Step 4 四方案对比与选型）、
+> [upstream-issues.md](upstream-issues.md)（7 条上游缺陷草稿，英文正文）。
+>
+> ⚠️ **本文档反复发生过「先写下结论、后被实测推翻」**，每处都保留原文并划掉。
+> 只搜关键词、不读上下文的话可能捡到废弃结论 —— 动手前先扫一眼 README 里那张推翻清单。
 
 ---
 
@@ -342,7 +348,7 @@ CSS 求值」这一层，注入的是人为非零值）、转屏 / 键盘触发�
 （第 7 条因为被实测大幅修订，单独放在最后 ↓）
 
 7. **grid 把 `position: sticky` 当脱流处理**（Step 4 重设计时从源码判定，见
-   `docs/webf-step4-design.md` §3 Step 1 的完整判据）。`rendering/grid.dart:347-351` 的
+   `docs/webf/step4-design.md` §3 Step 1 的完整判据）。`rendering/grid.dart:347-351` 的
    `_isPositionedGridChild()` 把 sticky 与 absolute/fixed **归成同一类**，而这个判据被用在
    **13 处**排除逻辑上（`:385 :471 :872 :913 :2250 :3052 :3077 :3363 :3643 :3925 :4034 :4477`），
    其中 `:2250` 就是**构建 grid item 列表**本身、`:3052`/`:3363` 是**固有宽度计算**。
@@ -389,7 +395,7 @@ CSS 求值」这一层，注入的是人为非零值）、转屏 / 键盘触发�
 
 | 缺口 | 命中的插件 | 现状 |
 |---|---|---|
-| `<table>` 元素**根本不存在**（退化成嵌套 `display:block`；且 `display:table/table-row/table-cell` 也救不了 —— `css/display.dart` 的 `CSSDisplay` 枚举**没有任何 table 值**，`resolveDisplay` 的 `default` 返回 `CSSDisplay.inline`，比 block **更糟**） | **实际只有** downloader（`webf`）；radio 虽有表格但未声明 = `webview`，**进不到 WebF** | **Step 4 实施中**。原定的「垫片改写成 `<webf-table>`」**已证伪**，改走 CSS Grid，方案见 `docs/webf-step4-design.md` |
+| `<table>` 元素**根本不存在**（退化成嵌套 `display:block`；且 `display:table/table-row/table-cell` 也救不了 —— `css/display.dart` 的 `CSSDisplay` 枚举**没有任何 table 值**，`resolveDisplay` 的 `default` 返回 `CSSDisplay.inline`，比 block **更糟**） | **实际只有** downloader（`webf`）；radio 虽有表格但未声明 = `webview`，**进不到 WebF** | **Step 4 实施中**。原定的「垫片改写成 `<webf-table>`」**已证伪**，改走 CSS Grid，方案见 `docs/webf/step4-design.md` |
 | `input[type=range]` **整行不绘制**（源码层面是落到 `TextField`，但实测一个像素都不画，连同行兄弟文字一起消失 —— 见 §3.2 第 6 条） | **仅** miot（2 处） | ✅ Step 3 已提供 `<songloft-slider>` + `common.js` 的 `rangeSliderShim` **自动**替换（隐藏原 input 并双向同步，插件 JS 零改动）。**插件侧仍需两件事**：竖向滑块在原 input 上写 `data-sl-orientation="vertical"`（垫片不猜朝向），以及补几行几何 CSS（新标签匹配不到 `input[type=range]` 选择器，垫片只拷 inline style 不拷 class）。miot 已适配 |
 | `env(safe-area-inset-*)` 不求值（`css/keywords.dart` 里那 6 个 `SAFE_AREA_INSET*` / `ENV` 常量是**全库无引用的死常量**，连解析入口都没有；upstream #907 open） | 声明 `webf` 的插件里**只有** miot（3 处）。dav / subsonic / cloudflared / hostc / ytdlp 虽有 `env()` 但都未声明 = `webview`，**不暴露** | ✅ **Step 5 已完成**：宿主注入 `--sl-safe-*` 四个 CSS 变量，插件统一写 `var(--sl-safe-bottom)`。原定的「垫片把 `env()` 改写成 `var()`」**已证伪**（见 §2.5） |
 | `window.open` 是 no-op（`window.cc:157-168` 两个重载都 `return this`，不抛错） | **仅** miot `js/auth.js:95`（小米账号二次验证） | **Step 6 待做** |
@@ -435,7 +441,7 @@ Step 3 小节；对插件作者的说明已写进插件开发指南（中英双�
 ### Step 4 — `<table>`（task #16，**实施中**）
 
 > ⚠️ **本文档旧版写的「WebF 自带 `<webf-table>` 系列标签，垫片做的是标签改写而非从零实现」
-> 已被证伪。看到那句话时以本节与 `docs/webf-step4-design.md` 为准。**
+> 已被证伪。看到那句话时以本节与 `docs/webf/step4-design.md` 为准。**
 
 **证伪理由**：`<webf-table>` 的 `build` 只读**直接 `childNodes`**（`html/table.dart:188-189` 的
 `firstWhereOrNull` / `whereType`），`<thead>`/`<tbody>` 不拆就是**一张空表，且不报错不打日志**；
@@ -443,7 +449,7 @@ Step 3 小节；对插件作者的说明已写进插件开发指南（中英双�
 `TypeError`。WebF 又**没有 `MutationObserver`**。更要命的是 `colspan`/`rowspan` 零支持是
 **Flutter `Table` widget 的天花板，不是 WebF 没做，上游修也修不了**。
 
-**现在的方案**：CSS Grid（`docs/webf-step4-design.md` 的方案 B'）。WebF 的 Grid 是**已实现**的
+**现在的方案**：CSS Grid（`docs/webf/step4-design.md` 的方案 B'）。WebF 的 Grid 是**已实现**的
 （`fr` / `minmax()` / `repeat()` / `auto-fill` / `auto-fit` / `grid-auto-flow` / `span` 全在
 `css/grid.dart`），且这是唯一「浏览器 / 系统 WebView / WebF **三条路径共用一套代码**」的方案
 —— 自写元素与垫片方案都要靠 `webf-engine` class 分叉两套模板，而 WebF 那份**在本机永远跑不到**
@@ -472,14 +478,14 @@ Step 3 小节；对插件作者的说明已写进插件开发指南（中英双�
    改 `data:` URL，**注意 `createObjectURL` 是同步的而 blob→base64 是异步的，所以必须改 miot
    的调用点**，不能只做一个假的同步垫片
 3. **`input[type=file]`** —— **当前零暴露**（radio 是 `webview`；ytdlp / lxmusic 拿不到源码且
-   从未标 `webf`）。桥形状与垫片形状已定形，见 `docs/webf-step4-design.md` §2.3 / §2.4：
+   从未标 `webf`）。桥形状与垫片形状已定形，见 `docs/webf/step4-design.md` §2.3 / §2.4：
    桥返回 `{name, size, text}`、**主载荷是 UTF-8 解码后的字符串**（不返回 path），
    垫片**必须同时拦 `click` 事件与覆写实例 `click` 方法**（radio 是「隐藏 input + 外部按钮代点」）
 
 `file_picker: ^10.3.10` **早就在 `pubspec.yaml` 里了**，所以用它的原生契约哈希代价是**零**。
 ⚠️ 但**绝不要 bump 它的版本**：版本号进哈希，而它是 caret 约束，**一次 `pub upgrade` 就会静默改变**。
 
-顺带还有一件小事（`docs/webf-step4-design.md` §1.9）：给 `common.js` 加一个**只警告不改写**的
+顺带还有一件小事（`docs/webf/step4-design.md` §1.9）：给 `common.js` 加一个**只警告不改写**的
 表格垫片，把「插件用了 `<table>` 但它压根不存在」这个**完全静默**的失败
 （`element_registry.dart` 的日志默认关）变成一行指路的 `console.warn`。
 
@@ -505,7 +511,7 @@ Step 3 小节；对插件作者的说明已写进插件开发指南（中英双�
 
 ### task #12 — 给 WebF 上游报 §3.2 里的 **7** 条
 
-草稿在 `docs/webf-upstream-issues.md`（同为分支临时件）。
+草稿在 `docs/webf/upstream-issues.md`（同为分支临时件）。
 **未经用户确认不要向 `openwebf/webf` 提交** —— 那是对第三方仓库的外发动作。
 
 ### 明确不做（用户已定）

@@ -1,6 +1,6 @@
 # WebF 迁移 — Step 4 / 5 / 6 源码调研（songloft-org/songloft#341）
 
-> **这是分支临时件**，与 `docs/webf-migration-handoff.md` 同期存在，#341 落地后**连同交接文档一起删除**。
+> **这是分支临时件**，与 `docs/webf/handoff.md` 同期存在，#341 落地后**连同交接文档一起删除**。
 > 刻意**不做**中英双语同步、也不进文档站导航。
 >
 > 调研范围：WebF 包源码 `/home/ejoydev/.pub-cache/hosted/pub.dev/webf-0.24.27`（只读）+ 本仓库源码。
