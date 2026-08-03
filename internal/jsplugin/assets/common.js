@@ -1025,45 +1025,101 @@
      * —— 就算 JS 侧造出 `blob:xxx`，加载那一步必然失败。
      *
      * 而 `data:` URL 是原生支持的（同文件 `_isDataScheme` 分支 → `DataBundle`），
-     * 验证容器实测 **`<img src="data:…">` 与 CSS `background-image: url(data:…)`
-     * 两个消费点都能出图**（第 18 组的 IMG / BG 两个方块）。
+     * 两个消费点（`<img src="data:…">` 与 CSS `background-image: url(data:…)`）
+     * 的**盒子**都会正常建立（第 18 组的 IMG / BG 两个方块，`bgRect=16x16`）。
+     * ⚠️ 但**「盒子有尺寸」不等于「图真的画出来了」** —— 第 18 组的判据只看了
+     * `getBoundingClientRect`，而后续实测中一个硬编码的 1×1 红点 PNG 虽然
+     * `naturalWidth/Height` 报 1/1，截图里那个方块却是灰的。所以
+     * **「WebF 下 data URL 能显示图片」目前没有可信证据**，待用「截图里出现
+     * 预期颜色」这种绘制层判据重验。别把 `bgRect=ok` 当成出图的证明。
      *
      * ⚠️ **本函数是异步的，而 `createObjectURL` 是同步的** —— 这不是实现懒惰，
      * 是无法弥合的形状差异（blob → base64 只能经 `arrayBuffer()` / `FileReader`，
      * 两者都是异步的）。所以插件**必须改调用点**，不能指望宿主垫一个假的同步
      * `createObjectURL`。
      *
-     * 实现选 `blob.arrayBuffer()` + `btoa` 而不是 `FileReader.readAsDataURL`：
-     * 验证容器实测 **WebF 里 `FileReader` 不存在**，而 `Blob.prototype.arrayBuffer`
-     * 与 `btoa` 都在，且端到端往返（Blob→arrayBuffer→btoa）与预期字符串逐字符
-     * 相等（第 18 组的 b64rt=ok）。浏览器与系统 WebView 下这两个 API 同样存在，
-     * 所以三条渲染路径共用这一份实现，不分叉。
+     * 实现选 `blob.arrayBuffer()` 而不是 `FileReader.readAsDataURL`：
+     * 验证容器实测 **WebF 里 `FileReader` 不存在**，而 `Blob.prototype.arrayBuffer` 在。
+     * 浏览器与系统 WebView 下同样存在，所以三条渲染路径共用这一份实现，不分叉。
      *
-     * 分块转字符串（8 KB）而不是一次 `String.fromCharCode.apply(null, bytes)`：
-     * 后者在几百 KB 的图上会因参数个数超限抛 RangeError。
+     * ⚠️⚠️ **刻意不用 `btoa`，自带 base64 编码表。** WebF 的 `btoa` **不是二进制安全的**：
+     * 它把 > 0x7F 的码点当字符先做了一次 UTF-8 编码，而不是按 latin1 取字节。实测
+     *
+     *     btoa('\x89')                       → "wg=="       正确应为 "iQ=="
+     *     btoa('\x89PNG')                    → "wolQTg=="   正确应为 "iVBORw=="
+     *
+     * 而 `"wolQTg=="` 解码是 `0xC2 0x89 0x50 0x4E` —— `0xC2 0x89` 正是 U+0089 的
+     * UTF-8 编码，签名一目了然。后果：**任何**含高位字节的二进制（也就是所有图片）
+     * 都会被编坏，`<img>` 拿到的是损坏的 PNG/JPEG。`atob` 方向是**正确**的
+     * （`atob("iQ==").charCodeAt(0) === 137`），所以只需自己实现 encode 方向。
+     *
+     * 这个坑此前被漏掉，是因为探针第 18 组的往返用例是 `new Blob(['hi'])` ——
+     * **纯 ASCII，全程没有一个字节 > 0x7F**，结构上抓不到这个 bug。教训写在这里：
+     * 二进制编解码的回归用例**必须**包含高位字节。
+     *
+     * 分块处理（3 字节一组、每 8 KB 拼一次）而不是一次拼完整串：
+     * 几百 KB 的图上单次 `String.fromCharCode.apply` 会因参数个数超限抛 RangeError，
+     * 而一个字符一个字符 `+=` 在 QuickJS 上又太慢。
      *
      * @param {Blob} blob
-     * @param {string} [mimeType] 覆盖 blob.type（blob.type 为空时用得上）
+     * @param {string} [mimeType] 覆盖 blob.type（WebF 下 blob.type 恒为空串，
+     *   且 `Response.headers.get('content-type')` 返回 null，所以调用方往往拿不到
+     *   mime —— 不传就落到 application/octet-stream，能显示但语义不精确）
      * @returns {Promise<string>} 形如 `data:image/jpeg;base64,...`
      */
+    var B64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+    /** Uint8Array → base64。不依赖 btoa，见 blobToDataURL 的注释。 */
+    function bytesToBase64(bytes) {
+        var out = '';
+        var buf = [];
+        var i = 0;
+        var len = bytes.length;
+        // 每次吃 3 字节产 4 个 base64 字符；余数在循环外单独补 padding
+        var limit = len - (len % 3);
+        for (i = 0; i < limit; i += 3) {
+            var n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+            buf.push(
+                B64_CHARS.charAt((n >> 18) & 63),
+                B64_CHARS.charAt((n >> 12) & 63),
+                B64_CHARS.charAt((n >> 6) & 63),
+                B64_CHARS.charAt(n & 63)
+            );
+            // 攒够一批再 join，避免 O(n²) 的字符串拼接
+            if (buf.length >= 8192) {
+                out += buf.join('');
+                buf.length = 0;
+            }
+        }
+        var rem = len % 3;
+        if (rem === 1) {
+            var a = bytes[len - 1];
+            buf.push(
+                B64_CHARS.charAt((a >> 2) & 63),
+                B64_CHARS.charAt((a << 4) & 63),
+                '=', '='
+            );
+        } else if (rem === 2) {
+            var b0 = bytes[len - 2], b1 = bytes[len - 1];
+            buf.push(
+                B64_CHARS.charAt((b0 >> 2) & 63),
+                B64_CHARS.charAt(((b0 << 4) | (b1 >> 4)) & 63),
+                B64_CHARS.charAt((b1 << 2) & 63),
+                '='
+            );
+        }
+        out += buf.join('');
+        return out;
+    }
+
     function blobToDataURL(blob, mimeType) {
         if (!blob) return Promise.reject(new Error('blobToDataURL: no blob'));
         if (typeof blob.arrayBuffer !== 'function') {
             return Promise.reject(new Error('blobToDataURL: Blob.arrayBuffer unavailable'));
         }
-        if (typeof window.btoa !== 'function') {
-            return Promise.reject(new Error('blobToDataURL: btoa unavailable'));
-        }
         var mime = mimeType || blob.type || 'application/octet-stream';
         return blob.arrayBuffer().then(function(buf) {
-            var bytes = new Uint8Array(buf);
-            var chunk = 8192;
-            var binary = '';
-            for (var i = 0; i < bytes.length; i += chunk) {
-                binary += String.fromCharCode.apply(
-                    null, bytes.subarray(i, i + chunk));
-            }
-            return 'data:' + mime + ';base64,' + window.btoa(binary);
+            return 'data:' + mime + ';base64,' + bytesToBase64(new Uint8Array(buf));
         });
     }
 
