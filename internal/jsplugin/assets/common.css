@@ -826,6 +826,23 @@ html.embed .snackbar {
     display: none;
 }
 
+/* file 垫片（common.js 的 filePickerShim）：原 <input type=file> 被隐藏，
+ * 选择器改由宿主的原生文件选择器（Dart 侧 file_picker）弹出。
+ *
+ * 为什么必须隐藏：WebF 的 <input> 实现里没有 file 分支
+ * （html/form/input.dart:250-266 的 switch 落到 default），于是 type=file 变成
+ * 一个 Flutter TextField；**而且 WebF 不认 HTML 的 `hidden` 属性** ——
+ * 验证容器实测：带 hidden 与不带 hidden 的 file input 盒子都是 172x24
+ * （scripts/webf-verify 第 18 组的 fileVisHidden / fileVis）。也就是说连插件
+ * 刻意写了 `hidden` 的那个隐藏 input，在 WebF 下都会占掉一行版面。
+ *
+ * 与 .sl-range-hidden 同一套做法：class + 垫片里的 inline display:none 双保险，
+ * class 形态留给插件调试时用更高优先级显示回来。
+ */
+.sl-file-hidden {
+    display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

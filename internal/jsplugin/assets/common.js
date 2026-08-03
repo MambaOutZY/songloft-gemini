@@ -646,9 +646,223 @@
         }
     };
 
+    // ── 垫片：input[type=file] → 宿主原生选择器（ready 段）─────────────────
+    //
+    // WebF 的 <input> 实现（html/form/input.dart:250-266 的 build switch）只认
+    // radio/checkbox/button/submit/date/time，`hidden` 在 createInput 里另有一支；
+    // **file 落到 default → 一个 Flutter TextField**，点了什么都不会发生。
+    //
+    // 验证容器实测到的三条事实（scripts/webf-verify 第 18 组，都不是推断）：
+    //   ① `FileReader` **不存在**（`typeof` 为 undefined），`FileList` 也不存在。
+    //      → **绝不能**去伪造 `input.files` + `FileReader` 那一套：假 File 配不上
+    //      真 FileReader，而真 FileReader 压根没有。这条直接决定了「插件必须改
+    //      调用点」，与 URL.createObjectURL 那一项是同一个结论。
+    //   ② WebF **不认 HTML `hidden` 属性**：带 hidden 与不带 hidden 的 file input
+    //      盒子都是 172x24。所以垫片必须自己强制 display:none —— 否则插件刻意
+    //      隐藏的那个 input 会在页面上占掉一行（还是一个点不动的空文本框）。
+    //   ③ 程序化 `el.click()` **确实会**派发 DOM click 到监听器（progClick=dispatched）。
+    //
+    // ── 为什么两条入口都要装（③ 已经通了也要装第二条）──────────────────
+    //
+    // 真实插件的形状是「隐藏 input + 外部按钮代点」（radio 的 app.js:100
+    // `btnFile.addEventListener('click', () => fileInput.click())`）。③ 说明只拦
+    // click 事件在**当前** WebF 版本下够用，但那是 C++ 侧的实现细节、不随 pub 包
+    // 发布、也没有任何契约保证；而覆写实例 click 方法的成本只有 5 行。
+    // 两条入口互不冲突：覆写版**不调**原生 click，所以不会派发事件，
+    // 不存在「一次点击弹两个选择器」。
+    //
+    // ── 结果怎么交给插件 ──────────────────────────────────────────────
+    //
+    // 主通道是 `SongloftPlugin.lastPickedFiles`（一个普通 JS 数组，一定可读）。
+    // 派发的 `change` 事件上**尝试**挂 `event.data`，但那是 WebF 的 binding
+    // object，能不能挂自定义属性没有契约 —— 所以文档要求插件读
+    // `SongloftPlugin.lastPickedFiles`，`event.data` 只当锦上添花。
+    // 刻意不派发 `input` 事件：浏览器里 file input 只派 change。
+    var FILE_MARK = 'data-sl-file-shim';
+    var FILE_OPT_OUT = 'data-sl-no-file-picker';
+    // 载荷形态：'text'（默认，UTF-8 解码后的字符串）/ 'bytes'（base64）/ 'none'（只要元信息）。
+    // 插件用 data-sl-file-as 声明；不声明就是 text —— 真实用例（radio 导入 m3u/json）
+    // 只要文本，而 base64 让 20 MB 文件变成 ~27 MB 字符串跨两次桥，默认不该付这个钱。
+    var FILE_AS_ATTR = 'data-sl-file-as';
+
+    function collectFileInputs() {
+        var list = [];
+        try {
+            var found = document.querySelectorAll('input[type="file"]');
+            for (var i = 0; i < found.length; i++) list.push(found[i]);
+        } catch (e) {
+            list = [];
+        }
+        if (!list.length) {
+            var all = collectByTag('input');
+            for (var j = 0; j < all.length; j++) {
+                var t = all[j].getAttribute('type');
+                if (t && t.toLowerCase() === 'file') list.push(all[j]);
+            }
+        }
+        return list;
+    }
+
+    function shimOneFileInput(input) {
+        // 幂等：applyShims 可被插件在动态插入 HTML 后重复调用
+        if (input.hasAttribute(FILE_MARK)) return;
+        // 插件的正式退出开关（想保留 WebF 原生表现，或自己已经处理了）
+        if (input.hasAttribute(FILE_OPT_OUT)) return;
+        input.setAttribute(FILE_MARK, '');
+
+        // 隐藏原 input：见本段顶部实测事实 ②。class + inline 双保险，
+        // 与 rangeSliderShim 同一种保守。
+        input.classList.add('sl-file-hidden');
+        try { input.style.display = 'none'; } catch (e) {}
+
+        // 一次只允许一个选择器在飞。没有这道闸时，插件那种「按钮 handler 里
+        // 调 click()」的写法配上用户连点，会同时挂起两次宿主调用，
+        // 回来的两个 change 里后到的那个未必是用户最后选的文件。
+        var pending = false;
+
+        function openPicker() {
+            if (pending) return;
+            if (input.disabled) return;
+            pending = true;
+            var as = (input.getAttribute(FILE_AS_ATTR) || 'text').toLowerCase();
+            invokeHost('files', 'pickFile', {
+                // accept 原样透传（radio 写的是扩展名形式 '.m3u,.m3u8,.json,.txt'，
+                // 不是 MIME）—— 由 Dart 侧决定怎么翻译给 file_picker。
+                accept: input.getAttribute('accept') || '',
+                multiple: input.hasAttribute('multiple'),
+                as: as
+            }).then(function (res) {
+                pending = false;
+                var files = (res && res.files) || null;
+                // 用户取消：**不派发 change**（浏览器语义也是如此）。
+                // 派发一个空 change 会让插件走进「读不到文件」的错误分支，
+                // 弹一个用户没做错任何事的报错。
+                if (!files || !files.length) return;
+                try {
+                    if (window.SongloftPlugin) {
+                        window.SongloftPlugin.lastPickedFiles = files;
+                    }
+                } catch (e) { /* 主通道写不进去也还有下面的 event.data */ }
+                var ev;
+                try {
+                    ev = new Event('change', { bubbles: true });
+                } catch (e) {
+                    try { ev = new Event('change'); } catch (e2) { ev = null; }
+                }
+                if (!ev) {
+                    console.warn('[songloft] file shim: cannot construct change event');
+                    return;
+                }
+                // best-effort：WebF 的 Event 是 binding object，挂自定义属性
+                // 没有契约。挂不上不影响主通道。
+                try { ev.data = { files: files }; } catch (e) {}
+                input.dispatchEvent(ev);
+            }, function (err) {
+                pending = false;
+                console.warn('[songloft] file shim: host pickFile failed:', err);
+            });
+        }
+
+        // 入口①：拦 click 事件（覆盖「用户直接点可见的 file input」）。
+        // preventDefault 只是形式上的对齐 —— WebF 的 file input 本来就没有
+        // 默认行为可阻止（它是个 TextField）。
+        input.addEventListener('click', function (e) {
+            try { e.preventDefault(); } catch (e2) {}
+            openPicker();
+        });
+
+        // 入口②：覆写实例 click 方法（覆盖「隐藏 input + 外部按钮 fileInput.click()」）。
+        // 装不上不致命 —— 入口① 已实测可承接程序化 click（progClick=dispatched），
+        // 所以这里**不做** verified-or-abort：两条入口是冗余而非串联，
+        // 为「其中一条没装上」就整体放弃反而是把能用的功能丢掉。
+        try {
+            Object.defineProperty(input, 'click', {
+                configurable: true,
+                writable: true,
+                value: function () { openPicker(); }
+            });
+        } catch (e) {
+            console.warn('[songloft] file shim: click() not interceptable:', e);
+        }
+    }
+
+    var filePickerShim = {
+        name: 'file-picker',
+        apply: function () {
+            var list = collectFileInputs();
+            for (var i = 0; i < list.length; i++) {
+                // 逐元素兜底：页面里某个畸形 input 不该让其余的一起失去选择器
+                try {
+                    shimOneFileInput(list[i]);
+                } catch (e) {
+                    console.warn('[songloft] file shim skipped one element:', e);
+                }
+            }
+        }
+    };
+
+    // ── 垫片：<table> 只警告不改写（ready 段）──────────────────────────────
+    //
+    // WebF 的两份标签注册表里**一个表格标签都没有**（Dart 侧
+    // element_registry.dart 连 `const String TABLE` 这样的常量都不存在），于是
+    // <table>/<thead>/<tbody>/<tr>/<th>/<td> 全部降级为 _UnknownHTMLElement，
+    // 默认样式 `display:block` → 6 列的表变成「6N 行无标签文本」，
+    // 6 个 position:sticky 的表头还会互相叠在同一个位置。
+    //
+    // **这个失败是完全静默的**：未知标签的日志只在 `enableWebFCommandLog` 打开时
+    // 才 debugPrint（element_registry.dart:83-85），产品没开。插件作者看到的是
+    // 「一坨竖着排的文本」，既没有报错也没有可疑元素 —— 与 input[type=range]
+    // 那条教训完全同构（那边是「一行莫名空白」）。
+    //
+    // ── 为什么只警告、不改写 ──────────────────────────────────────────
+    //
+    // 「把 <table> 改写成 WebF 自带的 <webf-table> 家族」这条路已经证伪：
+    //   ① <webf-table> 只看**直接 childNodes**（table.dart:188-189），
+    //      <thead>/<tbody> 不拆掉就是 rows=[] / header=null → **一张空表，
+    //      而且不报错不打日志**；
+    //   ② 拆掉 <tbody> 会让插件的 `$('#tbody').innerHTML = ...` 抛 TypeError，
+    //      整个渲染函数中断；
+    //   ③ 列宽只认表头单元格的 `column-width` 属性（CSS width 完全无效），
+    //      sticky 表头必须逐列写死宽度否则表头与表体两次独立 flex 分配会错位，
+    //      sticky 分支还用了 Expanded（要求有界高度）；
+    //   ④ colspan/rowspan 零支持，且列数不齐会让 Flutter Table assert
+    //      —— 也就是说改写能把「丑」变成「崩」。
+    // 换来的是一个残废表格；而一行明确的 warn 把「归因难度高一个量级」的问题
+    // 直接降到零，并把修复责任交给唯一有能力做对的人（插件作者）。
+    // 推荐替代写法是 CSS Grid（WebF 的 Grid 有 193 KB 的真实实现，
+    // `fr` / `minmax` / `repeat` 都在），见插件开发指南。
+    //
+    // ⚠️ **不要**顺手给 <table> 补 `display:table` 之类的 CSS：CSSDisplay 枚举里
+    // 没有任何 table 取值，`resolveDisplay` 落到 `default: return inline`
+    // （css/display.dart:83-85）→ 从 block 退化成 inline，**比什么都不写更糟**。
+    var TABLE_MARK = 'data-sl-table-unsupported';
+
+    var tableWarnShim = {
+        name: 'table-warn',
+        apply: function () {
+            var list = collectByTag('table');
+            var fresh = 0;
+            for (var i = 0; i < list.length; i++) {
+                // 幂等：applyShims 可被重复调用，不该每次刷一遍同样的 warn
+                if (list[i].hasAttribute(TABLE_MARK)) continue;
+                // 打标记不只是幂等用：它同时是页面内省的定位手段
+                // （DIAGNOSE 脚本 / 插件自己都能 querySelectorAll 出来）
+                list[i].setAttribute(TABLE_MARK, '');
+                fresh++;
+            }
+            if (!fresh) return;
+            console.warn('[songloft] WebF 不支持原生 <table>（会退化成纵向堆叠的 ' +
+                'block，且完全静默）。请改用 CSS Grid，见插件开发指南「WebF 渲染' +
+                '引擎」章节。本页命中 ' + fresh + ' 处，已标记 ' + TABLE_MARK + '。');
+        }
+    };
+
     // ── 垫片注册表 ─────────────────────────────────────────────────────────
     var earlyShims = [emptyImgSrcAccessorShim];
-    var readyShims = [emptyImgSrcSweepShim, detailsShim, rangeSliderShim, safeAreaShim];
+    var readyShims = [
+        emptyImgSrcSweepShim, detailsShim, rangeSliderShim, safeAreaShim,
+        filePickerShim, tableWarnShim
+    ];
 
     function installEarly() {
         if (!isWebFEngine()) return;
@@ -795,6 +1009,62 @@
             method: 'DELETE',
             headers: buildHeaders()
         }).then(parseResponse);
+    }
+
+    /**
+     * Blob → `data:` URL（songloft-org/songloft#341）。
+     *
+     * 存在的理由：**WebF 没有 `URL.createObjectURL`**（验证容器实测
+     * `typeof URL.createObjectURL === 'undefined'`；`Blob` 本身有，但没有任何
+     * 入口能产出 `blob:` URL），而「带鉴权头 fetch 一张图 → 显示」是插件的常见
+     * 写法（fetch 拿到的是 Blob，`<img src>` 不能直接吃 Blob）。
+     *
+     * 也**不可能**给 WebF 垫一个返回 `blob:` 的 createObjectURL：它的资源加载器
+     * `WebFBundle.fromUrl` 只认 http/https/assets/file/`data:`，其余分支直接
+     * `throw FlutterError('Unsupported url')`（foundation/bundle.dart:192-194）
+     * —— 就算 JS 侧造出 `blob:xxx`，加载那一步必然失败。
+     *
+     * 而 `data:` URL 是原生支持的（同文件 `_isDataScheme` 分支 → `DataBundle`），
+     * 验证容器实测 **`<img src="data:…">` 与 CSS `background-image: url(data:…)`
+     * 两个消费点都能出图**（第 18 组的 IMG / BG 两个方块）。
+     *
+     * ⚠️ **本函数是异步的，而 `createObjectURL` 是同步的** —— 这不是实现懒惰，
+     * 是无法弥合的形状差异（blob → base64 只能经 `arrayBuffer()` / `FileReader`，
+     * 两者都是异步的）。所以插件**必须改调用点**，不能指望宿主垫一个假的同步
+     * `createObjectURL`。
+     *
+     * 实现选 `blob.arrayBuffer()` + `btoa` 而不是 `FileReader.readAsDataURL`：
+     * 验证容器实测 **WebF 里 `FileReader` 不存在**，而 `Blob.prototype.arrayBuffer`
+     * 与 `btoa` 都在，且端到端往返（Blob→arrayBuffer→btoa）与预期字符串逐字符
+     * 相等（第 18 组的 b64rt=ok）。浏览器与系统 WebView 下这两个 API 同样存在，
+     * 所以三条渲染路径共用这一份实现，不分叉。
+     *
+     * 分块转字符串（8 KB）而不是一次 `String.fromCharCode.apply(null, bytes)`：
+     * 后者在几百 KB 的图上会因参数个数超限抛 RangeError。
+     *
+     * @param {Blob} blob
+     * @param {string} [mimeType] 覆盖 blob.type（blob.type 为空时用得上）
+     * @returns {Promise<string>} 形如 `data:image/jpeg;base64,...`
+     */
+    function blobToDataURL(blob, mimeType) {
+        if (!blob) return Promise.reject(new Error('blobToDataURL: no blob'));
+        if (typeof blob.arrayBuffer !== 'function') {
+            return Promise.reject(new Error('blobToDataURL: Blob.arrayBuffer unavailable'));
+        }
+        if (typeof window.btoa !== 'function') {
+            return Promise.reject(new Error('blobToDataURL: btoa unavailable'));
+        }
+        var mime = mimeType || blob.type || 'application/octet-stream';
+        return blob.arrayBuffer().then(function(buf) {
+            var bytes = new Uint8Array(buf);
+            var chunk = 8192;
+            var binary = '';
+            for (var i = 0; i < bytes.length; i += chunk) {
+                binary += String.fromCharCode.apply(
+                    null, bytes.subarray(i, i + chunk));
+            }
+            return 'data:' + mime + ';base64,' + window.btoa(binary);
+        });
     }
 
     /**
@@ -1055,6 +1325,14 @@
         apiDelete: apiDelete,
         getTheme: getTheme,
         onThemeChange: onThemeChange,
+        // Blob → data: URL。WebF 没有 URL.createObjectURL，见函数上方注释。
+        // 三条渲染路径共用同一份实现（浏览器/WebView 下同样可用），插件不必分叉。
+        blobToDataURL: blobToDataURL,
+        // WebF 下 input[type=file] 垫片最近一次选到的文件数组
+        // （每项 {name, size, text?, bytesBase64?}）。**这是主通道** ——
+        // 派发的 change 事件上那个 event.data 是 best-effort（WebF 的 Event 是
+        // binding object，挂自定义属性没有契约）。未选过时为 null。
+        lastPickedFiles: null,
         announce: announce,
         hideDecorationIcons: hideDecorationIcons,
         enhanceClickableElements: enhanceClickableElements,
