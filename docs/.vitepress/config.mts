@@ -116,7 +116,6 @@ export default async () => {
       'webf-recon-step456.md',
       'webf-step4-design.md',
       'webf-upstream-issues.md',
-      'webf-lxmusic-crash.md',
     ],
 
     sitemap: {
@@ -148,7 +147,6 @@ export default async () => {
             'webf-recon-step456',
             'webf-step4-design',
             'webf-upstream-issues',
-            'webf-lxmusic-crash',
           ],
         }),
       ],
