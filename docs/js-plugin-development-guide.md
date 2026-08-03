@@ -1249,6 +1249,165 @@ songloft-slider {
 
 注意宿主注入的值是**剩给页面自己处理**的那部分：客户端外层已有 `SafeArea` 消化掉一部分安全区（插件 Tab 页消化了上 / 左 / 右，把下方留给页面），所以不会出现「上层让开了、页面又内缩一次」的双重留白。
 
+#### 文件选择：`input[type=file]` 自动接管，但结果**不在 `input.files` 里**
+
+**页面 HTML 一行都不用改，读结果的 JS 必须改。**
+
+WebF 没有实现 `input[type=file]`：它的 `<input>` build 分支只认 radio / checkbox / button / submit / date / time，`type=file` 落到 default → 渲染成一个 Flutter 文本框，**点了什么都不会发生**（也不报错）。所以 `common.js` 的垫片在 WebF 下会自动：
+
+1. 扫描页面里所有 `input[type="file"]`，把它**隐藏**（加 `.sl-file-hidden` class + inline `display:none`）；
+2. 既拦它的 `click` 事件、也覆写它的实例 `click()` 方法 —— 所以「隐藏 input + 外部按钮调 `fileInput.click()`」这种常见写法照样能弹出选择器；
+3. 弹出**宿主的原生文件选择器**，把用户选中的文件经桥送回页面；
+4. 把结果写进 `SongloftPlugin.lastPickedFiles`，然后在原 input 上派发一个冒泡的 `change`。
+
+为什么垫片必须自己隐藏原 input：实测 **WebF 不认 HTML `hidden` 属性**（带与不带 `hidden` 的 file input 盒子都是 170×24），插件刻意隐藏的那个 input 在 WebF 下会实打实占掉一行，而且是个点不动的空文本框。
+
+##### 读结果：主通道是 `SongloftPlugin.lastPickedFiles`
+
+```js
+fileInput.addEventListener('change', function () {
+    // ✅ 主通道：一个普通 JS 数组，一定可读
+    var files = (window.SongloftPlugin && SongloftPlugin.lastPickedFiles) || [];
+    if (!files.length) return;
+    importPlaylist(files[0].text);   // as=text（默认）时是解码后的字符串
+});
+```
+
+- **`input.files` / `FileReader` / `FileList` 在 WebF 下都不能用**：后两者**压根不存在**（实测 `typeof` 均为 `undefined`），所以宿主刻意**不去伪造** `input.files` —— 假 `File` 配不上真 `FileReader`，而真 `FileReader` 根本没有。用 `new FileReader()` 读文件的代码在 WebF 下会直接抛异常。
+- `change` 事件上**也会尝试**挂一份 `event.data = {files: [...]}`，但那只是锦上添花：WebF 的 `Event` 是 binding object，能不能挂自定义属性**没有契约保证**。**不要**把它当主通道。
+- **用户取消时不派发 `change`**（与浏览器一致），所以不必担心「空 change 走进读取失败分支、弹一个用户没做错任何事的报错」。
+- `lastPickedFiles` 是**全局单值**（未选过时为 `null`），页面里有多个 file input 时它存的是最近一次的结果 —— 在 `change` 回调里立刻取走即可。宿主调用失败时只打一条 `console.warn` 且不派发 `change`。
+
+##### 载荷形态：`data-sl-file-as`
+
+```html
+<!-- 只要元信息，不读内容 -->
+<input type="file" id="pick" accept=".m3u,.m3u8,.json" data-sl-file-as="none">
+```
+
+| 取值 | 载荷 | 什么时候用 |
+|------|------|-----------|
+| `text`（默认） | `text` 字符串 + `encoding`（+ 可能的 `textLossy`） | 导入 m3u / json / lrc 这类文本 |
+| `bytes` | `bytesBase64`（base64 字符串） | 二进制文件，或需要自己按 GBK 等编码解码 |
+| `none` | 只有 `name` / `size` | 只要文件名与大小 |
+
+**默认是 `text` 而不是 `bytes`**：真实用例（导入 m3u / json）只要文本，而 base64 会把一个 20 MB 的文件变成约 27 MB 的字符串，还要跨两次序列化桥（Dart → C++ → QuickJS），默认不该付这个钱。
+
+每个文件对象的字段：
+
+| 字段 | 出现条件 | 说明 |
+|------|---------|------|
+| `name` | 总是 | 文件名（不含路径） |
+| `size` | 总是 | 字节数 |
+| `text` | `as=text` 且读取成功 | 解码后的字符串（BOM 已剥离） |
+| `encoding` | 同上 | `utf-8` / `utf-8-lossy` / `utf-16le` / `utf-16be` |
+| `textLossy` | 解码有损时为 `true` | 宿主只按 BOM + 严格 UTF-8 判定，**不猜 GBK**；GBK 文件会走「容错解码」并打上这个标记 —— 要精确处理请改用 `as="bytes"` 自己解码 |
+| `bytesBase64` | `as=bytes` 且读取成功 | base64 |
+| `error` | 读取失败时 | `too_large`（超过单文件 32 MB 上限，同时带 `limit`）/ `read_failed`。**刻意不静默截断**：半截的 m3u 解析出来是「导入成功但少了一半」，比报错难查得多 |
+
+- **拿不到文件路径**，这是有意的：桌面端是真实路径、Android SAF 是 content URI，跨平台语义不一致，对页面 JS 也毫无用处，还是不必要的信息泄露。
+- `accept` 原样透传给宿主，但**只有 `.ext` 扩展名形式会变成真的过滤器**；写成 MIME（`text/plain`、`image/*`）或与扩展名混写时，宿主**整体放弃过滤**（宁可多几个可选项——插件自己还会校验，也不要把用户本该能选的文件挡住）。
+- `multiple` 存在时可多选，否则只取第一项。
+- 一次只允许一个选择器在飞：用户连点不会挂起两次宿主调用（否则回来的两个 `change` 里后到的那个未必是用户最后选的文件）。
+
+##### 退出开关、幂等与两端兼容
+
+想保留 WebF 的原生表现（或插件自己已经处理了这个 input）就写 `data-sl-no-file-picker`，垫片会跳过它：
+
+```html
+<input type="file" data-sl-no-file-picker>
+```
+
+垫片幂等（`data-sl-file-shim` 标记），动态插入 HTML 后调 `SongloftPlugin.applyShims()` 即可给新出现的 file input 补上接管。垫片**只在 WebF 渲染面下跑**：普通浏览器与系统 WebView 里原生 file input 与 `FileReader` 照常工作。所以推荐**两条路都留**，一份代码通吃三种运行环境：
+
+```js
+function readPickedFile(input, cb) {
+    var picked = window.SongloftPlugin && SongloftPlugin.lastPickedFiles;
+    if (picked && picked.length) return cb(picked[0].text);   // WebF
+    var f = input.files && input.files[0];                    // 浏览器 / 系统 WebView
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () { cb(r.result); };
+    r.readAsText(f);
+}
+```
+
+#### `URL.createObjectURL` 不存在：改用 `SongloftPlugin.blobToDataURL()`（**异步**）
+
+**WebF 里 `URL.createObjectURL` 压根不存在**（实测 `typeof URL.createObjectURL === 'undefined'`）。`Blob` 本身是有的，但没有任何入口能产出 `blob:` URL，而且**也不可能垫一个**：`blob:` 要资源加载器配合，而 WebF 的加载器只认 `http` / `https` / `assets` / `file` / `data:`，其余 scheme 直接抛错 —— 就算 JS 侧造出一个 `blob:xxx` 字符串，加载那一步必然失败。
+
+典型受害写法是「带鉴权头 fetch 一张图 → 显示」：`fetch` 拿到的是 `Blob`，而 `<img src>` 不能直接吃 Blob。宿主给出的替代是 `data:` URL（WebF 原生支持）：
+
+```js
+var url = await SongloftPlugin.blobToDataURL(blob);   // 'data:image/jpeg;base64,...'
+```
+
+签名 `blobToDataURL(blob, mimeType?) → Promise<string>`。`mimeType` 用来覆盖 `blob.type`（`blob.type` 为空时用得上），两者都没有时按 `application/octet-stream`。
+
+**三条渲染路径共用同一份实现**：它用的 `Blob.prototype.arrayBuffer` + `btoa` 在普通浏览器与系统 WebView 下同样存在，所以**不必按引擎分叉**，一份异步写法通吃。
+
+##### ⚠️ 它是异步的，所以你必须改调用点
+
+`createObjectURL` 是**同步**的，而 `blobToDataURL` 返回 **Promise**。这不是实现偷懒，而是无法弥合的形状差异：`Blob → base64` 只能经 `arrayBuffer()`（`FileReader` 在 WebF 下不存在），而那本身就是异步的。所以**不要指望宿主给一个同步替身** —— 改调用点是唯一的路：
+
+```js
+// ❌ 改写前：WebF 下 URL.createObjectURL 是 undefined，这行直接抛 TypeError
+function showCover(blob) {
+    var url = URL.createObjectURL(blob);
+    img.src = url;
+    bg.style.backgroundImage = 'url(' + url + ')';
+    // 用完还得记着 URL.revokeObjectURL(url)
+}
+
+// ✅ 改写后：函数变异步，拿到字符串后的用法完全不变
+async function showCover(blob) {
+    var url = await SongloftPlugin.blobToDataURL(blob);
+    img.src = url;
+    bg.style.backgroundImage = 'url(' + url + ')';
+    // 不需要 revoke
+}
+```
+
+注意「改调用点」会**往上传染**：`showCover()` 变成 async 之后，它的调用者要么跟着 `await` / `.then`，要么接受「图片晚一拍出现」。这是移植时最容易漏的一环——漏掉不会报错，只是图不出来。
+
+##### 两个已实测可用的消费点
+
+- `<img src="data:…">`
+- CSS `background-image: url(data:…)` —— 这条尤其值得写明：它走的是与 `<img>` **完全不同**的代码路径，而 data URL 里含逗号与分号，CSS `url()` 的词法本来可能切错。实测能出图，所以「同一张图既当封面 `<img>` 又当模糊背景」可以沿用**同一个** data URL，不必另找出路。
+
+##### 生命周期语义变了
+
+data URL **不需要**（也没有）`revokeObjectURL`：它不是句柄，就是一个字符串。代价是它**常驻内存**（base64 比原始字节大约 4/3），只要还有元素的 `src` / `style` 引用它，或者你自己把它存进了变量 / 数组 / DOM 属性，那份字符串就不会被回收。因此：
+
+- 大图、长列表缩略图这类场景，不要无脑把 data URL 攒进数组当缓存 —— 该丢的时候把引用清掉。
+- 更省的做法是**能直接用 URL 就别绕 Blob**：只要那张图能通过一个可直接访问的 URL 拿到（不需要自定义请求头），把 `<img src>` 指过去即可，完全绕开这一整套。
+
+#### `window.open`：外链改由**系统浏览器**打开（插件无需改动）
+
+**插件侧一行都不用改**，但要知道它现在的语义。
+
+WebF 的 `window.open` 曾经是**彻底静默**的：不抛错、也什么都不发生（归因是没装导航代理时，WebF 的默认导航策略把外链无条件 cancel 掉了）。所以「点『去网页登录』什么反应都没有」这种 bug 在 WebF 下既没有报错也没有日志。
+
+新版客户端在 WebF 渲染面上装了导航代理，行为变成三档：
+
+| 目标 | 行为 |
+|------|------|
+| `#` 开头的页内锚点 | 照常跳转（`pushState` + `hashchange` 正常工作） |
+| **外部** `http(s)` / `mailto:` / `tel:` | 用**系统浏览器 / 系统默认应用**打开 |
+| **同源**（插件页自己）的 `http(s)` 跳转 | **被拦下**，并在客户端日志里留一条 warn |
+
+```js
+// 两种调用形态都已实测可用（单参、带 target 的双参都会真的转发到宿主）
+window.open('https://account.xiaomi.com/oauth2/authorize?...');
+window.open('https://example.com/help', '_blank');
+```
+
+三条要点：
+
+- **它打开的是外部浏览器，而不是页内新窗口**。所以「弹窗里完成操作后由弹窗回填数据到父页」（`window.opener`、给返回的 window 对象赋值、跨窗口 `postMessage`）这类流程在这里**走不通** —— 请改成「用户回到插件页后由插件轮询 / 或提供一个『我已完成』按钮触发回调」的形态。
+- **同源整页跳转被刻意拦掉**：WebF 里那条路是「把整个插件页 `load()` 成新地址」，会把宿主注入的上下文、loading 状态、返回键行为全部弄错。**WebF 下不要做多页跳转**，单页 + 页内切换视图。
+- 其余 scheme（相对路径、`javascript:`、自定义 scheme）一律不放行。若插件依赖自定义 scheme 唤起第三方 App，请当它在 WebF 下不可用并另做降级。
+
 ### 访问路径
 
 安装后，静态文件通过以下路径访问（注意：运行时路由是单数 `jsplugin`，与管理 API `/api/v1/jsplugins`（复数）不同）：

@@ -1251,6 +1251,166 @@ Three hard constraints, all verified on WebF:
 
 Note that the injected value is **whatever is left for the page to handle**: the client already consumes part of the safe area with an outer `SafeArea` (the plugin tab page consumes top / left / right and leaves the bottom to the page), so you will not get double padding where the host has already inset the surface.
 
+#### File picking: `input[type=file]` is taken over automatically, but the result is **not in `input.files`**
+
+**Your HTML needs no changes at all; the JS that reads the result must change.**
+
+WebF does not implement `input[type=file]`: its `<input>` build switch only knows radio / checkbox / button / submit / date / time, so `type=file` falls through to the default branch and renders a Flutter text field — **clicking it does nothing at all** (and raises no error). So under WebF the `common.js` shim automatically:
+
+1. Scans every `input[type="file"]` on the page and **hides it** (adds the `.sl-file-hidden` class plus inline `display:none`);
+2. Intercepts its `click` event **and** overrides its instance `click()` method — so the common "hidden input + external button calling `fileInput.click()`" pattern still opens the picker;
+3. Opens the **host's native file picker** and sends the chosen files back to the page over the bridge;
+4. Writes the result into `SongloftPlugin.lastPickedFiles`, then dispatches a bubbling `change` on the original input.
+
+Why the shim must hide the original input itself: measured behavior is that **WebF ignores the HTML `hidden` attribute** (a file input's box is 170×24 with or without `hidden`), so the input a plugin deliberately hid would really occupy a line under WebF — as an unclickable empty text field.
+
+##### Reading the result: the primary channel is `SongloftPlugin.lastPickedFiles`
+
+```js
+fileInput.addEventListener('change', function () {
+    // ✅ Primary channel: a plain JS array, always readable
+    var files = (window.SongloftPlugin && SongloftPlugin.lastPickedFiles) || [];
+    if (!files.length) return;
+    importPlaylist(files[0].text);   // a decoded string when as=text (the default)
+});
+```
+
+- **`input.files` / `FileReader` / `FileList` are all unusable under WebF**: the latter two **do not exist at all** (measured: `typeof` is `undefined` for both), which is why the host deliberately does **not** fake `input.files` — a fake `File` is useless without a real `FileReader`, and there is no real `FileReader`. Code that reads files with `new FileReader()` throws outright under WebF.
+- The `change` event **also carries a best-effort** `event.data = {files: [...]}`, but that is a bonus only: WebF's `Event` is a binding object and there is **no contract** that custom properties can be attached to it. Do **not** treat it as the primary channel.
+- **No `change` is dispatched when the user cancels** (same as in a browser), so you need not worry about an empty `change` falling into your "read failed" branch and showing an error for something the user did not do wrong.
+- `lastPickedFiles` is a **single global value** (`null` before the first pick); with several file inputs on a page it holds the most recent result — read it immediately inside the `change` handler. If the host call fails, the shim only logs a `console.warn` and dispatches no `change`.
+
+##### Payload shape: `data-sl-file-as`
+
+```html
+<!-- metadata only, do not read the contents -->
+<input type="file" id="pick" accept=".m3u,.m3u8,.json" data-sl-file-as="none">
+```
+
+| Value | Payload | When to use it |
+|------|------|-----------|
+| `text` (default) | `text` string + `encoding` (+ possibly `textLossy`) | Importing text such as m3u / json / lrc |
+| `bytes` | `bytesBase64` (a base64 string) | Binary files, or when you need to decode a legacy encoding (e.g. GBK) yourself |
+| `none` | `name` / `size` only | You only need the file name and size |
+
+**The default is `text`, not `bytes`**: the real use cases (importing m3u / json) only need text, while base64 turns a 20 MB file into roughly a 27 MB string that must cross two serialization bridges (Dart → C++ → QuickJS). That is not a price to pay by default.
+
+Fields of each file object:
+
+| Field | Present when | Meaning |
+|------|---------|------|
+| `name` | Always | File name (no path) |
+| `size` | Always | Size in bytes |
+| `text` | `as=text` and the read succeeded | The decoded string (BOM stripped) |
+| `encoding` | Same as above | `utf-8` / `utf-8-lossy` / `utf-16le` / `utf-16be` |
+| `textLossy` | `true` when decoding was lossy | The host decides by BOM plus strict UTF-8 only and **never guesses GBK**; GBK files go through a lenient decode and get this flag — switch to `as="bytes"` and decode them yourself if you need exact handling |
+| `bytesBase64` | `as=bytes` and the read succeeded | base64 |
+| `error` | On read failure | `too_large` (over the 32 MB per-file limit, accompanied by `limit`) / `read_failed`. **Deliberately never truncated silently**: half an m3u parses as "imported fine, but half the entries are missing", which is far harder to diagnose than an error |
+
+- **You never get a file path**, by design: desktop platforms hand back a real path while Android SAF gives a content URI (inconsistent across platforms), a path is useless to page JS anyway, and it would be an unnecessary information leak.
+- `accept` is passed through verbatim, but **only the `.ext` extension form becomes a real filter**; with MIME forms (`text/plain`, `image/*`) or a mix of the two, the host **drops filtering entirely** (a few extra selectable files — which your plugin validates anyway — is better than blocking files the user was supposed to be able to pick).
+- `multiple` enables multi-select; without it only the first file is returned.
+- Only one picker may be in flight at a time, so rapid clicking cannot start two host calls (otherwise, of the two resulting `change` events, the later one is not necessarily the user's final choice).
+
+##### Opt-out, idempotency and cross-runtime code
+
+To keep WebF's native behavior (or when your plugin already handles that input itself), add `data-sl-no-file-picker` and the shim skips it:
+
+```html
+<input type="file" data-sl-no-file-picker>
+```
+
+The shim is idempotent (marked with `data-sl-file-shim`); after inserting HTML dynamically, call `SongloftPlugin.applyShims()` to take over the newly added file inputs. The shim **only runs on the WebF rendering surface**: in a regular browser or the system WebView the native file input and `FileReader` keep working. So keep **both paths** and one body of code serves all three runtimes:
+
+```js
+function readPickedFile(input, cb) {
+    var picked = window.SongloftPlugin && SongloftPlugin.lastPickedFiles;
+    if (picked && picked.length) return cb(picked[0].text);   // WebF
+    var f = input.files && input.files[0];                    // browser / system WebView
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () { cb(r.result); };
+    r.readAsText(f);
+}
+```
+
+#### `URL.createObjectURL` does not exist: use `SongloftPlugin.blobToDataURL()` (**async**)
+
+**`URL.createObjectURL` simply does not exist under WebF** (measured: `typeof URL.createObjectURL === 'undefined'`). `Blob` itself is there, but nothing can produce a `blob:` URL — and **no shim is possible either**: `blob:` requires cooperation from the resource loader, and WebF's loader only accepts `http` / `https` / `assets` / `file` / `data:` and throws on anything else. Even if JS fabricated a `blob:xxx` string, loading it would necessarily fail.
+
+The textbook victim is "fetch an image with an auth header, then display it": `fetch` gives you a `Blob`, and `<img src>` cannot consume a Blob directly. The host's replacement is a `data:` URL (natively supported by WebF):
+
+```js
+var url = await SongloftPlugin.blobToDataURL(blob);   // 'data:image/jpeg;base64,...'
+```
+
+Signature: `blobToDataURL(blob, mimeType?) → Promise<string>`. `mimeType` overrides `blob.type` (useful when `blob.type` is empty); with neither, `application/octet-stream` is used.
+
+**All three rendering paths share one implementation**: it uses `Blob.prototype.arrayBuffer` + `btoa`, which exist in regular browsers and the system WebView too, so **no engine forking is needed** — one async spelling serves everything.
+
+##### ⚠️ It is async, so you must change the call sites
+
+`createObjectURL` is **synchronous** while `blobToDataURL` returns a **Promise**. That is not implementation laziness but an unbridgeable difference in shape: `Blob → base64` can only go through `arrayBuffer()` (`FileReader` does not exist under WebF), and that is inherently asynchronous. So **do not expect a synchronous stand-in from the host** — changing the call sites is the only path:
+
+```js
+// ❌ Before: URL.createObjectURL is undefined under WebF, so this line throws a TypeError
+function showCover(blob) {
+    var url = URL.createObjectURL(blob);
+    img.src = url;
+    bg.style.backgroundImage = 'url(' + url + ')';
+    // and you still have to remember URL.revokeObjectURL(url)
+}
+
+// ✅ After: the function becomes async; everything after you have the string is unchanged
+async function showCover(blob) {
+    var url = await SongloftPlugin.blobToDataURL(blob);
+    img.src = url;
+    bg.style.backgroundImage = 'url(' + url + ')';
+    // no revoke needed
+}
+```
+
+Note that "change the call sites" **propagates upwards**: once `showCover()` is async, its own callers must either `await` / `.then` it or accept that the image appears a beat later. This is the easiest step to miss when porting — missing it raises no error, the image just never shows up.
+
+##### Two consumption points verified to work
+
+- `<img src="data:…">`
+- CSS `background-image: url(data:…)` — worth spelling out, because it takes a **completely different** code path from `<img>`, and a data URL contains commas and semicolons that CSS `url()` tokenization could plausibly split wrongly. It was measured to render, so "the same image as both a cover `<img>` and a blurred background" can reuse the **same** data URL instead of needing another route.
+
+##### The lifetime semantics change
+
+A data URL **needs no** `revokeObjectURL` (there is none): it is not a handle, just a string. The price is that it **stays in memory** (base64 is about 4/3 of the raw bytes) — as long as an element's `src` / `style` references it, or you stored it in a variable / array / DOM attribute, that string is not reclaimed. Therefore:
+
+- For large images or long-list thumbnails, do not blindly accumulate data URLs in an array as a cache — clear the references when you are done with them.
+- The cheaper approach is **not to route through a Blob at all when a URL will do**: if the image is reachable via a directly accessible URL (no custom request headers required), point `<img src>` at it and skip the whole dance.
+
+#### `window.open`: external links now open in the **system browser** (no plugin changes needed)
+
+**Nothing on the plugin side has to change**, but you need to know what it now means.
+
+WebF's `window.open` used to be **completely silent**: no error, and nothing happened (the root cause is that with no navigation delegate installed, WebF's default navigation policy cancels external links unconditionally). So under WebF, "clicking 'log in on the web' does nothing" produced neither an error nor a log line.
+
+Newer clients install a navigation delegate on the WebF rendering surface, and the behavior is now three-tiered:
+
+| Target | Behavior |
+|------|------|
+| In-page anchors starting with `#` | Navigate as usual (`pushState` + `hashchange` keep working) |
+| **External** `http(s)` / `mailto:` / `tel:` | Opened with the **system browser / system default app** |
+| **Same-origin** `http(s)` navigation (the plugin page itself) | **Blocked**, with a warning in the client log |
+
+```js
+// Both call shapes are verified to work (one argument, and two arguments with a target,
+// are both really forwarded to the host)
+window.open('https://account.xiaomi.com/oauth2/authorize?...');
+window.open('https://example.com/help', '_blank');
+```
+
+Three things to keep in mind:
+
+- **It opens an external browser, not an in-page popup window.** So flows where "the popup writes data back into the opener after the user finishes" (`window.opener`, assigning to the returned window object, cross-window `postMessage`) **do not work here** — restructure them so that the plugin polls after the user returns to the page, or offer an explicit "I'm done" button that triggers the callback.
+- **Same-origin full-page navigation is deliberately blocked**: under WebF that path means "`load()` the whole plugin page at a new address", which invalidates the context injected by the host, the loading state and the back-button behavior. **Do not do multi-page navigation under WebF** — stay single-page and switch views in place.
+- Any other scheme (relative paths, `javascript:`, custom schemes) is not allowed through. If your plugin relies on a custom scheme to launch a third-party app, treat that as unavailable under WebF and provide a fallback.
+
 ### Access Paths
 
 After installation, static files are accessed via the following paths (note: the runtime route is the singular `jsplugin`, different from the management API `/api/v1/jsplugins`, which is plural):

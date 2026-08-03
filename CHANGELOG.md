@@ -37,6 +37,46 @@
   进度变化只走一次重绘。颜色默认跟随 CSS `color`（currentColor），因此零配置即跟随主题。
   **不做自动替换**——插件需自己改用该标签（内联 SVG 是任意图形，机械判定「这个 svg 是进度环」必然
   误伤）。仅 WebF 渲染面生效 *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下补齐 `input[type=file]` —— 现在会弹出**宿主的原生文件选择器**。
+  WebF 的 `<input>` 没有 file 分支（`type=file` 落到 default，渲染成一个点了毫无反应的文本框，
+  既不报错也无日志），`common.js` 垫片改为拦下点击（同时覆写实例 `click()` 方法，
+  因此「隐藏 input + 外部按钮代点」这种常见写法照样生效）、经桥调宿主选择器、并强制
+  `display:none` 隐藏原 input（实测 **WebF 不认 HTML `hidden` 属性**，带与不带 hidden 的
+  file input 盒子都是 170×24，插件刻意隐藏的 input 会实打实占掉一行）。
+  **插件的 HTML 零改动即可用，但读结果的方式变了**：主通道是 `SongloftPlugin.lastPickedFiles`
+  （普通 JS 数组，每项 `{name, size, text?/bytesBase64?, encoding?, textLossy?, error?}`），
+  `change` 事件上的 `event.data` 只是锦上添花（WebF 的 `Event` 是 binding object，
+  挂自定义属性没有契约）。**`input.files` / `FileReader` / `FileList` 在 WebF 下都不可用**
+  （后两者实测压根不存在），故宿主刻意不去伪造它们——假 `File` 配不上真 `FileReader`，
+  而真 `FileReader` 根本没有。载荷形态由 `data-sl-file-as` 声明（`text` 默认 / `bytes` base64 /
+  `none` 只要元信息；默认 text 是因为真实用例只要文本，而 base64 会让 20 MB 文件变成约 27 MB
+  字符串跨两次桥），`data-sl-no-file-picker` 可退出该垫片。单文件上限 32 MB，超限返回明确错误
+  而非静默截断；用户取消时不派发 `change`。仅 WebF 渲染面生效，浏览器与系统 WebView 下不变。
+  读结果的两端兼容写法见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
+  *(songloft-org/songloft#341)*
+- **jsplugin**: 新增 `SongloftPlugin.blobToDataURL(blob, mimeType?)`，替代 WebF 下不存在的
+  `URL.createObjectURL`（实测 `typeof` 为 undefined；`Blob` 本身有，但没有任何入口能产出
+  `blob:`，而 WebF 的资源加载器只认 http/https/assets/file/`data:`，纯 JS 也垫不出来）。
+  返回形如 `data:image/jpeg;base64,...` 的字符串，`<img src>` 与 CSS
+  `background-image: url(data:…)` 两个消费点均已实测可用（后者走的是另一条代码路径，
+  且 data URL 含逗号分号、CSS `url()` 词法本可能切错），所以同一张图当封面和当模糊背景可以
+  沿用同一个 URL。⚠️ **它返回 Promise，而 `createObjectURL` 是同步的 —— 插件必须改调用点**：
+  `Blob → base64` 只能经异步的 `arrayBuffer()`（`FileReader` 在 WebF 下不存在），
+  无法提供同步替身，且函数变 async 会往上传染到它的调用者（漏改不报错，只是图不出来）。
+  data URL 不需要也没有 `revokeObjectURL`，但会常驻内存（约为原始字节的 4/3）。
+  浏览器与系统 WebView 下同样可用，插件不必按引擎分叉
+  *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下 `window.open` 与外链点击改为用**系统浏览器**打开
+  （以前是彻底静默：WebF 的 `window.open` 不抛错、也什么都不发生，归因是没装导航代理时
+  默认导航策略把外链无条件 cancel 掉了，所以「点『去网页登录』毫无反应」既没有报错也没有日志）。
+  现在客户端装了导航代理，三档决策：`#` 开头的页内锚点照常跳转；**外部** http(s)/mailto/tel
+  交给系统浏览器或系统默认应用；**同源**整页跳转被拦下并留一条 warn（WebF 里那条路会把整个
+  插件页 `load()` 成新地址，宿主注入的上下文、loading 状态与返回键行为全部错位——
+  **WebF 下不要做多页跳转**）。**插件侧无需改动**，单参与带 `target` 的双参两种调用形态都已实测
+  转发到宿主；但它打开的是**外部浏览器而非页内新窗口**，所以「弹窗回填数据到父页」
+  （`window.opener` / 跨窗口 `postMessage`）这类流程走不通，需改成回调或轮询。
+  官方插件 miot 的小米账号二次验证据此可用。见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
+  *(songloft-org/songloft#341)*
 
 ### :zap: Performance Improvements
 - **jsplugin**: 插件商店拉取结果服务端缓存 5 分钟，翻页与搜索不再重复拉取整棵注册表树
