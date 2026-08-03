@@ -308,6 +308,30 @@ CSS 求值」这一层，注入的是人为非零值）、转屏 / 键盘触发�
    不是布局塌陷。判据已固化在验证探针**第 14b 组**（把那一行染成黄色：整行不出现任何黄色即复现）。
    对插件的杀伤力**不止「滑块没了」，而是「同行内容全没」** —— 作者看到的是「一行莫名空白」，
    既没有报错也没有可疑元素，归因难度比「多了个文本框」高一个量级。
+**⬇ 下面 8–11 是 2026-08-03 容器实测新增的，其中 8 与 9 直接命中范围内插件。**
+
+8. **`btoa` 不是二进制安全的**：把 > 0x7F 的码点当字符先做一次 UTF-8 编码，而不是按
+   latin1 取字节。实测 `btoa('\x89')` → `"wg=="`（应为 `"iQ=="`）、
+   `btoa('\x89PNG')` → `"wolQTg=="`（应为 `"iVBORw=="`），而 `"wolQTg=="` 解码是
+   `0xC2 0x89 0x50 0x4E` —— `0xC2 0x89` 正是 U+0089 的 UTF-8 编码。**`atob` 方向是对的**。
+   后果：任何含高位字节的二进制（所有图片）经 `btoa` 都会被编坏。
+   → 我们的绕法：`common.js` 自带 base64 编码表（`bytesToBase64`，`6f5b3ef`），不用 `btoa`
+9. **grid `auto` 行高约 7 倍过高**：实测 downloader 页一行占 **281px**（同内容放进等宽 block
+   里自然高 **41px**），表头行 72px（应约 39px）。数字与「**在 min-content 宽度下测量子项高度**」
+   吻合：表头最高的「艺术家」是 3 个 CJK 字（CJK 每字都是断行点）→ 3 行 ≈ 71；数据行最长的
+   艺术家名 12 个 CJK → 13 行 ≈ 280。轨道定义**无关**（裸 `2fr`、`minmax(120px,2fr)`、
+   全定宽 px 三种都是 281），`grid-auto-rows: 40px` 则正常 → 是 auto 行高的测量阶段用错了宽度。
+   **可行修法已实测**：在行插入**之前**注入
+   `white-space:nowrap; overflow:hidden; text-overflow:ellipsis` → 行距 43 / 表头 39 且稳定
+   （nowrap 下 min-content == max-content，所以那个错误的第一遍也量对了）。
+   最小合成用例（3×200px 轨道 + 10 个 CJK 字）**不复现**，触发条件未收敛
+10. **`Response.headers.get()` 返回 `null`、`Blob.type` 是空串** → 从 fetch 结果推不出 mime
+11. **`Infinity or NaN toInt` 不是 lxmusic 特有**：downloader 页 7 次运行里命中 2 次（间歇），
+    栈是 `InlineFormattingContext._rectLineIndexCacheKey ← _lineIndexForRect ← layout ←
+    RenderFlowLayout._layoutChildren`，**没有一帧是 grid**。§6 里那条「lxmusic 特有」的记法是错的
+
+（第 7 条因为被实测大幅修订，单独放在最后 ↓）
+
 7. **grid 把 `position: sticky` 当脱流处理**（Step 4 重设计时从源码判定，见
    `docs/webf-step4-design.md` §3 Step 1 的完整判据）。`rendering/grid.dart:347-351` 的
    `_isPositionedGridChild()` 把 sticky 与 absolute/fixed **归成同一类**，而这个判据被用在
@@ -316,12 +340,28 @@ CSS 求值」这一层，注入的是人为非零值）、转屏 / 键盘触发�
    于是 sticky 子项**既不占格子、也不参与列轨道定宽**。
    `:1948-1972` 的注释写着「their placeholders can reserve correct space」，但
    **`placeholder` 在整个 `grid.dart` 里只出现在 3 条注释里、没有任何实现**。
-   **对照组证明这是 grid 路径独有的缺陷、不是 WebF 全局不支持 sticky**：`rendering/flow.dart`
-   的在流排除判据（`:425 :1212 :1342`）**只判 `isSelfPositioned()`、不含 sticky**，
-   所以块级/流式布局下 sticky 正确留在流内并占据空间（符合 CSS 规范）。
-   而 `applyStickyChildOffset` 在 grid 路径上照样会调（`:4592`），所以**它会「贴住」，
-   只是以脱流方式贴住** —— 这是最难归因的失败形态：看起来 sticky 生效了，实际列宽全错、
-   还盖住了一行数据。
+   > ⚠️⚠️ **本条曾有一句被实测推翻，已划掉，别再引用它。**
+   >
+   > ~~对照组证明这是 grid 路径独有的缺陷、不是 WebF 全局不支持 sticky：`rendering/flow.dart`
+   > 的在流排除判据（`:425 :1212 :1342`）只判 `isSelfPositioned()`、不含 sticky，
+   > 所以块级/流式布局下 sticky 正确留在流内并占据空间。~~
+   >
+   > **实测结论：`position: sticky` 在 WebF 下压根不生效，且不限于 grid 路径。**
+   > 容器里把一个普通 `<div style="position:sticky;top:0">` 放在 `body` 顶部、用**页面级**
+   > 滚动（`documentElement.scrollTop=300`，`window.scrollY` 确认为 300），那个 div
+   > **整量滚走**（`y = -300`）。downloader 页里内层容器 `scrollTop=400/500` 时表头
+   > `deltaY = -400/-500`，也是精确地滚走整个滚动量，而 computed `position` 仍是
+   > `"sticky"`、`top` 仍是 `"0px"`（样式没丢）、`scroll` 事件也确实派发了（通知链跑了）。
+   >
+   > 所以上面那段源码推理只证明了「grid 把 sticky 排除在轨道定宽之外」（这半仍然成立），
+   > **不能**据此推出「flow 路径的 sticky 是好的」——`applyStickyChildOffset` 有调用点
+   > **不等于**偏移被正确算出并应用。**这是一次典型的「读源码得出乐观结论、实测相反」**，
+   > 与 §2.5 里 clamp 那条恰好反向（那次是源码说不行、实测能行）。
+   >
+   > 残余不确定性（如实记）：合成滚轮（`PointerScrollEvent`）与合成触摸拖动都**无法**驱动
+   > WebF 的任何滚动容器（页面级也不动），所以「真实用户滚动下 sticky 是否生效」未验证。
+   > 判定为「没实现」而非「时序问题」的依据是：scroll 事件已派发，且页面级最标准的配置
+   > 也失败。
 
 ### 3.3 缺口清单与真实命中面（已交叉验证）
 
@@ -528,6 +568,21 @@ HOST_NETWORK=1 PROBE_URL='http://127.0.0.1:58191/api/v1/jsplugin/miot/?embed=&th
   **三条推送共享同一个闸**。真实插件页由后端 `stripEmptySrcAttrs` 剥掉空 `src`、且页面能正常结束
   loading（否则会撞 20s 超时 UI），所以生产上这个闸**应当**会开 —— 但**没有实机验证**。
   新加依赖页面 ready 时序的桥之前，先确认这个闸会开，或学 Step 5 / `slDrag` 让页面主动叫 Dart
+- **⚠️ `run.sh` 默认不重建镜像，而 `probe_main.dart` / `entrypoint.sh` 是 `COPY` 进镜像的**
+  → 改了它们再跑 `run.sh`，**跑的是旧探针**。表现极具误导性：「我新加的诊断脚本没生效，
+  输出的还是内置那份」。与下面 `docker build && run.sh` 那条同源但不同因，为此白跑过一轮。
+  改探针后必须 `run.sh --build`
+- **⚠️ WebF 的 layout 是异步的**：`el.style.x = ...; void el.offsetHeight;
+  el.getBoundingClientRect()` 读到的是**改之前**的布局。所有「改样式 → 量」都必须跨帧
+  （`setTimeout`）。曾因此误判出「窄屏列宽不对」与「360 个单元格全是 0×0」两个不存在的缺陷
+- **容器里没有中日韩字体** → 截图中 CJK 全是豆腐块（拉丁字符正常）。不是 WebF 缺陷，
+  但会让人误判「字体挂了」
+- **`display:none` 的元素 `getBoundingClientRect()` 未必是 0 尺寸**：实测 downloader 的
+  `#empty` 在 `display:none` 下仍返回 728×157。功能上没影响（确实没显示），
+  但**拿它的 rect 当「是否可见」的判据会被骗**
+- **合成滚动驱动不了 WebF**：`PointerScrollEvent`（即使补了 `PointerAdded` + `PointerHover`、
+  落点在可见区内）与合成触摸拖动都无法让任何滚动容器动一下，页面级也不动。
+  目前只有程序化 `scrollTop` / `documentElement.scrollTop` 能驱动滚动
 - **探针第 16 组本身是 flaky 的**：Step 5 实测 5 次里 2 次 `sldRect=0x0`（滑块被静默漏出拖动目标，
   **表现与「事件没通」一模一样**）。不改一行重跑就好了，probe.html 原有注释已描述过这个失效模式。
   **不要**把它的偶发失败误判成自己的改动坏了
@@ -545,11 +600,14 @@ HOST_NETWORK=1 PROBE_URL='http://127.0.0.1:58191/api/v1/jsplugin/miot/?embed=&th
   **lxmusic / bili / ytdlp 都不是跟踪的子模块**，要验证它们得先自己 clone）。
   → **⛔ 用户已明确划出范围外（2026-08-03），不处理。** 曾派 agent 查根因，中途按该决定停掉。
   留这条只为「以后若把 lxmusic 纳入范围，知道有这么个坑」。
-  **注意它的普适性**：这两个异常是通用的 Flutter/WebF 布局崩溃，**不是 lxmusic 专属**，
-  理论上范围内插件写出同类 CSS 也会踩（典型可疑来源：未定尺寸下的百分比、`0/0` 或
-  `Infinity - Infinity` 落进 `.toInt()`）。目前**三个在范围内的插件都没有复现过**，
-  所以不主动追；**万一 miot / downloader / lyrics 出现这两条报错，请回到这里**，
-  别当成新问题从零查
+  **⚠️ 「lxmusic 特有」这个记法已被实测推翻**（2026-08-03）：`Infinity or NaN toInt`
+  在 **downloader 页也会出现**，7 次运行里命中 2 次（间歇性），栈是
+  `InlineFormattingContext._rectLineIndexCacheKey ← _lineIndexForRect ← layout ←
+  RenderFlowLayout._layoutChildren` —— **没有一帧是 grid**，所以也不是我们改成 Grid 引入的。
+  它是**行内格式化上下文**里的通用缺陷（已登记为 §3.2 第 11 条）。
+  也就是说这条已经**命中范围内插件**，不再是「范围外、可以不管」的事；
+  但它间歇出现、且目前未观察到可见后果（页面照常渲染），所以按「已知带栈的间歇异常」
+  记账，暂不专门开工。**若 downloader / miot / lyrics 出现可见的布局错乱，先怀疑这条。**
 - **`<details>` 垫片的一个已知边界**：垫片跑完之后再给 `<details>` 追加直接子节点，
   那个节点会永久留在折叠容器外面（幂等标记会阻止重新包裹）。插件应在插完 HTML 后调
   `SongloftPlugin.applyShims()`，但对"追加单个子节点"这种用法无解
