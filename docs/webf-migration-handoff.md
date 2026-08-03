@@ -315,15 +315,24 @@ CSS 求值」这一层，注入的是人为非零值）、转屏 / 键盘触发�
    `btoa('\x89PNG')` → `"wolQTg=="`（应为 `"iVBORw=="`），而 `"wolQTg=="` 解码是
    `0xC2 0x89 0x50 0x4E` —— `0xC2 0x89` 正是 U+0089 的 UTF-8 编码。**`atob` 方向是对的**。
    后果：任何含高位字节的二进制（所有图片）经 `btoa` 都会被编坏。
-   → 我们的绕法：`common.js` 自带 base64 编码表（`bytesToBase64`，`6f5b3ef`），不用 `btoa`
+   **而且它不只是「值错」，还会静默丢数据**：拿全部 256 种字节值过一遍，输出**长度是正确的
+   344**，但从第 170 个字符起就对不上——它按 UTF-8 展开字节流、却按**字符数**算输出长度，
+   于是原始的 `0xC1..0xFF` 共 **63 个字节被直接丢掉**。所以**「长度对得上」同样不能作为
+   base64 正确的判据**。
+   → 我们的绕法：`common.js` 自带 base64 编码表（`bytesToBase64`，`6f5b3ef`），不用 `btoa`。
+   已在真实 WebF 运行时验过：同一个 256 字节 blob 走产品路径产出的 data URL 与预期**逐字符
+   相等**（探针 `dataUrl=ok`），顺带说明 `Blob.arrayBuffer()` 的字节是准确的、锅只在 `btoa`
 9. **grid `auto` 行高约 7 倍过高**：实测 downloader 页一行占 **281px**（同内容放进等宽 block
    里自然高 **41px**），表头行 72px（应约 39px）。数字与「**在 min-content 宽度下测量子项高度**」
    吻合：表头最高的「艺术家」是 3 个 CJK 字（CJK 每字都是断行点）→ 3 行 ≈ 71；数据行最长的
    艺术家名 12 个 CJK → 13 行 ≈ 280。轨道定义**无关**（裸 `2fr`、`minmax(120px,2fr)`、
    全定宽 px 三种都是 281），`grid-auto-rows: 40px` 则正常 → 是 auto 行高的测量阶段用错了宽度。
-   **可行修法已实测**：在行插入**之前**注入
-   `white-space:nowrap; overflow:hidden; text-overflow:ellipsis` → 行距 43 / 表头 39 且稳定
-   （nowrap 下 min-content == max-content，所以那个错误的第一遍也量对了）。
+   **✅ downloader 已修**（`d629153`）：`.tbl-th, .tbl-td` 加
+   `white-space:nowrap; overflow:hidden; text-overflow:ellipsis; overflow-wrap:normal`
+   （写在 `style.css` 里随页面加载，**不是** JS 注入，天然满足「行插入前生效」），
+   长内容全文放进 `title` 属性（**必须用 `escAttr` 拼**，`esc()` 不转义引号）。
+   实测 **行距 281→43 / 表头 72→39 / 可见行数 1→6**（60 行数据区总高 18420→2580）。
+   nowrap 下 min-content == max-content，所以那个错误的第一遍也量对了。
    最小合成用例（3×200px 轨道 + 10 个 CJK 字）**不复现**，触发条件未收敛
 10. **`Response.headers.get()` 返回 `null`、`Blob.type` 是空串** → 从 fetch 结果推不出 mime
 11. **`Infinity or NaN toInt` 不是 lxmusic 特有**：downloader 页 7 次运行里命中 2 次（间歇），
@@ -362,6 +371,16 @@ CSS 求值」这一层，注入的是人为非零值）、转屏 / 键盘触发�
    > WebF 的任何滚动容器（页面级也不动），所以「真实用户滚动下 sticky 是否生效」未验证。
    > 判定为「没实现」而非「时序问题」的依据是：scroll 事件已派发，且页面级最标准的配置
    > 也失败。
+   >
+   > **✅ downloader 已不再依赖 sticky**（`d629153`）：改成三层结构 —— `.table-wrap` 管横向
+   > （表头与数据区都在里面，否则横向滚到最右会错列）／`.tbl` 提供宽度基准与 `min-width`／
+   > `.tbl-scroll` 管纵向且**只包数据区**，于是表头压根不需要「贴住」。
+   > 滚动条宽度差导致的列错位用**每次 render 后实测**补偿（桌面 Chrome 占位式滚动条实测
+   > 4px、WebF 覆盖式实测 **0px**）—— 差值在 CSS 里拿不到，但两条路径用**同一段代码**各自
+   > 得到正确值，所以不需要按引擎分叉；量不到就取 0，恰好等于覆盖式滚动条的正确值。
+   > 实测 6 种情形（初始／纵向滚 400／滚 1200／横向滚到最右／min-width 900／900+滚到最右）
+   > 表头与数据区 `grid-template-columns` 逐字符相同、6 列 x 坐标逐一相同，滚动后表头
+   > `delta=0`。**其他插件若要做贴顶表头，照这个结构做，不要用 `position: sticky`。**
 
 ### 3.3 缺口清单与真实命中面（已交叉验证）
 
@@ -575,6 +594,22 @@ HOST_NETWORK=1 PROBE_URL='http://127.0.0.1:58191/api/v1/jsplugin/miot/?embed=&th
 - **⚠️ WebF 的 layout 是异步的**：`el.style.x = ...; void el.offsetHeight;
   el.getBoundingClientRect()` 读到的是**改之前**的布局。所有「改样式 → 量」都必须跨帧
   （`setTimeout`）。曾因此误判出「窄屏列宽不对」与「360 个单元格全是 0×0」两个不存在的缺陷
+- **⚠️⚠️ 更进一步：WebF 压根不保证内联样式变更后会重新布局** →
+  **「运行时改样式做 A/B 归因」这个手法在 WebF 上不可信**（同一改动两轮分别量到 61 与 43）。
+  要对比两个版本，只能**各自新鲜加载**一次。相关地，`removeChild(<style>)`
+  在 WebF 下**不撤销样式**（computed style 保持注入后的值），所以「注入→量→移除→再量」
+  这种对照法也是无效的
+- **首次测量必须留足 settle（≥2s）**：诊断脚本里 `setTimeout(0)` 会读到未完成的布局
+  （`cell0H=0`、坐标全 0），**表现与「元素塌陷成 0 高」一模一样**，极易误判成真缺陷
+- **绘制层判据不要按坐标取色**：报坐标与抓屏之间若隔了几秒，其间别处的异步读数仍在写 DOM，
+  会把下面的行整体推移（实测被推下 96px），于是取到空白处的颜色 → **假阴性**。
+  改用**与坐标无关**的判据：「这个颜色在整页出现了多少像素」。
+  「data URL 能不能出图」这个问题正是因为用错判据而反复翻转过两次（详见 `common.js` 里
+  `blobToDataURL` 的注释），现结论是**能**（4 项全过，各 196px）
+- **`document.documentElement.scrollTop = N` 可驱动页面级滚动**（`window.scrollY` 会跟随），
+  但 `document.body.scrollTop` **无效**
+- **容器里 `100vh = 720`（窗口 1280×717）**，而 downloader 的表格顶在 `y≈735`
+  → **整张表默认在折叠线以下**，抓屏前必须先把页面下滚，否则截图里根本没有它
 - **容器里没有中日韩字体** → 截图中 CJK 全是豆腐块（拉丁字符正常）。不是 WebF 缺陷，
   但会让人误判「字体挂了」
 - **`display:none` 的元素 `getBoundingClientRect()` 未必是 0 尺寸**：实测 downloader 的
