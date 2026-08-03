@@ -88,6 +88,16 @@
   （不能用 `display:table`、sticky 表头不能是 grid 子项、轨道别用 `auto`、窄屏别用 `display:none`
   隐藏列）见「JS 插件开发指南 · WebF 渲染引擎与原生元素」。官方插件 downloader 的歌曲列表已按此改造
   *(songloft-org/songloft#341)*
+- **client**: 客户端新增「设置 → 关于与更新 → 开源许可」页。引入 WebF（GPL-3.0-only，
+  无链接例外）后客户端二进制整体按 GPL-3.0 分发，而 GPLv3 §4/§5 要求分发时**随附**许可全文与
+  「完整对应源码」的获取方式 —— 此前全文只作为 release 附件存在，App 里看不到任何许可信息、
+  安装包内部也没有一份。新页面写明分发许可为何是 GPL-3.0、三个源码仓库直链，并可查看
+  GPL-3.0 全文、NOTICE 第三方组件声明与 Flutter 汇总的逐个依赖包许可。
+  **许可全文内嵌为安装包内的 asset 而非外链** —— Songloft 的典型场景是局域网自托管、
+  设备可能长期离线，纯外链拿不到全文；这条路径在签名之前，因此一次覆盖全部平台且不动打包/签名流程。
+  Linux 便携包（tar.gz/deb/rpm/AppImage）、Windows（zip/msix）与 macOS zip 另外在解包后的根目录
+  直接放一份 `LICENSE-GPL-3.0.txt`
+  *(songloft-org/songloft#341)*
 
 ### :zap: Performance Improvements
 - **jsplugin**: 插件商店拉取结果服务端缓存 5 分钟，翻页与搜索不再重复拉取整棵注册表树
