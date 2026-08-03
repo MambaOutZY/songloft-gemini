@@ -84,9 +84,11 @@
   **只警告不改写**：WebF 自带的 `<webf-table>` 家族是 Flutter `Table` widget 的薄封装，
   `colspan`/`rowspan` 零支持、CSS `width` 无效、行必须是直接子节点（`<thead>`/`<tbody>` 不拆就渲染出
   一张**空表且不报错**），且那些标签在普通浏览器与系统 WebView 下根本不存在，用它就要长期维护两套模板。
-  推荐改用 **CSS Grid**（标准 CSS，三条渲染路径共用一套代码），完整改法与四条硬约束
-  （不能用 `display:table`、sticky 表头不能是 grid 子项、轨道别用 `auto`、窄屏别用 `display:none`
-  隐藏列）见「JS 插件开发指南 · WebF 渲染引擎与原生元素」。官方插件 downloader 的歌曲列表已按此改造
+  推荐改用 **CSS Grid**（标准 CSS，三条渲染路径共用一套代码），完整改法与六条硬约束
+  （不能用 `display:table`；单元格必须 `nowrap` + 省略号，否则 WebF 的 grid `auto` 行高会按
+  min-content 宽度测量、行高暴涨约 7 倍；表头别用 `position: sticky`（WebF 下压根不生效）而应
+  留在纵向滚动容器外面；纵向滚动条宽度要实测补偿；轨道别用 `auto`；窄屏别用 `display:none` 隐藏列）
+  见「JS 插件开发指南 · WebF 渲染引擎与原生元素」。官方插件 downloader 的歌曲列表已按此改造
   *(songloft-org/songloft#341)*
 - **client**: 客户端新增「设置 → 关于与更新 → 开源许可」页。引入 WebF（GPL-3.0-only，
   无链接例外）后客户端二进制整体按 GPL-3.0 分发，而 GPLv3 §4/§5 要求分发时**随附**许可全文与
@@ -106,6 +108,15 @@
   插件安装状态不受缓存影响，仍每次请求实时计算
 
 ### :bug: Bug Fixes
+- **downloader 插件**: 修复 WebF 渲染面下歌曲列表**一屏只装得下一行**、以及表头随内容滚走。
+  两个独立根因：① WebF 的 grid `auto` 行高是**在 min-content 宽度下**测量子项高度的，而 CJK
+  每个字都是断行点 —— 一行实测占 **281px**（同内容自然高 41px）、表头 72px，用户看到的是一张
+  几乎空的表；单元格改 `white-space: nowrap` + 省略号后行距 41 / 表头 39（这同时也更像表格该有的
+  观感，长内容用 `title` 属性悬停看全）。② `position: sticky` 在 WebF 下**压根不生效**，
+  且不限于 grid 路径（页面级最标准的配置也整量滚走），改为把表头放到纵向滚动容器**外面**、
+  结构上不再需要 sticky；数据区滚动条占掉的宽度由 JS 实测补偿，保证表头与数据区 6 列逐像素对齐。
+  三条渲染路径（浏览器 / 系统 WebView / WebF）仍共用同一套 HTML/CSS/JS，无引擎分叉
+  *(songloft-org/songloft#341)*
 - **jsplugin**: 修复插件商店中 `entry_path` 相同的多个插件只显示一个、且安装状态互相串台
   （装了 A 却显示 B 已安装）。去重与安装态匹配改用「`entry_path` + 作者身份」
   （作者规范化后比较，缺 author 时用 `updateUrl` 的 GitHub 仓库兜底），同名不同作者的插件

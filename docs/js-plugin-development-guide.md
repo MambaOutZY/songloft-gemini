@@ -1425,20 +1425,25 @@ WebF 的元素注册表里 `table` / `thead` / `tbody` / `tr` / `th` / `td` **�
 ```
 
 ```html
-<div class="table-wrap">          <!-- 滚动容器：overflow-y 在这里 -->
-  <div class="tbl">               <!-- 普通 block -->
-    <div class="tbl-head">…6 个表头格…</div>   <!-- position: sticky; top: 0 -->
-    <div class="tbl-body">…6×N 个数据格…</div>
+<div class="table-wrap">            <!-- 横向滚动：overflow-x 在这里，表头与数据区都在里面 -->
+  <div class="tbl">                 <!-- 普通 block：宽度基准 + min-width 下限 -->
+    <div class="tbl-head">…6 个表头格…</div>     <!-- 留在纵向滚动容器外面，不用 sticky -->
+    <div class="tbl-scroll">       <!-- 纵向滚动：max-height + overflow-y，只包数据区 -->
+      <div class="tbl-body">…6×N 个数据格…</div>
+    </div>
   </div>
 </div>
 ```
 
-**四条硬约束（每一条都是踩出来的，别自己重新发现）**：
+**六条硬约束（每一条都是踩出来的，别自己重新发现）**：
 
 - **不要写 `display: table` / `table-row` / `table-cell`**。WebF 的 `CSSDisplay` 枚举里**没有任何 table 取值**，`resolveDisplay` 落到 `default` 返回 **`inline`** —— 比默认的 `block` **更糟**，是负收益。`display: contents`（浏览器里透明化行元素的标准招数）同样不支持，所以**不能保留 `<tr>` 包裹元素**。
-- **表头必须是 block 容器的流内子节点，不能是 grid 子项**。WebF 的 grid 布局把 `position: sticky` 子项与 absolute/fixed **归成同一类脱流元素**，于是 sticky 表头**既不占格子、也不参与列轨道定宽** —— 表头列宽与数据行各算各的（对不齐），还会压在第一行数据上。所以是**两个 grid 容器**（表头 + 数据区）作兄弟节点、共用同一份 `grid-template-columns`，而 sticky 加在**外层 block 的子节点**上（流式布局下 WebF 的 sticky 实现是正确的）。
+- **单元格必须 `white-space: nowrap` + `overflow: hidden` + `text-overflow: ellipsis`，不能让内容换行**。WebF 的 grid `auto` 行高是**在 min-content 宽度下**测量子项高度的（已确诊的上游缺陷）：可换行时 CJK 每个字都是断行点，「艺术家」3 个字被测成 3 行、12 个字的名字被测成 13 行 —— 实测一行占 **281px**（同内容自然高 41px）、表头 72px，可见区只装得下 1 行，用户看到的是**一张几乎空的表**。`nowrap` 下 min-content == max-content，那个错误的测量也就量对了（实测行距 41 / 表头 39）。这条属性**必须写在随页面加载的 CSS 里**，不能 JS 事后注入 —— 要在行插入之前生效才能从第一次布局起就正确。长内容用 `title` 属性给桌面端悬停看全（拼属性一律用转义引号的函数，`textContent → innerHTML` 那种 `esc()` 不转义引号，含双引号的内容会截断属性）。
+- **表头不要用 `position: sticky` 贴顶，让它根本不需要 sticky**。实测 WebF 下 `position: sticky` **压根不生效**，而且**不限于 grid 路径** —— 把一个普通 div 放在 `body` 顶部、用页面级滚动（`documentElement.scrollTop = 300`）也整量滚走（`y = -300`），而 computed `position` 仍是 `"sticky"`、`top` 仍是 `"0px"`、`scroll` 事件也确实派发了（**样式没丢、通知链也跑了，只是偏移没被应用**）。所以结构上避开它：**只让数据区滚动**，表头是它的兄弟节点、留在纵向滚动容器**外面**。这个结构在浏览器 / 系统 WebView 下同样正确，仍是一套代码通吃三条路径。
+  - 顺带一条源码事实（对「为什么表头必须是独立 grid 容器」仍然成立）：WebF 的 grid 布局把 `position: sticky` 子项与 absolute/fixed **归成同一类脱流元素**，于是 sticky 表头单元格**既不占格子、也不参与列轨道定宽**。所以无论如何都得是**两个 grid 容器**（表头 + 数据区）共用同一份 `grid-template-columns`。
+- **纵向滚动条会让表头与数据区错开一个滚动条宽度，必须补偿**。数据区在自己的滚动容器里，占位式滚动条（桌面浏览器）只吃它的内容宽度，而表头在外面吃不到（实测差十几像素；WebF 与移动端是覆盖式滚动条、差 0）。CSS 里拿不到这个宽度，只能实测：`scrollEl.getBoundingClientRect().width - bodyEl.getBoundingClientRect().width` 写进一个自定义属性、表头 `padding-right` 抵掉它。两个要点：① **必须跨帧量**（WebF 的 layout 是异步的，刚写完 `innerHTML` 立刻量到的是改之前的布局，包一层 `setTimeout` 即可）；② 量不到就当 0，那恰好是覆盖式滚动条的正确值。给滚动容器加 `scrollbar-gutter: stable` 可以让「有没有滚动条」不再改变内容宽度，少一次跨阈值跳动。
 - **轨道定义里不要用 `auto` / `min-content` / `max-content`**。只用定宽 `px` 与 `minmax(0, Nfr)`，这样每列宽度是「可用宽度」的**纯函数**，与两个容器各自装了什么内容无关 —— 这是两个独立容器能对齐的前提。
-- **窄屏不要用 `@media` + `display:none` 隐藏某几列**。WebF 里 `display:none` 的元素**仍会挂一个 0 尺寸的 box、照样占掉一个 grid 格子**，后面所有单元格会整体错位一格。改为给 `.tbl` 设 `min-width`、低于该宽度整表横向滚动。
+- **窄屏不要用 `@media` + `display:none` 隐藏某几列**。WebF 里 `display:none` 的元素**仍会挂一个 0 尺寸的 box、照样占掉一个 grid 格子**，后面所有单元格会整体错位一格。改为给 `.tbl` 设 `min-width`、低于该宽度整表横向滚动（横向滚动容器必须同时包住表头与数据区，否则滚到右边两者就错列了）。
 
 **为什么宿主不自动改写成 WebF 自带的 `<webf-table>` 家族**：它是 Flutter `Table` widget 的薄封装，能力上限由上游锁死 —— `colspan`/`rowspan` 零支持、CSS `width` 完全无效（只认表头单元格的 `column-width` 属性）、CSS `position:sticky` 无效（要换成 `sticky` 属性）、行必须是**直接子节点**（`<thead>`/`<tbody>` 不拆就渲染出一张**空表且不报错**）。更关键的是那些标签在普通浏览器与系统 WebView 下**根本不存在**，用它就必须长期维护两套模板。CSS Grid 是标准 CSS，**三条渲染路径共用同一套 HTML/CSS/JS、同一套外观**。
 
