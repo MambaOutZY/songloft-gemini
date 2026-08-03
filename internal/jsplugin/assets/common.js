@@ -658,7 +658,7 @@
     //      真 FileReader，而真 FileReader 压根没有。这条直接决定了「插件必须改
     //      调用点」，与 URL.createObjectURL 那一项是同一个结论。
     //   ② WebF **不认 HTML `hidden` 属性**：带 hidden 与不带 hidden 的 file input
-    //      盒子都是 172x24。所以垫片必须自己强制 display:none —— 否则插件刻意
+    //      盒子都是 170x24。所以垫片必须自己强制 display:none —— 否则插件刻意
     //      隐藏的那个 input 会在页面上占掉一行（还是一个点不动的空文本框）。
     //   ③ 程序化 `el.click()` **确实会**派发 DOM click 到监听器（progClick=dispatched）。
     //

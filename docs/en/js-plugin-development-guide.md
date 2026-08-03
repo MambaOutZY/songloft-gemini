@@ -1411,6 +1411,43 @@ Three things to keep in mind:
 - **Same-origin full-page navigation is deliberately blocked**: under WebF that path means "`load()` the whole plugin page at a new address", which invalidates the context injected by the host, the loading state and the back-button behavior. **Do not do multi-page navigation under WebF** — stay single-page and switch views in place.
 - Any other scheme (relative paths, `javascript:`, custom schemes) is not allowed through. If your plugin relies on a custom scheme to launch a third-party app, treat that as unavailable under WebF and provide a fallback.
 
+#### `<table>` **does not exist** under WebF: use CSS Grid instead
+
+WebF's element registry registers **none** of `table` / `thead` / `tbody` / `tr` / `th` / `td` — they all fall through to unknown elements (`display:block`). The consequence is not "slightly off styling" but **loss of information structure**: a 6-column table stacks into 6 rows, and a few dozen records become several hundred lines of unlabeled text. And it is **completely silent** — no error, no log.
+
+The host can only help you **discover** it, not fix it: on the WebF surface, `common.js` tags every `<table>` on the page with `data-sl-table-unsupported` and prints one `console.warn` (that warning is what pointed you at this section). **The host deliberately does not rewrite the tags** — see the rationale below.
+
+**The fix: CSS Grid.** One row = N consecutive cell divs, wrapped by grid auto-placement:
+
+```css
+.tbl-head, .tbl-body {
+    display: grid;
+    /* Both containers share one track definition — that is the whole secret
+       behind columns lining up across rows. */
+    grid-template-columns: 36px minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr) 90px 60px;
+}
+```
+
+```html
+<div class="table-wrap">          <!-- scroll container: overflow-y lives here -->
+  <div class="tbl">               <!-- plain block -->
+    <div class="tbl-head">…6 header cells…</div>   <!-- position: sticky; top: 0 -->
+    <div class="tbl-body">…6×N data cells…</div>
+  </div>
+</div>
+```
+
+**Four hard constraints — each one was learned the hard way, do not rediscover them**:
+
+- **Never write `display: table` / `table-row` / `table-cell`.** WebF's `CSSDisplay` enum has **no table value at all**, and `resolveDisplay` falls through to `default`, returning **`inline`** — which is **worse** than the default `block`, i.e. a net loss. `display: contents` (the standard trick for making row wrappers transparent in browsers) is unsupported too, so **you cannot keep `<tr>` wrapper elements**.
+- **The sticky header must be an in-flow child of a block container, never a grid item.** WebF's grid layout lumps `position: sticky` children together with absolute/fixed as **out-of-flow**, so a sticky header **neither occupies a grid cell nor contributes to track sizing** — header columns and data columns are sized independently (they will not line up), and the header overlaps the first data row. Hence **two grid containers** (header + body) as sibling nodes sharing one `grid-template-columns`, with sticky applied to a **child of the outer block** (WebF's sticky implementation is correct in flow layout).
+- **Do not use `auto` / `min-content` / `max-content` in the track definition.** Use only fixed `px` and `minmax(0, Nfr)`, so each column width is a **pure function of the available width**, independent of what either container happens to hold — that is the precondition for two independent containers to stay aligned.
+- **Do not hide columns on narrow screens with `@media` + `display:none`.** Under WebF a `display:none` element **still attaches a zero-sized box and still consumes a grid cell**, shifting every following cell by one position. Give `.tbl` a `min-width` and let the whole table scroll horizontally below that width instead.
+
+**Why the host does not rewrite tags to WebF's built-in `<webf-table>` family**: it is a thin wrapper over the Flutter `Table` widget, so its ceiling is set upstream — zero `colspan`/`rowspan` support, CSS `width` entirely ineffective (only the header cells' `column-width` attribute is honored), CSS `position:sticky` ineffective (you must use a `sticky` attribute instead), and rows must be **direct children** (leaving `<thead>`/`<tbody>` in place renders an **empty table with no error**). More importantly those tags **do not exist at all** in plain browsers and system WebViews, so using them would mean maintaining two templates forever. CSS Grid is standard CSS: **all three rendering paths share one set of HTML/CSS/JS and one appearance.**
+
+**Two unavoidable regressions** (the official downloader plugin has already been converted this way — use it as a reference): `tr:hover` whole-row highlighting degrades to single-cell highlighting (after flattening there is no row element in the DOM, and pure CSS cannot express it); table accessibility semantics are lost (mitigation: add `aria-label` to each row's interactive controls and `role="group"` to the container).
+
 ### Access Paths
 
 After installation, static files are accessed via the following paths (note: the runtime route is the singular `jsplugin`, different from the management API `/api/v1/jsplugins`, which is plural):

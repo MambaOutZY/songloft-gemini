@@ -1408,6 +1408,42 @@ window.open('https://example.com/help', '_blank');
 - **同源整页跳转被刻意拦掉**：WebF 里那条路是「把整个插件页 `load()` 成新地址」，会把宿主注入的上下文、loading 状态、返回键行为全部弄错。**WebF 下不要做多页跳转**，单页 + 页内切换视图。
 - 其余 scheme（相对路径、`javascript:`、自定义 scheme）一律不放行。若插件依赖自定义 scheme 唤起第三方 App，请当它在 WebF 下不可用并另做降级。
 
+#### `<table>` 在 WebF 下**不存在**：改用 CSS Grid
+
+WebF 的元素注册表里 `table` / `thead` / `tbody` / `tr` / `th` / `td` **一个都没有注册**，全部落到未知元素（`display:block`）。后果不是「样式差一点」，而是**信息结构丢失** —— 一张 6 列的表会竖排成 6 行，几十条数据变成几百行无标题文本。而且**完全静默**：不报错、不打日志。
+
+宿主只能帮你**发现**它，不能帮你修：WebF 渲染面下 `common.js` 会给页面上每个 `<table>` 打上 `data-sl-table-unsupported` 属性并在 console 打一条 warn（你就是照那条 warn 找到这一节的）。**宿主刻意不做自动改写**，原因见下。
+
+**改法：CSS Grid。** 一行 = 连续 N 个单元格 div，靠 grid 的自动放置换行：
+
+```css
+.tbl-head, .tbl-body {
+    display: grid;
+    /* 两个容器共用同一份轨道定义，这是「列宽跨行对齐」的全部秘密 */
+    grid-template-columns: 36px minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr) 90px 60px;
+}
+```
+
+```html
+<div class="table-wrap">          <!-- 滚动容器：overflow-y 在这里 -->
+  <div class="tbl">               <!-- 普通 block -->
+    <div class="tbl-head">…6 个表头格…</div>   <!-- position: sticky; top: 0 -->
+    <div class="tbl-body">…6×N 个数据格…</div>
+  </div>
+</div>
+```
+
+**四条硬约束（每一条都是踩出来的，别自己重新发现）**：
+
+- **不要写 `display: table` / `table-row` / `table-cell`**。WebF 的 `CSSDisplay` 枚举里**没有任何 table 取值**，`resolveDisplay` 落到 `default` 返回 **`inline`** —— 比默认的 `block` **更糟**，是负收益。`display: contents`（浏览器里透明化行元素的标准招数）同样不支持，所以**不能保留 `<tr>` 包裹元素**。
+- **表头必须是 block 容器的流内子节点，不能是 grid 子项**。WebF 的 grid 布局把 `position: sticky` 子项与 absolute/fixed **归成同一类脱流元素**，于是 sticky 表头**既不占格子、也不参与列轨道定宽** —— 表头列宽与数据行各算各的（对不齐），还会压在第一行数据上。所以是**两个 grid 容器**（表头 + 数据区）作兄弟节点、共用同一份 `grid-template-columns`，而 sticky 加在**外层 block 的子节点**上（流式布局下 WebF 的 sticky 实现是正确的）。
+- **轨道定义里不要用 `auto` / `min-content` / `max-content`**。只用定宽 `px` 与 `minmax(0, Nfr)`，这样每列宽度是「可用宽度」的**纯函数**，与两个容器各自装了什么内容无关 —— 这是两个独立容器能对齐的前提。
+- **窄屏不要用 `@media` + `display:none` 隐藏某几列**。WebF 里 `display:none` 的元素**仍会挂一个 0 尺寸的 box、照样占掉一个 grid 格子**，后面所有单元格会整体错位一格。改为给 `.tbl` 设 `min-width`、低于该宽度整表横向滚动。
+
+**为什么宿主不自动改写成 WebF 自带的 `<webf-table>` 家族**：它是 Flutter `Table` widget 的薄封装，能力上限由上游锁死 —— `colspan`/`rowspan` 零支持、CSS `width` 完全无效（只认表头单元格的 `column-width` 属性）、CSS `position:sticky` 无效（要换成 `sticky` 属性）、行必须是**直接子节点**（`<thead>`/`<tbody>` 不拆就渲染出一张**空表且不报错**）。更关键的是那些标签在普通浏览器与系统 WebView 下**根本不存在**，用它就必须长期维护两套模板。CSS Grid 是标准 CSS，**三条渲染路径共用同一套 HTML/CSS/JS、同一套外观**。
+
+**两处不可避免的降级**（官方插件 downloader 已按此改造，可参考它的实现）：`tr:hover` 整行高亮变成单个单元格高亮（展平后 DOM 里没有行元素，纯 CSS 无法表达）；表格无障碍语义丢失（缓解：给每行的交互控件补 `aria-label`，容器补 `role="group"`）。
+
 ### 访问路径
 
 安装后，静态文件通过以下路径访问（注意：运行时路由是单数 `jsplugin`，与管理 API `/api/v1/jsplugins`（复数）不同）：

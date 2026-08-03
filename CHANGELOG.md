@@ -77,6 +77,17 @@
   （`window.opener` / 跨窗口 `postMessage`）这类流程走不通，需改成回调或轮询。
   官方插件 miot 的小米账号二次验证据此可用。见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
   *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下检测到 `<table>` 时打一条 `console.warn` 并给元素标上
+  `data-sl-table-unsupported`。WebF 的元素注册表里 `table` / `thead` / `tbody` / `tr` / `th` / `td`
+  **一个都没注册**，全部退化成 `display:block` —— 后果不是样式差一点，而是**信息结构丢失**
+  （6 列表格竖排成 6 行），且**完全静默**：不报错、不打日志，插件作者只看到「一堆没有表头的文本」。
+  **只警告不改写**：WebF 自带的 `<webf-table>` 家族是 Flutter `Table` widget 的薄封装，
+  `colspan`/`rowspan` 零支持、CSS `width` 无效、行必须是直接子节点（`<thead>`/`<tbody>` 不拆就渲染出
+  一张**空表且不报错**），且那些标签在普通浏览器与系统 WebView 下根本不存在，用它就要长期维护两套模板。
+  推荐改用 **CSS Grid**（标准 CSS，三条渲染路径共用一套代码），完整改法与四条硬约束
+  （不能用 `display:table`、sticky 表头不能是 grid 子项、轨道别用 `auto`、窄屏别用 `display:none`
+  隐藏列）见「JS 插件开发指南 · WebF 渲染引擎与原生元素」。官方插件 downloader 的歌曲列表已按此改造
+  *(songloft-org/songloft#341)*
 
 ### :zap: Performance Improvements
 - **jsplugin**: 插件商店拉取结果服务端缓存 5 分钟，翻页与搜索不再重复拉取整棵注册表树
