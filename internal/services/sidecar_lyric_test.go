@@ -9,6 +9,37 @@ import (
 	"songloft/internal/models"
 )
 
+// sameSidecarFile 断言「找到的是同一个文件」，而不是「路径字符串相同」。
+//
+// 为什么不能直接比字符串：macOS 默认的 APFS **大小写不敏感**，用例里创建的
+// `song.LRC` 与 FindSidecarLyricFile 探测顺序里第一个候选 `song.lrc` 是**同一个
+// 文件**，Stat 直接命中，于是函数返回小写路径，而用例断言的是它自己创建的大写名。
+// 表现是这几个用例在大小写敏感的 Linux（CI）上恒绿、在 macOS 上恒红 —— 那是用例
+// 不可移植，不是实现有问题。os.SameFile 表达的才是真正的意图。
+//
+// 这在大小写敏感的系统上**不会放松判定**：只有 `song.LRC` 存在时，若实现错误地
+// 返回了 `song.lrc`，那次 os.Stat 就会失败，SameFile 同样不成立。
+//
+// 代价（有意接受）：在大小写不敏感的文件系统上，那几个「大小写变体」子用例会退化成
+// 与小写用例等价的覆盖 —— 变体本身的真实覆盖只能由 CI 的 Linux 提供。
+func sameSidecarFile(got, want string) bool {
+	if want == "" {
+		return got == ""
+	}
+	if got == "" {
+		return false
+	}
+	gotInfo, err := os.Stat(got)
+	if err != nil {
+		return false
+	}
+	wantInfo, err := os.Stat(want)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(gotInfo, wantInfo)
+}
+
 func TestFindSidecarLyricFile(t *testing.T) {
 	dir := t.TempDir()
 
@@ -100,8 +131,8 @@ func TestFindSidecarLyricFile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.setup()
 			got, _ := FindSidecarLyricFile(tt.audioPath)
-			if got != tt.wantFile {
-				t.Errorf("FindSidecarLyricFile() = %q, want %q", got, tt.wantFile)
+			if !sameSidecarFile(got, tt.wantFile) {
+				t.Errorf("FindSidecarLyricFile() = %q, want %q（按同一文件判定）", got, tt.wantFile)
 			}
 		})
 	}
@@ -116,8 +147,11 @@ func TestFindSidecarLyricFile_BasePreferredOverFull(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "a.lrc"), []byte("[00:01]base"), 0644)
 	os.WriteFile(filepath.Join(dir, "a.mp3.lrc"), []byte("[00:01]full"), 0644)
 
+	// 同样走 sameSidecarFile：这里两个候选是**不同**文件（a.lrc 与 a.mp3.lrc），
+	// 所以判定强度不变 —— 选错了 SameFile 就不成立。统一成一种写法，免得后来人
+	// 照着字符串比较的那份复制出新的不可移植用例。
 	got, _ := FindSidecarLyricFile(audioPath)
-	if got != filepath.Join(dir, "a.lrc") {
+	if !sameSidecarFile(got, filepath.Join(dir, "a.lrc")) {
 		t.Errorf("expected base variant to win, got %q", got)
 	}
 }
