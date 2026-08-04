@@ -334,7 +334,9 @@ curl -s -X POST http://127.0.0.1:3000/function \
 - 沙盒：QuickJS，通过 `internal/jsruntime` 提供的 `host` 桥接调用宿主能力（`http.fetch`、`storage`、`logger`、`songs.*`、`playlists.*`）
 - 路由：`/api/v1/jsplugin/{entry_path}/...`
 - 公共资源：`/api/v1/jsplugin-assets/*` 提供嵌入在 Go 二进制中的 `common.css`/`common.js`/字体，`injectHTMLHead` 自动注入到所有插件 HTML 页面
-- 主题同步：`common.js` 内含 embed 检测 + 主题桥接（URL `?theme=` 参数 + `postMessage` 实时更新 + `data-theme` 属性 + `songloft-theme-change` 事件），暴露 `window.SongloftPlugin` 全局 API（`getTheme`/`onThemeChange`/`apiGet`/`apiPost` 等）
+- 主题同步：`common.js` 内含 embed 检测 + 主题桥接（URL `?theme=` 参数 + `postMessage` 实时更新 + `data-theme` 属性 + `songloft-theme-change` 事件），暴露 `window.SongloftPlugin` 全局 API（`getTheme`/`onThemeChange`/`apiGet`/`apiPost`/`getCookies` 等）
+- **客户端宿主桥接**（`@songloft/client-sdk`，`common.js` 内含）：插件前端页面通过 `window.SongloftPlugin.host` / `player` / `getCookies` 等调用 Flutter 客户端宿主能力。native 平台走 `flutter_inappwebview.callHandler('songloftHost', {ns, method, params})`，Web/iframe 走 `postMessage` 到父窗口。分发逻辑在 `songloft-player/lib/features/home/presentation/plugin_host_dispatch.dart`（传输无关、web-safe），native 桥接在 `plugin_host_bridge.dart`（mixin，注册 callHandler + 注入平台相关回调）
+- **Cookie 读取桥**（`window.SongloftPlugin.getCookies(origin)`）：读取宿主 WebView Cookie Store 中指定 origin 的 Cookie（含 HttpOnly），返回 `{name: value}` 映射。**仅原生客户端可用**（Android/iOS/macOS/Windows/Linux），Web 端因浏览器同源策略无法实现，调用会 reject。实现路径：`common.js getCookies()` → `invokeHost('cookies', 'get', {origin})` → Flutter `PluginHostDispatcher` → `CookieManager.instance().getCookies(url: WebUri(origin))`。origin 必须含协议+主机（如 `https://example.com`），无效格式会被校验拒绝。典型用途：FN Connect 等第三方网关的会话复用（用户在应用内 WebView 登录后，插件读取 Cookie 用于后续 API 调用）
 - `common.css` 定义 `--md-*` CSS 变量（亮/暗双主题），所有使用这些变量的插件自动跟随主题切换
 - 权限：manifest 中 `permissions: ["net", "storage", "fs:music", ...]`，运行时由 `internal/jsplugin` 校验
 - 健康检查 + 文件指纹热更新均自动进行

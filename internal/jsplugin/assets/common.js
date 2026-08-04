@@ -346,6 +346,15 @@
         }
     };
 
+    /**
+     * 读取指定 origin 的 Cookie（仅原生客户端可用，Web 不支持）。
+     * @param {string} origin - 目标站点 origin，如 "https://example.com"
+     * @returns {Promise<Record<string, string>>} name→value 映射
+     */
+    function getCookies(origin) {
+        return invokeHost('cookies', 'get', { origin: origin });
+    }
+
     window.SongloftPlugin = {
         getAuthToken: getAuthToken,
         apiGet: apiGet,
@@ -358,6 +367,7 @@
         hideDecorationIcons: hideDecorationIcons,
         enhanceClickableElements: enhanceClickableElements,
         host: host,
-        player: player
+        player: player,
+        getCookies: getCookies
     };
 })();

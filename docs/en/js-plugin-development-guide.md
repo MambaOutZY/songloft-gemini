@@ -974,6 +974,58 @@ if (isClient()) {
 
 Build-free vanilla static pages need no install — just use the injected `window.SongloftPlugin.player` directly (only losing type hints).
 
+### Cookie Reading Bridge — Retrieve Third-Party Site Sessions (Native Only)
+
+If a plugin needs session cookies from a third-party site (e.g., FN Connect gateway's `os-access-code`, self-hosted NAS login tokens, etc.), it can use the `getCookies` bridge — the host's native layer reads from the WebView Cookie Store, bypassing browser same-origin policy and HttpOnly restrictions.
+
+```javascript
+// Prerequisite: user has opened the target site in the app's WebView and logged in
+const cookies = await SongloftPlugin.getCookies('https://pcyear.5ddd.com');
+// cookies: { 'os-access-code': 'xxx', 'music-token': 'yyy', ... }
+```
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `origin` | `string` | Target site origin, must include scheme+host(+port), e.g. `https://example.com`. Path is ignored |
+
+**Returns:** `Promise<Record<string, string>>` — Cookie name→value map. Returns empty object `{}` if no cookies exist for that origin.
+
+**Platform Support:**
+
+| Platform | Supported | Notes |
+|----------|-----------|-------|
+| Android / iOS / macOS / Windows / Linux | ✅ | Native `CookieManager` reads WebView Cookie Store |
+| Web | ❌ | Browser same-origin policy hard limit; calls will reject |
+
+> ⚠️ Check platform before calling:
+> ```javascript
+> const info = await SongloftPlugin.host.getInfo();
+> if (info.platform !== 'web') {
+>   const cookies = await SongloftPlugin.getCookies(origin);
+> }
+> ```
+
+**Typical workflow (FN Connect example):**
+
+1. User adds a FN Music source, plugin constructs origin (e.g. `https://pcyear.5ddd.com`)
+2. Plugin guides user to open the target site in the app's WebView and log in
+3. After login, plugin calls `getCookies(origin)` to retrieve session cookies
+4. Stores cookies in plugin backend config (via `apiPost` etc.), subsequent requests carry the session
+
+**TypeScript usage:**
+
+```ts
+import { getCookies, host } from '@songloft/client-sdk';
+
+const info = await host.getInfo();
+if (info.platform !== 'web') {
+  const cookies = await getCookies('https://pcyear.5ddd.com');
+  await SongloftPlugin.apiPost('/config/cookies', cookies);
+}
+```
+
 ### Theme Adaptation
 
 The main program's `common.css` defines `--md-*` CSS variables under `:root` (light values), and overrides them with dark values under `html[data-theme="dark"]`. Plugin pages that use these variables adapt to the theme automatically:
