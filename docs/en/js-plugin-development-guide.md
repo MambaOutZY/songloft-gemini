@@ -1540,8 +1540,81 @@ Separately, **`<webf-list-view>` comes from the `webf` package itself** (not fro
 set). It maps onto Flutter's ListView with built-in view recycling — the first choice for long
 lists.
 
-**Cupertino has no dropdown for arbitrary option lists** (only `date-picker`). Keep using the
-native `<select>`, which does work under WebF.
+**Cupertino has no dropdown for arbitrary option lists** (`flutter-cupertino-picker` is
+**commented out** inside `installWebFCupertinoUI()`; only `date-picker` is registered).
+
+> ⛔ **Do not reach for the native `<select>` to fill that gap — under WebF the selected value
+> never makes it back to JS.** It draws fine and it does pop up a menu, which makes it very easy to
+> mistake for "supported"; but WebF's `HTMLSelectElement` only exposes `value` / `selectedIndex` /
+> `disabled` / `multiple` / `required` — **there is no `options`**. Vue's `v-model` on a `<select>`
+> resolves to the `vModelSelect` directive, whose entire implementation is built on `el.options`
+> (its change listener is `Array.prototype.filter.call(el.options, o => o.selected)`), so
+> `filter.call(undefined, …)` throws a TypeError — **any framework's** two-way binding on
+> `<select>` hits this. Bypassing `v-model` with an explicit `@change` that reads `el.value`
+> **also does not work** in practice (the remaining break is on the Dart side and is not observable
+> from JS). No error, no log line.
+>
+> **Diagnostic trap: "the dropdown label updated" is not evidence that the data flowed.** WebF's
+> select is a `WidgetElement`; it mutates its own `selectedIndex` first and dispatches `change`
+> afterwards, so the visible label is maintained on the Flutter side regardless of whether JS ever
+> received the value.
+
+**Recommended: a trigger button plus an inline panel in normal flow, with plain `<div>` rows.**
+
+```vue
+<script setup>
+const open = ref(false);
+// Panel rows = placeholder + every option; clicking a row emits that row's value
+const rows = computed(() => [{ value: '', label: 'All' }, ...options.value]);
+</script>
+<template>
+  <SlButton :label="currentLabel" trailing-icon="chevron" @click="open = !open" />
+  <!-- v-if, not display:none — under WebF a display:none element still gets a 0-size render box -->
+  <div v-if="open" class="panel">
+    <div v-for="r in rows" :key="r.value" class="opt"
+         @click="open = false; pick(r.value)">{{ r.label }}</div>
+  </div>
+</template>
+```
+
+This uses only three **core** primitives: the cupertino button's `click`, normal-flow block boxes,
+and `click` on an ordinary element (WebF dispatches DOM click from its single global tap
+recognizer). The value only ever flows through your own JS; no WebF element property is read or
+written. The cost is that expanding pushes the content below it down.
+
+Deliberately **no overlay** (`position: absolute/fixed` gambles on WebF's stacking and hit testing,
+and such a panel usually has to sit on top of some Flutter widget), **no nested
+`<webf-list-view>`** (gambles on the tap reaching through a Flutter ListView's gesture arena), and
+**no reliance on `overflow` scrolling** (let the page itself scroll when there are many options).
+
+> ℹ️ **The official `<flutter-cupertino-action-sheet>` can also serve as a dropdown — but know what
+> it costs.** The contract (read `action_sheet.dart`, not the React-flavoured `.md`): `el.show(config)`,
+> where config may be an object **or a JSON string** (a string is safer); selecting dispatches
+> `CustomEvent('select', detail: {text, event, isDefault, isDestructive, index})`, where `index` is
+> the position within `actions`, **`cancelButton` carries no `index`**, and dismissing via the scrim
+> dispatches **nothing**. The risk: the host element builds a `SizedBox.shrink()`, and `show()` is
+> implemented as `state?._showActionSheetImpl(args)` — a **silent no-op** when state is not yet
+> established, with no exception and no log line. So "nothing happens when tapped" and "working
+> correctly" are **indistinguishable** in code. Keep the host mounted and never hide it with
+> `display:none`; and accept that if it does not work, you have nothing to log and can only probe by
+> hand. That is precisely why downloader switched to the hand-rolled panel above.
+
+Conversely, `v-model` on a **component** is safe (it compiles to `:modelValue` +
+`@update:modelValue`, pure Vue, no native directive involved), and so is `<input type=checkbox>`'s
+`vModelCheckbox` (it only needs `el.checked` / `el.value`, both of which WebF has). The native
+`<select>` is the only one to watch out for.
+
+> 🔍 **When an icon renders as a `?` box, do not go fixing the icon name — the client is missing
+> the font, and it is not your bug.** The rule in one line: **a visible question mark means the
+> name is right and the font is missing; nothing at all means the name is wrong.**
+> That is because `icon.dart` returns `SizedBox.shrink()` for a `type` it cannot resolve (a wrong
+> name is *invisible*), whereas the question-mark box is what a **missing font** looks like — icon
+> codepoints live in the Private Use Area, and with no font the system fallback draws its
+> "unknown character" placeholder (on macOS, exactly a `?` in a rounded box). The root cause is
+> that `webf_cupertino_ui` does not depend on `cupertino_icons`, so the host app has to declare
+> that dependency itself (the Songloft client now does; see item 15 in the parent repo's
+> `docs/webf/handoff.md`). On an older client there is no plugin-side workaround — wait for the
+> client update.
 
 ##### You must feature-detect, not engine-detect
 
@@ -1657,23 +1730,13 @@ watchEffect(() => {
 String attributes (`val` / `placeholder` / `type` / `variant` / `active-color`) are `toString()`-ed
 on both entry points, so template binding is safe for them.
 
-##### The child-node contract: only the first child counts, and it cannot be bare text
+##### The child-node contract: only the first child counts
 
-Both of these render an **empty box** with no error and nothing in the log. Rule ① is confirmed in
-the source; rule ② is, for now, only an empirically observed one:
-
-**① Only `childNodes.first` is rendered.** `<flutter-cupertino-button>` is literally
+`<flutter-cupertino-button>` is literally
 `childNodes.isEmpty ? SizedBox() : childNodes.first.toWidget()`, and the upstream `button.md`
-states it outright: "The first child is used as the primary content". So with two children — an
-icon and a label — the label is dropped entirely.
-
-**② A bare text node does not render (empirical rule, mechanism not pinned down).** Observed:
-`<flutter-cupertino-button>Refresh</flutter-cupertino-button>` — whose only child is a text node —
-renders as an empty box collapsed to `minimumSize` (32px for `size="small"`). Reading webf's
-`RenderTextBox` actually suggests text outside an IFC (inline formatting context) *should* paint
-itself (`paintsSelf` defaults to `true` when it finds no IFC-establishing ancestor), so **do not
-treat this as an explained conclusion**. Upstream's own examples always wrap content in an element
-too.
+states it outright: "The first child is used as the primary content". So with two sibling children —
+an icon and a label — the label is dropped entirely, **with no error and nothing in the log**; you
+just get a button missing part of its content.
 
 **Conclusion: wrap the content into exactly one child element, and wrap the text in an element of
 its own.**
@@ -1681,19 +1744,23 @@ its own.**
 ```html
 <!-- ✗ label dropped (only the first child is used) -->
 <flutter-cupertino-button><flutter-cupertino-icon type="arrow_clockwise" />Refresh</flutter-cupertino-button>
-<!-- ✗ empty box (bare text node) -->
-<flutter-cupertino-button>Refresh</flutter-cupertino-button>
 <!-- ✓ -->
 <flutter-cupertino-button><span class="btn-inner"
   ><flutter-cupertino-icon type="arrow_clockwise" /><span>Refresh</span
 ></span></flutter-cupertino-button>
 ```
 
-In your wrapper component, **do not expose a slot** — make the text a prop
-(`<SlButton icon="refresh" label="Refresh" />`) so callers have no chance to violate either rule.
+In your wrapper component, **do not expose a slot** — make the text and icon props
+(`<SlButton icon="refresh" label="Refresh" />`) so callers have no chance to violate the rule.
 Also give the text layer `white-space: nowrap`: button width comes from the content's intrinsic
 width, and a wrappable CJK label gets measured as "one character per line", yielding a narrow,
 tall button.
+
+> **A bare text child (`<flutter-cupertino-button>Refresh</...>`) is fine.** That is exactly the
+> quick-start form in upstream's `button.md`. This page once claimed bare text does not render; that
+> observation turned out to come from a **stale in-process bundle** (the plugin was reinstalled
+> without restarting the client), and has been retracted. Wrapping in an element is still the
+> recommendation — you need the wrapper anyway as soon as there is an icon, so one form covers both.
 
 ##### Let the widget paint the decoration — do not write a second copy in CSS
 
@@ -1721,6 +1788,30 @@ widget does not read renderStyle's text styles) — writing them only misleads t
 Note that **`<flutter-cupertino-input>` has no `change` event** — only `input` / `submit` /
 `blur`. To implement "save on commit" rather than one request per keystroke, use `blur` (and
 `change` on the HTML fallback branch).
+
+> ⚠️ **But `blur` is not deduplicated, so "blur == the user finished editing a value" does not
+> hold.** Upstream does
+> `_focusNode.addListener(() { hasFocus ? dispatch('focus') : dispatch('blur') })`
+> (in `input.dart`'s `initState`) — it **never remembers the previous focus state**, so any
+> notification the FocusNode emits while unfocused dispatches another `blur`. Observed in
+> practice: a dozen **byte-identical** save requests, with the UI stuttering at the same time.
+>
+> So "save on commit" needs a "only submit if the value actually changed" guard in your own code,
+> rather than you trying to predict when a FocusNode notifies:
+>
+> ```js
+> let savedFingerprint = null;          // register once after loading from the server
+> function save() {
+>   const fp = fingerprint();           // ← must use the **same** normalizer as the request body
+>   if (fp === savedFingerprint) return Promise.resolve(null);
+>   savedFingerprint = fp;
+>   return api.save(state);
+> }
+> ```
+>
+> Do not skip sharing the normalizer: if the fingerprint is computed from the raw `-4` the user
+> typed while the request body normalizes it to `0`, the two never match and the guard degrades
+> into "submit every time".
 
 ##### Two hard constraints on `<webf-list-view>`
 

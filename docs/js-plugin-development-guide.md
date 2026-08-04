@@ -1530,8 +1530,70 @@ Flutter widget 的原生元素，绕开整个 CSS 布局层。列表与表单控
 另外 **`<webf-list-view>` 来自 `webf` 包本身**（不属于 cupertino 那一批），映射到 Flutter 的
 ListView，自带 view 回收 —— 长列表的首选。
 
-**Cupertino 里没有任意选项的下拉选择器**（只有 `date-picker`）。下拉请继续用原生
-`<select>`，它在 WebF 下是可用的。
+**Cupertino 里没有任意选项的下拉选择器**（`flutter-cupertino-picker` 在
+`installWebFCupertinoUI()` 里是**注释掉的**，只有 `date-picker` 注册了）。
+
+> ⛔ **别用原生 `<select>` 兜这一块 —— 它在 WebF 下选中值传不回 JS。**
+> 它能画出来、能弹出菜单，所以很容易被当成「可用」；但 WebF 的 `HTMLSelectElement`
+> 只暴露 `value` / `selectedIndex` / `disabled` / `multiple` / `required`，**没有 `options`**。
+> Vue 的 `v-model` 在 `<select>` 上走 `vModelSelect` 指令，而它整个实现建立在 `el.options`
+> 上（change 监听器是 `Array.prototype.filter.call(el.options, o => o.selected)`），
+> 于是 `filter.call(undefined, …)` 抛 TypeError —— **任何框架**的 `<select>` 双向绑定都会踩。
+> 绕开 v-model 改成显式 `@change` 读 `el.value` 也**实测不通**（剩下的断点在 Dart 侧、
+> 从 JS 观测不到）。不报错、不打日志。
+>
+> **判据陷阱：「下拉显示更新了」不能当成「数据通了」。** WebF 的 select 是 `WidgetElement`，
+> 它先改自己的 `selectedIndex` 再派发 `change`，显示的标签由 Flutter 侧维护，与 JS 收不收到
+> 值完全无关。
+
+**推荐做法：触发按钮 + 常规流里的内联面板，选项行用普通 `<div>`。**
+
+```vue
+<script setup>
+const open = ref(false);
+// 面板行 = 占位项 + 全部选项；点哪一行就 emit 那一行的 value
+const rows = computed(() => [{ value: '', label: '全部' }, ...options.value]);
+</script>
+<template>
+  <SlButton :label="currentLabel" trailing-icon="chevron" @click="open = !open" />
+  <!-- v-if 而不是 display:none：WebF 里 display:none 的元素仍会挂 0 尺寸 render box -->
+  <div v-if="open" class="panel">
+    <div v-for="r in rows" :key="r.value" class="opt"
+         @click="open = false; pick(r.value)">{{ r.label }}</div>
+  </div>
+</template>
+```
+
+这套只用三个**核心**原语：cupertino button 的 `click`、常规流块盒、普通元素的 `click`
+（DOM click 由 WebF 唯一那个全局 tap recognizer 派发）。值只在你自己的 JS 里流动，
+不碰任何 WebF 元素的属性读写。代价是展开时把下方内容顶下去。
+
+刻意**不用**浮层（`position: absolute/fixed` 要赌 WebF 的层叠与命中测试，面板往往得盖在
+某个 Flutter widget 上）、**不嵌** `<webf-list-view>`（要赌 tap 穿过 Flutter ListView 的
+手势竞技场）、**不靠 `overflow` 滚动**（选项多时让页面自身滚动）。
+
+> ℹ️ **官方的 `<flutter-cupertino-action-sheet>` 也能做下拉，但要知道它的代价。**
+> 契约（读 `action_sheet.dart`，不是那份 React 口径的 `.md`）：`el.show(config)`，config
+> 可以是对象**或 JSON 字符串**（传字符串更稳）；选中派发
+> `CustomEvent('select', detail: {text, event, isDefault, isDestructive, index})`，
+> `index` 是 `actions` 下标、**`cancelButton` 不带 `index`**、点遮罩关闭**不派发**。
+> 风险在于：宿主元素 build 出来的是 `SizedBox.shrink()`，而 `show()` 的实现是
+> `state?._showActionSheetImpl(args)` —— state 还没建立时是**静默 no-op**，不抛异常、
+> 不打日志，于是「点了什么都不发生」与「正常工作」在代码里**无法区分**。所以宿主元素
+> 必须常驻、不能用 `display:none` 藏；而且一旦不工作，你没有可打的日志、只能靠人肉试。
+> downloader 就是因此改用了上面的自绘方案。
+
+反过来说，`v-model` 用在**组件**上是安全的（编译成 `:modelValue` + `@update:modelValue`，
+纯 Vue 逻辑，不碰原生指令）；`<input type=checkbox>` 的 `vModelCheckbox` 也安全（只依赖
+`el.checked` / `el.value`，WebF 两个都有）。要提防的只有原生 `<select>`。
+
+> 🔍 **图标画成 `?` 方框时，别去改图标名 —— 那是客户端缺字体，不是你的锅。**
+> 判据一句话：**看得见问号 = 名字对、字体缺；什么都看不见 = 名字错。**
+> 因为 `icon.dart` 对查不到的 `type` 返回的是 `SizedBox.shrink()`（写错名字是**看不见**）；
+> 而问号方框是**字体缺失**的表现 —— 图标码点落在私用区，缺字体时由系统兜底字体渲染成
+> 「未知字符」占位符（macOS 上正是圆角框里一个 `?`）。根因是 `webf_cupertino_ui` 没有依赖
+> `cupertino_icons`，客户端必须自己补这条依赖（Songloft 客户端已补，见父仓
+> `docs/webf/handoff.md` 第 15 条）。老客户端上遇到只能等客户端更新，插件侧无法绕开。
 
 ##### 必须做特性探测，不能只判 `window.webf`
 
@@ -1637,38 +1699,32 @@ watchEffect(() => {
 字符串类属性（`val` / `placeholder` / `type` / `variant` / `active-color`）两条入口都会
 `toString()`，模板绑定是安全的。
 
-##### 子节点契约：只认第一个子节点，而且不能是裸文本
+##### 子节点契约：只认第一个子节点
 
-这两条都会画出一个**空盒子**，不报错、不打日志。第 ① 条读源码可以确证，第 ② 条目前只是
-实测到的经验规则：
-
-**① 只渲染 `childNodes.first`。** `<flutter-cupertino-button>` 的实现就是
+`<flutter-cupertino-button>` 的实现就是
 `childNodes.isEmpty ? SizedBox() : childNodes.first.toWidget()`，官方 `button.md` 亦明写
-"The first child is used as the primary content"。所以「图标 + 文字」两个子节点时，文字会被
-整段丢弃。
-
-**② 裸文本节点画不出来（经验规则，机理未查实）。** 实测
-`<flutter-cupertino-button>全选</flutter-cupertino-button>`（唯一子节点是文本节点）渲染成一个
-`minimumSize`（`size="small"` 时是 32px）的空盒子。读 webf 的 `RenderTextBox` 反而显示脱离
-IFC（行内格式化上下文）的文本应当自绘（`paintsSelf` 找不到建立 IFC 的祖先时默认返回 `true`），
-所以**别把这条当成已解释的结论**。upstream 自己的例子也一律把内容包进元素。
+"The first child is used as the primary content"。所以「图标 + 文字」两个并列子节点时，
+文字会被整段丢弃 —— **不报错、不打日志**，只是画出个缺内容的按钮。
 
 **结论：内容包成恰好一个子元素，文字再包一层元素。**
 
 ```html
 <!-- ✗ 文字丢失（只取第一个子节点） -->
 <flutter-cupertino-button><flutter-cupertino-icon type="arrow_clockwise" />刷新</flutter-cupertino-button>
-<!-- ✗ 空盒子（裸文本节点） -->
-<flutter-cupertino-button>刷新</flutter-cupertino-button>
 <!-- ✓ -->
 <flutter-cupertino-button><span class="btn-inner"
   ><flutter-cupertino-icon type="arrow_clockwise" /><span>刷新</span
 ></span></flutter-cupertino-button>
 ```
 
-包装组件里**别开放插槽**，把文字做成 prop（`<SlButton icon="refresh" label="刷新" />`），
-让调用方没机会违反这两条。另外文字那层要 `white-space: nowrap` —— 按钮宽度按内容的固有宽度
+包装组件里**别开放插槽**，把文字与图标做成 prop（`<SlButton icon="refresh" label="刷新" />`），
+让调用方没机会违反。另外文字那层要 `white-space: nowrap` —— 按钮宽度按内容的固有宽度
 算，可换行的 CJK 标签会被量成「一字一行」的又窄又高的按钮。
+
+> **裸文本子节点（`<flutter-cupertino-button>刷新</...>`）可以用。** upstream 的 `button.md`
+> 快速上手示例就是这种写法。本文这里一度写过「裸文本画不出来」，后来查明那次观察取自一个
+> **进程内缓存的旧 bundle**（重装插件后没重启客户端），已撤回。仍然建议按上面的写法包一层
+> 元素 —— 反正「图标 + 文字」时本来就必须包，统一写法少一个分叉。
 
 ##### 装饰交给 widget 画，不要在 CSS 上再写一份
 
@@ -1693,6 +1749,28 @@ widget 那份落在 content box 上、被 `padding` 内缩一圈。
 
 注意 **`<flutter-cupertino-input>` 没有 `change` 事件**，只有 `input` / `submit` / `blur`。
 要实现「改完即存」而不是每敲一个字符发一次请求，用 `blur`（HTML 回落分支用 `change`）。
+
+> ⚠️ **但 `blur` 没有去重，「blur == 用户改完了一个值」这个前提不成立。** 上游实现是
+> `_focusNode.addListener(() { hasFocus ? dispatch('focus') : dispatch('blur') })`
+> （`input.dart` 的 `initState`）—— **没有记住上一次的焦点态**，FocusNode 只要在未聚焦状态下
+> 发出任何一次通知，就会再派发一个 `blur`。实测表现是十几条内容**完全相同**的保存请求，
+> 界面同时发卡。
+>
+> 所以「改完即存」必须在业务侧加一道「值真的变了才提交」的守卫，而不是去猜 FocusNode 什么时候
+> 会通知：
+>
+> ```js
+> let savedFingerprint = null;          // 从服务端读回来之后要登记一次
+> function save() {
+>   const fp = fingerprint();           // ← 必须和提交体用**同一个**规范化函数
+>   if (fp === savedFingerprint) return Promise.resolve(null);
+>   savedFingerprint = fp;
+>   return api.save(state);
+> }
+> ```
+>
+> 指纹与提交体共用规范化函数这点别省：若指纹按用户输入的 `-4` 算、提交体规范化成 `0`，
+> 两者永远不等，守卫就退化成「每次都提交」。
 
 ##### `<webf-list-view>` 的两条硬约束
 

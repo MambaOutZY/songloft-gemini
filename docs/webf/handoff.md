@@ -99,24 +99,29 @@ webf」的铁律（§7），而它需要 import `webf_cupertino_ui`。探针侧�
     downloader 原先锁在 2.5.0（`package-lock.json`），更早的版本会**静默跳过**整个前端构建、
     产出一个没有前端资源的包。要用 `frontend/` 的插件必须 bump 这个 devDependency。
 
-#### 首轮真机跑出来的三条（2026-08-04，用户在 macOS 客户端上看到的）
+#### 真机跑出来的十条（2026-08-04，用户在 macOS 客户端上看到的）
 
-前 10 条是读源码得来的；这三条是**页面真的画出来之后**才暴露的，且**全部是「画出一个东西但
+前 10 条是读源码得来的；这几条是**页面真的画出来之后**才暴露的，且**全部是「画出一个东西但
 不对」而非报错**，所以只看日志抓不到。
 
-11. **cupertino button 只渲染 `childNodes.first`，而且裸文本节点画不出来 —— 两条叠加表现为
-    「按钮是个空盒子」。** 第一条**读源码可确证**：`button.dart:154` 就是
+> ⚠️ **第 14 条（进程内缓存的旧 bundle）请先读。** 它是这一批里唯一会让你**误判其它所有条**
+> 的坑：本轮为它烧掉了整整一轮返工，还害得第 11 条的机理被错记了一次。
+
+11. **cupertino button 只渲染 `childNodes.first`。** `button.dart:154` 就是
     `childNodes.isEmpty ? SizedBox() : childNodes.first.toWidget()`，官方 `button.md` 也明写
-    "The first child is used as the primary content"，所以「图标 + 文字」时文字被整段丢弃。
-    第二条**只是实测现象、机理没查实**：`<flutter-cupertino-button>全选</...>`（唯一子节点是
-    文本节点）渲染成 `minimumSize`（small = 32px）的空盒子。注意读
-    `webf-0.24.27/lib/src/rendering/text.dart:102` 反而显示脱离 IFC 的文本**应当**自绘
-    （`paintsSelf` 找不到建立 IFC 的祖先时默认 `return true`），`renderStyle` 也确实取自
-    `parentElement.renderStyle`（`dom/text_node.dart:123`）—— 所以**别把「必须是元素」当成
-    已解释的结论**，它目前是经验规则，upstream 自己的例子也一律把内容包进元素。
-    落地做法：**内容包成恰好一个子元素，文字再包一层元素**；包装组件里别开放插槽，把文字做成
-    prop 让调用方无法违反。文字那层还要 `white-space: nowrap`，否则按钮的固有宽度会按 CJK
-    「一字一行」量出来。**若以后有人查实了第二条的真因，请回来改这一段。**
+    "The first child is used as the primary content"，所以「图标 + 文字」两个并列子节点时文字被
+    整段丢弃 —— 无报错、无日志。落地做法：**内容包成恰好一个子元素**，包装组件里别开放插槽、
+    把文字与图标做成 prop，让调用方无法违反。文字那层要 `white-space: nowrap`，否则按钮的固有
+    宽度会按 CJK「一字一行」量出来（这条与第 9 条同源）。
+    **裸文本子节点是可以用的**（upstream `button.md` 的快速上手示例就是
+    `<FlutterCupertinoButton>Tap me</...>`）；包一层元素只是本项目的统一写法 —— 反正有图标时
+    本来就必须包。
+    > 📌 **一段值得留着的错误归因。** 首轮观察到三个按钮**全是空盒子**，包括第一个子节点是
+    > `<flutter-cupertino-icon>`（元素，不是文本）的那两个。我当时把它归因成「裸文本画不出来」，
+    > 并据此写进了四份文档。真相是那次复测**看的是旧 bundle**（第 14 条）—— 重启客户端后按钮
+    > 正常画出图标 + 文字，**空盒子从来就只是旧页面的样子**。教训不是「要更仔细读源码」（我为此
+    > 读了 `RenderWidgetElementChild.performLayout`、`Align(widthFactor:1)` 一整圈，全是白费），
+    > 而是**在解释一个现象之前，先确认被测的页面就是被改的代码**。这一步花 30 秒。
 12. **cupertino input 的装饰来自 CSS，于是 CSS 上写 `border` 会画出两个框。**
     `CupertinoTextField` 直接把 `renderStyle.decoration` 当自己的 `decoration`
     （`input.dart:301`），而 WebF 自己的 render box **也**画同一份 —— 外框在 border box 上，
@@ -129,6 +134,162 @@ webf」的铁律（§7），而它需要 import `webf_cupertino_ui`。探针侧�
     原因是滑块的 `top/left` 是相对轨道的 **padding box** 算的，而轨道有 `border: 2px`
     —— 可用区是 48×28 而不是 52×32。这条与 WebF 无关，纯 CSS，但说明「非 WebF 分支不用测」
     是错的假设。
+14. **⚠️ 重装插件后不重启客户端 = 你看的还是旧 bundle，而且毫无提示。** 这条会让你把正确的修改
+    当成没生效，然后去重写本来是对的代码 —— 本轮就为它烧掉了一整轮返工。
+    机制在 `plugin_render_surface_webf.dart:469`：渲染面用
+    `WebF.fromControllerName(controllerName: 'plugin:<去掉 query 的 URL>')`，controller 由
+    `WebFControllerManager` 按名字**缓存到进程结束**（本项目 `maxAliveInstances: 8`）。
+    命中缓存时**不会重新取 bundle**，日志里那句
+    `WebF: loading with controller: WebFController#xxxxx (disposed: false, evaluated: true,
+    status: PreloadingStatus.done)` 就是它 —— `evaluated: true` 的意思是「这一页的 JS 早就跑完
+    了，我只是把它重新挂上来」。退出页面再进、切 Tab、甚至换主题都不会重取（缓存键刻意去掉了
+    query，就是为了让切主题不整页重载）。
+    **不是 HTTP 缓存**：`networkOptions: enableHttpCache: false`（第 5 条），后端也已经把
+    `index.html` 设成 `Cache-Control: no-cache`、静态资源走内容哈希文件名 + `immutable`。
+    所以**完全退出应用再启动**就够了，不用清任何缓存目录。
+    **怎么在只有一张截图时确认自己看的是旧的**（不用装任何工具，这套取证本轮就是这么定案的）：
+    截图是 2x 的，按像素量几何再跟**服务端当前真的在 serve 的那份**对：
+    ```bash
+    curl -s http://<host>/api/v1/jsplugin/<entry>/ | grep -o 'static/[^"]*'   # 拿到当前哈希文件名
+    curl -s http://<host>/api/v1/jsplugin/<entry>/static/css/style.<hash>.css # 再读内容
+    ```
+    然后用 PIL 逐点取色：`--md-outline` 是 `#79747E` = `(121,116,126)`，量到的边框颜色一模一样
+    就说明那条线来自 CSS 的 `border`（而不是 widget 自绘的装饰）；再量它相对外框的内缩量，
+    对得上 `padding` + `border` 就能反推出**页面用的是哪一版 CSS**。更省事的判据是找一个
+    「只在旧版里可能出现的东西」：本轮是空状态图标画的是 `question_square`，而服务端 bundle 里
+    `grep -c question_square` 是 **0** —— 一条就定案，不需要几何推理。
+    要不要在宿主侧修（装完插件自动 `WebFControllerManager.removeAndDisposeController(name)`）
+    是另一个议题：对**真实用户**同样成立 —— 从插件商店更新完，已经打开过的插件 Tab 仍是旧页面。
+    该 API 存在（`launcher/controller_manager.dart:1251`），但改动落在客户端、要另测，本轮未做。
+15. **`webf_cupertino_ui` 没有依赖 `cupertino_icons`，于是所有 `<flutter-cupertino-icon>` 画成
+    `?` 方框。** 这是那个包的打包遗漏，**每个用它的 App 都会中**，必须在**产品 pubspec.yaml 里
+    自己补** `cupertino_icons`（本仓库已补，probe_pubspec.yaml 同步）。
+    因果链：`cupertino_icons_map_generated.dart` 的取值全是 `CupertinoIcons.xxx`，而那些常量是
+    `IconData(0xf43c, fontFamily: 'CupertinoIcons', fontPackage: 'cupertino_icons')` —— 字体文件
+    由 `cupertino_icons` 包自己的 pubspec 声明（`family: CupertinoIcons`，`assets/CupertinoIcons.ttf`，
+    257 KB）。而 `webf_cupertino_ui` 的 pubspec 只有 flutter/webf/logger/collection，`flutter:` 段
+    是空的，所以不列这条依赖那个 ttf 就不进 assets。
+    **症状会把你带到完全错误的方向**：不是「图标不显示」，而是**画出一个 `?` 方框** ——
+    那些码点在私用区（0xF000+），缺字体时由系统兜底字体渲染成「未知字符」占位符
+    （macOS 是 Apple LastResort，正是圆角框里一个 `?`）。所以第一反应必然是「图标名写错了」，
+    而那是错的：`icon.dart` 对查不到的 `type` 返回 `SizedBox.shrink()`，**名字写错是看不见，
+    不是问号**。判据一句话：**看得见问号 = 名字对、字体缺；什么都看不见 = 名字错。**
+    自查：`grep -A4 '^  cupertino_icons:' pubspec.lock` —— 不在 lock 里就是没打包。
+16. **⚠️ `onControllerCreated` 只在「新建 controller」时回调，于是二次进入插件页 100% 走到
+    「页面加载超时」。** 这条是真 bug、不是性能问题，且**必然复现**（同一进程第二次进入）。
+    机制：`AutoManagedWebFState._getOrCreateController()` 里那句
+    `widget.onControllerCreated!(newController)` 位于
+    `if (bundle != null && (controller == null || forceLoad))` **之内**。命中进程内缓存
+    （第 14 条）时它、`createController`、`onLoad` **一个都不跑**。后果三连：
+    ① `onLoadStop` 永远不被调用 → `PluginRenderView` 的 20s 超时定时器必然烧到，把**已经画好的
+    页面**整个换成「页面加载失败 · 页面加载超时」（`_errorMessage != null` 时 build 里根本不挂
+    渲染面）—— 用户的观感是「用着好好的，过一会突然卡死了」；
+    ② `_controller` 恒为 null → 安全区与播放器状态推不下去、返回键问不到页面；
+    ③ `onControllerReady` 不回调 → 宿主拿不到渲染面引用。
+    修法在 `_adoptPreloadedController()`（`initState` 里同步 `getControllerSync(name)`，
+    命中且 `evaluated` 就自己补上桥、delegate、主题、安全区、`onLoadStop`）。
+    **不要**改用 `forceLoad: true` 绕开 —— 那等于每次进页面都重取 bundle 重放整页，
+    缓存意义全无、页面内 JS 状态归零。注意 `onControllerCreated` 里那句「被淘汰后重建时兜住
+    引用与桥」的原注释**建立在一个错误假设上**（以为它总会回调），两条路径现在要一起改。
+17. **`<flutter-cupertino-input>` 的 `blur` 事件没有去重，「blur == 用户改完了」这个前提不成立。**
+    `input.dart` 的 `initState` 里就是
+    `_focusNode!.addListener(() { hasFocus ? dispatch('focus') : dispatch('blur') })` ——
+    **没有记住上一次的焦点态**，FocusNode 只要在未聚焦状态下发出任何一次通知就再派发一个
+    `blur`。实测表现：日志里十几条内容**完全相同**的 `POST /api/settings`，界面同时发卡。
+    所以「文本框改完即存」这类语义**不能只靠 blur**，要在业务侧加「值真的变了才提交」的守卫
+    （downloader 的做法：`store.js` 里按提交后的语义算指纹，与已保存的一致就直接
+    `Promise.resolve(null)`）。指纹必须用**和提交体同一个规范化函数**，否则会出现
+    「指纹按 `-4` 算、提交的是 `0`」从而永远判定为「有改动」的死循环。
+18. **`WebF` 的 `build()` 里现造 future，所以每次祖先 rebuild 都会多跑一次异步 controller 查找
+    并刷一行日志。** `AutoManagedWebFState.build()` 是
+    `FutureBuilder(future: _getOrCreateController())` —— future 在 build 里现造。而插件渲染面会随
+    **任何祖先 rebuild** 一起重建（播放中迷你播放器的进度更新就够了），于是日志里
+    `WebF: loading with controller: ...` 会刷屏。解法是让渲染面**返回同一个 widget 实例**
+    （`_webfChild ??= WebF.fromControllerName(...)`，`url` 变时置空），`Element.updateChild` 会
+    直接短路整棵子树。
+    > **别顺着它推出「子树被反复拆掉重建」——那是错的**，我推过一次。`FutureBuilder` 换 future
+    > 时用的是 `_snapshot.inState(waiting)`，**data 会被保留**，而 `webf.dart:357` 的判断是
+    > `connectionState == waiting && snapshot.data == null` —— data 非空就不会回落到
+    > `loadingWidget`，已挂载的 WebF 子树不会被拆。这里省掉的是重复的异步查找与日志噪音，
+    > 不是修「拆树」。同理，外层那个 `FutureBuilder(future: PluginRenderFonts.ensureLoaded())`
+    > 也是安全的：`ensureLoaded()` 返回 `_pending ??= _load()`，**每次是同一个 Future 实例**，
+    > `didUpdateWidget` 里 `oldWidget.future != widget.future` 不成立，压根不会重订阅。
+19. **⛔ `<select>` 在 WebF 下不能用来做双向绑定 —— 换 `<flutter-cupertino-action-sheet>`。**
+    这条把 §3.3「已排除的伪阻塞」里那句「`select` 在 WebF 下可用」**收窄**：它只是能画出来、
+    能弹出菜单，**选中值传不回 JS**。症状是「歌单/艺术家/专辑筛选都不重筛列表，
+    只有关键字搜索正常」，不报错、不打日志。
+    - **根因（读源码确证）**：`webf/lib/src/html/form/select.dart` 的
+      `HTMLSelectElement.initializeDynamicProperties` 只暴露 `value` / `selectedIndex` /
+      `disabled` / `multiple` / `required`，**没有 `options`**，也没有 `selectedOptions`
+      （Dart 侧 `grep "\['options'\]" lib/` 零命中；`macos/libwebf.dylib` 的绑定表里
+      `HTMLSelectElement` 附近也只有类名注册，没有属性名）。于是 Vue 的 `vModelSelect`
+      指令直接抛 TypeError —— 它的 change 监听器是
+      `Array.prototype.filter.call(el.options, o => o.selected)`，`mounted`/`updated` 调的
+      `setSelected()` 里是 `el.options.length`。**任何框架**的 `<select>` 双向绑定都会踩这个。
+    - **绕开 v-model 也不够。** 我改成显式 `@change` 读 `el.value` + `flush:'post'` 的
+      `watchEffect` 命令式回写，**真机实测仍然不通**。剩下的可疑点全在 Dart 侧且从 JS
+      观测不到：`_openOptionsMenu()` 用 Material `showMenu`；而元素一旦挂上 JS 监听，
+      `Element.hasEvent` 翻真 → `requestWidgetToRebuild(AddEventUpdateReason())` →
+      `RenderEventListener.enableEventCapture()` 起自己的 `GestureDispatcher`，与 select
+      自带的 `GestureDetector.onTap` 同处一个手势竞技场。**没有继续深挖**——换实现更便宜。
+    - **官方的 `<flutter-cupertino-action-sheet>` 是 webf-ui 给「从 N 个里选一个」的正解**
+      （`webf_cupertino_ui.dart:60` 已注册；31 个元素里**没有**任意选项的 picker，
+      `flutter-cupertino-picker` 是注释掉的，只有 `date-picker` 注册了）。契约在
+      `action_sheet.dart`，**不是**那份 React 口径的 `.md`：
+      * 命令式 `el.show(config)`，config 可以是对象**或 JSON 字符串**（`args[0] is String`
+        → `jsonDecode`）。**传字符串**，别依赖 JS 对象跨桥 marshal 成 Dart Map。
+      * 选中派发 `CustomEvent('select', detail: {text, event, isDefault, isDestructive, index})`。
+        `index` 是在 `actions` 里的下标，**`cancelButton` 不带 index**；点遮罩关闭则不派发。
+      * 内部 `showCupertinoModalPopup(useRootNavigator: true)`，不依赖局部 Overlay。
+      * 宿主元素自己 build 的是 `SizedBox.shrink()`，**必须常驻且不要用 `display:none` 藏**。
+      **但 downloader 最后没用它**，理由是它有一个**从 JS 侧无法观测的静默失败模式**：
+      `show()` 的实现是 `state?._showActionSheetImpl(args)` —— state 还没建立时直接
+      no-op，不抛异常、不打日志，于是「点了什么都不发生」与「正常工作」在代码里无法区分，
+      只能靠人肉试。同类不确定还有：方法能否被 `typeof` 探到（属性与方法在 Dart 侧是
+      `_getBindingObjectProperty` 与 `_getBindingObjectMethodType` **两条独立查找路径**），
+      以及 `CustomEvent.detail` 过桥后是对象还是字符串（Dart 侧 Map 走 `tagJson`，
+      但同一通道在 cupertino input 的 `input` 事件上传的是裸字符串）。
+      这些本来一次容器探针就能全验完，但**探针在 Apple Silicon 上跑不了**（见下条），
+      于是选择了确定性优先的自绘方案。
+    - **downloader 现在的实现**：cupertino button 触发 + **常规流里的内联面板**（普通 `div` 行，
+      `v-if` 展开）。只用「已在同页跑通」的原语：button 的 `click`、块盒布局、
+      普通元素的 `click`（DOM click 由 WebF 唯一那个全局 tap recognizer 派发，见第 420 行附近）。
+      刻意**不用**浮层（要赌层叠与命中测试 —— 面板得盖在歌曲列表那个 Flutter widget 上）、
+      **不嵌** `<webf-list-view>`（要赌 tap 穿过 Flutter ListView 的手势竞技场）、
+      **不靠 overflow 滚动**。值只在自己的 JS 里流动，完全不碰 WebF 元素的属性读写。
+    - **判据陷阱：「下拉显示更新了」不是「数据通了」的证据。** WebF 的 select 是
+      `WidgetElement`，`_openOptionsMenu()` 先 `widgetElement.selectedIndex = result` 改自己的
+      内部态、再派发 `change`，显示的标签由 Flutter 侧维护，与 JS 收不收到值完全无关。
+    - 反过来说，`v-model` 用在**组件**上是安全的（编译成 `:modelValue` + `@update:modelValue`，
+      纯 Vue 逻辑，不碰原生指令）；`<input type=checkbox>` 的 `vModelCheckbox` 也安全
+      （只依赖 `el.checked` / `el.value`，WebF 两个都有）。要提防的只有原生 `<select>`。
+    > **过程复盘（返工三轮）**：第一轮只查到「`options` 缺失 → v-model 挂了」就收工，把
+    > 「改成显式事件」当成了修复 —— 诊断本身没错，但**它不是唯一的断点**，而我只验证了
+    > 「编译产物里有新代码」就下了「修好了」的结论。第二轮换成官方 action sheet，仍然
+    > 只在产物里 grep 到新标记就交付，而那个组件恰好有个静默 no-op 的失败模式。
+    > 两条教训：**① 一个静默失效的元素上，找到一个足以解释症状的断点，不等于找到了全部断点**；
+    > **② 在无法运行期验证的环境里，要按「失败模式能不能从代码侧观测」来选实现**——
+    > 官方组件不等于确定可用，能打日志、能定位断点的自绘方案反而更省往返。
+
+20. **⚠️ `scripts/webf-verify` 在 Apple Silicon 上跑出来的结论不可信（会静默跑旧二进制）。**
+    `webf` 包只提供 **x86-64** 的 `libwebf.so`（`file linux/libwebf.so` 确认；这也是
+    §F「Linux 仅 x86-64」的同一个根因）。在 arm64 宿主上 Docker 跑 linux/arm64 镜像，
+    容器里 `flutter build linux` 产出 `build/linux/**arm64**/release/bundle`，那份产物
+    **加载不到原生库**，运行期报
+    `Failed to load dynamic library 'libwebf.so'` → `_contextId has not been initialized`
+    → 注入的诊断脚本一行都不输出。
+    而 `entrypoint.sh` 的 `BUNDLE=` 硬编码 `build/linux/**x64**/release/bundle`，
+    于是它**启动的是镜像里烘进去的那份旧 x64 二进制**，而不是刚构建的产物 ——
+    脚本照常打印「构建探针」「运行探针」「截图已落」，`run.sh` 退出码 0，截图也有内容。
+    也就是说：**你改的探针代码根本没跑，但一切看起来都成功了。**
+    判据：`out/build.log` 里那行 `✓ Built build/linux/<arch>/release/bundle/...`
+    的 arch 与 `entrypoint.sh` 的 `BUNDLE=` 不一致 → 本次结论作废。
+    要在 arm64 机器上用它，得 `--platform linux/amd64` 走 QEMU 模拟（Flutter 构建 +
+    软渲染 GL，慢到不实用），或者换 x86-64 宿主。
+    - 顺带修掉一个让这条路径**一次都跑不起来**的 bug：`run.sh` 里
+      `echo "…：$DIAGNOSE_JS（…"` 的裸变量引用后面紧跟全角「（」，bash 5.3 会把那几个
+      高位字节当成标识符的一部分，变量名成了 `DIAGNOSE_JS（`，`set -u` 下直接
+      unbound variable 退出，而报错里的变量名是乱码。已改成 `${DIAGNOSE_JS}`。
 
 #### 仍然要主动规避的（webf-ui 救不了的）
 
@@ -519,7 +680,11 @@ CSS Grid **已实现**（experimental，193 KB 实现，issue 原文写"不支�
 只有旧式 `addListener` 的缺陷不影响本项目；token 注入不需要 pre-inject API（已走 `?access_token=`
 + 后端内联 `authBridgeScriptTpl`）；`gap` / `-webkit-line-clamp` / `aspect-ratio` /
 `navigator.clipboard.writeText` / `NodeList.forEach` / `WebSocket` / `localStorage` /
-`select` / `textarea` / `input[type=time]` 全部可用。
+`textarea` / `input[type=time]` 全部可用。
+
+> ⚠️ **`select` 从这份名单里撤回了。** 它只是「能画出来、能弹菜单」，**选中值传不回 JS**
+> （没有 `options` 属性，任何框架的双向绑定都挂）。要做下拉请用
+> `<flutter-cupertino-action-sheet>`，详见上面第 19 条。
 
 ---
 
