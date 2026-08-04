@@ -2,36 +2,36 @@
 SELECT id, name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
     status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at,
-    public_paths, icon, external_paths
+    public_paths, icon, external_paths, render_engine
 FROM js_plugins ORDER BY id;
 
 -- name: GetJSPluginByID :one
 SELECT id, name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
     status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at,
-    public_paths, icon, external_paths
+    public_paths, icon, external_paths, render_engine
 FROM js_plugins WHERE id = ?;
 
 -- name: GetJSPluginByEntryPath :one
 SELECT id, name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
     status, zip_hash, entry_hash, file_mod_time, file_path, created_at, updated_at,
-    public_paths, icon, external_paths
+    public_paths, icon, external_paths, render_engine
 FROM js_plugins WHERE entry_path = ?;
 
 -- name: CreateJSPlugin :execlastid
 INSERT INTO js_plugins (name, version, description, author, homepage, license,
     entry_path, main, min_host_version, permissions, update_url, download_url,
     status, zip_hash, entry_hash, file_mod_time, file_path, public_paths, icon,
-    external_paths)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    external_paths, render_engine)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateJSPlugin :exec
 UPDATE js_plugins SET name = ?, version = ?, description = ?, author = ?,
     homepage = ?, license = ?, entry_path = ?, main = ?, min_host_version = ?,
     permissions = ?, update_url = ?, download_url = ?, status = ?,
     zip_hash = ?, entry_hash = ?, file_mod_time = ?, file_path = ?,
-    public_paths = ?, icon = ?, external_paths = ?
+    public_paths = ?, icon = ?, external_paths = ?, render_engine = ?
 WHERE id = ?;
 
 -- name: DeleteJSPlugin :exec

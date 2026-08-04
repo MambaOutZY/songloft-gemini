@@ -254,6 +254,7 @@ static/              # 静态资源目录（可选）
 | `main` | string | 是 | 入口文件路径（必须以 `.js` 结尾） |
 | `minHostVersion` | string | 否 | 最低宿主版本要求 |
 | `permissions` | string[] | 是 | 权限列表（可为空数组 `[]`） |
+| `renderEngine` | string | 否 | 客户端渲染插件页用的引擎，`webview` / `webf`，缺失或空串等同 `webview`。详见 [renderEngine 渲染引擎声明](#renderengine-渲染引擎声明) |
 | `updateUrl` | string | 否 | 远程更新检查 URL |
 | `download_url` | string | 否 | 插件下载 URL |
 | `entryHash` | string | 是 | `sha256(main.js)` 64 位小写 hex，由 `@songloft/plugin-builder` 自动生成，请勿手动编辑 |
@@ -267,6 +268,43 @@ static/              # 静态资源目录（可选）
 - 必须以小写字母开头
 - 正则：`^[a-z][a-z0-9-]*$`
 - 示例：`example-basic`、`music-sync`、`metadata-helper`
+
+### renderEngine 渲染引擎声明
+
+原生客户端渲染插件页有两条路径：系统 WebView，和 [WebF](https://openwebf.com/)（纯 Flutter 渲染的 W3C 运行时）。用哪条**由插件自己在 `plugin.json` 里声明**——宿主侧**没有**全局引擎开关，插件之间互不影响。
+
+```json
+{
+  "entryPath": "my-plugin",
+  "renderEngine": "webf"
+}
+```
+
+| 取值 | 含义 |
+|------|------|
+| 字段缺失 / `""` | 等同 `webview`，即宿主默认 |
+| `"webview"` | 系统 WebView 渲染（默认） |
+| `"webf"` | WebF 渲染 |
+
+- **其它取值一律非法**：后端 `ValidateManifest` 阶段直接报错，插件**装不上**（不会静默回退到 `webview`）
+- 插件列表 API 以 snake_case 的 `render_engine` 字段返回该值
+- 该字段可随版本改：不想再用 WebF 就发一个把它改回 `webview`（或删掉）的新版本
+
+#### 什么时候该声明 `webf`
+
+**只有插件页在 WebF 下已经实测可用时才声明。** WebF 不是浏览器，有一批 HTML/CSS 能力缺失（内建元素、`env()`、`window.open`、`URL.createObjectURL` 等），能力边界、已垫掉的缺口、以及可用的原生元素见 [§8 · WebF 渲染引擎与原生元素](#webf-渲染引擎与原生元素)——那一节是判断「我的页面能不能上 WebF」的依据，**不要**只按浏览器里的表现下结论。
+
+声明之后作者要承担的事：
+
+- **自己验证**每个页面在 WebF 下的渲染与交互，包括表格、滑块、文件选择、外链跳转这类容易静默降级的控件
+- 需要按引擎分叉时用 `html.webf-engine` class（主程序自动加），见 [§8 · WebF 渲染引擎与原生元素](#webf-渲染引擎与原生元素)
+- WebF 目前是 **0.x beta**。宿主**不保留任何全局回退开关**：页面在 WebF 下出问题时，用户能做的只是**禁用这个插件**，或等你发一个改回 `webview` 的版本。把这条当成声明 `webf` 的成本
+
+#### 平台限制（声明前必看）
+
+- **Web 端（浏览器里的 Songloft Web）完全不受该字段影响**：WebF 不支持 Flutter Web，Web 端**永远**走 iframe 路径。声明 `webf` 不会改变 Web 端的任何行为
+- **Linux 端覆盖面很窄**：WebF Linux 仅支持 x86-64 且 glibc ≥ 2.38，**没有 arm64**——NAS、Debian 12、树莓派等常见环境都在覆盖之外，拿不到 WebF 渲染面
+- 因此**插件页必须在系统 WebView / 普通浏览器里同样可用**：`webf` 是「在支持的平台上换一个更好的渲染面」，不是「只为 WebF 写页面」的许可
 
 ---
 
@@ -992,6 +1030,424 @@ if (isClient()) {
 3. 写入 `localStorage['songloft-theme']`
 
 插件 JS 可通过 `SongloftPlugin.onThemeChange(callback)` 监听主题变化做额外处理。
+
+### WebF 渲染引擎与原生元素
+
+新版客户端在部分平台上可以用 [WebF](https://openwebf.com/)（自研 W3C 运行时，纯 Flutter 渲染）替代系统 WebView 渲染插件页。**这是逐插件选择的**：只有在 `plugin.json` 里声明 `"renderEngine": "webf"` 的插件才走 WebF 渲染面，默认仍是系统 WebView，Web 端永远走 iframe——字段语义与平台限制见 [§3 · renderEngine 渲染引擎声明](#renderengine-渲染引擎声明)。WebF **不是浏览器**，有一批 HTML/CSS 能力缺失，主程序的 `common.js` 会统一垫掉常见缺口（空 `img src`、`<details>` 折叠等），并给 `<html>` 加上 `webf-engine` class 供插件按引擎分叉：
+
+```css
+html.webf-engine .only-in-webf { display: block; }
+```
+
+#### WebF 下内联 SVG 的真实限制
+
+WebF 的 `<svg>` 实现是：把整棵 svg 子树**重新序列化成字符串**，交给 `flutter_svg` 渲染。因此：
+
+- svg 的子节点只作数据存在，**没有真实 box** —— 拿不到布局（`getBoundingClientRect()` 无意义）
+- 单个 `<path>` / `<circle>` **无法单独做 CSS 动画、也无法命中测试**（点不到）
+- **任何子节点的属性 / 样式 / 子树变更都会触发整棵 SVG 重建**（重新拼字符串 + 重新解析 + 重新光栅化）
+
+结论：**高频更新的内联 SVG 在 WebF 下性能最差**。典型反例就是「每秒改 `stroke-dashoffset` 的 SVG 进度环」—— 每一次进度变化都在重建整棵 SVG。
+
+#### `<songloft-progress-ring>` —— 原生环形进度条
+
+为此主程序提供了一个原生元素：进度变化只走一次 Flutter `CustomPaint` 重绘，没有字符串序列化、没有 SVG 重解析。
+
+```html
+<songloft-progress-ring value="30" max="100" stroke-width="5"
+                        style="width:48px;height:48px"></songloft-progress-ring>
+```
+
+```js
+// 进度更新就是改属性，没有其它 API
+document.querySelector('songloft-progress-ring').setAttribute('value', '65');
+```
+
+属性一览：
+
+| 属性 | 默认值 | 说明 |
+|------|--------|------|
+| `value` | `0` | 当前进度值 |
+| `min` | `0` | 区间下界 |
+| `max` | `100` | 区间上界。`max <= min` 是退化区间，按 0 处理（只画轨道） |
+| `stroke-width` | `4` | 线宽（px），夹到 `(0, 短边/2]` |
+| `color` | CSS `color` 的值 | 进度弧颜色，**只接受具体色值**（见下） |
+| `track-color` | 进度色的 24% 不透明度 | 轨道颜色 |
+| `line-cap` | `butt` | 设为 `round` 得圆头端点 |
+
+- **尺寸**走 CSS `width` / `height`（未指定时为 36×36），`display` 默认 `inline-block`
+- 弧从 12 点方向起顺时针增长
+- **非法值一律夹紧或忽略，不会抛异常**：`value="oops"` 当 0，越界 value 夹到 `[min, max]`，负 `stroke-width` 夹到最小值
+- **暂不支持不确定态（indeterminate）动画**，需要转圈请自己用 CSS 动画包一层容器
+
+#### 颜色如何跟随主题
+
+Flutter 侧拿不到插件页的 `--md-*` CSS 变量，所以颜色由**页面**决定，两条路：
+
+```css
+/* ① 推荐：CSS color 属性（currentColor 语义）。
+   这是唯一能跟着 --md-* 变量走的路 —— 用户在主程序里切换亮/暗主题时，
+   环的颜色会跟着重绘。 */
+songloft-progress-ring {
+    color: var(--md-primary);
+}
+```
+
+```html
+<!-- ② 需要「进度色与文字色不同」或颜色由 JS 算出来时，用属性覆盖 -->
+<songloft-progress-ring value="30" color="#4caf50" track-color="#e0e0e0"
+                        style="width:48px;height:48px"></songloft-progress-ring>
+```
+
+`color` 是可继承属性，所以**什么都不配也能跟主题**：它会取继承来的文字色，而 `common.css` 已把文字色绑到 `--md-on-surface`。
+
+两个已实测的坑（不要踩）：
+
+- **属性里写 `var(--md-primary)` 不生效**：WebF 的属性值不经过 CSS 变量展开，元素会按「无效颜色」忽略它并退回 ①。要跟变量就用 CSS `color`。
+- **`getComputedStyle(el).getPropertyValue('--md-primary')` 在 WebF 下一律返回空串**：WebF 的 getComputedStyle 不暴露自定义属性，所以「用 JS 读变量再写进属性」这条常见套路走不通。
+
+#### 兼容性与降级
+
+- 该元素**只在 WebF 渲染面下存在**。在普通浏览器、系统 WebView（旧版客户端）里它是未知标签，会渲染成一个空盒子 —— 主程序**不会**把插件里的 SVG 自动替换成它（SVG 是任意图形，机械判定「哪个 svg 是进度环」必然误伤正常 SVG），替换与降级都由插件自己控制
+- 需要两端都好看时，两套实现共存 + 用 `html.webf-engine` 二选一：
+
+```css
+.ring-native { display: none; }                        /* 默认藏起原生元素 */
+html.webf-engine .ring-native { display: inline-block; }
+html.webf-engine .ring-svg { display: none; }          /* WebF 下藏起 SVG 版 */
+```
+
+#### `<songloft-slider>` —— 原生滑块（`input[type=range]` 的替身）
+
+**大多数插件什么都不用做。** WebF 没有实现 `input[type=range]`——实测那一整行在 WebF 下**一个像素都不画**：既没有滑块也没有文本框，同一行的兄弟文字与该行自己的 `background` 会一起消失。所以主程序的 `common.js` 垫片在 WebF 下会自动：
+
+1. 扫描页面里所有 `input[type="range"]`，在每个 input **后面**插入一个 `<songloft-slider>`；
+2. 把原 `<input>` **隐藏**（加 `.sl-range-hidden` class + inline `display:none`）而**不是移除**；
+3. 双向同步两者。
+
+因此插件既有的 JS **一行都不用改**：
+
+- `el.value` 读写照常（垫片在实例上装了访问器；JS 写入会同步给滑块，拖动期间除外）
+- `el.disabled = true / false` 照常（滑块会跟着变灰并停止响应手势）
+- `el.addEventListener('input' / 'change', ...)` 照常（滑块的交互会在原 input 上派发**冒泡的** `input` / `change`）
+- `el.matches(':active')` 照常（拖动中返回 `true`）。这条是插件「用户正在拖，别用轮询结果覆盖」的标准写法；隐藏后的 input 在 WebF 里永远进不了真正的 `:active`，所以垫片遮蔽了 `matches`
+
+垫片幂等（`data-sl-range-shim` 标记），动态插入 HTML 后调 `SongloftPlugin.applyShims()` 即可给新出现的 range 补上滑块。若 `.value` 的访问器装不上（哨兵往返自检失败），垫片会**整体放弃**：删掉滑块、还原原 input、打一条 `console.warn` —— 宁可退回 WebF 的原生表现，也不要「input 被隐藏了、值又同步不上」。
+
+属性一览（走垫片时由垫片从原 input 转写；手写该元素时自己给）。垫片还会一并转写 `aria-label` 与原 input 的 inline `style`，并给滑块加上 `.sl-range-slider` class 和 `data-sl-for="<原 input 的 id>"`：
+
+| 属性 | 默认值 | 说明 |
+|------|--------|------|
+| `value` | `min` | 当前值 |
+| `min` | `0` | 区间下界 |
+| `max` | `100` | 区间上界。`max <= min` 是退化区间，停在起点且不响应拖动 |
+| `step` | `1` | 步长。`any` 或 `<= 0` 视为连续 |
+| `orientation` | `horizontal` | 设为 `vertical` 得竖向滑块（**min 在下、max 在上**） |
+| `disabled` | 不存在 | 存在即禁用（`false` / `0` 例外，视为未禁用）。禁用时整体 38% 不透明度且不响应手势 |
+| `color` | CSS `color` 的值 | 已填充轨道 + 把手的颜色，**只接受具体色值** |
+| `track-color` | 填充色的 24% 不透明度 | 未填充轨道的颜色 |
+
+- **尺寸**走 CSS `width` / `height`；未指定时按朝向兜底为**横向 160×28 / 竖向 28×160**，`display` 默认 `inline-block`
+- 事件：拖动与**点击轨道**（点击会让把手跳到点击处，与浏览器一致）都派发 `input`，抬手派发 `change`；新值放在 `event.data` 里（字符串，整数不带 `.0`）
+- **交互期元素不回写自己的 `value` 属性**——真值由页面侧持有。所以直接使用该元素时请从 `event.data` 取值，**不要**读 `getAttribute('value')`（那只是你上一次推给它的值）
+- `min` / `max` / `step` 必须写成**属性**：WebF 没实现这三个的属性反射，`el.min` 读出来是空串
+- 非法值一律忽略并在客户端日志里留一条提示，不抛异常
+
+##### 竖向滑块：必须显式声明 `data-sl-orientation`
+
+垫片**不猜**朝向，要竖向就在原 `<input>` 上写出来：
+
+```html
+<input type="range" id="volumeSlider" min="0" max="100" value="50"
+       aria-label="音量" data-sl-orientation="vertical">
+```
+
+为什么不能自动推断：浏览器里的竖向 range 通常是 `transform: rotate(-90deg)` 转出来的，而 WebF 的 `getComputedStyle` 支持面不可靠（连自定义属性都不暴露），读 transform 反推**猜错了是静默的错朝向**——比要求一行声明糟得多。
+
+不想要滑块（想保留 WebF 的原生表现，或插件自己已经处理了这个 range）就写 `data-sl-no-slider`，垫片会跳过它：
+
+```html
+<input type="range" data-sl-no-slider>
+```
+
+##### 插件通常需要补几行 CSS
+
+`<songloft-slider>` 是**新标签**，匹配不到插件原有的 `input[type="range"]` 选择器，因此拿不到原有几何。垫片只把原 input 的 **inline `style`** 拷过去（`style="width:100%"` 这种因此自动生效），**刻意不拷 class**——class 上挂的往往是「让原生 range 长得像滑块」的规则（`-webkit-appearance`、`::-webkit-slider-thumb`、`accent-color`），拷过来只会带进无意义甚至有害的声明。
+
+不补 CSS 也能用，只是拿到元素默认尺寸（横向 160×28）、不合版面。可用的三个选择器：`songloft-slider`、垫片加的 class `.sl-range-slider`、以及 `[data-sl-for="<原 input 的 id>"]`（原 id 留在 input 上，不会挪到滑块上）。
+
+第一方插件 miot 的实际写法（竖向音量条，原本是 `width: 110px` + `rotate(-90deg)`）：
+
+```css
+songloft-slider {
+    color: var(--md-primary);
+}
+
+/* 竖向元素自己就是竖着画的，不需要 transform；
+   原来 rotate 前的 width 现在对应 height */
+.volume-panel .volume-slider-wrap songloft-slider {
+    width: 28px;
+    height: 110px;
+}
+```
+
+这些规则在浏览器 / 系统 WebView 下永不匹配（那儿没有 `songloft-slider` 元素），属纯增量，不必包在 `html.webf-engine` 里。
+
+颜色跟随主题的结论与 `<songloft-progress-ring>` 完全一致（CSS `color` / currentColor 走得通，**属性里写 `var()` 不生效**），见上面「[颜色如何跟随主题](#颜色如何跟随主题)」，不再重复。
+
+##### 生效范围与一个已知残留风险
+
+- 垫片**只在 WebF 渲染面下跑**：普通浏览器与系统 WebView 里原生 `input[type=range]` 照常工作，页面不会有任何变化。手写 `<songloft-slider>` 时它在非 WebF 环境是未知标签（空盒子），需要两端都好看就像进度环那样两套实现 + `html.webf-engine` 二选一
+- **竖向滑块放进竖向滚动容器里可能抢不到手势**：滑块用与朝向同轴的 drag 手势与滚动**竞争**（这是正确行为，否则会出现「页面在滚 + 滑块同时在动」），胜负依赖手势竞技场的「命中更深者先接受」。miot 的音量面板是弹出层所以不受影响；真要放进长列表里请实测
+
+#### 安全区：用 `--sl-safe-*`，不要写 `env(safe-area-inset-*)`
+
+**WebF 完全没有实现 CSS 的 `env()`** —— 不是求值不准，是连解析入口都不存在。所以刘海屏 / 圆角屏 / 手势条设备上，写 `env(safe-area-inset-bottom)` 的插件页会**顶到状态栏或被下巴切掉**。
+
+主程序改为把真实安全区（Flutter 的 `MediaQuery.viewPadding`）注入成四个 CSS 变量，插件侧统一写 `var()`：
+
+| 变量 | 语义 |
+|------|------|
+| `--sl-safe-top` | 上安全区（状态栏 / 刘海） |
+| `--sl-safe-right` | 右安全区（横屏刘海 / 圆角） |
+| `--sl-safe-bottom` | 下安全区（Home 手势条） |
+| `--sl-safe-left` | 左安全区 |
+
+```css
+/* 推荐写法：一份 CSS 通吃三种运行环境，不需要分叉 */
+.player-bar {
+    padding: 6px 16px calc(4px + var(--sl-safe-bottom));
+}
+```
+
+`common.css` 已经在 `:root` 上给这四个变量备好了默认值，所以**三种环境下都有确定值，插件只写一种形式**：
+
+| 环境 | `var(--sl-safe-bottom)` 的值 |
+|------|------|
+| 普通浏览器 / 系统 WebView（默认渲染引擎） | `env(safe-area-inset-bottom, 0px)`，即原生真值（桌面浏览器上是 `0px`） |
+| WebF + 新版客户端 | 宿主注入的真实 `MediaQuery.viewPadding`（转屏 / 进退全屏 / 页面重挂都会重推） |
+| WebF + 旧版客户端（不推安全区） | `0px`，等价于「无安全区」，与不做这件事时的表现一致 |
+
+因此：**只写 `var(--sl-safe-bottom)` 就够了，不要再画蛇添足加 `env()` 兜底。**
+
+三条已实测的硬约束（都在 WebF 下踩过）：
+
+- **`var(--x, env(...))` 这种带 `env()` 兜底的写法在 WebF 下求值为 `0`** —— fallback 链在 `env()` 处断掉，连 `env()` 自己的内层兜底（`env(safe-area-inset-bottom, 19px)` 里的 `19px`）也取不到。所以它不是「更安全的写法」，只是把变量的默认值白白覆盖掉
+- **WebF 没有实现 CSS `max()` / `min()`**，整条声明会失效（不只是安全区那一项）。想表达「至少留 24px，安全区更大时按安全区」，把 `max(24px, ...)` 换成 `clamp()`：
+
+  ```css
+  /* clamp(MIN, VAL, MAX) 的定义就是 max(MIN, min(VAL, MAX))，
+     对任何 ≤ 96px 的安全区与 max(24px, …) 完全等价（真机最大约 34px）。
+     浏览器侧零行为变化，WebF 侧实测可用。 */
+  .fp-controls {
+      padding-bottom: clamp(24px, var(--sl-safe-bottom), 96px);
+  }
+  ```
+
+  只想「安全区之上再加固定间距」时用 `calc()` 更直白：`calc(24px + var(--sl-safe-bottom))`
+- **`clamp()` 可用、参数里也能塞 `var()`**（已实测），但 `calc()` 之外的其它 CSS 数学函数（`max` / `min` / `round` / `mod` 等）都不要用
+
+注意宿主注入的值是**剩给页面自己处理**的那部分：客户端外层已有 `SafeArea` 消化掉一部分安全区（插件 Tab 页消化了上 / 左 / 右，把下方留给页面），所以不会出现「上层让开了、页面又内缩一次」的双重留白。
+
+#### 文件选择：`input[type=file]` 自动接管，但结果**不在 `input.files` 里**
+
+**页面 HTML 一行都不用改，读结果的 JS 必须改。**
+
+WebF 没有实现 `input[type=file]`：它的 `<input>` build 分支只认 radio / checkbox / button / submit / date / time，`type=file` 落到 default → 渲染成一个 Flutter 文本框，**点了什么都不会发生**（也不报错）。所以 `common.js` 的垫片在 WebF 下会自动：
+
+1. 扫描页面里所有 `input[type="file"]`，把它**隐藏**（加 `.sl-file-hidden` class + inline `display:none`）；
+2. 既拦它的 `click` 事件、也覆写它的实例 `click()` 方法 —— 所以「隐藏 input + 外部按钮调 `fileInput.click()`」这种常见写法照样能弹出选择器；
+3. 弹出**宿主的原生文件选择器**，把用户选中的文件经桥送回页面；
+4. 把结果写进 `SongloftPlugin.lastPickedFiles`，然后在原 input 上派发一个冒泡的 `change`。
+
+为什么垫片必须自己隐藏原 input：实测 **WebF 不认 HTML `hidden` 属性**（带与不带 `hidden` 的 file input 盒子都是 170×24），插件刻意隐藏的那个 input 在 WebF 下会实打实占掉一行，而且是个点不动的空文本框。
+
+##### 读结果：主通道是 `SongloftPlugin.lastPickedFiles`
+
+```js
+fileInput.addEventListener('change', function () {
+    // ✅ 主通道：一个普通 JS 数组，一定可读
+    var files = (window.SongloftPlugin && SongloftPlugin.lastPickedFiles) || [];
+    if (!files.length) return;
+    importPlaylist(files[0].text);   // as=text（默认）时是解码后的字符串
+});
+```
+
+- **`input.files` / `FileReader` / `FileList` 在 WebF 下都不能用**：后两者**压根不存在**（实测 `typeof` 均为 `undefined`），所以宿主刻意**不去伪造** `input.files` —— 假 `File` 配不上真 `FileReader`，而真 `FileReader` 根本没有。用 `new FileReader()` 读文件的代码在 WebF 下会直接抛异常。
+- `change` 事件上**也会尝试**挂一份 `event.data = {files: [...]}`，但那只是锦上添花：WebF 的 `Event` 是 binding object，能不能挂自定义属性**没有契约保证**。**不要**把它当主通道。
+- **用户取消时不派发 `change`**（与浏览器一致），所以不必担心「空 change 走进读取失败分支、弹一个用户没做错任何事的报错」。
+- `lastPickedFiles` 是**全局单值**（未选过时为 `null`），页面里有多个 file input 时它存的是最近一次的结果 —— 在 `change` 回调里立刻取走即可。宿主调用失败时只打一条 `console.warn` 且不派发 `change`。
+
+##### 载荷形态：`data-sl-file-as`
+
+```html
+<!-- 只要元信息，不读内容 -->
+<input type="file" id="pick" accept=".m3u,.m3u8,.json" data-sl-file-as="none">
+```
+
+| 取值 | 载荷 | 什么时候用 |
+|------|------|-----------|
+| `text`（默认） | `text` 字符串 + `encoding`（+ 可能的 `textLossy`） | 导入 m3u / json / lrc 这类文本 |
+| `bytes` | `bytesBase64`（base64 字符串） | 二进制文件，或需要自己按 GBK 等编码解码 |
+| `none` | 只有 `name` / `size` | 只要文件名与大小 |
+
+**默认是 `text` 而不是 `bytes`**：真实用例（导入 m3u / json）只要文本，而 base64 会把一个 20 MB 的文件变成约 27 MB 的字符串，还要跨两次序列化桥（Dart → C++ → QuickJS），默认不该付这个钱。
+
+每个文件对象的字段：
+
+| 字段 | 出现条件 | 说明 |
+|------|---------|------|
+| `name` | 总是 | 文件名（不含路径） |
+| `size` | 总是 | 字节数 |
+| `text` | `as=text` 且读取成功 | 解码后的字符串（BOM 已剥离） |
+| `encoding` | 同上 | `utf-8` / `utf-8-lossy` / `utf-16le` / `utf-16be` |
+| `textLossy` | 解码有损时为 `true` | 宿主只按 BOM + 严格 UTF-8 判定，**不猜 GBK**；GBK 文件会走「容错解码」并打上这个标记 —— 要精确处理请改用 `as="bytes"` 自己解码 |
+| `bytesBase64` | `as=bytes` 且读取成功 | base64 |
+| `error` | 读取失败时 | `too_large`（超过单文件 32 MB 上限，同时带 `limit`）/ `read_failed`。**刻意不静默截断**：半截的 m3u 解析出来是「导入成功但少了一半」，比报错难查得多 |
+
+- **拿不到文件路径**，这是有意的：桌面端是真实路径、Android SAF 是 content URI，跨平台语义不一致，对页面 JS 也毫无用处，还是不必要的信息泄露。
+- `accept` 原样透传给宿主，但**只有 `.ext` 扩展名形式会变成真的过滤器**；写成 MIME（`text/plain`、`image/*`）或与扩展名混写时，宿主**整体放弃过滤**（宁可多几个可选项——插件自己还会校验，也不要把用户本该能选的文件挡住）。
+- `multiple` 存在时可多选，否则只取第一项。
+- 一次只允许一个选择器在飞：用户连点不会挂起两次宿主调用（否则回来的两个 `change` 里后到的那个未必是用户最后选的文件）。
+
+##### 退出开关、幂等与两端兼容
+
+想保留 WebF 的原生表现（或插件自己已经处理了这个 input）就写 `data-sl-no-file-picker`，垫片会跳过它：
+
+```html
+<input type="file" data-sl-no-file-picker>
+```
+
+垫片幂等（`data-sl-file-shim` 标记），动态插入 HTML 后调 `SongloftPlugin.applyShims()` 即可给新出现的 file input 补上接管。垫片**只在 WebF 渲染面下跑**：普通浏览器与系统 WebView 里原生 file input 与 `FileReader` 照常工作。所以推荐**两条路都留**，一份代码通吃三种运行环境：
+
+```js
+function readPickedFile(input, cb) {
+    var picked = window.SongloftPlugin && SongloftPlugin.lastPickedFiles;
+    if (picked && picked.length) return cb(picked[0].text);   // WebF
+    var f = input.files && input.files[0];                    // 浏览器 / 系统 WebView
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () { cb(r.result); };
+    r.readAsText(f);
+}
+```
+
+#### `URL.createObjectURL` 不存在：改用 `SongloftPlugin.blobToDataURL()`（**异步**）
+
+**WebF 里 `URL.createObjectURL` 压根不存在**（实测 `typeof URL.createObjectURL === 'undefined'`）。`Blob` 本身是有的，但没有任何入口能产出 `blob:` URL，而且**也不可能垫一个**：`blob:` 要资源加载器配合，而 WebF 的加载器只认 `http` / `https` / `assets` / `file` / `data:`，其余 scheme 直接抛错 —— 就算 JS 侧造出一个 `blob:xxx` 字符串，加载那一步必然失败。
+
+典型受害写法是「带鉴权头 fetch 一张图 → 显示」：`fetch` 拿到的是 `Blob`，而 `<img src>` 不能直接吃 Blob。宿主给出的替代是 `data:` URL（WebF 原生支持）：
+
+```js
+var url = await SongloftPlugin.blobToDataURL(blob);   // 'data:image/jpeg;base64,...'
+```
+
+签名 `blobToDataURL(blob, mimeType?) → Promise<string>`。`mimeType` 用来覆盖 `blob.type`（`blob.type` 为空时用得上），两者都没有时按 `application/octet-stream`。
+
+**三条渲染路径共用同一份实现**：它用的 `Blob.prototype.arrayBuffer` + `btoa` 在普通浏览器与系统 WebView 下同样存在，所以**不必按引擎分叉**，一份异步写法通吃。
+
+##### ⚠️ 它是异步的，所以你必须改调用点
+
+`createObjectURL` 是**同步**的，而 `blobToDataURL` 返回 **Promise**。这不是实现偷懒，而是无法弥合的形状差异：`Blob → base64` 只能经 `arrayBuffer()`（`FileReader` 在 WebF 下不存在），而那本身就是异步的。所以**不要指望宿主给一个同步替身** —— 改调用点是唯一的路：
+
+```js
+// ❌ 改写前：WebF 下 URL.createObjectURL 是 undefined，这行直接抛 TypeError
+function showCover(blob) {
+    var url = URL.createObjectURL(blob);
+    img.src = url;
+    bg.style.backgroundImage = 'url(' + url + ')';
+    // 用完还得记着 URL.revokeObjectURL(url)
+}
+
+// ✅ 改写后：函数变异步，拿到字符串后的用法完全不变
+async function showCover(blob) {
+    var url = await SongloftPlugin.blobToDataURL(blob);
+    img.src = url;
+    bg.style.backgroundImage = 'url(' + url + ')';
+    // 不需要 revoke
+}
+```
+
+注意「改调用点」会**往上传染**：`showCover()` 变成 async 之后，它的调用者要么跟着 `await` / `.then`，要么接受「图片晚一拍出现」。这是移植时最容易漏的一环——漏掉不会报错，只是图不出来。
+
+##### 两个已实测可用的消费点
+
+- `<img src="data:…">`
+- CSS `background-image: url(data:…)` —— 这条尤其值得写明：它走的是与 `<img>` **完全不同**的代码路径，而 data URL 里含逗号与分号，CSS `url()` 的词法本来可能切错。实测能出图，所以「同一张图既当封面 `<img>` 又当模糊背景」可以沿用**同一个** data URL，不必另找出路。
+
+##### 生命周期语义变了
+
+data URL **不需要**（也没有）`revokeObjectURL`：它不是句柄，就是一个字符串。代价是它**常驻内存**（base64 比原始字节大约 4/3），只要还有元素的 `src` / `style` 引用它，或者你自己把它存进了变量 / 数组 / DOM 属性，那份字符串就不会被回收。因此：
+
+- 大图、长列表缩略图这类场景，不要无脑把 data URL 攒进数组当缓存 —— 该丢的时候把引用清掉。
+- 更省的做法是**能直接用 URL 就别绕 Blob**：只要那张图能通过一个可直接访问的 URL 拿到（不需要自定义请求头），把 `<img src>` 指过去即可，完全绕开这一整套。
+
+#### `window.open`：外链改由**系统浏览器**打开（插件无需改动）
+
+**插件侧一行都不用改**，但要知道它现在的语义。
+
+WebF 的 `window.open` 曾经是**彻底静默**的：不抛错、也什么都不发生（归因是没装导航代理时，WebF 的默认导航策略把外链无条件 cancel 掉了）。所以「点『去网页登录』什么反应都没有」这种 bug 在 WebF 下既没有报错也没有日志。
+
+新版客户端在 WebF 渲染面上装了导航代理，行为变成三档：
+
+| 目标 | 行为 |
+|------|------|
+| `#` 开头的页内锚点 | 照常跳转（`pushState` + `hashchange` 正常工作） |
+| **外部** `http(s)` / `mailto:` / `tel:` | 用**系统浏览器 / 系统默认应用**打开 |
+| **同源**（插件页自己）的 `http(s)` 跳转 | **被拦下**，并在客户端日志里留一条 warn |
+
+```js
+// 两种调用形态都已实测可用（单参、带 target 的双参都会真的转发到宿主）
+window.open('https://account.xiaomi.com/oauth2/authorize?...');
+window.open('https://example.com/help', '_blank');
+```
+
+三条要点：
+
+- **它打开的是外部浏览器，而不是页内新窗口**。所以「弹窗里完成操作后由弹窗回填数据到父页」（`window.opener`、给返回的 window 对象赋值、跨窗口 `postMessage`）这类流程在这里**走不通** —— 请改成「用户回到插件页后由插件轮询 / 或提供一个『我已完成』按钮触发回调」的形态。
+- **同源整页跳转被刻意拦掉**：WebF 里那条路是「把整个插件页 `load()` 成新地址」，会把宿主注入的上下文、loading 状态、返回键行为全部弄错。**WebF 下不要做多页跳转**，单页 + 页内切换视图。
+- 其余 scheme（相对路径、`javascript:`、自定义 scheme）一律不放行。若插件依赖自定义 scheme 唤起第三方 App，请当它在 WebF 下不可用并另做降级。
+
+#### `<table>` 在 WebF 下**不存在**：改用 CSS Grid
+
+WebF 的元素注册表里 `table` / `thead` / `tbody` / `tr` / `th` / `td` **一个都没有注册**，全部落到未知元素（`display:block`）。后果不是「样式差一点」，而是**信息结构丢失** —— 一张 6 列的表会竖排成 6 行，几十条数据变成几百行无标题文本。而且**完全静默**：不报错、不打日志。
+
+宿主只能帮你**发现**它，不能帮你修：WebF 渲染面下 `common.js` 会给页面上每个 `<table>` 打上 `data-sl-table-unsupported` 属性并在 console 打一条 warn（你就是照那条 warn 找到这一节的）。**宿主刻意不做自动改写**，原因见下。
+
+**改法：CSS Grid。** 一行 = 连续 N 个单元格 div，靠 grid 的自动放置换行：
+
+```css
+.tbl-head, .tbl-body {
+    display: grid;
+    /* 两个容器共用同一份轨道定义，这是「列宽跨行对齐」的全部秘密 */
+    grid-template-columns: 36px minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr) 90px 60px;
+}
+```
+
+```html
+<div class="table-wrap">            <!-- 横向滚动：overflow-x 在这里，表头与数据区都在里面 -->
+  <div class="tbl">                 <!-- 普通 block：宽度基准 + min-width 下限 -->
+    <div class="tbl-head">…6 个表头格…</div>     <!-- 留在纵向滚动容器外面，不用 sticky -->
+    <div class="tbl-scroll">       <!-- 纵向滚动：max-height + overflow-y，只包数据区 -->
+      <div class="tbl-body">…6×N 个数据格…</div>
+    </div>
+  </div>
+</div>
+```
+
+**六条硬约束（每一条都是踩出来的，别自己重新发现）**：
+
+- **不要写 `display: table` / `table-row` / `table-cell`**。WebF 的 `CSSDisplay` 枚举里**没有任何 table 取值**，`resolveDisplay` 落到 `default` 返回 **`inline`** —— 比默认的 `block` **更糟**，是负收益。`display: contents`（浏览器里透明化行元素的标准招数）同样不支持，所以**不能保留 `<tr>` 包裹元素**。
+- **单元格必须 `white-space: nowrap` + `overflow: hidden` + `text-overflow: ellipsis`，不能让内容换行**。WebF 的 grid `auto` 行高是**在 min-content 宽度下**测量子项高度的（已确诊的上游缺陷）：可换行时 CJK 每个字都是断行点，「艺术家」3 个字被测成 3 行、12 个字的名字被测成 13 行 —— 实测一行占 **281px**（同内容自然高 41px）、表头 72px，可见区只装得下 1 行，用户看到的是**一张几乎空的表**。`nowrap` 下 min-content == max-content，那个错误的测量也就量对了（实测行距 41 / 表头 39）。这条属性**必须写在随页面加载的 CSS 里**，不能 JS 事后注入 —— 要在行插入之前生效才能从第一次布局起就正确。长内容用 `title` 属性给桌面端悬停看全（拼属性一律用转义引号的函数，`textContent → innerHTML` 那种 `esc()` 不转义引号，含双引号的内容会截断属性）。
+- **表头不要用 `position: sticky` 贴顶，让它根本不需要 sticky**。实测 WebF 下 `position: sticky` **压根不生效**，而且**不限于 grid 路径** —— 把一个普通 div 放在 `body` 顶部、用页面级滚动（`documentElement.scrollTop = 300`）也整量滚走（`y = -300`），而 computed `position` 仍是 `"sticky"`、`top` 仍是 `"0px"`、`scroll` 事件也确实派发了（**样式没丢、通知链也跑了，只是偏移没被应用**）。所以结构上避开它：**只让数据区滚动**，表头是它的兄弟节点、留在纵向滚动容器**外面**。这个结构在浏览器 / 系统 WebView 下同样正确，仍是一套代码通吃三条路径。
+  - 顺带一条源码事实（对「为什么表头必须是独立 grid 容器」仍然成立）：WebF 的 grid 布局把 `position: sticky` 子项与 absolute/fixed **归成同一类脱流元素**，于是 sticky 表头单元格**既不占格子、也不参与列轨道定宽**。所以无论如何都得是**两个 grid 容器**（表头 + 数据区）共用同一份 `grid-template-columns`。
+- **纵向滚动条会让表头与数据区错开一个滚动条宽度，必须补偿**。数据区在自己的滚动容器里，占位式滚动条（桌面浏览器）只吃它的内容宽度，而表头在外面吃不到（实测差十几像素；WebF 与移动端是覆盖式滚动条、差 0）。CSS 里拿不到这个宽度，只能实测：`scrollEl.getBoundingClientRect().width - bodyEl.getBoundingClientRect().width` 写进一个自定义属性、表头 `padding-right` 抵掉它。两个要点：① **必须跨帧量**（WebF 的 layout 是异步的，刚写完 `innerHTML` 立刻量到的是改之前的布局，包一层 `setTimeout` 即可）；② 量不到就当 0，那恰好是覆盖式滚动条的正确值。给滚动容器加 `scrollbar-gutter: stable` 可以让「有没有滚动条」不再改变内容宽度，少一次跨阈值跳动。
+- **轨道定义里不要用 `auto` / `min-content` / `max-content`**。只用定宽 `px` 与 `minmax(0, Nfr)`，这样每列宽度是「可用宽度」的**纯函数**，与两个容器各自装了什么内容无关 —— 这是两个独立容器能对齐的前提。
+- **窄屏不要用 `@media` + `display:none` 隐藏某几列**。WebF 里 `display:none` 的元素**仍会挂一个 0 尺寸的 box、照样占掉一个 grid 格子**，后面所有单元格会整体错位一格。改为给 `.tbl` 设 `min-width`、低于该宽度整表横向滚动（横向滚动容器必须同时包住表头与数据区，否则滚到右边两者就错列了）。
+
+**为什么宿主不自动改写成 WebF 自带的 `<webf-table>` 家族**：它是 Flutter `Table` widget 的薄封装，能力上限由上游锁死 —— `colspan`/`rowspan` 零支持、CSS `width` 完全无效（只认表头单元格的 `column-width` 属性）、CSS `position:sticky` 无效（要换成 `sticky` 属性）、行必须是**直接子节点**（`<thead>`/`<tbody>` 不拆就渲染出一张**空表且不报错**）。更关键的是那些标签在普通浏览器与系统 WebView 下**根本不存在**，用它就必须长期维护两套模板。CSS Grid 是标准 CSS，**三条渲染路径共用同一套 HTML/CSS/JS、同一套外观**。
+
+**两处不可避免的降级**（官方插件 downloader 已按此改造，可参考它的实现）：`tr:hover` 整行高亮变成单个单元格高亮（展平后 DOM 里没有行元素，纯 CSS 无法表达）；表格无障碍语义丢失（缓解：给每行的交互控件补 `aria-label`，容器补 `role="group"`）。
 
 ### 访问路径
 

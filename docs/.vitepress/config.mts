@@ -95,7 +95,9 @@ export default async () => {
       ],
 
       footer: {
-        message: '基于 <a href="https://github.com/songloft-org/songloft/blob/main/LICENSE">Apache 2.0</a> 协议开源',
+        // 源码与客户端二进制的许可不同，不能只写一个 Apache 2.0：客户端二进制链接了
+        // GPL-3.0-only 的 WebF（songloft-org/songloft#341），整体按 GPL-3.0 分发。
+        message: '源码基于 <a href="https://github.com/songloft-org/songloft/blob/main/LICENSE">Apache 2.0</a> 协议开源；客户端二进制含 <a href="https://github.com/openwebf/webf">WebF</a>，按 <a href="https://github.com/songloft-org/songloft/blob/main/LICENSES/GPL-3.0.txt">GPL-3.0</a> 分发',
         copyright: `Copyright © 2025-${new Date().getFullYear()} <a href="https://github.com/hanxi">涵曦</a>`,
       },
 
@@ -108,6 +110,12 @@ export default async () => {
         text: '在 GitHub 上提问',
       },
     },
+
+    // `docs/webf/` 整个目录是 songloft-org/songloft#341 的分支临时件，不是产品文档：
+    // 不建页、不进 sitemap、也刻意不做中英双语同步（没有 docs/en/webf/ 对应件）。
+    // #341 落地后连同整个目录一起删除（这条 srcExclude 与下面的 ignoreList 也删掉）。
+    // 用目录级 glob 而不是逐个文件名：那边还会继续加文档，逐个列必然漏。
+    srcExclude: ['webf/**'],
 
     sitemap: {
       hostname: 'https://songloft.hanxi.cc',
@@ -132,6 +140,9 @@ export default async () => {
           collapsed: true,
           titleFromFile: true,
           ignoreIndexItem: true, // 首页 index.md（落地页）不进侧边栏
+          // 与上面的 srcExclude 配对：那些页不建，侧边栏也不能留指向它们的死链。
+          // 'webf' 是目录名 —— 整个 docs/webf/ 不进侧边栏。
+          ignoreList: ['webf'],
         }),
       ],
     },

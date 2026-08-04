@@ -103,6 +103,108 @@
 
 
 ## [Unreleased]
+### :sparkles: New Features
+- **jsplugin**: 插件页渲染引擎改为**逐插件声明**。`plugin.json` 新增可选字段 `renderEngine`
+  （`webview` / `webf`，缺失或空串等同 `webview`），插件列表 API 以 `render_engine` 返回；
+  非法取值在清单校验阶段报错、插件装不上。原生客户端据此为声明 `webf` 的插件启用
+  [WebF](https://openwebf.com/) 渲染面（纯 Flutter 渲染，替代系统 WebView），
+  其余插件保持系统 WebView 不变。客户端设置页里原先的全局渲染引擎开关随之移除 ——
+  能力缺口是逐页面的，只有插件作者能验证自己的页面。
+  官方插件 miot（智能音箱）、downloader（歌曲下载）、lyrics（歌词搜索）已标记为 `webf`。
+  Web 端不受影响（WebF 不支持 Flutter Web，浏览器里永远走 iframe）；
+  Linux 端 WebF 仅支持 x86-64 + glibc ≥ 2.38，arm64 / NAS / 树莓派等环境拿不到 WebF 渲染面。
+  字段语义与作者须知见「JS 插件开发指南 · renderEngine 渲染引擎声明」
+  *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下的滑块补齐。WebF 没有实现 `input[type=range]`（实测那一整行一个像素
+  都不画：既没有滑块也没有文本框，同一行的兄弟文字与行背景会一起消失），现在客户端提供原生元素
+  `<songloft-slider>`，`common.js` 垫片会自动把每个 `input[type="range"]` **隐藏**并在其后插入滑块、
+  双向同步 `.value` / `.disabled` / `input` 与 `change` 事件 / `matches(':active')`——原 `<input>` 仍留在
+  DOM 里，**插件既有 JS 无需改动**。竖向滑块需在原 input 上声明 `data-sl-orientation="vertical"`
+  （不自动推断朝向），并按新标签补几行几何 CSS（垫片只拷 inline style、不拷 class）；
+  `data-sl-no-slider` 可退出该垫片。仅 WebF 渲染面生效，浏览器与系统 WebView 下行为不变。
+  官方插件 miot 的音量条已适配。属性契约与适配示例见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
+  *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下补齐安全区（刘海屏 / 圆角屏 / 手势条）。WebF 压根不实现
+  CSS `env(safe-area-inset-*)`（连解析入口都不存在），写 `env()` 的插件页在这些设备上会顶到状态栏
+  或被下巴切掉。现在客户端把真实安全区（`MediaQuery.viewPadding`）注入成四个 CSS 变量
+  `--sl-safe-top` / `--sl-safe-right` / `--sl-safe-bottom` / `--sl-safe-left`，转屏、进退全屏、
+  页面重挂都会重推；`common.css` 给这四个变量备了默认值，**普通浏览器与系统 WebView 下它们就等于
+  `env()` 本身**，所以插件只写一种形式 `var(--sl-safe-bottom)` 即可三端通吃、行为不变。
+  **不做自动改写**——CSSOM 没有可用的写入面（`cssText` 只读、规则不暴露 `selectorText` 与 `.style`、
+  `@media` 内的规则完全不可达），且真实写法都套在 `calc()` / `max()` 里，而 WebF 同样没有实现
+  `max()` / `min()`（`clamp()` 可用，可作等价替换）。官方插件 miot 的 3 处已适配。
+  变量语义与 `max()` 的替换写法见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
+  *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下新增原生环形进度条元素 `<songloft-progress-ring>`。WebF 的 `<svg>` 是把
+  整棵子树重新序列化后交给 `flutter_svg` 渲染，任何子节点变更都会让整棵 SVG 重新拼串 + 重新解析 +
+  重新光栅化，所以「每秒改 `strokeDashoffset` 的 SVG 进度环」在 WebF 下是最差的一类写法；新元素的
+  进度变化只走一次重绘。颜色默认跟随 CSS `color`（currentColor），因此零配置即跟随主题。
+  **不做自动替换**——插件需自己改用该标签（内联 SVG 是任意图形，机械判定「这个 svg 是进度环」必然
+  误伤）。仅 WebF 渲染面生效 *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下补齐 `input[type=file]` —— 现在会弹出**宿主的原生文件选择器**。
+  WebF 的 `<input>` 没有 file 分支（`type=file` 落到 default，渲染成一个点了毫无反应的文本框，
+  既不报错也无日志），`common.js` 垫片改为拦下点击（同时覆写实例 `click()` 方法，
+  因此「隐藏 input + 外部按钮代点」这种常见写法照样生效）、经桥调宿主选择器、并强制
+  `display:none` 隐藏原 input（实测 **WebF 不认 HTML `hidden` 属性**，带与不带 hidden 的
+  file input 盒子都是 170×24，插件刻意隐藏的 input 会实打实占掉一行）。
+  **插件的 HTML 零改动即可用，但读结果的方式变了**：主通道是 `SongloftPlugin.lastPickedFiles`
+  （普通 JS 数组，每项 `{name, size, text?/bytesBase64?, encoding?, textLossy?, error?}`），
+  `change` 事件上的 `event.data` 只是锦上添花（WebF 的 `Event` 是 binding object，
+  挂自定义属性没有契约）。**`input.files` / `FileReader` / `FileList` 在 WebF 下都不可用**
+  （后两者实测压根不存在），故宿主刻意不去伪造它们——假 `File` 配不上真 `FileReader`，
+  而真 `FileReader` 根本没有。载荷形态由 `data-sl-file-as` 声明（`text` 默认 / `bytes` base64 /
+  `none` 只要元信息；默认 text 是因为真实用例只要文本，而 base64 会让 20 MB 文件变成约 27 MB
+  字符串跨两次桥），`data-sl-no-file-picker` 可退出该垫片。单文件上限 32 MB，超限返回明确错误
+  而非静默截断；用户取消时不派发 `change`。仅 WebF 渲染面生效，浏览器与系统 WebView 下不变。
+  读结果的两端兼容写法见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
+  *(songloft-org/songloft#341)*
+- **jsplugin**: 新增 `SongloftPlugin.blobToDataURL(blob, mimeType?)`，替代 WebF 下不存在的
+  `URL.createObjectURL`（实测 `typeof` 为 undefined；`Blob` 本身有，但没有任何入口能产出
+  `blob:`，而 WebF 的资源加载器只认 http/https/assets/file/`data:`，纯 JS 也垫不出来）。
+  返回形如 `data:image/jpeg;base64,...` 的字符串，`<img src>` 与 CSS
+  `background-image: url(data:…)` 两个消费点均已实测可用（后者走的是另一条代码路径，
+  且 data URL 含逗号分号、CSS `url()` 词法本可能切错），所以同一张图当封面和当模糊背景可以
+  沿用同一个 URL。⚠️ **它返回 Promise，而 `createObjectURL` 是同步的 —— 插件必须改调用点**：
+  `Blob → base64` 只能经异步的 `arrayBuffer()`（`FileReader` 在 WebF 下不存在），
+  无法提供同步替身，且函数变 async 会往上传染到它的调用者（漏改不报错，只是图不出来）。
+  data URL 不需要也没有 `revokeObjectURL`，但会常驻内存（约为原始字节的 4/3）。
+  浏览器与系统 WebView 下同样可用，插件不必按引擎分叉
+  *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下 `window.open` 与外链点击改为用**系统浏览器**打开
+  （以前是彻底静默：WebF 的 `window.open` 不抛错、也什么都不发生，归因是没装导航代理时
+  默认导航策略把外链无条件 cancel 掉了，所以「点『去网页登录』毫无反应」既没有报错也没有日志）。
+  现在客户端装了导航代理，三档决策：`#` 开头的页内锚点照常跳转；**外部** http(s)/mailto/tel
+  交给系统浏览器或系统默认应用；**同源**整页跳转被拦下并留一条 warn（WebF 里那条路会把整个
+  插件页 `load()` 成新地址，宿主注入的上下文、loading 状态与返回键行为全部错位——
+  **WebF 下不要做多页跳转**）。**插件侧无需改动**，单参与带 `target` 的双参两种调用形态都已实测
+  转发到宿主；但它打开的是**外部浏览器而非页内新窗口**，所以「弹窗回填数据到父页」
+  （`window.opener` / 跨窗口 `postMessage`）这类流程走不通，需改成回调或轮询。
+  官方插件 miot 的小米账号二次验证据此可用。见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
+  *(songloft-org/songloft#341)*
+- **jsplugin**: WebF 渲染面下检测到 `<table>` 时打一条 `console.warn` 并给元素标上
+  `data-sl-table-unsupported`。WebF 的元素注册表里 `table` / `thead` / `tbody` / `tr` / `th` / `td`
+  **一个都没注册**，全部退化成 `display:block` —— 后果不是样式差一点，而是**信息结构丢失**
+  （6 列表格竖排成 6 行），且**完全静默**：不报错、不打日志，插件作者只看到「一堆没有表头的文本」。
+  **只警告不改写**：WebF 自带的 `<webf-table>` 家族是 Flutter `Table` widget 的薄封装，
+  `colspan`/`rowspan` 零支持、CSS `width` 无效、行必须是直接子节点（`<thead>`/`<tbody>` 不拆就渲染出
+  一张**空表且不报错**），且那些标签在普通浏览器与系统 WebView 下根本不存在，用它就要长期维护两套模板。
+  推荐改用 **CSS Grid**（标准 CSS，三条渲染路径共用一套代码），完整改法与六条硬约束
+  （不能用 `display:table`；单元格必须 `nowrap` + 省略号，否则 WebF 的 grid `auto` 行高会按
+  min-content 宽度测量、行高暴涨约 7 倍；表头别用 `position: sticky`（WebF 下压根不生效）而应
+  留在纵向滚动容器外面；纵向滚动条宽度要实测补偿；轨道别用 `auto`；窄屏别用 `display:none` 隐藏列）
+  见「JS 插件开发指南 · WebF 渲染引擎与原生元素」。官方插件 downloader 的歌曲列表已按此改造
+  *(songloft-org/songloft#341)*
+- **client**: 客户端新增「设置 → 关于与更新 → 开源许可」页。引入 WebF（GPL-3.0-only，
+  无链接例外）后客户端二进制整体按 GPL-3.0 分发，而 GPLv3 §4/§5 要求分发时**随附**许可全文与
+  「完整对应源码」的获取方式 —— 此前全文只作为 release 附件存在，App 里看不到任何许可信息、
+  安装包内部也没有一份。新页面写明分发许可为何是 GPL-3.0、三个源码仓库直链，并可查看
+  GPL-3.0 全文、NOTICE 第三方组件声明与 Flutter 汇总的逐个依赖包许可。
+  **许可全文内嵌为安装包内的 asset 而非外链** —— Songloft 的典型场景是局域网自托管、
+  设备可能长期离线，纯外链拿不到全文；这条路径在签名之前，因此一次覆盖全部平台且不动打包/签名流程。
+  Linux 便携包（tar.gz/deb/rpm/AppImage）、Windows（zip/msix）与 macOS zip 另外在解包后的根目录
+  直接放一份 `LICENSE-GPL-3.0.txt`
+  *(songloft-org/songloft#341)*
+
 ### :zap: Performance Improvements
 - **jsplugin**: 插件商店拉取结果服务端缓存 5 分钟，翻页与搜索不再重复拉取整棵注册表树
   （以前每翻一页都会重新递归拉取，最多 500 个 `plugin.json`、8 并发、单请求 15s 超时）。
@@ -110,6 +212,15 @@
   插件安装状态不受缓存影响，仍每次请求实时计算
 
 ### :bug: Bug Fixes
+- **downloader 插件**: 修复 WebF 渲染面下歌曲列表**一屏只装得下一行**、以及表头随内容滚走。
+  两个独立根因：① WebF 的 grid `auto` 行高是**在 min-content 宽度下**测量子项高度的，而 CJK
+  每个字都是断行点 —— 一行实测占 **281px**（同内容自然高 41px）、表头 72px，用户看到的是一张
+  几乎空的表；单元格改 `white-space: nowrap` + 省略号后行距 41 / 表头 39（这同时也更像表格该有的
+  观感，长内容用 `title` 属性悬停看全）。② `position: sticky` 在 WebF 下**压根不生效**，
+  且不限于 grid 路径（页面级最标准的配置也整量滚走），改为把表头放到纵向滚动容器**外面**、
+  结构上不再需要 sticky；数据区滚动条占掉的宽度由 JS 实测补偿，保证表头与数据区 6 列逐像素对齐。
+  三条渲染路径（浏览器 / 系统 WebView / WebF）仍共用同一套 HTML/CSS/JS，无引擎分叉
+  *(songloft-org/songloft#341)*
 - **jsplugin**: 修复插件商店中 `entry_path` 相同的多个插件只显示一个、且安装状态互相串台
   （装了 A 却显示 B 已安装）。去重与安装态匹配改用「`entry_path` + 作者身份」
   （作者规范化后比较，缺 author 时用 `updateUrl` 的 GitHub 仓库兜底），同名不同作者的插件

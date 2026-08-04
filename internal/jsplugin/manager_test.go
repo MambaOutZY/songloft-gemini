@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"songloft/internal/database"
+	"songloft/internal/database/testutil"
 
 	_ "modernc.org/sqlite"
 )
@@ -117,56 +118,12 @@ func computeTestCanonicalZipHash(t *testing.T, mainFile, jsCode string, staticFi
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-// setupTestDB creates an in-memory SQLite database with the js_plugins schema
+// setupTestDB 打开跑完真实 goose 迁移的 :memory: 库。
+// 刻意不在这里手写 js_plugins 的 CREATE TABLE：以前手抄一份 schema，每次给
+// js_plugins 加列都要同步改这里，漏了就整包测试报 "no such column"。
 func setupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open in-memory db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-
-	// Create js_plugins table
-	schema := `
-CREATE TABLE IF NOT EXISTS js_plugins (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    version TEXT NOT NULL,
-    description TEXT,
-    author TEXT,
-    homepage TEXT,
-    license TEXT,
-    entry_path TEXT NOT NULL UNIQUE,
-    main TEXT NOT NULL DEFAULT 'main.js',
-    min_host_version TEXT,
-    permissions TEXT DEFAULT '[]',
-    update_url TEXT,
-    download_url TEXT,
-    status TEXT NOT NULL CHECK(status IN ('active', 'inactive', 'error')) DEFAULT 'inactive',
-    zip_hash TEXT,
-    entry_hash TEXT,
-    file_mod_time TEXT,
-    file_path TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    public_paths TEXT NOT NULL DEFAULT '[]',
-    icon TEXT NOT NULL DEFAULT '',
-    external_paths TEXT NOT NULL DEFAULT '[]'
-);
-
-CREATE TRIGGER IF NOT EXISTS update_js_plugins_updated_at
-AFTER UPDATE ON js_plugins
-FOR EACH ROW
-BEGIN
-    UPDATE js_plugins SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-END;
-`
-	if _, err := db.Exec(schema); err != nil {
-		t.Fatalf("create schema: %v", err)
-	}
-
-	return db
+	return testutil.OpenMemoryDB(t).DB()
 }
 
 // setupTestEnv creates a full test environment (temp dirs, db, repo, package manager)

@@ -37,6 +37,7 @@ jobs:
     outputs:
       version: ${{ steps.parse.outputs.version }}
       version_tag: ${{ steps.parse.outputs.version_tag }}
+      release_tag: ${{ steps.parse.outputs.release_tag }}
       is_prerelease: ${{ steps.parse.outputs.is_prerelease }}
       release_title: ${{ steps.parse.outputs.release_title }}
       previous_tag: ${{ steps.prev-tag.outputs.previous_tag }}
@@ -68,8 +69,20 @@ jobs:
           BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
           GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
+          # RELEASE_TAG 只用于 GitHub release 的 tag 名与 Docker 镜像 tag 后缀。
+          # 刻意与 VERSION / VERSION_TAG 分开：VERSION=dev 会驱动 Makefile 的
+          # -tags dev，VERSION_TAG 是客户端的 FRONTEND_VERSION，两者语义不能动。
+          # WebF 实验分支（songloft-org/songloft#341）发到独立 tag，避免覆盖共享
+          # dev 预发布 —— 那是 dev 渠道客户端热更新检查的目标。
+          # 本分支合并回 main 前必须删掉这段。
+          RELEASE_TAG="${VERSION}"
+          if [[ "${GITHUB_REF}" != refs/tags/v* && "${GITHUB_REF#refs/heads/}" == worktree-webf-plugin-render ]]; then
+            RELEASE_TAG="dev-webf"
+          fi
+
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "version_tag=${VERSION_TAG}" >> $GITHUB_OUTPUT
+          echo "release_tag=${RELEASE_TAG}" >> $GITHUB_OUTPUT
           echo "is_prerelease=${IS_PRERELEASE}" >> $GITHUB_OUTPUT
           echo "release_title=${RELEASE_TITLE}" >> $GITHUB_OUTPUT
           echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
@@ -250,13 +263,16 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           BUILD_TIME: ${{ needs.prepare.outputs.build_time }}
           GIT_COMMIT: ${{ needs.prepare.outputs.git_commit }}
+          # 下载地址必须用 release_tag 而不是 VERSION：WebF 实验分支的产物挂在
+          # dev-webf 这个独立 release 下，用 VERSION 会拼出不存在的路径。
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         run: |
           cat > version.json <<EOF
           {
             "version": "${VERSION}",
             "git_commit": "${GIT_COMMIT}",
             "build_time": "${BUILD_TIME}",
-            "download_url_prefix": "https://github.com/${{ env.RELEASE_REPO }}/releases/download/${VERSION}/songloft",
+            "download_url_prefix": "https://github.com/${{ env.RELEASE_REPO }}/releases/download/${RELEASE_TAG}/songloft",
             "release_notes": "Release ${VERSION}"
           }
           EOF
@@ -330,8 +346,9 @@ jobs:
             LITE_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}-lite,${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:lite"
           else
             # dispatch：仅打分支名标签
-            FULL_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}"
-            LITE_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}-lite"
+            # 用 release_tag 而非 version_tag：WebF 实验分支要避开共享的 :dev 镜像
+            FULL_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.release_tag }}"
+            LITE_TAGS="${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.release_tag }}-lite"
           fi
 
           echo "FULL_TAGS=${FULL_TAGS}" >> $GITHUB_OUTPUT
@@ -679,7 +696,9 @@ jobs:
       - name: Produce hot-update patch assets (frontend zip + backend so)
         env:
           REPO: ${{ env.RELEASE_REPO }}
-          TAG: ${{ needs.prepare.outputs.version }}
+          # 用 release_tag：补丁资产挂在实际的 release 下（WebF 分支是 dev-webf），
+          # 用 version 会让 manifest 里的 patchUrl/soUrl 指向不存在的路径。
+          TAG: ${{ needs.prepare.outputs.release_tag }}
           SEMVER: ${{ needs.prepare.outputs.version_tag }}
           GIT_COMMIT: ${{ needs.prepare.outputs.git_commit }}
           BUILD_TIME: ${{ needs.prepare.outputs.build_time }}
@@ -1081,6 +1100,110 @@ jobs:
           name: bundled-windows
           path: release-files
 
+      # GPLv3 合规（songloft-org/songloft#341）：bundle 版客户端链接 WebF
+      # （GPL-3.0-only，无链接例外），所以那些产物整体受 GPL-3.0 约束。GPLv3 要求
+      # 随程序一并给出许可证全文（§4/§5）与完整对应源码的获取方式（§6）。
+      # 服务端二进制与 Docker 镜像不含 WebF，仍是 Apache-2.0 —— 所以这一步只在
+      # 本次 release 真的带上了 bundle 版产物时才附加这两个文件，避免给纯服务端
+      # 的 release 挂一份不适用的 GPL 声明。
+      - name: Attach GPL-3.0 license text + corresponding source notice (bundled clients)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          if ! compgen -G "release-files/songloft-bundled-*" > /dev/null 2>&1; then
+            echo "本次 release 没有 bundle 版客户端产物，跳过 GPL 附件"
+            exit 0
+          fi
+
+          # 本 job checkout 的是 main，被构建的 commit 不一定在本地对象库里（分支构建）。
+          # 显式补一次浅 fetch，别赌 fetch-depth: 0 一定把该分支也拉下来了。
+          git cat-file -e "${GITHUB_SHA}^{commit}" 2>/dev/null \
+            || git fetch --no-tags --depth=1 origin "${GITHUB_SHA}" 2>/dev/null \
+            || echo "警告：无法取到被构建的 commit ${GITHUB_SHA}，改用工作树兜底"
+
+          # 本 job 是 checkout main 的，而被构建的 commit 可能在别的分支上（分支构建），
+          # 那时 main 的工作树里可能还没有 LICENSES/ —— 所以优先从**被构建的 commit**
+          # 里取许可证全文（语义上也正是该 commit 对应的那份），工作树只作兜底。
+          if git show "${GITHUB_SHA}:LICENSES/GPL-3.0.txt" > release-files/LICENSE-GPL-3.0.txt 2>/dev/null; then
+            echo "GPL-3.0 全文取自被构建的 commit ${GITHUB_SHA}"
+          elif [ -f LICENSES/GPL-3.0.txt ]; then
+            cp LICENSES/GPL-3.0.txt release-files/LICENSE-GPL-3.0.txt
+            echo "GPL-3.0 全文取自工作树"
+          else
+            rm -f release-files/LICENSE-GPL-3.0.txt
+            echo "::error::LICENSES/GPL-3.0.txt 缺失，无法满足 GPLv3 的随附许可证要求（bundle 版客户端链接 GPL-3.0 的 WebF）"
+            exit 1
+          fi
+
+          # 注意：本 job 是 checkout main 的，HEAD 不是被构建的那个 commit。
+          # 对应源码必须指向真正构建用的 commit（分支构建时 GITHUB_SHA 是分支 HEAD），
+          # 以及那个 commit 下 songloft-player 子模块的指针。
+          # 每一步都要校验拿到的确实是 40 位 SHA：失败的 gh api 会把错误 JSON 打到
+          # stdout，直接用会把整段 JSON 写进合规文件里。
+          is_sha() { printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'; }
+          PLAYER_SHA=$(git rev-parse "${GITHUB_SHA}:songloft-player" 2>/dev/null || true)
+          if ! is_sha "$PLAYER_SHA"; then
+            PLAYER_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/contents/songloft-player?ref=${GITHUB_SHA}" --jq .sha 2>/dev/null || true)
+          fi
+          if ! is_sha "$PLAYER_SHA"; then
+            PLAYER_SHA="unknown -- read the songloft-player submodule pointer at the commit above"
+          fi
+
+          cat > release-files/CORRESPONDING-SOURCE.txt <<EOF
+          Songloft bundled client -- COMPLETE CORRESPONDING SOURCE
+          ========================================================
+
+          The bundled client artifacts in this release (songloft-bundled-*: the
+          Flutter client with the Go backend embedded) link against WebF, which
+          is licensed GPL-3.0-only with no linking exception. Each of those
+          artifacts is therefore governed AS A WHOLE by the GNU General Public
+          License, version 3 -- a verbatim copy of which is attached to this
+          release as LICENSE-GPL-3.0.txt.
+
+          You are entitled to the complete corresponding source code of that
+          combined work. This is exactly what it was built from:
+
+            Server / this repository
+              https://github.com/${GITHUB_REPOSITORY}
+              release tag : ${RELEASE_TAG}
+              commit      : ${GITHUB_SHA}
+
+            Flutter client (songloft-player submodule at that commit)
+              https://github.com/songloft-org/songloft-player
+              commit      : ${PLAYER_SHA}
+
+            WebF (rendering engine, GPL-3.0-only)
+              https://github.com/openwebf/webf
+              constraint  : the "webf:" entry in songloft-player/pubspec.yaml at
+              the client commit above -- that file is committed and readable
+              (it is a version CONSTRAINT, e.g. "^0.24.27", NOT the resolved
+              version: pubspec.lock is not committed to the client repository.
+              The exact version linked into this build appears in the
+              "flutter pub get" output of the build log below.)
+              build log   : ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          To reproduce:
+
+            git clone https://github.com/${GITHUB_REPOSITORY}.git
+            cd songloft && git checkout ${GITHUB_SHA}
+            git submodule update --init --recursive
+
+          The exact toolchain versions and build commands used for this release
+          are in .github/workflows/release.yml at the commit above (job
+          "build-bundled-*"), and the full build logs are retained on the
+          workflow run for this release.
+
+          NOT covered by GPL-3.0: the standalone server binaries in this release
+          (songloft-linux-* / songloft-darwin-* / songloft-windows-*) and the
+          Docker images contain no WebF and are distributed under Apache-2.0.
+          See LICENSE and NOTICE.
+          EOF
+
+          echo "=== GPL compliance assets ==="
+          ls -l release-files/LICENSE-GPL-3.0.txt release-files/CORRESPONDING-SOURCE.txt
+          cat release-files/CORRESPONDING-SOURCE.txt
+
       - name: Generate checksums
         run: |
           cd release-files
@@ -1114,6 +1237,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_TITLE: ${{ needs.prepare.outputs.release_title }}
           IS_PRERELEASE: ${{ needs.prepare.outputs.is_prerelease }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
         run: |
           cd release-files
 
@@ -1122,9 +1246,9 @@ jobs:
           echo "Uploading ${#FILES[@]} files..."
 
           # 检查 release 是否已存在，存在则删除
-          if gh release view "${VERSION}" --repo "${{ env.RELEASE_REPO }}" > /dev/null 2>&1; then
-            echo "Release ${VERSION} already exists, deleting..."
-            gh release delete "${VERSION}" --repo "${{ env.RELEASE_REPO }}" --yes
+          if gh release view "${RELEASE_TAG}" --repo "${{ env.RELEASE_REPO }}" > /dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists, deleting..."
+            gh release delete "${RELEASE_TAG}" --repo "${{ env.RELEASE_REPO }}" --yes
           fi
 
           # 构建 Release Notes（用 heredoc 避免 changelog 内容被 shell 展开执行）
@@ -1145,14 +1269,14 @@ jobs:
 
           # 创建 Release
           if [[ "${IS_PRERELEASE}" == "true" ]]; then
-            gh release create "${VERSION}" \
+            gh release create "${RELEASE_TAG}" \
               --repo "${{ env.RELEASE_REPO }}" \
               --title "${RELEASE_TITLE}" \
               --notes "${RELEASE_NOTES}" \
               --prerelease \
               "${FILES[@]}"
           else
-            gh release create "${VERSION}" \
+            gh release create "${RELEASE_TAG}" \
               --repo "${{ env.RELEASE_REPO }}" \
               --title "${RELEASE_TITLE}" \
               --notes "${RELEASE_NOTES}" \

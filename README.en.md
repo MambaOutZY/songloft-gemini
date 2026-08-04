@@ -568,4 +568,18 @@ For detailed release notes, see [CHANGELOG.md](CHANGELOG.md).
 
 ## 📄 License
 
-This project is open-sourced under the [Apache-2.0 License](LICENSE).
+The **source code** of this project is open-sourced under the [Apache-2.0 License](LICENSE); the server binaries and Docker images are likewise distributed under Apache-2.0.
+
+> **⚠️ Client binaries are distributed under GPL-3.0**
+>
+> The **native platform builds** of the Flutter client (Android / iOS / Windows / macOS / Linux, including the `songloft-bundled-*` bundle builds released from this repository) link against [WebF](https://github.com/openwebf/webf) to render JS plugin pages, and WebF is **GPL-3.0-only with no linking exception**. Apache-2.0 is one-way compatible with GPLv3, so the combination is permitted — but the resulting work, i.e. every client binary we distribute, **is governed as a whole by GPL-3.0**.
+>
+> As a recipient of a client binary, you therefore have the following rights:
+>
+> - The binary you received is licensed to you under **GPL-3.0, not Apache-2.0**;
+> - You are entitled to the **complete corresponding source code** of that combined work — [this repository](https://github.com/songloft-org/songloft) (server), the [client repository](https://github.com/songloft-org/songloft-player), and [WebF](https://github.com/openwebf/webf); every release ships a note recording the exact tag/commit it was built from;
+> - You may modify it and redistribute it under the terms of GPL-3.0.
+>
+> The full GPL-3.0 text is at [LICENSES/GPL-3.0.txt](https://github.com/songloft-org/songloft/blob/main/LICENSES/GPL-3.0.txt) and is attached to every release. The license texts are also **bundled inside the client installers**, readable in-app without a network connection under "Settings → About & Updates → Open source licenses": the full GPL-3.0 text, the third-party notices, and the per-package licenses.
+>
+> **What is not affected**: the backend (Go server) source and binaries, the Docker images, and the Web client build contain **no WebF** and remain governed by Apache-2.0 alone; building the client from source with the WebF dependency removed also yields a binary governed by Apache-2.0 alone. For the third-party component list, see the [client NOTICE](https://github.com/songloft-org/songloft-player/blob/main/NOTICE).

@@ -568,4 +568,18 @@ Songloft 内置 JS 插件引擎，插件运行在 QuickJS 沙箱中，支持权�
 
 ## 📄 许可证
 
-本项目基于 [Apache-2.0 License](LICENSE) 开源。
+本项目**源代码**基于 [Apache-2.0 License](LICENSE) 开源；服务端二进制与 Docker 镜像同样按 Apache-2.0 分发。
+
+> **⚠️ 客户端二进制按 GPL-3.0 分发**
+>
+> Flutter 客户端的**原生平台构建**（Android / iOS / Windows / macOS / Linux，含本仓库发布的 `songloft-bundled-*` Bundle 版）链接了 [WebF](https://github.com/openwebf/webf) 用于渲染 JS 插件页，而 WebF 是 **GPL-3.0-only 且没有链接例外**。Apache-2.0 单向兼容 GPLv3，所以这种组合是允许的 —— 但**组合后的产物（即我们分发的每个客户端二进制）整体受 GPL-3.0 约束**。
+>
+> 作为客户端二进制的接收方，你据此获得以下权利：
+>
+> - 你拿到的那份二进制**按 GPL-3.0 而非 Apache-2.0** 授予你；
+> - 你有权获取该组合作品的**完整对应源码** —— [本仓库](https://github.com/songloft-org/songloft)（服务端）、[客户端仓库](https://github.com/songloft-org/songloft-player)、[WebF](https://github.com/openwebf/webf)，每个 release 都随附一份说明其构建所用的确切 tag/commit；
+> - 你可以自行修改并按 GPL-3.0 的条件再分发。
+>
+> GPL-3.0 全文见 [LICENSES/GPL-3.0.txt](https://github.com/songloft-org/songloft/blob/main/LICENSES/GPL-3.0.txt)，并随每个 release 一同发布。许可全文同时**内置在客户端安装包里**，无需联网即可在 App 内「设置 → 关于与更新 → 开源许可」查看 GPL-3.0 全文、第三方组件声明与逐个依赖包许可。
+>
+> **不受影响的部分**：后端（Go 服务端）源码与二进制、Docker 镜像、Web 端客户端构建都**不含 WebF**，仍然只受 Apache-2.0 约束；把客户端源码去掉 WebF 依赖后自行编译，产物同样只受 Apache-2.0 约束。第三方组件清单见 [客户端 NOTICE](https://github.com/songloft-org/songloft-player/blob/main/NOTICE)。

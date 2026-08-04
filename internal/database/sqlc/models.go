@@ -52,6 +52,7 @@ type JsPlugin struct {
 	PublicPaths    string
 	Icon           string
 	ExternalPaths  string
+	RenderEngine   string
 }
 
 type PlayHistory struct {

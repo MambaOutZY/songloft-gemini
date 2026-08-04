@@ -619,27 +619,30 @@ const (
 
 // JSPlugin JS 插件模型
 type JSPlugin struct {
-	ID             int64          `json:"id"`
-	Name           string         `json:"name"`
-	Version        string         `json:"version"`
-	Description    string         `json:"description"`
-	Author         string         `json:"author"`
-	Homepage       string         `json:"homepage,omitempty"`
-	License        string         `json:"license,omitempty"`
-	EntryPath      string         `json:"entry_path"` // 路由前缀（如 "myplugin"）
-	Main           string         `json:"main"`       // 入口文件路径（如 "main.js"）
-	MinHostVersion string         `json:"min_host_version,omitempty"`
-	Permissions    []string       `json:"permissions"`    // 权限列表
-	PublicPaths    []string       `json:"public_paths"`   // 无需 JWT 认证的路径前缀
-	ExternalPaths  []string       `json:"external_paths"` // 可访问的外部绝对路径目录
-	Icon           string         `json:"icon,omitempty"`
-	UpdateURL      string         `json:"update_url,omitempty"`
-	DownloadURL    string         `json:"download_url,omitempty"`
-	Status         JSPluginStatus `json:"status"`
-	ZipHash        string         `json:"zip_hash,omitempty"`   // ZIP 文件 SHA256
-	EntryHash      string         `json:"entry_hash,omitempty"` // main.js/main.jsc 内容 SHA256
-	FileModTime    string         `json:"file_mod_time,omitempty"`
-	FilePath       string         `json:"file_path"` // ZIP 文件相对路径
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
+	ID             int64    `json:"id"`
+	Name           string   `json:"name"`
+	Version        string   `json:"version"`
+	Description    string   `json:"description"`
+	Author         string   `json:"author"`
+	Homepage       string   `json:"homepage,omitempty"`
+	License        string   `json:"license,omitempty"`
+	EntryPath      string   `json:"entry_path"` // 路由前缀（如 "myplugin"）
+	Main           string   `json:"main"`       // 入口文件路径（如 "main.js"）
+	MinHostVersion string   `json:"min_host_version,omitempty"`
+	Permissions    []string `json:"permissions"`    // 权限列表
+	PublicPaths    []string `json:"public_paths"`   // 无需 JWT 认证的路径前缀
+	ExternalPaths  []string `json:"external_paths"` // 可访问的外部绝对路径目录
+	Icon           string   `json:"icon,omitempty"`
+	UpdateURL      string   `json:"update_url,omitempty"`
+	DownloadURL    string   `json:"download_url,omitempty"`
+	// RenderEngine 插件页渲染引擎："webview" / "webf"；空串 = 跟随宿主默认（当前 webview）。
+	// 刻意不加 omitempty：客户端需要能稳定读到该字段并自行把空串映射为默认引擎。
+	RenderEngine string         `json:"render_engine"`
+	Status       JSPluginStatus `json:"status"`
+	ZipHash      string         `json:"zip_hash,omitempty"`   // ZIP 文件 SHA256
+	EntryHash    string         `json:"entry_hash,omitempty"` // main.js/main.jsc 内容 SHA256
+	FileModTime  string         `json:"file_mod_time,omitempty"`
+	FilePath     string         `json:"file_path"` // ZIP 文件相对路径
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
 }

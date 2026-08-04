@@ -254,6 +254,7 @@ static/              # Static assets directory (optional)
 | `main` | string | Yes | Entry file path (must end in `.js`) |
 | `minHostVersion` | string | No | Minimum host version requirement |
 | `permissions` | string[] | Yes | Permission list (may be an empty array `[]`) |
+| `renderEngine` | string | No | Engine the client uses to render the plugin page: `webview` / `webf`; missing or empty string means `webview`. See [renderEngine — Declaring the Rendering Engine](#renderengine--declaring-the-rendering-engine) |
 | `updateUrl` | string | No | Remote update check URL |
 | `download_url` | string | No | Plugin download URL |
 | `entryHash` | string | Yes | `sha256(main.js)` as 64-character lowercase hex, generated automatically by `@songloft/plugin-builder`; do not edit manually |
@@ -267,6 +268,43 @@ static/              # Static assets directory (optional)
 - Must start with a lowercase letter
 - Regex: `^[a-z][a-z0-9-]*$`
 - Examples: `example-basic`, `music-sync`, `metadata-helper`
+
+### renderEngine — Declaring the Rendering Engine
+
+Native clients have two paths for rendering a plugin page: the system WebView, and [WebF](https://openwebf.com/) (a W3C runtime rendered entirely by Flutter). Which one is used **is declared by the plugin itself in `plugin.json`** — the host has **no** global engine switch, and plugins do not affect each other.
+
+```json
+{
+  "entryPath": "my-plugin",
+  "renderEngine": "webf"
+}
+```
+
+| Value | Meaning |
+|-------|---------|
+| field missing / `""` | Same as `webview`, i.e. the host default |
+| `"webview"` | Rendered by the system WebView (default) |
+| `"webf"` | Rendered by WebF |
+
+- **Any other value is invalid**: the backend fails it during `ValidateManifest`, so the plugin **cannot be installed** (it does *not* silently fall back to `webview`)
+- The plugin list API returns the value in the snake_case field `render_engine`
+- The field can change between versions: to stop using WebF, publish a new version that sets it back to `webview` (or drops it)
+
+#### When to declare `webf`
+
+**Only declare it once the plugin page has been verified to actually work under WebF.** WebF is not a browser and lacks a number of HTML/CSS capabilities (built-in elements, `env()`, `window.open`, `URL.createObjectURL`, …). The capability boundary, the gaps already shimmed by the host, and the native elements available to you are documented in [§8 · The WebF Rendering Engine and Native Elements](#the-webf-rendering-engine-and-native-elements) — that section is what you judge "can my page run on WebF" against; do **not** conclude anything from how it looks in a browser alone.
+
+What you take on by declaring it:
+
+- **Verifying every page yourself** under WebF, rendering and interaction alike — especially tables, sliders, file pickers and external links, which tend to degrade silently
+- Using the `html.webf-engine` class (added automatically by the host) when you need to branch on the engine; see [§8 · The WebF Rendering Engine and Native Elements](#the-webf-rendering-engine-and-native-elements)
+- WebF is currently **0.x beta**. The host keeps **no global fallback switch**: if your page breaks under WebF, all a user can do is **disable your plugin**, or wait for you to ship a version that switches back to `webview`. Treat that as the cost of declaring `webf`
+
+#### Platform limits (read before declaring)
+
+- **The web build (Songloft Web in a browser) is completely unaffected by this field**: WebF does not support Flutter Web, so the web build **always** uses the iframe path. Declaring `webf` changes nothing there
+- **Linux coverage is narrow**: WebF on Linux requires x86-64 with glibc ≥ 2.38 and has **no arm64** build — NAS boxes, Debian 12 and Raspberry Pi are all outside that range and never get the WebF rendering surface
+- Therefore **the plugin page must remain usable in the system WebView / a regular browser**: `webf` means "use a better rendering surface on the platforms that support it", not "a license to write the page for WebF only"
 
 ---
 
@@ -993,6 +1031,427 @@ When the theme changes (the user switches it in the main program's settings), `c
 3. Write to `localStorage['songloft-theme']`
 
 Plugin JS can listen for theme changes via `SongloftPlugin.onThemeChange(callback)` to perform additional handling.
+
+### The WebF Rendering Engine and Native Elements
+
+On some platforms, newer clients can render plugin pages with [WebF](https://openwebf.com/) (an in-house W3C runtime rendered entirely by Flutter) instead of the system WebView. **This is a per-plugin choice**: only plugins that declare `"renderEngine": "webf"` in `plugin.json` get the WebF rendering surface; the default is still the system WebView, and the web build always uses the iframe path — see [§3 · renderEngine — Declaring the Rendering Engine](#renderengine--declaring-the-rendering-engine) for the field semantics and platform limits. WebF **is not a browser** and lacks a number of HTML/CSS capabilities. The main program's `common.js` shims the common gaps (empty `img src`, `<details>` collapsing, etc.) and adds a `webf-engine` class to `<html>` so plugins can branch on the engine:
+
+```css
+html.webf-engine .only-in-webf { display: block; }
+```
+
+#### Real limitations of inline SVG under WebF
+
+WebF implements `<svg>` by **re-serializing the whole svg subtree into a string** and handing it to `flutter_svg`. Consequently:
+
+- SVG child nodes exist as data only and have **no real box** — you cannot get layout from them (`getBoundingClientRect()` is meaningless)
+- An individual `<path>` / `<circle>` **cannot be animated with CSS on its own, nor hit-tested** (it is not clickable)
+- **Any change to a child's attributes / styles / subtree rebuilds the entire SVG** (re-serialize the string, re-parse, re-rasterize)
+
+Conclusion: **frequently updated inline SVG performs worst under WebF**. The textbook counter-example is "an SVG progress ring whose `stroke-dashoffset` changes every second" — every progress step rebuilds the whole SVG.
+
+#### `<songloft-progress-ring>` — a native progress ring
+
+For this reason the main program provides a native element: a progress change costs exactly one Flutter `CustomPaint` repaint, with no string serialization and no SVG re-parsing.
+
+```html
+<songloft-progress-ring value="30" max="100" stroke-width="5"
+                        style="width:48px;height:48px"></songloft-progress-ring>
+```
+
+```js
+// Updating progress means setting an attribute; there is no other API
+document.querySelector('songloft-progress-ring').setAttribute('value', '65');
+```
+
+Attributes:
+
+| Attribute | Default | Description |
+|-----------|---------|-------------|
+| `value` | `0` | Current progress value |
+| `min` | `0` | Lower bound |
+| `max` | `100` | Upper bound. `max <= min` is a degenerate range and is treated as 0 (track only) |
+| `stroke-width` | `4` | Stroke width in px, clamped to `(0, shorter side / 2]` |
+| `color` | value of CSS `color` | Progress arc color; **accepts concrete color values only** (see below) |
+| `track-color` | progress color at 24% opacity | Track color |
+| `line-cap` | `butt` | Set to `round` for rounded caps |
+
+- **Size** comes from CSS `width` / `height` (36×36 when unspecified); `display` defaults to `inline-block`
+- The arc starts at the 12 o'clock position and grows clockwise
+- **Invalid values are always clamped or ignored, never thrown**: `value="oops"` counts as 0, out-of-range values are clamped to `[min, max]`, a negative `stroke-width` is clamped to the minimum
+- **Indeterminate animation is not supported yet**; wrap the element in a CSS animation if you need a spinner
+
+#### How the color follows the theme
+
+The Flutter side cannot read the plugin page's `--md-*` CSS variables, so the color is decided by the **page**, in one of two ways:
+
+```css
+/* ① Recommended: the CSS color property (currentColor semantics).
+   This is the only path that tracks --md-* variables — when the user switches
+   between light and dark in the main program, the ring repaints accordingly. */
+songloft-progress-ring {
+    color: var(--md-primary);
+}
+```
+
+```html
+<!-- ② Override with attributes when the progress color must differ from the text
+     color, or when the color is computed in JS -->
+<songloft-progress-ring value="30" color="#4caf50" track-color="#e0e0e0"
+                        style="width:48px;height:48px"></songloft-progress-ring>
+```
+
+`color` is an inherited property, so **it follows the theme even with zero configuration**: it picks up the inherited text color, and `common.css` already binds the text color to `--md-on-surface`.
+
+Two verified pitfalls (do not step in them):
+
+- **Writing `var(--md-primary)` in the attribute does not work**: WebF does not expand CSS variables in attribute values, so the element treats it as an invalid color, ignores it, and falls back to ①. Use CSS `color` if you want to track a variable.
+- **`getComputedStyle(el).getPropertyValue('--md-primary')` always returns an empty string under WebF**: WebF's getComputedStyle does not expose custom properties, so the common trick of "read the variable in JS, then write it into the attribute" does not work.
+
+#### Compatibility and graceful degradation
+
+- The element **exists only on the WebF rendering surface**. In a regular browser or the system WebView (older clients) it is an unknown tag and renders as an empty box. The main program does **not** auto-replace SVG in plugins with it (SVG is arbitrary graphics; mechanically deciding "which svg is a progress ring" would inevitably break legitimate SVG) — replacement and fallback are entirely up to the plugin
+- When you need both to look right, ship both implementations and pick one via `html.webf-engine`:
+
+```css
+.ring-native { display: none; }                        /* hide the native element by default */
+html.webf-engine .ring-native { display: inline-block; }
+html.webf-engine .ring-svg { display: none; }          /* hide the SVG version under WebF */
+```
+
+#### `<songloft-slider>` — a native slider (stand-in for `input[type=range]`)
+
+**Most plugins have to do nothing at all.** WebF does not implement `input[type=range]` — measured behavior is that the whole line **paints zero pixels** under WebF: no slider, no text box, and the sibling text on that line plus the line's own `background` disappear along with it. So the main program's `common.js` shim automatically does the following under WebF:
+
+1. Scan every `input[type="range"]` on the page and insert a `<songloft-slider>` **after** each input;
+2. **Hide** the original `<input>` (add the `.sl-range-hidden` class plus inline `display:none`) instead of **removing** it;
+3. Keep the two in sync, both ways.
+
+Your existing plugin JS therefore needs **no changes at all**:
+
+- Reading and writing `el.value` works as before (the shim installs accessors on the instance; JS writes are pushed to the slider, except while the user is dragging)
+- `el.disabled = true / false` works as before (the slider dims and stops responding to gestures)
+- `el.addEventListener('input' / 'change', ...)` works as before (slider interaction dispatches **bubbling** `input` / `change` events on the original input)
+- `el.matches(':active')` works as before (returns `true` while dragging). This is the standard way plugins detect "the user is dragging, don't overwrite with polled state"; a hidden input can never truly enter `:active` under WebF, so the shim also shadows `matches`
+
+The shim is idempotent (marked with `data-sl-range-shim`); after inserting HTML dynamically, call `SongloftPlugin.applyShims()` to give the new range inputs a slider. If the `.value` accessor cannot be installed (the sentinel round-trip self-check fails), the shim **gives up entirely**: it removes the slider, restores the original input, and logs a `console.warn` — falling back to WebF's native behavior is better than "the input is hidden and the value no longer syncs".
+
+Attributes (the shim transcribes these from the original input; supply them yourself when you write the element by hand). The shim also carries over `aria-label` and the original input's inline `style`, and adds the `.sl-range-slider` class plus `data-sl-for="<id of the original input>"` to the slider:
+
+| Attribute | Default | Description |
+|-----------|---------|-------------|
+| `value` | `min` | Current value |
+| `min` | `0` | Lower bound |
+| `max` | `100` | Upper bound. `max <= min` is a degenerate range: the thumb stays at the start and drags are ignored |
+| `step` | `1` | Step size. `any` or `<= 0` means continuous |
+| `orientation` | `horizontal` | Set to `vertical` for a vertical slider (**min at the bottom, max at the top**) |
+| `disabled` | absent | Present means disabled (`false` / `0` are the exception and count as enabled). When disabled the whole element is drawn at 38% opacity and ignores gestures |
+| `color` | value of CSS `color` | Color of the filled track and the thumb; **accepts concrete color values only** |
+| `track-color` | fill color at 24% opacity | Color of the unfilled track |
+
+- **Size** comes from CSS `width` / `height`; when unspecified it falls back per orientation to **160×28 horizontal / 28×160 vertical**, and `display` defaults to `inline-block`
+- Events: dragging and **tapping the track** (a tap moves the thumb to the tap position, same as a browser) both dispatch `input`; releasing dispatches `change`. The new value is carried in `event.data` (a string; integers have no `.0`)
+- **The element does not write back its own `value` attribute during interaction** — the page owns the truth. So when you use the element directly, read the value from `event.data` and **do not** read `getAttribute('value')` (that is only whatever you last pushed into it)
+- `min` / `max` / `step` must be written as **attributes**: WebF does not implement property reflection for these three, so `el.min` reads back as an empty string
+- Invalid values are always ignored with a note in the client log, never thrown
+
+##### Vertical sliders: `data-sl-orientation` must be declared explicitly
+
+The shim does **not** guess the orientation — spell it out on the original `<input>`:
+
+```html
+<input type="range" id="volumeSlider" min="0" max="100" value="50"
+       aria-label="Volume" data-sl-orientation="vertical">
+```
+
+Why it cannot be inferred: in a browser a vertical range is usually produced with `transform: rotate(-90deg)`, but WebF's `getComputedStyle` coverage is unreliable (it does not even expose custom properties), and inferring from transform means **a wrong guess is a silently wrong orientation** — far worse than requiring one declaration.
+
+If you do not want the slider (you want WebF's native behavior, or your plugin already handles that range itself), add `data-sl-no-slider` and the shim skips it:
+
+```html
+<input type="range" data-sl-no-slider>
+```
+
+##### Plugins usually need a few lines of CSS
+
+`<songloft-slider>` is a **new tag**, so it does not match your existing `input[type="range"]` selectors and inherits none of their geometry. The shim copies only the original input's **inline `style`** (so things like `style="width:100%"` keep working automatically) and **deliberately does not copy classes** — those classes usually carry rules that make a native range *look* like a slider (`-webkit-appearance`, `::-webkit-slider-thumb`, `accent-color`), and copying them would only drag in meaningless or harmful declarations.
+
+It still works without any CSS; you just get the element's default size (160×28 horizontal), which rarely fits your layout. Three selectors are available: `songloft-slider`, the `.sl-range-slider` class added by the shim, and `[data-sl-for="<id of the original input>"]` (the original id stays on the input and is never moved to the slider).
+
+How the first-party miot plugin actually does it (vertical volume bar, originally `width: 110px` + `rotate(-90deg)`):
+
+```css
+songloft-slider {
+    color: var(--md-primary);
+}
+
+/* A vertical element paints vertically on its own — no transform needed;
+   what used to be the pre-rotation width is now the height. */
+.volume-panel .volume-slider-wrap songloft-slider {
+    width: 28px;
+    height: 110px;
+}
+```
+
+These rules never match in a browser or the system WebView (there is no `songloft-slider` element there), so they are purely additive and do not need to be wrapped in `html.webf-engine`.
+
+Theme-following colors behave exactly as with `<songloft-progress-ring>` (CSS `color` / currentColor works, **writing `var()` in the attribute does not**) — see [How the color follows the theme](#how-the-color-follows-the-theme) above; it is not repeated here.
+
+##### Where it applies, and one known residual risk
+
+- The shim **only runs on the WebF rendering surface**: in a regular browser or the system WebView, the native `input[type=range]` keeps working and nothing about the page changes. A hand-written `<songloft-slider>` is an unknown tag (an empty box) outside WebF, so if you need both to look right, ship two implementations and pick one via `html.webf-engine`, just like the progress ring
+- **A vertical slider inside a vertical scrolling container may lose the gesture**: the slider uses a drag gesture on the same axis as its orientation and therefore **competes** with scrolling (which is the correct behavior — otherwise the page would scroll and the slider would move at the same time). Who wins depends on the gesture arena's "the deeper hit accepts first" ordering. miot's volume panel is a popup layer, so it is unaffected; test it for real before putting one inside a long list
+
+#### Safe areas: use `--sl-safe-*`, never `env(safe-area-inset-*)`
+
+**WebF does not implement CSS `env()` at all** — it is not a matter of imprecise evaluation, the parsing entry point simply does not exist. So on notched / rounded-corner / gesture-bar devices, a plugin page that writes `env(safe-area-inset-bottom)` will **run under the status bar or get clipped by the home indicator**.
+
+The host therefore injects the real safe area (Flutter's `MediaQuery.viewPadding`) as four CSS variables, and plugins uniformly use `var()`:
+
+| Variable | Meaning |
+|------|------|
+| `--sl-safe-top` | Top inset (status bar / notch) |
+| `--sl-safe-right` | Right inset (landscape notch / rounded corner) |
+| `--sl-safe-bottom` | Bottom inset (home gesture bar) |
+| `--sl-safe-left` | Left inset |
+
+```css
+/* Recommended: one stylesheet for all three runtimes, no forking needed */
+.player-bar {
+    padding: 6px 16px calc(4px + var(--sl-safe-bottom));
+}
+```
+
+`common.css` already declares defaults for all four on `:root`, so **every runtime yields a defined value and plugins only ever write one form**:
+
+| Runtime | Value of `var(--sl-safe-bottom)` |
+|------|------|
+| Regular browser / system WebView (default engine) | `env(safe-area-inset-bottom, 0px)`, i.e. the native value (`0px` on desktop browsers) |
+| WebF + new client | The real `MediaQuery.viewPadding` pushed by the host (re-pushed on rotation, entering/leaving fullscreen, and page remount) |
+| WebF + older client (does not push safe areas) | `0px`, equivalent to "no safe area" — the same as not doing any of this |
+
+So: **just write `var(--sl-safe-bottom)`; do not bolt an `env()` fallback onto it.**
+
+Three hard constraints, all verified on WebF:
+
+- **`var(--x, env(...))` evaluates to `0` under WebF** — the fallback chain dies at `env()`, and even `env()`'s own inner fallback (the `19px` in `env(safe-area-inset-bottom, 19px)`) is unreachable. So it is not a "safer" spelling; it merely throws away the variable's default value
+- **WebF does not implement CSS `max()` / `min()`**, and the whole declaration is dropped (not just the safe-area term). To express "at least 24px, more if the safe area is larger", replace `max(24px, ...)` with `clamp()`:
+
+  ```css
+  /* clamp(MIN, VAL, MAX) is by definition max(MIN, min(VAL, MAX)), so for any
+     safe area <= 96px it is exactly equivalent to max(24px, …) (real devices
+     top out around 34px). Zero behavior change in browsers, verified on WebF. */
+  .fp-controls {
+      padding-bottom: clamp(24px, var(--sl-safe-bottom), 96px);
+  }
+  ```
+
+  When you only want "a fixed gap on top of the safe area", `calc()` is more direct: `calc(24px + var(--sl-safe-bottom))`
+- **`clamp()` works and accepts `var()` in its arguments** (verified), but avoid every other CSS math function outside `calc()` (`max` / `min` / `round` / `mod`, …)
+
+Note that the injected value is **whatever is left for the page to handle**: the client already consumes part of the safe area with an outer `SafeArea` (the plugin tab page consumes top / left / right and leaves the bottom to the page), so you will not get double padding where the host has already inset the surface.
+
+#### File picking: `input[type=file]` is taken over automatically, but the result is **not in `input.files`**
+
+**Your HTML needs no changes at all; the JS that reads the result must change.**
+
+WebF does not implement `input[type=file]`: its `<input>` build switch only knows radio / checkbox / button / submit / date / time, so `type=file` falls through to the default branch and renders a Flutter text field — **clicking it does nothing at all** (and raises no error). So under WebF the `common.js` shim automatically:
+
+1. Scans every `input[type="file"]` on the page and **hides it** (adds the `.sl-file-hidden` class plus inline `display:none`);
+2. Intercepts its `click` event **and** overrides its instance `click()` method — so the common "hidden input + external button calling `fileInput.click()`" pattern still opens the picker;
+3. Opens the **host's native file picker** and sends the chosen files back to the page over the bridge;
+4. Writes the result into `SongloftPlugin.lastPickedFiles`, then dispatches a bubbling `change` on the original input.
+
+Why the shim must hide the original input itself: measured behavior is that **WebF ignores the HTML `hidden` attribute** (a file input's box is 170×24 with or without `hidden`), so the input a plugin deliberately hid would really occupy a line under WebF — as an unclickable empty text field.
+
+##### Reading the result: the primary channel is `SongloftPlugin.lastPickedFiles`
+
+```js
+fileInput.addEventListener('change', function () {
+    // ✅ Primary channel: a plain JS array, always readable
+    var files = (window.SongloftPlugin && SongloftPlugin.lastPickedFiles) || [];
+    if (!files.length) return;
+    importPlaylist(files[0].text);   // a decoded string when as=text (the default)
+});
+```
+
+- **`input.files` / `FileReader` / `FileList` are all unusable under WebF**: the latter two **do not exist at all** (measured: `typeof` is `undefined` for both), which is why the host deliberately does **not** fake `input.files` — a fake `File` is useless without a real `FileReader`, and there is no real `FileReader`. Code that reads files with `new FileReader()` throws outright under WebF.
+- The `change` event **also carries a best-effort** `event.data = {files: [...]}`, but that is a bonus only: WebF's `Event` is a binding object and there is **no contract** that custom properties can be attached to it. Do **not** treat it as the primary channel.
+- **No `change` is dispatched when the user cancels** (same as in a browser), so you need not worry about an empty `change` falling into your "read failed" branch and showing an error for something the user did not do wrong.
+- `lastPickedFiles` is a **single global value** (`null` before the first pick); with several file inputs on a page it holds the most recent result — read it immediately inside the `change` handler. If the host call fails, the shim only logs a `console.warn` and dispatches no `change`.
+
+##### Payload shape: `data-sl-file-as`
+
+```html
+<!-- metadata only, do not read the contents -->
+<input type="file" id="pick" accept=".m3u,.m3u8,.json" data-sl-file-as="none">
+```
+
+| Value | Payload | When to use it |
+|------|------|-----------|
+| `text` (default) | `text` string + `encoding` (+ possibly `textLossy`) | Importing text such as m3u / json / lrc |
+| `bytes` | `bytesBase64` (a base64 string) | Binary files, or when you need to decode a legacy encoding (e.g. GBK) yourself |
+| `none` | `name` / `size` only | You only need the file name and size |
+
+**The default is `text`, not `bytes`**: the real use cases (importing m3u / json) only need text, while base64 turns a 20 MB file into roughly a 27 MB string that must cross two serialization bridges (Dart → C++ → QuickJS). That is not a price to pay by default.
+
+Fields of each file object:
+
+| Field | Present when | Meaning |
+|------|---------|------|
+| `name` | Always | File name (no path) |
+| `size` | Always | Size in bytes |
+| `text` | `as=text` and the read succeeded | The decoded string (BOM stripped) |
+| `encoding` | Same as above | `utf-8` / `utf-8-lossy` / `utf-16le` / `utf-16be` |
+| `textLossy` | `true` when decoding was lossy | The host decides by BOM plus strict UTF-8 only and **never guesses GBK**; GBK files go through a lenient decode and get this flag — switch to `as="bytes"` and decode them yourself if you need exact handling |
+| `bytesBase64` | `as=bytes` and the read succeeded | base64 |
+| `error` | On read failure | `too_large` (over the 32 MB per-file limit, accompanied by `limit`) / `read_failed`. **Deliberately never truncated silently**: half an m3u parses as "imported fine, but half the entries are missing", which is far harder to diagnose than an error |
+
+- **You never get a file path**, by design: desktop platforms hand back a real path while Android SAF gives a content URI (inconsistent across platforms), a path is useless to page JS anyway, and it would be an unnecessary information leak.
+- `accept` is passed through verbatim, but **only the `.ext` extension form becomes a real filter**; with MIME forms (`text/plain`, `image/*`) or a mix of the two, the host **drops filtering entirely** (a few extra selectable files — which your plugin validates anyway — is better than blocking files the user was supposed to be able to pick).
+- `multiple` enables multi-select; without it only the first file is returned.
+- Only one picker may be in flight at a time, so rapid clicking cannot start two host calls (otherwise, of the two resulting `change` events, the later one is not necessarily the user's final choice).
+
+##### Opt-out, idempotency and cross-runtime code
+
+To keep WebF's native behavior (or when your plugin already handles that input itself), add `data-sl-no-file-picker` and the shim skips it:
+
+```html
+<input type="file" data-sl-no-file-picker>
+```
+
+The shim is idempotent (marked with `data-sl-file-shim`); after inserting HTML dynamically, call `SongloftPlugin.applyShims()` to take over the newly added file inputs. The shim **only runs on the WebF rendering surface**: in a regular browser or the system WebView the native file input and `FileReader` keep working. So keep **both paths** and one body of code serves all three runtimes:
+
+```js
+function readPickedFile(input, cb) {
+    var picked = window.SongloftPlugin && SongloftPlugin.lastPickedFiles;
+    if (picked && picked.length) return cb(picked[0].text);   // WebF
+    var f = input.files && input.files[0];                    // browser / system WebView
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () { cb(r.result); };
+    r.readAsText(f);
+}
+```
+
+#### `URL.createObjectURL` does not exist: use `SongloftPlugin.blobToDataURL()` (**async**)
+
+**`URL.createObjectURL` simply does not exist under WebF** (measured: `typeof URL.createObjectURL === 'undefined'`). `Blob` itself is there, but nothing can produce a `blob:` URL — and **no shim is possible either**: `blob:` requires cooperation from the resource loader, and WebF's loader only accepts `http` / `https` / `assets` / `file` / `data:` and throws on anything else. Even if JS fabricated a `blob:xxx` string, loading it would necessarily fail.
+
+The textbook victim is "fetch an image with an auth header, then display it": `fetch` gives you a `Blob`, and `<img src>` cannot consume a Blob directly. The host's replacement is a `data:` URL (natively supported by WebF):
+
+```js
+var url = await SongloftPlugin.blobToDataURL(blob);   // 'data:image/jpeg;base64,...'
+```
+
+Signature: `blobToDataURL(blob, mimeType?) → Promise<string>`. `mimeType` overrides `blob.type` (useful when `blob.type` is empty); with neither, `application/octet-stream` is used.
+
+**All three rendering paths share one implementation**: it uses `Blob.prototype.arrayBuffer` + `btoa`, which exist in regular browsers and the system WebView too, so **no engine forking is needed** — one async spelling serves everything.
+
+##### ⚠️ It is async, so you must change the call sites
+
+`createObjectURL` is **synchronous** while `blobToDataURL` returns a **Promise**. That is not implementation laziness but an unbridgeable difference in shape: `Blob → base64` can only go through `arrayBuffer()` (`FileReader` does not exist under WebF), and that is inherently asynchronous. So **do not expect a synchronous stand-in from the host** — changing the call sites is the only path:
+
+```js
+// ❌ Before: URL.createObjectURL is undefined under WebF, so this line throws a TypeError
+function showCover(blob) {
+    var url = URL.createObjectURL(blob);
+    img.src = url;
+    bg.style.backgroundImage = 'url(' + url + ')';
+    // and you still have to remember URL.revokeObjectURL(url)
+}
+
+// ✅ After: the function becomes async; everything after you have the string is unchanged
+async function showCover(blob) {
+    var url = await SongloftPlugin.blobToDataURL(blob);
+    img.src = url;
+    bg.style.backgroundImage = 'url(' + url + ')';
+    // no revoke needed
+}
+```
+
+Note that "change the call sites" **propagates upwards**: once `showCover()` is async, its own callers must either `await` / `.then` it or accept that the image appears a beat later. This is the easiest step to miss when porting — missing it raises no error, the image just never shows up.
+
+##### Two consumption points verified to work
+
+- `<img src="data:…">`
+- CSS `background-image: url(data:…)` — worth spelling out, because it takes a **completely different** code path from `<img>`, and a data URL contains commas and semicolons that CSS `url()` tokenization could plausibly split wrongly. It was measured to render, so "the same image as both a cover `<img>` and a blurred background" can reuse the **same** data URL instead of needing another route.
+
+##### The lifetime semantics change
+
+A data URL **needs no** `revokeObjectURL` (there is none): it is not a handle, just a string. The price is that it **stays in memory** (base64 is about 4/3 of the raw bytes) — as long as an element's `src` / `style` references it, or you stored it in a variable / array / DOM attribute, that string is not reclaimed. Therefore:
+
+- For large images or long-list thumbnails, do not blindly accumulate data URLs in an array as a cache — clear the references when you are done with them.
+- The cheaper approach is **not to route through a Blob at all when a URL will do**: if the image is reachable via a directly accessible URL (no custom request headers required), point `<img src>` at it and skip the whole dance.
+
+#### `window.open`: external links now open in the **system browser** (no plugin changes needed)
+
+**Nothing on the plugin side has to change**, but you need to know what it now means.
+
+WebF's `window.open` used to be **completely silent**: no error, and nothing happened (the root cause is that with no navigation delegate installed, WebF's default navigation policy cancels external links unconditionally). So under WebF, "clicking 'log in on the web' does nothing" produced neither an error nor a log line.
+
+Newer clients install a navigation delegate on the WebF rendering surface, and the behavior is now three-tiered:
+
+| Target | Behavior |
+|------|------|
+| In-page anchors starting with `#` | Navigate as usual (`pushState` + `hashchange` keep working) |
+| **External** `http(s)` / `mailto:` / `tel:` | Opened with the **system browser / system default app** |
+| **Same-origin** `http(s)` navigation (the plugin page itself) | **Blocked**, with a warning in the client log |
+
+```js
+// Both call shapes are verified to work (one argument, and two arguments with a target,
+// are both really forwarded to the host)
+window.open('https://account.xiaomi.com/oauth2/authorize?...');
+window.open('https://example.com/help', '_blank');
+```
+
+Three things to keep in mind:
+
+- **It opens an external browser, not an in-page popup window.** So flows where "the popup writes data back into the opener after the user finishes" (`window.opener`, assigning to the returned window object, cross-window `postMessage`) **do not work here** — restructure them so that the plugin polls after the user returns to the page, or offer an explicit "I'm done" button that triggers the callback.
+- **Same-origin full-page navigation is deliberately blocked**: under WebF that path means "`load()` the whole plugin page at a new address", which invalidates the context injected by the host, the loading state and the back-button behavior. **Do not do multi-page navigation under WebF** — stay single-page and switch views in place.
+- Any other scheme (relative paths, `javascript:`, custom schemes) is not allowed through. If your plugin relies on a custom scheme to launch a third-party app, treat that as unavailable under WebF and provide a fallback.
+
+#### `<table>` **does not exist** under WebF: use CSS Grid instead
+
+WebF's element registry registers **none** of `table` / `thead` / `tbody` / `tr` / `th` / `td` — they all fall through to unknown elements (`display:block`). The consequence is not "slightly off styling" but **loss of information structure**: a 6-column table stacks into 6 rows, and a few dozen records become several hundred lines of unlabeled text. And it is **completely silent** — no error, no log.
+
+The host can only help you **discover** it, not fix it: on the WebF surface, `common.js` tags every `<table>` on the page with `data-sl-table-unsupported` and prints one `console.warn` (that warning is what pointed you at this section). **The host deliberately does not rewrite the tags** — see the rationale below.
+
+**The fix: CSS Grid.** One row = N consecutive cell divs, wrapped by grid auto-placement:
+
+```css
+.tbl-head, .tbl-body {
+    display: grid;
+    /* Both containers share one track definition — that is the whole secret
+       behind columns lining up across rows. */
+    grid-template-columns: 36px minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr) 90px 60px;
+}
+```
+
+```html
+<div class="table-wrap">            <!-- horizontal scroll: overflow-x here, BOTH header and body inside -->
+  <div class="tbl">                 <!-- plain block: width baseline + min-width floor -->
+    <div class="tbl-head">…6 header cells…</div>   <!-- outside the vertical scroller, no sticky -->
+    <div class="tbl-scroll">       <!-- vertical scroll: max-height + overflow-y, body only -->
+      <div class="tbl-body">…6×N data cells…</div>
+    </div>
+  </div>
+</div>
+```
+
+**Six hard constraints — each one was learned the hard way, do not rediscover them**:
+
+- **Never write `display: table` / `table-row` / `table-cell`.** WebF's `CSSDisplay` enum has **no table value at all**, and `resolveDisplay` falls through to `default`, returning **`inline`** — which is **worse** than the default `block`, i.e. a net loss. `display: contents` (the standard trick for making row wrappers transparent in browsers) is unsupported too, so **you cannot keep `<tr>` wrapper elements**.
+- **Cells must be `white-space: nowrap` + `overflow: hidden` + `text-overflow: ellipsis`; never let content wrap.** WebF sizes `auto` grid rows by measuring children **at min-content width** (a confirmed upstream defect): when wrapping is allowed, every CJK character is a break opportunity, so a 3-character header is measured as 3 lines and a 12-character name as 13 lines — measured in the container, one row took **281px** (the same content is naturally 41px tall) and the header row 72px, leaving room for exactly **one** row: the user sees **an almost empty table**. Under `nowrap`, min-content == max-content, so even that wrong measurement pass comes out right (measured: 41px rows / 39px header). These properties **must live in CSS loaded with the page**, not injected later by JS — they have to be in effect *before* rows are inserted so the very first layout is correct. Expose the full text via a `title` attribute for desktop hover (always build attributes with a quote-escaping helper; a `textContent → innerHTML` style `esc()` does **not** escape quotes and will truncate the attribute).
+- **Do not make the header sticky — restructure so it does not need to be.** Measured: `position: sticky` **does not work at all** under WebF, and **not only in grid** — put a plain div at the top of `body` and scroll the page itself (`documentElement.scrollTop = 300`) and it still scrolls away by the full amount (`y = -300`), while computed `position` is still `"sticky"`, `top` is still `"0px"`, and `scroll` events do fire (**the style survives and the notification chain runs; only the offset is never applied**). So avoid it structurally: **only the data area scrolls**, and the header is its sibling, sitting **outside** the vertical scroll container. That structure is equally correct in browsers and system WebViews, so one code path still covers all three.
+  - A related source-level fact that still holds (it is why the header must be its own grid container): WebF's grid layout lumps `position: sticky` children together with absolute/fixed as **out-of-flow**, so sticky header cells **neither occupy a grid cell nor contribute to track sizing**. Either way you need **two grid containers** (header + body) sharing one `grid-template-columns`.
+- **A vertical scrollbar offsets the header from the body by its width — compensate for it.** The data area lives in its own scroll container, and a classic (space-consuming) scrollbar eats only *its* content width, which the header outside cannot see (measured: a dozen-odd pixels in desktop browsers; 0 under WebF and on mobile, where scrollbars are overlays). CSS cannot tell you that width, so measure it: `scrollEl.getBoundingClientRect().width - bodyEl.getBoundingClientRect().width`, write it into a custom property, and cancel it out with `padding-right` on the header. Two notes: ① **measure across a frame** — WebF's layout is asynchronous, so reading right after assigning `innerHTML` gives you the *previous* layout; wrap it in a `setTimeout`; ② if the measurement fails, treat it as 0, which is exactly the right answer for overlay scrollbars. Adding `scrollbar-gutter: stable` to the scroll container keeps the content width constant regardless of whether a scrollbar is present, removing one jump at the threshold.
+- **Do not use `auto` / `min-content` / `max-content` in the track definition.** Use only fixed `px` and `minmax(0, Nfr)`, so each column width is a **pure function of the available width**, independent of what either container happens to hold — that is the precondition for two independent containers to stay aligned.
+- **Do not hide columns on narrow screens with `@media` + `display:none`.** Under WebF a `display:none` element **still attaches a zero-sized box and still consumes a grid cell**, shifting every following cell by one position. Give `.tbl` a `min-width` and let the whole table scroll horizontally below that width instead (the horizontal scroll container must wrap **both** the header and the body, otherwise they drift apart once you scroll right).
+
+**Why the host does not rewrite tags to WebF's built-in `<webf-table>` family**: it is a thin wrapper over the Flutter `Table` widget, so its ceiling is set upstream — zero `colspan`/`rowspan` support, CSS `width` entirely ineffective (only the header cells' `column-width` attribute is honored), CSS `position:sticky` ineffective (you must use a `sticky` attribute instead), and rows must be **direct children** (leaving `<thead>`/`<tbody>` in place renders an **empty table with no error**). More importantly those tags **do not exist at all** in plain browsers and system WebViews, so using them would mean maintaining two templates forever. CSS Grid is standard CSS: **all three rendering paths share one set of HTML/CSS/JS and one appearance.**
+
+**Two unavoidable regressions** (the official downloader plugin has already been converted this way — use it as a reference): `tr:hover` whole-row highlighting degrades to single-cell highlighting (after flattening there is no row element in the DOM, and pure CSS cannot express it); table accessibility semantics are lost (mitigation: add `aria-label` to each row's interactive controls and `role="group"` to the container).
 
 ### Access Paths
 

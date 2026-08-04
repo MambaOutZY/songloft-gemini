@@ -1612,7 +1612,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取 JS 插件列表",
+                "description": "获取 JS 插件列表，形如 {\"plugins\": [jsplugin.JSPlugin, ...]}（响应类型是 map，\n单个插件对象的完整字段见 jsplugin.JSPlugin 定义）。\n其中 render_engine 是插件在自己 plugin.json 的 renderEngine 字段里声明的页面渲染引擎，\n取值 \"webview\"（系统 WebView）或 \"webf\"；**空串表示跟随宿主默认**，客户端需自行映射为 webview。",
                 "consumes": [
                     "application/json"
                 ],
@@ -8917,6 +8917,10 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "render_engine": {
+                    "description": "RenderEngine 插件页渲染引擎：\"webview\" / \"webf\"；空串 = 跟随宿主默认（当前 webview）。\n刻意不加 omitempty：客户端需要能稳定读到该字段并自行把空串映射为默认引擎。",
+                    "type": "string"
                 },
                 "status": {
                     "$ref": "#/definitions/models.JSPluginStatus"

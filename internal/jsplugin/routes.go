@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -449,7 +450,27 @@ func (m *Manager) tryServeStaticFile(w http.ResponseWriter, r *http.Request, sta
 // 否则浏览器的预加载扫描器（preload scanner）会用错误的基准 URL 发起资源请求。
 //
 // 如果 HTML 中没有 <head> 标签，则在文件开头注入。
+// emptySrcAttrRe 匹配 src="" / src=” / src= "" （含等号两侧空白）。
+//
+// 刻意只匹配**完全空**的值，不碰任何非空 src。
+var emptySrcAttrRe = regexp.MustCompile(`\s+src\s*=\s*(""|'')`)
+
+// stripEmptySrcAttrs 去掉页面里的空 src 属性。
+//
+// 按 HTML 规范空 src 是无效值，浏览器不会为它发请求，所以删掉它对浏览器与系统
+// WebView 都是语义上的无操作。但 WebF 会把空 src **解析成当前文档 URL**，于是把
+// 插件页自己的 HTML 抓回来当图片解码，报 `Failed to decode image (mime=text/html)`
+// （songloft-org/songloft#341 实测命中 miot / stats / music-feed 等多个插件）。
+//
+// 为什么必须在服务端做：静态 HTML 里的 src 是**解析器**设的，加载在解析期就已
+// 发起，早于任何脚本能跑的时机 —— common.js 里再怎么扫都来不及。运行时的
+// `img.src = ”` 是另一条路径，由 common.js 的属性访问器兜底。
+func stripEmptySrcAttrs(html []byte) []byte {
+	return emptySrcAttrRe.ReplaceAll(html, nil)
+}
+
 func injectHTMLHead(html []byte, entryPath, basePath string) []byte {
+	html = stripEmptySrcAttrs(html)
 	baseTag := []byte(`<base href="` + basePath + `/api/v1/jsplugin/` + entryPath + `/">`)
 	authScript := []byte(authBridgeScriptTpl)
 	assetsBase := basePath + "/api/v1/jsplugin-assets/"

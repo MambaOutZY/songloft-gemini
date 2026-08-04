@@ -103,6 +103,56 @@ html[data-theme="dark"] {
     --md-shadow-3: 0 4px 8px rgba(0,0,0,.42), 0 2px 8px rgba(0,0,0,.36);
 }
 
+/* ── 安全区内边距变量 --sl-safe-*（songloft-org/songloft#341）──
+ *
+ * 刘海屏 / 圆角屏 / 手势条的安全区。**插件请一律写 `var(--sl-safe-bottom)`，
+ * 不要直接写 `env(safe-area-inset-bottom)`** —— WebF 渲染引擎压根不实现 `env()`
+ * （`css/keywords.dart` 里那 6 个 SAFE_AREA_INSET* / ENV 常量全库无引用，
+ * 连解析入口都没有），写 env() 的插件页在 WebF 下会顶到状态栏 / 被下巴切掉。
+ *
+ * 三种环境下这四个变量都有确定值，插件侧只有一种写法：
+ *   ① 普通浏览器 / 系统 WebView（默认引擎）→ 下面 :root 里的 env() 原生求值，
+ *      拿到真实 inset（桌面浏览器上就是 0px）
+ *   ② WebF + 新客户端 → html.webf-engine 先把它压成 0px（因为 env() 在 WebF 里
+ *      既不求值也没有兜底，留着它会让 calc() 拿到一个非长度的字符串），
+ *      随后宿主用 MediaQuery.viewPadding 的真值经 common.js 写到
+ *      documentElement 的**内联样式**上覆盖（内联优先级最高）
+ *   ③ WebF + 旧客户端（不推安全区消息）→ 停在 0px，等价于「没有安全区」，
+ *      与今天的表现一致，不会更糟
+ *
+ * `html.webf-engine`（0,1,1）优先级高于 `:root`（0,1,0），且刻意**写在 :root
+ * 之后** —— 这样无论 WebF 是按优先级还是按源码顺序裁决，结论都一样。
+ * 那个 class 由 common.js 的 installEarly() 只在 WebF 下加。
+ *
+ * ⚠️ WebF 的两条已实测边界，写插件 CSS 时必须绕开：
+ *   - **没有 `max()` / `min()`**（`css/values/calc.dart` 只认 calc 与 clamp），
+ *     `max(24px, var(--sl-safe-bottom))` 整条声明是死的 —— 这跟 env() 无关，
+ *     换成 var() 也救不回来
+ *   - 想表达「至少留 24px，安全区更大时按安全区」，用 **`clamp()`**：
+ *     `clamp(24px, var(--sl-safe-bottom), 96px)`。clamp 的定义就是
+ *     `max(MIN, min(VAL, MAX))`，对任何 ≤ MAX 的安全区与 `max(24px, …)` 完全等价
+ *     （真机安全区最大也就 iPhone 的 34px 上下，96px 只是个够不到的上限）。
+ *     **`clamp()` 的参数里可以塞 `var()`** —— 探针第 17 组实测 D=30 / J=24
+ *     （J 那条证明夹紧真的发生、不是穿透）。
+ *     ⚠️ 光读源码会得出相反结论：clamp 分支是逐个参数走 `CSSLength.parseLength`，
+ *     而它不认 `var(...)`，只有 calc() 内部有专门的 `CalcVariableNode`。
+ *     实测推翻了这个判读（含 var 的整值应是先被样式系统替换过），
+ *     **以实测为准**，别照源码把它改回「不支持」
+ */
+:root {
+    --sl-safe-top: env(safe-area-inset-top, 0px);
+    --sl-safe-right: env(safe-area-inset-right, 0px);
+    --sl-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --sl-safe-left: env(safe-area-inset-left, 0px);
+}
+
+html.webf-engine {
+    --sl-safe-top: 0px;
+    --sl-safe-right: 0px;
+    --sl-safe-bottom: 0px;
+    --sl-safe-left: 0px;
+}
+
 /* ── Reset ── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -718,6 +768,79 @@ html.embed .snackbar {
 .text-field textarea:focus-visible {
     outline: 2px solid var(--md-primary);
     outline-offset: -2px;
+}
+
+/* ── WebF 垫片层样式（songloft-org/songloft#341）──
+ *
+ * 只服务 common.js 里的 WebF 兼容垫片层，纯增量。
+ *
+ * 为什么用 class 而不是 `html.webf-engine ...` 复合选择器做作用域：
+ * 下面这些 class（.sl-details / .sl-details-summary / .sl-details-content /
+ * .sl-details-marker）**只由垫片在 WebF 下添加**，垫片本身已经关在
+ * isWebFEngine() 分支里，所以规则天然只在 WebF 生效。写成
+ * `html.webf-engine .sl-details-summary` 反而额外依赖 WebF 正确解析「根元素
+ * class + 后代」组合，多一个失效点、零收益。（垫片仍会在 WebF 下给
+ * <html> 加 `webf-engine` class，供插件写自己的 WebF-only 规则用。）
+ * 浏览器与系统 WebView 下 <details> 是原生实现、垫片不跑，这段永不匹配。
+ *
+ * 颜色一律走 --md-* 变量 —— 这是把折叠做成 CSS/JS 垫片而不是 Flutter 组件的
+ * 主要理由：变量在 html[data-theme] 里已有亮/暗两套，主题切换自动跟随。
+ * 优先级刻意留低（单 class = 0,1,0），插件自己的 `.x summary`（0,1,1）能盖掉。
+ */
+.sl-details-summary {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    color: var(--md-primary);
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.sl-details-marker {
+    font-size: 20px;
+    line-height: 1;
+    color: var(--md-on-surface-variant);
+}
+
+.sl-details-content {
+    display: block;
+}
+
+/* range 垫片（common.js 的 rangeSliderShim）：原 <input type=range> 被隐藏，
+ * 由 <songloft-slider> 顶上（原 input 仍留在 DOM 里当数据宿主，插件读写不受影响）。
+ *
+ * 只这一条 display:none 是必须的；垫片同时还写了 inline style.display='none'
+ * 做双保险（CSS 没加载上也一定隐藏）。保留 class 形态是为了让插件在调试时能用
+ * 更高优先级把原 input 显示回来看一眼。
+ *
+ * 刻意**不在这里给 songloft-slider 定颜色 / 尺寸**：
+ *   - 颜色：元素默认取 CSS `color`（currentColor），而上面已把文字色绑到
+ *     --md-on-surface，所以零配置就跟随主题。想用主色的插件自己写
+ *     `songloft-slider { color: var(--md-primary) }` —— 定在这里反而会因为
+ *     加作用域而抬高优先级，把插件的覆盖压掉。
+ *   - 尺寸：Dart 侧按朝向给了兜底（横 160x28 / 竖 28x160）；插件要精确版面时
+ *     针对 `songloft-slider` / `.sl-range-slider` / `[data-sl-for="<原 id>"]` 自己写。
+ */
+.sl-range-hidden {
+    display: none;
+}
+
+/* file 垫片（common.js 的 filePickerShim）：原 <input type=file> 被隐藏，
+ * 选择器改由宿主的原生文件选择器（Dart 侧 file_picker）弹出。
+ *
+ * 为什么必须隐藏：WebF 的 <input> 实现里没有 file 分支
+ * （html/form/input.dart:250-266 的 switch 落到 default），于是 type=file 变成
+ * 一个 Flutter TextField；**而且 WebF 不认 HTML 的 `hidden` 属性** ——
+ * 验证容器实测：带 hidden 与不带 hidden 的 file input 盒子都是 172x24
+ * （scripts/webf-verify 第 18 组的 fileVisHidden / fileVis）。也就是说连插件
+ * 刻意写了 `hidden` 的那个隐藏 input，在 WebF 下都会占掉一行版面。
+ *
+ * 与 .sl-range-hidden 同一套做法：class + 垫片里的 inline display:none 双保险，
+ * class 形态留给插件调试时用更高优先级显示回来。
+ */
+.sl-file-hidden {
+    display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
