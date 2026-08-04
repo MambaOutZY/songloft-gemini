@@ -10,14 +10,14 @@ import (
 
 // 主题包相关错误
 var (
-	ErrThemePackInvalidSchema  = errors.New("unsupported schema version")
-	ErrThemePackMissingID      = errors.New("missing theme pack id")
-	ErrThemePackMissingName    = errors.New("missing theme pack name")
-	ErrThemePackInvalidColor   = errors.New("invalid color format, expected #RRGGBB")
-	ErrThemePackInvalidRadius  = errors.New("radius value out of range (0-100)")
-	ErrThemePackAlreadyExists  = errors.New("theme pack with this id already exists")
-	ErrThemePackNotFound       = errors.New("theme pack not found")
-	ErrThemePackInvalidJSON    = errors.New("invalid theme pack JSON")
+	ErrThemePackInvalidSchema = errors.New("unsupported schema version")
+	ErrThemePackMissingID     = errors.New("missing theme pack id")
+	ErrThemePackMissingName   = errors.New("missing theme pack name")
+	ErrThemePackInvalidColor  = errors.New("invalid color format, expected #RRGGBB")
+	ErrThemePackInvalidRadius = errors.New("radius value out of range (0-100)")
+	ErrThemePackAlreadyExists = errors.New("theme pack with this id already exists")
+	ErrThemePackNotFound      = errors.New("theme pack not found")
+	ErrThemePackInvalidJSON   = errors.New("invalid theme pack JSON")
 )
 
 // ThemePack 数据库行映射
@@ -36,18 +36,18 @@ type ThemePack struct {
 
 // ThemePackData 从 RawJSON 解析出的完整主题配置
 type ThemePackData struct {
-	SchemaVersion int              `json:"schemaVersion"`
-	ID            string           `json:"id"`
-	Name          string           `json:"name"`
-	Version       string           `json:"version"`
-	Author        string           `json:"author"`
-	Description   string           `json:"description"`
-	Light         *ThemePackColors `json:"light,omitempty"`
-	Dark          *ThemePackColors `json:"dark,omitempty"`
-	PlayerGradient []string        `json:"playerGradient,omitempty"`
-	CardRadius     *float64        `json:"cardRadius,omitempty"`
-	ControlRadius  *float64        `json:"controlRadius,omitempty"`
-	NavigationRadius *float64      `json:"navigationRadius,omitempty"`
+	SchemaVersion    int              `json:"schemaVersion"`
+	ID               string           `json:"id"`
+	Name             string           `json:"name"`
+	Version          string           `json:"version"`
+	Author           string           `json:"author"`
+	Description      string           `json:"description"`
+	Light            *ThemePackColors `json:"light,omitempty"`
+	Dark             *ThemePackColors `json:"dark,omitempty"`
+	PlayerGradient   []string         `json:"playerGradient,omitempty"`
+	CardRadius       *float64         `json:"cardRadius,omitempty"`
+	ControlRadius    *float64         `json:"controlRadius,omitempty"`
+	NavigationRadius *float64         `json:"navigationRadius,omitempty"`
 }
 
 // ThemePackColors 亮色或暗色配色方案

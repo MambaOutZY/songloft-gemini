@@ -28,16 +28,16 @@ func NewThemePackService(repo *database.ThemePackRepository, configService *Conf
 
 // ThemePackResponse 主题包响应（含完整 JSON 数据）
 type ThemePackResponse struct {
-	ID            int64                `json:"id"`
-	ThemeID       string               `json:"theme_id"`
-	Name          string               `json:"name"`
-	Version       string               `json:"version"`
-	Author        string               `json:"author"`
-	Description   string               `json:"description"`
-	SchemaVersion int                  `json:"schema_version"`
+	ID            int64                 `json:"id"`
+	ThemeID       string                `json:"theme_id"`
+	Name          string                `json:"name"`
+	Version       string                `json:"version"`
+	Author        string                `json:"author"`
+	Description   string                `json:"description"`
+	SchemaVersion int                   `json:"schema_version"`
 	Data          *models.ThemePackData `json:"data"`
-	CreatedAt     string               `json:"created_at"`
-	UpdatedAt     string               `json:"updated_at"`
+	CreatedAt     string                `json:"created_at"`
+	UpdatedAt     string                `json:"updated_at"`
 }
 
 // ThemePackListItem 列表项（不含完整 data，减少传输量）
