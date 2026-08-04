@@ -1011,6 +1011,59 @@ if (isClient()) {
 
 免构建的 vanilla 静态页面无需安装，直接用注入的 `window.SongloftPlugin.player` 即可（仅少了类型提示）。
 
+### Cookie 读取桥 —— 获取第三方站点登录态（native 专用）
+
+插件若需要第三方站点的会话 Cookie（如 FN Connect 网关的 `os-access-code`、自建 NAS 的登录态等），可使用 `getCookies` 桥接——由宿主原生层从 WebView Cookie Store 读取，不受浏览器同源策略和 HttpOnly 限制。
+
+```javascript
+// 前提：用户已在应用内 WebView 中打开目标站点并完成登录
+const cookies = await SongloftPlugin.getCookies('https://pcyear.5ddd.com');
+// cookies: { 'os-access-code': 'xxx', 'music-token': 'yyy', ... }
+```
+
+**参数说明：**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `origin` | `string` | 目标站点 origin，必须含协议+主机（+端口），如 `https://example.com`。路径忽略 |
+
+**返回值：** `Promise<Record<string, string>>` — Cookie 名→值映射。该 origin 无 Cookie 时返回空对象 `{}`。
+
+**平台限制：**
+
+| 平台 | 支持 | 说明 |
+|------|------|------|
+| Android / iOS / macOS / Windows / Linux | ✅ | 原生 `CookieManager` 读取 WebView Cookie Store |
+| Web | ❌ | 浏览器同源策略硬限制，调用会 reject |
+
+> ⚠️ 使用前建议检测平台：
+> ```javascript
+> const info = await SongloftPlugin.host.getInfo();
+> if (info.platform !== 'web') {
+>   const cookies = await SongloftPlugin.getCookies(origin);
+> }
+> ```
+
+**典型使用流程（以 FN Connect 为例）：**
+
+1. 用户添加飞牛音乐音源，插件拼出 origin（如 `https://pcyear.5ddd.com`）
+2. 插件引导用户在应用内 WebView 中打开目标站点并登录
+3. 登录完成后，插件调用 `getCookies(origin)` 获取会话 Cookie
+4. 将 Cookie 存入插件后端配置（通过 `apiPost` 等），后续请求携带该会话
+
+**TypeScript 用法：**
+
+```ts
+import { getCookies, host } from '@songloft/client-sdk';
+
+const info = await host.getInfo();
+if (info.platform !== 'web') {
+  const cookies = await getCookies('https://pcyear.5ddd.com');
+  // 传给插件后端保存
+  await SongloftPlugin.apiPost('/config/cookies', cookies);
+}
+```
+
 ### 主题适配
 
 主程序的 `common.css` 在 `:root` 下定义了 `--md-*` CSS 变量（亮色），并在 `html[data-theme="dark"]` 下覆盖为暗色值。插件页面使用这些变量即可自动适配主题：
