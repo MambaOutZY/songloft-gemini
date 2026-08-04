@@ -104,13 +104,34 @@
 
 ## [Unreleased]
 ### :sparkles: New Features
+- **jsplugin**: 客户端内置 webf-ui 原生组件库（`webf_cupertino_ui`，Apache-2.0）。声明
+  `renderEngine: "webf"` 的插件页现在可以直接使用 31 个 `<flutter-cupertino-*>` 原生元素
+  （按钮 / 输入框 / 开关 / 复选框 / 列表 / 表单 / 弹层 / 导航 / 1300+ 图标），以及 `webf` 包内建的
+  `<webf-list-view>`（映射到 Flutter ListView，自带 view 回收）—— 插件侧无需安装任何运行时。
+  这些元素直接映射到 Flutter widget，绕开 CSS 布局层，因此不再受 WebF 那批布局缺陷影响
+  （grid `auto` 行高按 min-content 测、`position: sticky` 全局失效、`<table>` 家族未注册等）。
+  ⚠️ 客户端与插件各自独立发版、`minHostVersion` 只约束服务端，所以插件**必须做特性探测**
+  （探 `document.createElement('flutter-cupertino-switch').checked !== undefined`）并保留
+  HTML 回落分支，否则在尚未内置该组件库的旧客户端上控件会**静默全部消失**。
+  可用元素清单、属性契约的三个静默失效坑（HTML 属性 kebab-case vs JS 属性 camelCase、
+  输入框的值属性叫 `val` 且是受控的、布尔属性两个入口语义不同）见
+  「JS 插件开发指南 · WebF 渲染引擎与原生元素 · webf-ui 原生组件」
+  *(songloft-org/songloft#341)*
+- **submodule**: 更新 songloft-plugin-downloader——前端用 webf-ui 重写并重新启用 WebF 渲染。
+  页面改为 Vue 3 + Vite（源码 `frontend/`，产物 `static/`），表单控件走 `<flutter-cupertino-*>`、
+  歌曲列表走 `<webf-list-view>`，引擎分叉收敛在一层薄包装组件里、业务代码只有一套，
+  因此浏览器 / 系统 WebView / Web iframe / Linux arm64 等拿不到 WebF 渲染面的路径功能不变。
+  上一版（v2026.8.3）的 CSS Grid 伪表格随之退休，它为绕开 WebF 缺陷付出的两处降级
+  （整行 hover 变单元格 hover、表格无障碍语义丢失）也一并恢复
+  *(songloft-org/songloft#341)*
 - **jsplugin**: 插件页渲染引擎改为**逐插件声明**。`plugin.json` 新增可选字段 `renderEngine`
   （`webview` / `webf`，缺失或空串等同 `webview`），插件列表 API 以 `render_engine` 返回；
   非法取值在清单校验阶段报错、插件装不上。原生客户端据此为声明 `webf` 的插件启用
   [WebF](https://openwebf.com/) 渲染面（纯 Flutter 渲染，替代系统 WebView），
   其余插件保持系统 WebView 不变。客户端设置页里原先的全局渲染引擎开关随之移除 ——
   能力缺口是逐页面的，只有插件作者能验证自己的页面。
-  官方插件 miot（智能音箱）、downloader（歌曲下载）、lyrics（歌词搜索）已标记为 `webf`。
+  目前只有官方插件 downloader（歌曲下载）声明了 `webf`；miot（智能音箱）与 lyrics（歌词搜索）
+  的页面尚未按 WebF 的能力边界重写，仍保持 `webview`。
   Web 端不受影响（WebF 不支持 Flutter Web，浏览器里永远走 iframe）；
   Linux 端 WebF 仅支持 x86-64 + glibc ≥ 2.38，arm64 / NAS / 树莓派等环境拿不到 WebF 渲染面。
   字段语义与作者须知见「JS 插件开发指南 · renderEngine 渲染引擎声明」

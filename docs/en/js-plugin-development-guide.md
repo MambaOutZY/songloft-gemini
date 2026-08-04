@@ -1465,6 +1465,14 @@ Three things to keep in mind:
 
 #### `<table>` **does not exist** under WebF: use CSS Grid instead
 
+> **Read the next section first.** If your "table" is really **a scrollable list** (identically
+> structured rows, potentially many of them), prefer
+> [`<webf-list-view>` plus flex rows](#webf-ui-native-components-flutter-cupertino--webf-list-view)
+> over the CSS Grid approach described here — that path sidesteps both of the nastiest pitfalls
+> below (grid `auto` row heights, and sticky headers). This section applies to **genuine
+> two-dimensional tables**: column widths must align strictly across rows, the row count is
+> bounded, and you do not need virtual scrolling.
+
 WebF's element registry registers **none** of `table` / `thead` / `tbody` / `tr` / `th` / `td` — they all fall through to unknown elements (`display:block`). The consequence is not "slightly off styling" but **loss of information structure**: a 6-column table stacks into 6 rows, and a few dozen records become several hundred lines of unlabeled text. And it is **completely silent** — no error, no log.
 
 The host can only help you **discover** it, not fix it: on the WebF surface, `common.js` tags every `<table>` on the page with `data-sl-table-unsupported` and prints one `console.warn` (that warning is what pointed you at this section). **The host deliberately does not rewrite the tags** — see the rationale below.
@@ -1503,7 +1511,253 @@ The host can only help you **discover** it, not fix it: on the WebF surface, `co
 
 **Why the host does not rewrite tags to WebF's built-in `<webf-table>` family**: it is a thin wrapper over the Flutter `Table` widget, so its ceiling is set upstream — zero `colspan`/`rowspan` support, CSS `width` entirely ineffective (only the header cells' `column-width` attribute is honored), CSS `position:sticky` ineffective (you must use a `sticky` attribute instead), and rows must be **direct children** (leaving `<thead>`/`<tbody>` in place renders an **empty table with no error**). More importantly those tags **do not exist at all** in plain browsers and system WebViews, so using them would mean maintaining two templates forever. CSS Grid is standard CSS: **all three rendering paths share one set of HTML/CSS/JS and one appearance.**
 
-**Two unavoidable regressions** (the official downloader plugin has already been converted this way — use it as a reference): `tr:hover` whole-row highlighting degrades to single-cell highlighting (after flattening there is no row element in the DOM, and pure CSS cannot express it); table accessibility semantics are lost (mitigation: add `aria-label` to each row's interactive controls and `role="group"` to the container).
+**Two unavoidable regressions**: `tr:hover` whole-row highlighting degrades to single-cell highlighting (after flattening there is no row element in the DOM, and pure CSS cannot express it); table accessibility semantics are lost (mitigation: add `aria-label` to each row's interactive controls and `role="group"` to the container). **These two regressions are precisely why lists are better served by `<webf-list-view>`** — on that path rows are real row elements, so neither is lost.
+
+#### webf-ui native components (`<flutter-cupertino-*>` / `<webf-list-view>`)
+
+Every section above follows the pattern "some web capability is missing under WebF, here is the
+workaround". **webf-ui goes the other direction**: use native elements that map straight onto
+Flutter widgets, bypassing the CSS layout layer entirely. For lists and form controls this is
+usually less work than assembling your own HTML/CSS, and far less likely to run into WebF's
+layout defects.
+
+The main client already bundles `webf_cupertino_ui`, so the tags below work **out of the box** on
+the WebF surface with no runtime to install on the plugin side (the npm packages
+`@openwebf/vue-cupertino-ui` / `react-cupertino-ui` are **type declarations only**; install them
+purely for editor completion):
+
+| Category | Tags |
+|---|---|
+| Buttons | `flutter-cupertino-button` |
+| Input | `flutter-cupertino-input`, `flutter-cupertino-search-text-field` |
+| Toggles & selection | `flutter-cupertino-switch`, `flutter-cupertino-checkbox`, `flutter-cupertino-radio`, `flutter-cupertino-slider`, `flutter-cupertino-sliding-segmented-control` |
+| Lists & forms | `flutter-cupertino-list-section`, `flutter-cupertino-list-tile` (with `-leading` / `-subtitle` / `-trailing` / `-additional-info` sub-tags), `flutter-cupertino-form-section`, `flutter-cupertino-form-row`, `flutter-cupertino-text-form-field-row` |
+| Overlays | `flutter-cupertino-alert`, `flutter-cupertino-action-sheet`, `flutter-cupertino-modal-popup`, `flutter-cupertino-context-menu` |
+| Navigation | `flutter-cupertino-tab-scaffold`, `flutter-cupertino-tab-bar`, `flutter-cupertino-tab-view` |
+| Other | `flutter-cupertino-icon` (1300+ icon names), `flutter-cupertino-date-picker` |
+
+Separately, **`<webf-list-view>` comes from the `webf` package itself** (not from the Cupertino
+set). It maps onto Flutter's ListView with built-in view recycling — the first choice for long
+lists.
+
+**Cupertino has no dropdown for arbitrary option lists** (only `date-picker`). Keep using the
+native `<select>`, which does work under WebF.
+
+##### You must feature-detect, not engine-detect
+
+webf-ui tags are **unknown elements** in plain browsers, system WebViews, and the web iframe, so
+using them obliges you to keep an HTML fallback path (see the next subsection). But when choosing
+between the two paths, **the test must not be "am I running inside WebF?"**:
+
+The client and the plugin ship **independently**. `minHostVersion` constrains only the **server**
+version; nothing constrains the client. So the combination "new plugin + old client" is
+inevitable, and on such a client `<flutter-cupertino-*>` falls through to `_UnknownHTMLElement`
+(an empty `display:block` box). What the user sees is **every control silently vanishing, with no
+error at all**.
+
+So test whether the elements are actually registered — when they are, the bindings define the
+corresponding JS property on the instance:
+
+```js
+function hasCupertinoUI() {
+    if (!window.webf) return false;
+    try {
+        return document.createElement('flutter-cupertino-switch').checked !== undefined;
+    } catch (e) {
+        return false;
+    }
+}
+
+// <webf-list-view> ships with the webf package, which is a separate concern from Cupertino
+function hasListView() {
+    if (!window.webf) return false;
+    try {
+        return typeof document.createElement('webf-list-view').finishLoad === 'function';
+    } catch (e) {
+        return false;
+    }
+}
+```
+
+The result cannot change during the page's lifetime, so compute it once and keep it as a constant.
+
+##### Confine the fork to leaf components; write business code once
+
+**Do not** sprinkle `if (isWebF)` through your business code, and do not maintain two page
+templates — that road has repeatedly been shown to rot, because one of the two copies can never
+be exercised on a dev machine, so breaking it goes unnoticed. Push the fork down into a thin
+wrapper layer:
+
+```vue
+<!-- ui/SlSwitch.vue — the only fork -->
+<template>
+  <flutter-cupertino-switch v-if="useNativeUI" ref="el" @change="onNativeChange" />
+  <label v-else class="my-switch">
+    <input type="checkbox" :checked="modelValue" @change="onHtmlChange" />
+    <span class="my-switch-track" />
+  </label>
+</template>
+```
+
+```vue
+<!-- business code only ever sees the wrapper -->
+<SlSwitch :model-value="settings.embedMetadata" @update:model-value="save" />
+```
+
+##### Three attribute pitfalls (all of them fail silently)
+
+**① HTML attributes are kebab-case; only JS properties are camelCase.**
+
+`webf_cupertino_ui`'s `*_bindings_generated.dart` registers both spellings:
+
+```dart
+attributes['active-color'] = ElementAttributeProperty(...);   // HTML attribute
+'activeColor': StaticDefinedBindingProperty(...)              // JS property
+```
+
+Writing `activeColor` in a template produces an `activecolor` attribute (HTML attribute names are
+case-insensitive), which **matches no registration and is silently ignored**. Always use
+kebab-case.
+
+**② The input's value attribute is `val`, not `value` — and it is controlled.**
+
+On every build `<flutter-cupertino-input>` performs
+`if (_controller.text != val) { replace the whole text and collapse the caret to the end }`. So if
+your write-back path performs a type conversion (e.g. storing a numeric field as a `Number`), the
+half-typed intermediate value gets rewritten and the caret jumps. **Keep numeric fields as
+strings in state and `parseInt` only on submit.**
+
+**③ Boolean attributes have two entry points with different semantics, and frameworks choose
+heuristically.**
+
+The same `checked`:
+
+```dart
+// HTML attribute setter — expects a string
+setter: (value) => checked = value == 'true' || value == ''
+// JS property setter — expects a real boolean
+set checked(value) { final bool next = value == true; ... }
+```
+
+The string `'true'` routed through the JS property entry point becomes **false** (in Dart
+`'true' == true` is false). Vue and React decide **heuristically** whether to set a prop or an
+attribute on a custom element, and the plugin cannot tell which they picked — picking wrong gives
+you "the switch does nothing when tapped", one of the hardest failures to diagnose.
+
+**Conclusion: bypass template binding for boolean attributes. Grab an element reference and
+assign the JS property imperatively, passing a real boolean.**
+
+```js
+// rewrite whenever dependencies change; flush:'post' guarantees the element is mounted
+watchEffect(() => {
+    if (el.value) el.value.checked = !!props.modelValue;
+}, { flush: 'post' });
+```
+
+String attributes (`val` / `placeholder` / `type` / `variant` / `active-color`) are `toString()`-ed
+on both entry points, so template binding is safe for them.
+
+##### The child-node contract: only the first child counts, and it cannot be bare text
+
+Both of these render an **empty box** with no error and nothing in the log. Rule ① is confirmed in
+the source; rule ② is, for now, only an empirically observed one:
+
+**① Only `childNodes.first` is rendered.** `<flutter-cupertino-button>` is literally
+`childNodes.isEmpty ? SizedBox() : childNodes.first.toWidget()`, and the upstream `button.md`
+states it outright: "The first child is used as the primary content". So with two children — an
+icon and a label — the label is dropped entirely.
+
+**② A bare text node does not render (empirical rule, mechanism not pinned down).** Observed:
+`<flutter-cupertino-button>Refresh</flutter-cupertino-button>` — whose only child is a text node —
+renders as an empty box collapsed to `minimumSize` (32px for `size="small"`). Reading webf's
+`RenderTextBox` actually suggests text outside an IFC (inline formatting context) *should* paint
+itself (`paintsSelf` defaults to `true` when it finds no IFC-establishing ancestor), so **do not
+treat this as an explained conclusion**. Upstream's own examples always wrap content in an element
+too.
+
+**Conclusion: wrap the content into exactly one child element, and wrap the text in an element of
+its own.**
+
+```html
+<!-- ✗ label dropped (only the first child is used) -->
+<flutter-cupertino-button><flutter-cupertino-icon type="arrow_clockwise" />Refresh</flutter-cupertino-button>
+<!-- ✗ empty box (bare text node) -->
+<flutter-cupertino-button>Refresh</flutter-cupertino-button>
+<!-- ✓ -->
+<flutter-cupertino-button><span class="btn-inner"
+  ><flutter-cupertino-icon type="arrow_clockwise" /><span>Refresh</span
+></span></flutter-cupertino-button>
+```
+
+In your wrapper component, **do not expose a slot** — make the text a prop
+(`<SlButton icon="refresh" label="Refresh" />`) so callers have no chance to violate either rule.
+Also give the text layer `white-space: nowrap`: button width comes from the content's intrinsic
+width, and a wrappable CJK label gets measured as "one character per line", yielding a narrow,
+tall button.
+
+##### Let the widget paint the decoration — do not write a second copy in CSS
+
+The `CupertinoTextField` inside `<flutter-cupertino-input>` takes `renderStyle.decoration` — that
+is, the CSS `border` / `border-radius` / `background` you wrote — and uses it as its own
+`decoration`. WebF's own render box paints that same CSS decoration **as well**, so you get **two
+frames** on screen: the outer one on the border box, the widget's copy on the content box, inset by
+`padding`.
+
+So for elements like this, write only sizing in CSS (`width` / `height`) and leave the decoration
+to the widget: with no background, border, radius or shadow, `renderStyle.decoration` returns
+`null` and the widget falls back to its own `systemGrey6` + 8px radius, which also follows the
+CupertinoTheme's light/dark brightness. Likewise `font-size` / `color` have no effect here (the
+widget does not read renderStyle's text styles) — writing them only misleads the next reader.
+
+##### Events carry their payload on `event.detail`
+
+| Element | Event | `detail` |
+|---|---|---|
+| `switch` / `checkbox` | `change` | boolean |
+| `input` / `search-text-field` | `input`, `submit` | string |
+| `input` | `focus` / `blur` / `clear` | none |
+| `button` | `click` | none (a plain `Event`) |
+
+Note that **`<flutter-cupertino-input>` has no `change` event** — only `input` / `submit` /
+`blur`. To implement "save on commit" rather than one request per keystroke, use `blur` (and
+`change` on the HTML fallback branch).
+
+##### Two hard constraints on `<webf-list-view>`
+
+```html
+<webf-list-view shrink-wrap="false" scroll-direction="vertical">
+  <div class="row">…</div>   <!-- every item must be a **direct child** -->
+  <div class="row">…</div>
+</webf-list-view>
+```
+
+- **Items must be direct children** — that is how Flutter's ListView recycles views. Wrapping
+  them in a `<div>` makes Flutter see a single child and recycling stops working.
+- **`shrink-wrap` defaults to `true`, and you almost always need `false`.** When true the list is
+  as tall as its total content and does not scroll internally, so hundreds of rows just keep
+  extending downwards. Once it is false you must give the element a **definite height** (e.g.
+  `height: clamp(240px, calc(100vh - 420px), 720px)`) — never leave the constraint unbounded, as
+  WebF resolving flex under unbounded constraints triggers `Infinity or NaN toInt`.
+
+Those are the only two attributes. The events are `refresh` / `loadmore`, and the methods are
+`finishRefresh()` / `finishLoad()` / `resetHeader()` / `resetFooter()`. **If you hook `loadmore`
+you must call `finishLoad('success' | 'noMore' | 'fail')`**, otherwise the loading indicator spins
+forever. If you are not paginating, do not hook those events at all — one less way to fail.
+
+##### Lay rows out with flex, not grid
+
+Inside `<webf-list-view>`, arrange row cells with flex and share column widths between the header
+and the rows through CSS custom properties. **Do not use grid** — you would run into the "grid
+`auto` row heights measured at min-content width" defect described in the previous section. Cells
+should still use `white-space: nowrap` plus ellipsis, with the full text in a `title` attribute.
+
+##### Reference implementation
+
+The official [songloft-plugin-downloader](https://github.com/songloft-org/songloft-plugin-downloader)
+plugin (from the version that has a `frontend/` directory onwards) is a complete example of this
+approach: Vue 3 + Vite, with
+`frontend/src/ui/` as the wrapper layer, `frontend/src/engine.js` doing feature detection, and
+`frontend/src/ui/native-props.js` handling the imperative boolean binding.
 
 ### Access Paths
 

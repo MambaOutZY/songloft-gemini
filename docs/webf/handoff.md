@@ -33,6 +33,111 @@ Step 3（`<songloft-slider>`）、Step 5（安全区 `--sl-safe-*`，见 §2.5�
 **进行中**：Step 4（`<table>` → CSS Grid，方案已重设计）、Step 6（三项经桥下沉）、
 上游 7 条缺陷报告起草。
 
+### 🆕 2026-08-04 之后：webf-ui 路线（downloader 已落地）
+
+> **这一节晚于本文档其余部分，与它们冲突时以本节为准。**
+
+2026-08-04 三个插件的 `renderEngine` 曾被 `397f4bd` 全部回退成 `webview`。之后 downloader
+**换了思路重做**：不再拿浏览器语义的 HTML/CSS 硬凑，而是用 **webf-ui 原生组件**
+（`webf_cupertino_ui` 的 31 个 `<flutter-cupertino-*>` + `webf` 包内建的 `<webf-list-view>`），
+前端改为 Vue 3 + Vite，并已重新声明 `renderEngine: "webf"`（随下一次发版生效）。
+
+> ⚠️ **v2026.8.4 不是这一版。** 那个 tag 打在 `a9ed05b`（回退成 webview 的那次）上、当天已由
+> 发版 bot 发布，内容是**旧的 webview 前端**。webf-ui 这一版要等下一次发版才有版本号 ——
+> 引用它时**别写 v2026.8.4**。顺带记住这个仓库的约定：`plugin.json` 的 `version` /
+> `download_url` **只由发版 bot 改**，功能提交一律不碰（历史上 `02b9b11` / `4f747bd` /
+> `d629153` / `a9ed05b` 都没碰过）。手写版本号会撞上已发布的 tag，而商店的 `has_update` 用的是
+> `CompareVersion(...) > 0`，撞号的结果是**用户永远收不到更新推送**。
+
+**这条路线让 §3.2 里最难缠的几条不再命中**：第 7 条（sticky）、第 9 条（grid `auto` 行高）、
+§3.3 的 `<table>` 那一行 —— 因为根本不再走 CSS grid / table 布局，行高由 Flutter 排版决定。
+**§4 的 Step 4（`<table>` → CSS Grid）因此降级为「真正的二维表格才用」的备选方案**，
+列表类内容一律优先 `<webf-list-view>`。
+
+宿主侧改动：`plugin_render_surface_webf.dart` 的 `_ensureWebFProcessSetup()` 新增第 ③ 步
+`installWebFCupertinoUI()`。**刻意不放进 `elements/`** —— 那个目录有「只能 import flutter 与
+webf」的铁律（§7），而它需要 import `webf_cupertino_ui`。探针侧同步（`probe_pubspec.yaml`
+加依赖 + `probe_main.dart` 调 install），否则探针里 cupertino 元素全是未知标签、验不了。
+
+#### 本轮新核实的事实（都读了包内源码，不是推断）
+
+1. **`installWebFCupertinoUI()` 内部是 31 条连续的 `WebF.defineCustomElement(...)`，
+   没有逐元素 try/catch。** 而 `defineCustomElement` 对重复注册是**抛异常**（热重启后进程级
+   registry 仍在）。任何一条抛出，后面的元素全部注册不上 → 必须整体包 try/catch。
+   这与 `SongloftCustomElements._define` 逐个包的理由完全一致。
+2. **cupertino 元素的 HTML 属性是 kebab-case，JS 属性才是 camelCase。**
+   `switch_bindings_generated.dart` 里 `attributes['active-color']` 对应
+   `'activeColor': StaticDefinedBindingProperty`。模板里写 camelCase 会变成全小写属性、
+   静默不匹配任何注册项。
+3. **同一个布尔属性的两个入口语义相反，这是本轮最危险的一条。**
+   HTML 属性 setter 是 `value == 'true' || value == ''`（认字符串），
+   JS 属性 setter 是 `value == true`（认真布尔，见 `switch.dart:26-32`）。
+   于是字符串 `'true'` 走 JS 属性入口得到 **false**。而 Vue / React 对自定义元素是**启发式**
+   决定走 prop 还是 attr 的 → 插件侧无法确定，选错就是「开关点了没反应」。
+   **结论：布尔属性一律绕开模板绑定，命令式赋 JS 属性并传真布尔。**
+4. **`<flutter-cupertino-input>` 的值属性叫 `val` 不是 `value`，且它是受控的**：
+   `build()` 里 `if (_controller.text != val)` 就整段替换文本并把光标收到末尾
+   （`input.dart:265-278`）。所以回写路径上**不能做类型转换**，数字字段要存字符串、
+   提交时才 `parseInt`。
+5. **`<flutter-cupertino-input>` 没有 `change` 事件**，只有 `input` / `submit` / `focus` /
+   `blur` / `clear`。「改完即存」用 `blur`。
+6. **`webf-list-view` 的 `shrink-wrap` 默认是 `true`**，不显式关掉就不在内部滚动。
+   关掉后必须给显式高度（无界约束会触发 §3.2 第 11 条的 `Infinity or NaN toInt`）。
+   标签名 `WEBF-LISTVIEW` 与 `WEBF-LIST-VIEW` 两个别名都注册了
+   （`webf-0.24.27/lib/src/html/listview.dart:52-53`）。
+7. **Cupertino 31 个元素里没有任意选项的下拉选择器**（只有 `date-picker`）。下拉继续用原生
+   `<select>`（§3.3 已记录它在 WebF 下可用）。
+8. **`common.css` 自己的 `.snackbar` 在 WebF 下是坏的**：它靠
+   `position: fixed` + `transform: translateX(-50%)` 定位，而 WebF 不对 fixed 元素应用
+   transform（miot `9196fe6` 已实测过这条）。插件要自绘 snackbar 就不能复用它 ——
+   用「外层 left/right 拉满 + 内层 margin auto」居中。**这条也意味着宿主的 `.snackbar`
+   本身值得修**，但那会影响所有插件，未动。
+9. **`webf_cupertino_ui` 是 Apache-2.0**（以包内 `LICENSE` 为准）。npm 上同名包的元数据写
+   ISC 是错的。**不引入新的 copyleft** —— 客户端整体按 GPL-3.0 分发的原因仍只有 webf 本身。
+   已记进 `songloft-player/NOTICE` 的第 1 项与第 6 项。
+10. **`@songloft/plugin-builder` 的 `frontend/` 构建钩子只有 ≥ 2.13.1 才有。**
+    downloader 原先锁在 2.5.0（`package-lock.json`），更早的版本会**静默跳过**整个前端构建、
+    产出一个没有前端资源的包。要用 `frontend/` 的插件必须 bump 这个 devDependency。
+
+#### 首轮真机跑出来的三条（2026-08-04，用户在 macOS 客户端上看到的）
+
+前 10 条是读源码得来的；这三条是**页面真的画出来之后**才暴露的，且**全部是「画出一个东西但
+不对」而非报错**，所以只看日志抓不到。
+
+11. **cupertino button 只渲染 `childNodes.first`，而且裸文本节点画不出来 —— 两条叠加表现为
+    「按钮是个空盒子」。** 第一条**读源码可确证**：`button.dart:154` 就是
+    `childNodes.isEmpty ? SizedBox() : childNodes.first.toWidget()`，官方 `button.md` 也明写
+    "The first child is used as the primary content"，所以「图标 + 文字」时文字被整段丢弃。
+    第二条**只是实测现象、机理没查实**：`<flutter-cupertino-button>全选</...>`（唯一子节点是
+    文本节点）渲染成 `minimumSize`（small = 32px）的空盒子。注意读
+    `webf-0.24.27/lib/src/rendering/text.dart:102` 反而显示脱离 IFC 的文本**应当**自绘
+    （`paintsSelf` 找不到建立 IFC 的祖先时默认 `return true`），`renderStyle` 也确实取自
+    `parentElement.renderStyle`（`dom/text_node.dart:123`）—— 所以**别把「必须是元素」当成
+    已解释的结论**，它目前是经验规则，upstream 自己的例子也一律把内容包进元素。
+    落地做法：**内容包成恰好一个子元素，文字再包一层元素**；包装组件里别开放插槽，把文字做成
+    prop 让调用方无法违反。文字那层还要 `white-space: nowrap`，否则按钮的固有宽度会按 CJK
+    「一字一行」量出来。**若以后有人查实了第二条的真因，请回来改这一段。**
+12. **cupertino input 的装饰来自 CSS，于是 CSS 上写 `border` 会画出两个框。**
+    `CupertinoTextField` 直接把 `renderStyle.decoration` 当自己的 `decoration`
+    （`input.dart:301`），而 WebF 自己的 render box **也**画同一份 —— 外框在 border box 上，
+    widget 那份落在 content box 上被 `padding` 内缩一圈。**这类元素在 CSS 里只写尺寸**：
+    背景/边框/圆角/阴影都不写时 `renderStyle.decoration` 返回 null
+    （`css/box.dart:46`），widget 回落到自带的 `systemGrey6` + 8px 圆角并跟随
+    CupertinoTheme 亮/暗。`font-size` / `color` 对它同样无效（widget 不读 renderStyle 的
+    文本样式）。
+13. **HTML 回落分支同样要真机看一遍。** 本轮 M3 开关的选中态滑块位置算错了 2px 并溢出轨道，
+    原因是滑块的 `top/left` 是相对轨道的 **padding box** 算的，而轨道有 `border: 2px`
+    —— 可用区是 48×28 而不是 52×32。这条与 WebF 无关，纯 CSS，但说明「非 WebF 分支不用测」
+    是错的假设。
+
+#### 仍然要主动规避的（webf-ui 救不了的）
+
+`<base href>` 不被采纳（第 2 条）、`display: none` 仍占位、内联 `style.display=''` 不可靠、
+layout 异步、`resize` 不一定派发、`max()`/`min()` 未实现、无界 flex 触发
+`Infinity or NaN toInt`、`btoa` 不是二进制安全。
+
+---
+
 ### ⛔ 范围硬边界（用户 2026-08-03 明确划定）
 
 > **只处理 miot / downloader / lyrics 三个插件。其他插件的问题暂时一律不处理。**

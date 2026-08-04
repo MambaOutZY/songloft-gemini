@@ -34,6 +34,20 @@
 
 ---
 
+## ⚠️ 2026-08-04 之后的路线变更（先读这条）
+
+三个插件的 `renderEngine` 曾被主仓 `397f4bd` 全部回退成 `webview`。之后 **downloader 换了思路
+重做**：不再用浏览器语义的 HTML/CSS 硬凑，改用 **webf-ui 原生组件**（`webf_cupertino_ui` 的
+31 个 `<flutter-cupertino-*>` + `webf` 内建的 `<webf-list-view>`），前端换成 Vue 3 + Vite，
+并已重新声明 `webf`（v2026.8.4）。
+
+**后果：下表里 Step 4（`<table>` → CSS Grid）已降级为备选方案** —— 列表类内容一律优先
+`<webf-list-view>`，那条路直接绕开「grid `auto` 行高」与「sticky 表头」两个最难缠的缺陷。
+完整说明与本轮新核实的 10 条事实见 `handoff.md` 的「🆕 2026-08-04 之后：webf-ui 路线」一节
+（**它晚于本目录其余内容，冲突时以它为准**）。
+
+---
+
 ## 当前状态速览
 
 **范围硬边界**：**只处理 miot / downloader / lyrics 三个插件**，其他插件的问题一律不处理

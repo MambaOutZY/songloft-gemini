@@ -1463,6 +1463,11 @@ window.open('https://example.com/help', '_blank');
 
 #### `<table>` 在 WebF 下**不存在**：改用 CSS Grid
 
+> **先读下一节。** 如果这张「表」本质上是**一个可滚动的列表**（每行结构相同、行数可能很多），
+> 优先用 [`<webf-list-view>` + flex 行](#webf-ui-原生组件flutter-cupertino--webf-list-view)，
+> 而不是本节的 CSS Grid —— 那条路能一并绕开下面「grid `auto` 行高」与「sticky 表头」两个最难缠的坑。
+> 本节适用于**真正的二维表格**（列宽必须跨行严格对齐、行数有限、不需要虚拟滚动）。
+
 WebF 的元素注册表里 `table` / `thead` / `tbody` / `tr` / `th` / `td` **一个都没有注册**，全部落到未知元素（`display:block`）。后果不是「样式差一点」，而是**信息结构丢失** —— 一张 6 列的表会竖排成 6 行，几十条数据变成几百行无标题文本。而且**完全静默**：不报错、不打日志。
 
 宿主只能帮你**发现**它，不能帮你修：WebF 渲染面下 `common.js` 会给页面上每个 `<table>` 打上 `data-sl-table-unsupported` 属性并在 console 打一条 warn（你就是照那条 warn 找到这一节的）。**宿主刻意不做自动改写**，原因见下。
@@ -1500,7 +1505,226 @@ WebF 的元素注册表里 `table` / `thead` / `tbody` / `tr` / `th` / `td` **�
 
 **为什么宿主不自动改写成 WebF 自带的 `<webf-table>` 家族**：它是 Flutter `Table` widget 的薄封装，能力上限由上游锁死 —— `colspan`/`rowspan` 零支持、CSS `width` 完全无效（只认表头单元格的 `column-width` 属性）、CSS `position:sticky` 无效（要换成 `sticky` 属性）、行必须是**直接子节点**（`<thead>`/`<tbody>` 不拆就渲染出一张**空表且不报错**）。更关键的是那些标签在普通浏览器与系统 WebView 下**根本不存在**，用它就必须长期维护两套模板。CSS Grid 是标准 CSS，**三条渲染路径共用同一套 HTML/CSS/JS、同一套外观**。
 
-**两处不可避免的降级**（官方插件 downloader 已按此改造，可参考它的实现）：`tr:hover` 整行高亮变成单个单元格高亮（展平后 DOM 里没有行元素，纯 CSS 无法表达）；表格无障碍语义丢失（缓解：给每行的交互控件补 `aria-label`，容器补 `role="group"`）。
+**两处不可避免的降级**：`tr:hover` 整行高亮变成单个单元格高亮（展平后 DOM 里没有行元素，纯 CSS 无法表达）；表格无障碍语义丢失（缓解：给每行的交互控件补 `aria-label`，容器补 `role="group"`）。**这两处降级正是「列表类内容改用 `<webf-list-view>` 更好」的理由** —— 那条路上行是真实的行元素，两者都不丢。
+
+#### webf-ui 原生组件（`<flutter-cupertino-*>` / `<webf-list-view>`）
+
+前面几节都是「某个 Web 能力在 WebF 下缺失，怎么绕」。**webf-ui 是相反的方向**：直接用映射到
+Flutter widget 的原生元素，绕开整个 CSS 布局层。列表与表单控件用它通常比自己拿 HTML/CSS
+拼更省事，也更不容易撞上 WebF 的布局缺陷。
+
+主程序客户端已内置 `webf_cupertino_ui`，所以下面这些标签在 WebF 渲染面下**开箱可用**，
+插件侧无需安装任何运行时（npm 上的 `@openwebf/vue-cupertino-ui` / `react-cupertino-ui`
+**只是类型声明包**，装它只为编辑器补全）：
+
+| 类别 | 标签 |
+|---|---|
+| 按钮 | `flutter-cupertino-button` |
+| 输入 | `flutter-cupertino-input`、`flutter-cupertino-search-text-field` |
+| 开关与选择 | `flutter-cupertino-switch`、`flutter-cupertino-checkbox`、`flutter-cupertino-radio`、`flutter-cupertino-slider`、`flutter-cupertino-sliding-segmented-control` |
+| 列表与表单 | `flutter-cupertino-list-section`、`flutter-cupertino-list-tile`（含 `-leading` / `-subtitle` / `-trailing` / `-additional-info` 子标签）、`flutter-cupertino-form-section`、`flutter-cupertino-form-row`、`flutter-cupertino-text-form-field-row` |
+| 弹层 | `flutter-cupertino-alert`、`flutter-cupertino-action-sheet`、`flutter-cupertino-modal-popup`、`flutter-cupertino-context-menu` |
+| 导航 | `flutter-cupertino-tab-scaffold`、`flutter-cupertino-tab-bar`、`flutter-cupertino-tab-view` |
+| 其它 | `flutter-cupertino-icon`（1300+ 图标名）、`flutter-cupertino-date-picker` |
+
+另外 **`<webf-list-view>` 来自 `webf` 包本身**（不属于 cupertino 那一批），映射到 Flutter 的
+ListView，自带 view 回收 —— 长列表的首选。
+
+**Cupertino 里没有任意选项的下拉选择器**（只有 `date-picker`）。下拉请继续用原生
+`<select>`，它在 WebF 下是可用的。
+
+##### 必须做特性探测，不能只判 `window.webf`
+
+webf-ui 的标签在浏览器 / 系统 WebView / Web 端 iframe 里都是**未知元素**，所以用了它就必须
+准备一条 HTML 回落路径（见下一小节）。而选择走哪条路径时，**判据不能是「我是不是跑在 WebF 里」**：
+
+客户端与插件是**各自独立发版**的，`minHostVersion` 只约束**服务端**版本，没有任何字段能约束
+客户端。于是「新插件 + 老客户端」这个组合必然出现，那时 `<flutter-cupertino-*>` 会落到
+`_UnknownHTMLElement`（一个空的 `display:block` 盒子），用户看到的是**所有控件凭空消失，
+且不报任何错**。
+
+所以探的是「元素到底注册上了没有」—— 注册上时 bindings 会在实例上定义对应的 JS 属性：
+
+```js
+function hasCupertinoUI() {
+    if (!window.webf) return false;
+    try {
+        return document.createElement('flutter-cupertino-switch').checked !== undefined;
+    } catch (e) {
+        return false;
+    }
+}
+
+// <webf-list-view> 来自 webf 包、与 cupertino 是两件事，单独探
+function hasListView() {
+    if (!window.webf) return false;
+    try {
+        return typeof document.createElement('webf-list-view').finishLoad === 'function';
+    } catch (e) {
+        return false;
+    }
+}
+```
+
+探测结果在页面生命周期内不会变，算一次存成常量即可。
+
+##### 引擎分叉收敛到叶子组件，业务代码只写一套
+
+**不要**在业务代码里到处 `if (isWebF)`，也不要维护两套页面模板（那条路已经反复证明会腐化 ——
+其中一份在开发机上永远跑不到，改坏了没人发现）。把分叉压到一层薄包装组件里：
+
+```vue
+<!-- ui/SlSwitch.vue —— 唯一的分叉点 -->
+<template>
+  <flutter-cupertino-switch v-if="useNativeUI" ref="el" @change="onNativeChange" />
+  <label v-else class="my-switch">
+    <input type="checkbox" :checked="modelValue" @change="onHtmlChange" />
+    <span class="my-switch-track" />
+  </label>
+</template>
+```
+
+```vue
+<!-- 业务代码只见包装组件 -->
+<SlSwitch :model-value="settings.embedMetadata" @update:model-value="save" />
+```
+
+##### 属性契约的三个坑（都会静默失效，不报错）
+
+**① HTML 属性是 kebab-case，JS 属性才是 camelCase。**
+
+`webf_cupertino_ui` 的 `*_bindings_generated.dart` 里同时注册了两套名字：
+
+```dart
+attributes['active-color'] = ElementAttributeProperty(...);   // HTML 属性
+'activeColor': StaticDefinedBindingProperty(...)              // JS 属性
+```
+
+模板里写 `activeColor` 会被当成 `activecolor` 属性（HTML 属性名大小写不敏感），**不匹配任何
+注册项、静默无效**。一律写 kebab-case。
+
+**② 输入框的值属性叫 `val`，不是 `value`；而且它是受控的。**
+
+`<flutter-cupertino-input>` 内部每次 build 都做
+`if (_controller.text != val) { 整段替换文本并把光标收到末尾 }`。所以如果你在回写路径上做了
+类型转换（比如数字输入框存成 `Number`），用户敲到一半的中间态就会被改写、光标跳走。
+**数字字段请在状态里存字符串，提交时才 `parseInt`。**
+
+**③ 布尔属性的两个入口语义不同，而框架走哪个是启发式的。**
+
+同一个 `checked`：
+
+```dart
+// HTML 属性 setter —— 认字符串
+setter: (value) => checked = value == 'true' || value == ''
+// JS 属性 setter —— 认真布尔
+set checked(value) { final bool next = value == true; ... }
+```
+
+字符串 `'true'` 走 JS 属性入口会变成 **false**（Dart 里 `'true' == true` 为假）。而 Vue / React
+对自定义元素是**启发式**决定走 prop 还是 attr 的，插件侧无法确定它选了哪条 —— 选错就是
+「开关点了没反应」这种最难查的无声故障。
+
+**结论：布尔属性绕开模板绑定，拿到元素引用后命令式赋 JS 属性，传真布尔。**
+
+```js
+// 依赖变化时重新写一遍；flush:'post' 保证元素已挂载
+watchEffect(() => {
+    if (el.value) el.value.checked = !!props.modelValue;
+}, { flush: 'post' });
+```
+
+字符串类属性（`val` / `placeholder` / `type` / `variant` / `active-color`）两条入口都会
+`toString()`，模板绑定是安全的。
+
+##### 子节点契约：只认第一个子节点，而且不能是裸文本
+
+这两条都会画出一个**空盒子**，不报错、不打日志。第 ① 条读源码可以确证，第 ② 条目前只是
+实测到的经验规则：
+
+**① 只渲染 `childNodes.first`。** `<flutter-cupertino-button>` 的实现就是
+`childNodes.isEmpty ? SizedBox() : childNodes.first.toWidget()`，官方 `button.md` 亦明写
+"The first child is used as the primary content"。所以「图标 + 文字」两个子节点时，文字会被
+整段丢弃。
+
+**② 裸文本节点画不出来（经验规则，机理未查实）。** 实测
+`<flutter-cupertino-button>全选</flutter-cupertino-button>`（唯一子节点是文本节点）渲染成一个
+`minimumSize`（`size="small"` 时是 32px）的空盒子。读 webf 的 `RenderTextBox` 反而显示脱离
+IFC（行内格式化上下文）的文本应当自绘（`paintsSelf` 找不到建立 IFC 的祖先时默认返回 `true`），
+所以**别把这条当成已解释的结论**。upstream 自己的例子也一律把内容包进元素。
+
+**结论：内容包成恰好一个子元素，文字再包一层元素。**
+
+```html
+<!-- ✗ 文字丢失（只取第一个子节点） -->
+<flutter-cupertino-button><flutter-cupertino-icon type="arrow_clockwise" />刷新</flutter-cupertino-button>
+<!-- ✗ 空盒子（裸文本节点） -->
+<flutter-cupertino-button>刷新</flutter-cupertino-button>
+<!-- ✓ -->
+<flutter-cupertino-button><span class="btn-inner"
+  ><flutter-cupertino-icon type="arrow_clockwise" /><span>刷新</span
+></span></flutter-cupertino-button>
+```
+
+包装组件里**别开放插槽**，把文字做成 prop（`<SlButton icon="refresh" label="刷新" />`），
+让调用方没机会违反这两条。另外文字那层要 `white-space: nowrap` —— 按钮宽度按内容的固有宽度
+算，可换行的 CJK 标签会被量成「一字一行」的又窄又高的按钮。
+
+##### 装饰交给 widget 画，不要在 CSS 上再写一份
+
+`<flutter-cupertino-input>` 内部的 `CupertinoTextField` 直接把 `renderStyle.decoration`
+（也就是你写的 CSS `border` / `border-radius` / `background`）当成自己的 `decoration`。而 WebF
+自己的 render box **也**会画同一份 CSS 装饰，于是屏幕上出现**两个框**：外框在 border box 上，
+widget 那份落在 content box 上、被 `padding` 内缩一圈。
+
+所以这类元素在 CSS 里只写尺寸（`width` / `height`），装饰留给 widget —— 背景 / 边框 / 圆角 /
+阴影一个都不写时 `renderStyle.decoration` 返回 `null`，widget 回落到自带的 `systemGrey6` +
+8px 圆角，并且跟着 CupertinoTheme 亮/暗自适应。同理 `font-size` / `color` 对它是无效的
+（widget 不读 renderStyle 的文本样式），写了只会误导后来人。
+
+##### 事件都在 `event.detail` 上
+
+| 元素 | 事件 | `detail` |
+|---|---|---|
+| `switch` / `checkbox` | `change` | boolean |
+| `input` / `search-text-field` | `input`、`submit` | string |
+| `input` | `focus` / `blur` / `clear` | 无 |
+| `button` | `click` | 无（是普通 `Event`） |
+
+注意 **`<flutter-cupertino-input>` 没有 `change` 事件**，只有 `input` / `submit` / `blur`。
+要实现「改完即存」而不是每敲一个字符发一次请求，用 `blur`（HTML 回落分支用 `change`）。
+
+##### `<webf-list-view>` 的两条硬约束
+
+```html
+<webf-list-view shrink-wrap="false" scroll-direction="vertical">
+  <div class="row">…</div>   <!-- 每一项必须是**直接子节点** -->
+  <div class="row">…</div>
+</webf-list-view>
+```
+
+- **列表项必须是直接子节点** —— Flutter ListView 靠此做 view 回收。中间套一层
+  `<div>` 会让 Flutter 只看到一个子节点，回收失效。
+- **`shrink-wrap` 默认是 `true`，通常必须显式设为 `false`。** true 时列表高度等于内容总高、
+  不在内部滚动，几百行会一路撑下去。设为 false 后必须给它**确定的高度**（例如
+  `height: clamp(240px, calc(100vh - 420px), 720px)`）—— 不能留无界约束，WebF 在无界约束下
+  解析 flex 会触发 `Infinity or NaN toInt`。
+
+属性只有这两个；事件是 `refresh` / `loadmore`，方法是 `finishRefresh()` / `finishLoad()` /
+`resetHeader()` / `resetFooter()`。**如果接了 `loadmore` 就必须调 `finishLoad('success' |
+'noMore' | 'fail')`**，否则加载指示器会永久转圈。不做分页就别接这两个事件，少一个失败面。
+
+##### 行内布局用 flex，不要用 grid
+
+`<webf-list-view>` 里的行用 flex 排列单元格、列宽用 CSS 变量在表头与行之间共享。**不要用
+grid** —— 会撞上「grid `auto` 行高在 min-content 宽度下测量」那个缺陷（见上一节）。单元格
+仍然建议 `white-space: nowrap` + 省略号 + `title` 属性放全文。
+
+##### 参考实现
+
+官方插件 [songloft-plugin-downloader](https://github.com/songloft-org/songloft-plugin-downloader)
+（有 `frontend/` 目录的那一版起）是这套做法的完整样例：Vue 3 + Vite，`frontend/src/ui/` 是包装层、
+`frontend/src/engine.js` 是特性探测、`frontend/src/ui/native-props.js` 是布尔属性的命令式绑定。
 
 ### 访问路径
 
