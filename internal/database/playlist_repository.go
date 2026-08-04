@@ -324,6 +324,15 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 	}
 	cueAlbums := make(map[string]*cueAlbumInfo) // key: cue_source_path
 
+	// 收集所有 CUE 轨的音频源文件路径：这些文件作为整轨镜像已由 CUE 专辑歌单覆盖，
+	// 不应再作为独立歌曲出现在目录歌单中（否则同一内容会同时出现在两个歌单里）。
+	cueAudioFiles := make(map[string]struct{})
+	for _, song := range songs {
+		if song.CueSourcePath != "" && song.FilePath != "" {
+			cueAudioFiles[song.FilePath] = struct{}{}
+		}
+	}
+
 	dirToSongs := make(map[string][]int64)
 	for _, song := range songs {
 		if song.FilePath == "" {
@@ -345,6 +354,11 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 				cueAlbums[song.CueSourcePath] = album
 			}
 			album.songIDs = append(album.songIDs, song.ID)
+			continue
+		}
+
+		// 跳过已有 CUE 轨的整轨音频文件
+		if _, isCueSource := cueAudioFiles[song.FilePath]; isCueSource {
 			continue
 		}
 

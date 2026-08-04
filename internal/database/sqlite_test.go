@@ -692,6 +692,72 @@ func TestAutoCreatePreservesManualCover(t *testing.T) {
 	}
 }
 
+// TestAutoCreateExcludesCueSourceFromDir verifies that whole-file songs
+// whose FilePath is shared with CUE tracks are excluded from directory playlists,
+// preventing the same content from appearing in both a dir playlist and a CUE album playlist.
+// When a directory contains ONLY CUE source files, no directory playlist is generated (songloft-org/songloft#358).
+func TestAutoCreateExcludesCueSourceFromDir(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	repo := db.PlaylistRepository()
+	songRepo := db.SongRepository()
+
+	songs := []*models.Song{
+		{Type: models.TypeLocal, Title: "normal", FilePath: "/music/Album/01.mp3"},
+		{Type: models.TypeLocal, Title: "whole-flac", FilePath: "/music/Album/disc.flac"},
+		{Type: models.TypeLocal, Title: "track1", FilePath: "/music/Album/disc.flac",
+			CueSourcePath: "/music/Album/disc.flac", CueTrackIndex: 1, Album: "My Album"},
+		{Type: models.TypeLocal, Title: "track2", FilePath: "/music/Album/disc.flac",
+			CueSourcePath: "/music/Album/disc.flac", CueTrackIndex: 2, Album: "My Album"},
+	}
+	if err := songRepo.BatchCreate(ctx, songs); err != nil {
+		t.Fatalf("BatchCreate error = %v", err)
+	}
+
+	resp, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	if err != nil {
+		t.Fatalf("AutoCreate error = %v", err)
+	}
+
+	ids := nameToID(resp)
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 playlists, got %d: %+v", len(ids), ids)
+	}
+	if _, ok := ids["Album"]; !ok {
+		t.Errorf("expected directory playlist 'Album', got %+v", ids)
+	}
+	if _, ok := ids["My Album"]; !ok {
+		t.Errorf("expected CUE album playlist 'My Album', got %+v", ids)
+	}
+
+	for _, p := range resp.Playlists {
+		if p.Name == "Album" && p.SongCount != 1 {
+			t.Errorf("directory playlist 'Album' should have 1 song (mp3 only), got %d", p.SongCount)
+		}
+		if p.Name == "My Album" && p.SongCount != 2 {
+			t.Errorf("CUE album 'My Album' should have 2 tracks, got %d", p.SongCount)
+		}
+	}
+
+	// When directory has ONLY CUE source files, no directory playlist should be created
+	if _, err := songRepo.BatchDelete(ctx, []int64{songs[0].ID}); err != nil {
+		t.Fatalf("delete mp3: %v", err)
+	}
+	resp2, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	if err != nil {
+		t.Fatalf("AutoCreate #2 error = %v", err)
+	}
+	ids2 := nameToID(resp2)
+	if len(ids2) != 1 {
+		t.Errorf("CUE-only dir should produce only CUE album playlist, got %d: %+v", len(ids2), ids2)
+	}
+	if _, ok := ids2["My Album"]; !ok {
+		t.Errorf("expected only CUE album 'My Album', got %+v", ids2)
+	}
+}
+
 // TestPickSongCoverDeterministic 直接锁定 pickSongCover 的确定性：
 // 同一输入多次调用必须返回同一结果，且取排序后第一首有封面的歌。
 func TestPickSongCoverDeterministic(t *testing.T) {
