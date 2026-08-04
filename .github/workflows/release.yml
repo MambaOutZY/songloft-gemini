@@ -342,10 +342,37 @@ jobs:
       - name: Create output directory
         run: mkdir -p docker-tars
 
+      # Docker Hub 限流（429）重试函数：GitHub Actions 并发高时 manifest HEAD 易触发 rate limit，
+      # 重试 3 次（间隔 30s/60s）可覆盖绝大多数瞬态限流。
+      - name: Define retry helper
+        run: |
+          cat > /tmp/docker-retry.sh <<'RETRY_EOF'
+          #!/usr/bin/env bash
+          set -o pipefail
+          MAX_RETRIES=3
+          RETRY_DELAY=30
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "::group::Attempt $i/$MAX_RETRIES"
+            if "$@"; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            if [ $i -lt $MAX_RETRIES ]; then
+              SLEEP=$((RETRY_DELAY * i))
+              echo "::warning::Build failed (attempt $i/$MAX_RETRIES), retrying in ${SLEEP}s..."
+              sleep $SLEEP
+            fi
+          done
+          echo "::error::All $MAX_RETRIES attempts failed"
+          exit 1
+          RETRY_EOF
+          chmod +x /tmp/docker-retry.sh
+
       # ---------- 逐平台构建完整版并导出 tar（写 GHA cache，下面 manifest 步骤复用）----------
       - name: Build & save full linux/amd64
         run: |
-          docker buildx build \
+          /tmp/docker-retry.sh docker buildx build \
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
@@ -366,7 +393,7 @@ jobs:
 
       - name: Build & save full linux/arm64
         run: |
-          docker buildx build \
+          /tmp/docker-retry.sh docker buildx build \
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
@@ -387,7 +414,7 @@ jobs:
 
       - name: Build & save full linux/arm/v7
         run: |
-          docker buildx build \
+          /tmp/docker-retry.sh docker buildx build \
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
@@ -415,7 +442,7 @@ jobs:
             TAG_ARGS="${TAG_ARGS} -t ${tag}"
           done
 
-          docker buildx build ${TAG_ARGS} \
+          /tmp/docker-retry.sh docker buildx build ${TAG_ARGS} \
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
@@ -431,11 +458,10 @@ jobs:
             --cache-to type=inline \
             --push \
             .
-
       # ---------- 逐平台构建精简版并导出 tar ----------
       - name: Build & save lite linux/amd64
         run: |
-          docker buildx build \
+          /tmp/docker-retry.sh docker buildx build \
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
@@ -457,7 +483,7 @@ jobs:
 
       - name: Build & save lite linux/arm64
         run: |
-          docker buildx build \
+          /tmp/docker-retry.sh docker buildx build \
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
@@ -479,7 +505,7 @@ jobs:
 
       - name: Build & save lite linux/arm/v7
         run: |
-          docker buildx build \
+          /tmp/docker-retry.sh docker buildx build \
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
@@ -508,7 +534,7 @@ jobs:
             TAG_ARGS="${TAG_ARGS} -t ${tag}"
           done
 
-          docker buildx build ${TAG_ARGS} \
+          /tmp/docker-retry.sh docker buildx build ${TAG_ARGS} \
             --build-arg VERSION="${{ needs.prepare.outputs.version }}" \
             --build-arg GIT_COMMIT="${{ steps.meta.outputs.GIT_COMMIT }}" \
             --build-arg BUILD_TIME="${{ steps.meta.outputs.BUILD_TIME }}" \
