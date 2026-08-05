@@ -292,6 +292,8 @@ func (a *App) setupAPIV1Router() {
 			r.Get("/upgrade/versions", upgradeHandler.GetVersions)
 			r.Get("/upgrade/check", upgradeHandler.CheckUpdate)
 			r.Post("/upgrade/start", upgradeHandler.StartUpgrade)
+			r.Post("/upgrade/upload", upgradeHandler.UploadBinary)
+			r.Post("/upgrade/upload/confirm", upgradeHandler.ConfirmUploadUpgrade)
 			r.Post("/upgrade/reset", upgradeHandler.ResetToBaseImage)
 			r.Get("/upgrade/progress", upgradeHandler.GetUpgradeProgress)
 		})

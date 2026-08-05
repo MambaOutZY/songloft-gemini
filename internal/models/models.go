@@ -465,6 +465,7 @@ type UpgradeProgress struct {
 // 升级状态常量
 const (
 	UpgradeStatusIdle        = "idle"        // 空闲
+	UpgradeStatusUploading   = "uploading"   // 上传中
 	UpgradeStatusDownloading = "downloading" // 下载中
 	UpgradeStatusTesting     = "testing"     // 测试中
 	UpgradeStatusReplacing   = "replacing"   // 替换中
@@ -472,6 +473,17 @@ const (
 	UpgradeStatusRestarting  = "restarting"  // 重启中
 	UpgradeStatusFailed      = "failed"      // 失败
 )
+
+// UploadedBinaryInfo 上传升级时返回的二进制文件信息
+type UploadedBinaryInfo struct {
+	Version         string `json:"version" example:"v2.11.0"`         // 上传文件的版本号
+	Channel         string `json:"channel" example:"stable"`          // 上传文件的通道（stable/dev）
+	BuildTime       string `json:"build_time" example:"2026-08-01"`   // 上传文件的构建时间
+	BuildType       string `json:"build_type" example:"full"`         // 上传文件的构建类型（full/lite）
+	CurrentVersion  string `json:"current_version" example:"v2.10.0"` // 当前运行版本
+	CurrentChannel  string `json:"current_channel" example:"dev"`     // 当前运行通道
+	ChannelMismatch bool   `json:"channel_mismatch" example:"true"`   // 通道是否不匹配（需前端二次确认）
+}
 
 // CreateConfigRequest 创建配置请求结构体
 type CreateConfigRequest struct {

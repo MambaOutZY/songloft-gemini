@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
 
 	"songloft/internal/models"
 	"songloft/internal/services"
@@ -12,6 +14,9 @@ import (
 
 // githubProxyConfigKey GitHub 更新代理配置的 config key
 const githubProxyConfigKey = "github_proxy"
+
+// binaryTemp 上传/下载的临时二进制文件路径（与 services 包的 binaryTemp 一致）
+const binaryTemp = "/app/data/songloft.new"
 
 // githubProxySetting GitHub 更新代理配置。
 type githubProxySetting struct {
@@ -292,4 +297,104 @@ func (h *UpgradeHandler) UpdateGithubProxySetting(w http.ResponseWriter, r *http
 	}
 	slog.Info("GitHub 更新代理已更新", "proxy", req.Proxy)
 	respondJSON(w, http.StatusOK, req)
+}
+
+// UploadBinary 上传二进制文件升级（阶段一：上传+验证）
+// @Summary 上传二进制文件升级
+// @Description 上传 Songloft 二进制文件进行离线升级。上传后验证文件可执行并提取版本信息返回给前端，由前端判断是否需要二次确认（如跨通道升级）。确认后调用 /upgrade/upload/confirm 执行实际替换。
+// @Tags 系统升级
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "Songloft 二进制文件"
+// @Success 200 {object} models.UploadedBinaryInfo "上传文件的版本信息"
+// @Failure 400 {object} models.ErrorResponse "请求参数错误或文件无效"
+// @Failure 403 {object} models.ErrorResponse "非 Docker 环境不支持升级"
+// @Failure 500 {object} models.ErrorResponse "保存或验证文件失败"
+// @Security BearerAuth
+// @Router /upgrade/upload [post]
+func (h *UpgradeHandler) UploadBinary(w http.ResponseWriter, r *http.Request) {
+	if !h.upgradeService.IsDockerEnvironment() {
+		respondError(w, http.StatusForbidden, "升级功能仅在 Docker 环境下可用", nil)
+		return
+	}
+
+	// 限制请求体大小 200MB
+	r.Body = http.MaxBytesReader(w, r.Body, 200<<20)
+
+	if err := r.ParseMultipartForm(200 << 20); err != nil {
+		respondError(w, http.StatusBadRequest, "解析上传文件失败，文件可能超过 200MB 限制", err)
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "未找到上传文件", err)
+		return
+	}
+	defer file.Close()
+
+	// 写入临时文件
+	out, err := os.Create(binaryTemp)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "创建临时文件失败", err)
+		return
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, file); err != nil {
+		os.Remove(binaryTemp)
+		respondError(w, http.StatusInternalServerError, "保存上传文件失败", err)
+		return
+	}
+	out.Close()
+
+	// 设置可执行权限并测试（不触发进度更新）
+	if err := h.upgradeService.ValidateBinary(binaryTemp); err != nil {
+		os.Remove(binaryTemp)
+		respondError(w, http.StatusBadRequest, "上传的文件不是有效的可执行文件", err)
+		return
+	}
+
+	// 提取版本信息
+	info, err := h.upgradeService.ExtractBinaryInfo(binaryTemp)
+	if err != nil {
+		os.Remove(binaryTemp)
+		respondError(w, http.StatusBadRequest, "无法识别上传文件的版本信息", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, info)
+}
+
+// ConfirmUploadUpgrade 确认执行上传升级（阶段二：替换+重启）
+// @Summary 确认执行上传升级
+// @Description 确认对已上传的二进制文件执行升级替换。前端在收到 /upgrade/upload 响应后，若需要二次确认（如跨通道），用户确认后调用此接口。升级进度通过 /upgrade/progress 轮询。
+// @Tags 系统升级
+// @Produce json
+// @Success 200 {object} models.SuccessResponse "升级已开始"
+// @Failure 400 {object} models.ErrorResponse "未找到已上传的升级文件"
+// @Failure 403 {object} models.ErrorResponse "非 Docker 环境不支持升级"
+// @Security BearerAuth
+// @Router /upgrade/upload/confirm [post]
+func (h *UpgradeHandler) ConfirmUploadUpgrade(w http.ResponseWriter, r *http.Request) {
+	if !h.upgradeService.IsDockerEnvironment() {
+		respondError(w, http.StatusForbidden, "升级功能仅在 Docker 环境下可用", nil)
+		return
+	}
+
+	// 检查上传文件是否存在
+	if _, err := os.Stat(binaryTemp); os.IsNotExist(err) {
+		respondError(w, http.StatusBadRequest, "未找到已上传的升级文件，请先上传", nil)
+		return
+	}
+
+	go func() {
+		if err := h.upgradeService.UpgradeFromUpload(); err != nil {
+			slog.Error("UpgradeFromUpload failed", "error", err)
+		}
+	}()
+
+	respondJSON(w, http.StatusOK, models.SuccessResponse{
+		Message: "升级已开始，请稍候...",
+	})
 }

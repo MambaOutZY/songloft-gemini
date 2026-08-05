@@ -8094,6 +8094,98 @@ const docTemplate = `{
                 }
             }
         },
+        "/upgrade/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "上传 Songloft 二进制文件进行离线升级。上传后验证文件可执行并提取版本信息返回给前端，由前端判断是否需要二次确认（如跨通道升级）。确认后调用 /upgrade/upload/confirm 执行实际替换。",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统升级"
+                ],
+                "summary": "上传二进制文件升级",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Songloft 二进制文件",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "上传文件的版本信息",
+                        "schema": {
+                            "$ref": "#/definitions/models.UploadedBinaryInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误或文件无效",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "非 Docker 环境不支持升级",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "保存或验证文件失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/upgrade/upload/confirm": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "确认对已上传的二进制文件执行升级替换。前端在收到 /upgrade/upload 响应后，若需要二次确认（如跨通道），用户确认后调用此接口。升级进度通过 /upgrade/progress 轮询。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "系统升级"
+                ],
+                "summary": "确认执行上传升级",
+                "responses": {
+                    "200": {
+                        "description": "升级已开始",
+                        "schema": {
+                            "$ref": "#/definitions/models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "未找到已上传的升级文件",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "非 Docker 环境不支持升级",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/upgrade/versions": {
             "get": {
                 "security": [
@@ -9664,6 +9756,46 @@ const docTemplate = `{
                         "failed"
                     ],
                     "example": "downloading"
+                }
+            }
+        },
+        "models.UploadedBinaryInfo": {
+            "type": "object",
+            "properties": {
+                "build_time": {
+                    "description": "上传文件的构建时间",
+                    "type": "string",
+                    "example": "2026-08-01"
+                },
+                "build_type": {
+                    "description": "上传文件的构建类型（full/lite）",
+                    "type": "string",
+                    "example": "full"
+                },
+                "channel": {
+                    "description": "上传文件的通道（stable/dev）",
+                    "type": "string",
+                    "example": "stable"
+                },
+                "channel_mismatch": {
+                    "description": "通道是否不匹配（需前端二次确认）",
+                    "type": "boolean",
+                    "example": true
+                },
+                "current_channel": {
+                    "description": "当前运行通道",
+                    "type": "string",
+                    "example": "dev"
+                },
+                "current_version": {
+                    "description": "当前运行版本",
+                    "type": "string",
+                    "example": "v2.10.0"
+                },
+                "version": {
+                    "description": "上传文件的版本号",
+                    "type": "string",
+                    "example": "v2.11.0"
                 }
             }
         },

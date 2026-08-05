@@ -394,6 +394,25 @@ func (s *UpgradeService) TestBinary(binaryPath string) error {
 	return nil
 }
 
+// ValidateBinary 验证二进制文件可执行（不更新进度，用于上传阶段的预检）
+func (s *UpgradeService) ValidateBinary(binaryPath string) error {
+	if err := os.Chmod(binaryPath, 0755); err != nil {
+		return fmt.Errorf("failed to set executable permission: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binaryPath, "-help")
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("binary test timeout")
+		}
+	}
+
+	return nil
+}
+
 // UpgradeBinary 执行升级流程
 // proxyPrefix 为 GitHub 代理前缀，为空则直连
 func (s *UpgradeService) UpgradeBinary(versionType, proxyPrefix string) error {
@@ -581,6 +600,100 @@ func (s *UpgradeService) ResetToBaseImage() error {
 	go func() {
 		time.Sleep(5 * time.Second)
 		os.Exit(0) // 退出进程，Docker 会自动重启容器
+	}()
+
+	return nil
+}
+
+// ExtractBinaryInfo 执行上传的二进制文件的 -version 命令，解析输出获取版本信息
+func (s *UpgradeService) ExtractBinaryInfo(binaryPath string) (*models.UploadedBinaryInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binaryPath, "-version")
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("获取版本信息超时")
+		}
+		return nil, fmt.Errorf("获取版本信息失败: %w", err)
+	}
+
+	info := &models.UploadedBinaryInfo{
+		CurrentVersion: version.GetVersion(),
+		CurrentChannel: s.CurrentVersionType(),
+	}
+
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "Songloft Version:"):
+			info.Version = strings.TrimSpace(strings.TrimPrefix(line, "Songloft Version:"))
+		case strings.HasPrefix(line, "Build Time:"):
+			info.BuildTime = strings.TrimSpace(strings.TrimPrefix(line, "Build Time:"))
+		case strings.HasPrefix(line, "Build Type:"):
+			info.BuildType = normalizeBuildType(strings.TrimPrefix(line, "Build Type:"))
+		}
+	}
+
+	if info.Version == "" {
+		return nil, fmt.Errorf("无法从二进制文件解析版本号")
+	}
+
+	if isDevVersion(info.Version) {
+		info.Channel = versionTypeDev
+	} else {
+		info.Channel = versionTypeStable
+	}
+	info.ChannelMismatch = info.Channel != s.CurrentVersionType()
+
+	return info, nil
+}
+
+// UpgradeFromUpload 从已上传的二进制文件执行升级（跳过下载阶段）
+func (s *UpgradeService) UpgradeFromUpload() error {
+	// 检查上传文件是否存在
+	if _, err := os.Stat(binaryTemp); os.IsNotExist(err) {
+		s.updateProgress(models.UpgradeStatusFailed, 0, "未找到已上传的升级文件")
+		return fmt.Errorf("uploaded binary not found: %s", binaryTemp)
+	}
+
+	// 1. 测试新版本
+	if err := s.TestBinary(binaryTemp); err != nil {
+		os.Remove(binaryTemp)
+		s.updateProgress(models.UpgradeStatusFailed, 0, fmt.Sprintf("测试失败: %v", err))
+		return err
+	}
+
+	// 2. 备份当前版本
+	s.updateProgress(models.UpgradeStatusReplacing, 50, "正在备份当前版本...")
+	if err := s.backupCurrentBinary(); err != nil {
+		os.Remove(binaryTemp)
+		s.updateProgress(models.UpgradeStatusFailed, 0, fmt.Sprintf("备份失败: %v", err))
+		return err
+	}
+
+	// 3. 替换二进制文件
+	s.updateProgress(models.UpgradeStatusReplacing, 75, "正在替换二进制文件...")
+	if err := os.Rename(binaryTemp, binaryTarget); err != nil {
+		s.restoreBackup()
+		s.updateProgress(models.UpgradeStatusFailed, 0, fmt.Sprintf("替换失败: %v", err))
+		return err
+	}
+
+	// 4. 设置可执行权限
+	if err := os.Chmod(binaryTarget, 0755); err != nil {
+		s.restoreBackup()
+		s.updateProgress(models.UpgradeStatusFailed, 0, fmt.Sprintf("设置权限失败: %v", err))
+		return err
+	}
+
+	// 5. 升级完成，准备重启
+	s.updateProgress(models.UpgradeStatusRestarting, 100, "升级完成，服务即将重启...")
+
+	go func() {
+		time.Sleep(5 * time.Second)
+		os.Exit(0)
 	}()
 
 	return nil
