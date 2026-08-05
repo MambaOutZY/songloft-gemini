@@ -77,8 +77,10 @@ type PlayEventSong struct {
 // ServeFileDirective 指示 Go 层直接 serve 文件（绕过 QuickJS string 管道）。
 // JS 做业务决策（认证、路由），Go 做文件 I/O（零拷贝、Range、HTTP 缓存）。
 type ServeFileDirective struct {
-	SongID   int64  `json:"songId,omitempty"`   // serve 系统内歌曲（需 songs.read 权限）
-	FilePath string `json:"filePath,omitempty"` // serve 文件（路径解析规则见 resolveServeFilePath）
+	SongID          int64   `json:"songId,omitempty"`          // serve 系统内歌曲（需 songs.read 权限）
+	FilePath        string  `json:"filePath,omitempty"`        // serve 文件（路径解析规则见 resolveServeFilePath）
+	SeekSeconds     float64 `json:"seekSeconds,omitempty"`     // 从第 N 秒起播（ffmpeg seek 流，仅 FilePath 模式）
+	DurationSeconds float64 `json:"durationSeconds,omitempty"` // 音频总时长秒数（用于 ffmpeg 超时计算，0=未知）
 }
 
 // NetDataEvent 是 UDP readLoop 推送给 JS 的数据事件。

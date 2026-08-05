@@ -53,6 +53,7 @@ type Manager struct {
 	songService     *services.SongService     // 歌曲服务（bridge songs.create/update/delete 用）
 	playlistService *services.PlaylistService // 歌单服务（bridge playlists.* 写操作用）
 	configService   *services.ConfigService   // 配置服务（keep-alive 白名单等）
+	cacheService    *services.CacheService    // 缓存服务（serveFile seek 流）
 	pluginToken     string                    // 插件专用的永久 JWT Token（启动时生成一次）
 	port            string                    // 服务器监听端口
 	healthChecker   *HealthChecker
@@ -168,6 +169,11 @@ func (m *Manager) SetServices(songService *services.SongService, playlistService
 // SetConfigService 注入配置服务（keep-alive 白名单等）。
 func (m *Manager) SetConfigService(cs *services.ConfigService) {
 	m.configService = cs
+}
+
+// SetCacheService 注入缓存服务（serveFile seek 流）。
+func (m *Manager) SetCacheService(cs *services.CacheService) {
+	m.cacheService = cs
 }
 
 // pluginKeepAliveSetting 是 plugin_keep_alive 配置的 JSON 结构。

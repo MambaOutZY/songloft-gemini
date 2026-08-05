@@ -352,6 +352,7 @@ func (a *App) Init() error {
 	a.jsPluginManager.SetSongDownloader(songDownloader)
 	a.jsPluginManager.SetServices(a.songService, a.playlistService)
 	a.jsPluginManager.SetConfigService(a.configService)
+	a.jsPluginManager.SetCacheService(a.cacheService)
 
 	// 装配音源处理链:Fetcher → Resolver → Orchestrator
 	// 三个组件都通过接口注入,与具体类型(jsplugin.Manager / services.MetadataExtractor)解耦。

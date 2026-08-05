@@ -21,6 +21,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+
+	"songloft/internal/services"
 )
 
 //go:embed assets/*
@@ -730,6 +732,31 @@ func (m *Manager) handleServeFileDirective(w http.ResponseWriter, r *http.Reques
 			http.NotFound(w, r)
 			return
 		}
+
+		if directive.SeekSeconds > 0 && m.cacheService != nil {
+			if directive.DurationSeconds <= 0 || directive.SeekSeconds < directive.DurationSeconds-3 {
+				remaining := float64(0)
+				if directive.DurationSeconds > directive.SeekSeconds {
+					remaining = directive.DurationSeconds - directive.SeekSeconds
+				}
+				w.Header().Set("Content-Type", "audio/mpeg")
+				w.Header().Set("Cache-Control", "no-store")
+				sErr := m.cacheService.StreamSeekedMP3(r.Context(), w, services.SeekStreamOptions{
+					SourcePath:      absPath,
+					StartSecond:     directive.SeekSeconds,
+					RemainingSecond: remaining,
+				})
+				if sErr == nil {
+					return
+				}
+				if !errors.Is(sErr, services.ErrSeekStreamUnavailable) {
+					return
+				}
+				w.Header().Del("Content-Type")
+				w.Header().Del("Cache-Control")
+			}
+		}
+
 		http.ServeFile(w, r, absPath)
 		return
 	}
