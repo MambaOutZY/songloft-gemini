@@ -6,14 +6,20 @@
 > **#341 落地后连同整个 `docs/webf/` 目录一起删除。**
 >
 > 面向对象：接手这条分支继续做的下一个 agent / 开发者。
-> 最后更新：2026-08-03（Step 4/6 实测落地并发版、撤回 data URL 的过度更正、
+> 最后更新：2026-08-05（**新增第 29 条 —— flex 套 flex 会让整个子树静默不绘制**，这是第 21 条
+> 那个 base size 缺陷的另一副面孔，downloader 已修复并像素验证；同日：**第 26 条被推翻、
+> 新增第 27、28 条** —— 「过一会白屏」的真根因是
+> 「渲染面重新挂载 + controller 命中缓存」，不是两个渲染面抢 controller；同一个白屏我连错
+> 三次归因，教训记在第 26 条末。同日此前：新增第 21 条 flex `wrap` 下 base size 被测成
+> 容器宽度、第 22 条 `[plugin][console]` 转发在缓存命中时静默失效并给第 16 条补上后果 ④。
+> 更早：2026-08-03 Step 4/6 实测落地并发版、撤回 data URL 的过度更正、
 > 缺陷台账扩到 11 条、文档搬进 `docs/webf/`）。
 >
 > **同目录的配套件** —— 先读 [README.md](README.md)，它有导航、当前状态速览、
 > 以及**被推翻结论的完整清单**：
 > [recon-step456.md](recon-step456.md)（Step 4/5/6 预研，证伪了两条既定方案）、
 > [step4-design.md](step4-design.md)（Step 4 四方案对比与选型）、
-> [upstream-issues.md](upstream-issues.md)（7 条上游缺陷草稿，英文正文）。
+> [upstream-issues.md](upstream-issues.md)（10 条上游缺陷草稿，英文正文）。
 >
 > ⚠️ **本文档反复发生过「先写下结论、后被实测推翻」**，每处都保留原文并划掉。
 > 只搜关键词、不读上下文的话可能捡到废弃结论 —— 动手前先扫一眼 README 里那张推翻清单。
@@ -185,7 +191,9 @@ webf」的铁律（§7），而它需要 import `webf_cupertino_ui`。探针侧�
     页面**整个换成「页面加载失败 · 页面加载超时」（`_errorMessage != null` 时 build 里根本不挂
     渲染面）—— 用户的观感是「用着好好的，过一会突然卡死了」；
     ② `_controller` 恒为 null → 安全区与播放器状态推不下去、返回键问不到页面；
-    ③ `onControllerReady` 不回调 → 宿主拿不到渲染面引用。
+    ③ `onControllerReady` 不回调 → 宿主拿不到渲染面引用；
+    ④ **`onJSLog` 也没被赋值 → 页面 console 与 JS 侧诊断输出全部丢失**（2026-08-05 实测补记，
+    详见第 22 条）——排错手段本身被这条 bug 打掉，是它最隐蔽的代价。
     修法在 `_adoptPreloadedController()`（`initState` 里同步 `getControllerSync(name)`，
     命中且 `evaluated` 就自己补上桥、delegate、主题、安全区、`onLoadStop`）。
     **不要**改用 `forceLoad: true` 绕开 —— 那等于每次进页面都重取 bundle 重放整页，
@@ -291,11 +299,258 @@ webf」的铁律（§7），而它需要 import `webf_cupertino_ui`。探针侧�
       高位字节当成标识符的一部分，变量名成了 `DIAGNOSE_JS（`，`set -u` 下直接
       unbound variable 退出，而报错里的变量名是乱码。已改成 `${DIAGNOSE_JS}`。
 
+21. **⚠️ `flex-wrap: wrap` 的容器里，子项不能靠「内容固有宽度」定宽 —— base size 会被测成
+    容器宽度，于是每个子项独占一行并铺满。** 2026-08-05 在 downloader 上复现并修掉
+    （症状：工具栏「全选 / 刷新 / 下载选中」三个按钮各占一整行、筛选栏四项各占一整行，
+    而 webview 分支完全正常）。
+    - **机理（读 `webf-0.24.27` 源码确证，逐环闭合）**：
+      ① `RenderFlexLayout._computeRunMetrics`（`rendering/flex.dart:5199+`）算 flex base size
+      用的是**「以放松后的约束实际 layout 一遍子项」得到的宽度**（局部变量 `intrinsicMain`），
+      不是真正的 max-content 贡献；
+      ② `_getIntrinsicConstraints`（`flex.dart:2461-2482`）在 row 方向 + `width:auto` + 非 replaced
+      时把子项 `maxWidth` 放松成 `double.infinity`。**WidgetElement 不是 replaced**——
+      `isSelfRenderReplaced()` 判的是 `is RenderReplaced`（`css/render_style.dart:1131`），
+      而 cupertino button 是 `RenderWidget`；
+      ③ `RenderWidget._layoutChild`（`rendering/widget.dart:166-188`）把那个无界宽度
+      **clamp 回 viewport 宽度**（注释明写是为了防 hosted Flutter subtree 拿无界约束崩溃，
+      `allowsInfiniteWidth` 默认 false，见 `widget/widget_element.dart:119`）；
+      ④ 按钮内容层 `.dl-btn-inner` 当时是 `display:flex` 即 **block-level** → `width:auto`
+      → **fill-available** = 上一步的 viewport 宽度（`css/render_style.dart:3425-3432` 显示只有
+      `inline-block` / `inline-flex` / `inline-grid` / `inline` 才在 `width:auto` 时 shrink-to-fit）；
+      ⑤ `RenderWidget` 完全 shrink-wrap 到唯一子节点（`size = getBoxSize(childSize)`，
+      `rendering/widget.dart:268`）→ 按钮宽度 = viewport 宽度；
+      ⑥ 回到 flex：换行判定 `isExceedFlexLineLimit`（`flex.dart:5476-5480`）从第二个子项起恒真。
+    - **WebF 自己知道这个 bug 并打了补丁，但补丁覆盖不到这两类子项。**
+      `flex.dart:5331-5369` 的注释直接引 CSS Flexbox §9.2：*"Our intrinsic pass can mistakenly
+      inherit a container-bounded width for block-level items … causing the base size to equal the
+      container width."* 可它的入口条件是 `if (isHorizontal && child is RenderFlowLayout)` ——
+      **`RenderWidget`（WidgetElement）与 `RenderFlexLayout`（嵌套 flex 容器）都不在内**。
+    - **两条落地规则**（downloader `style.css` 的约束 ⑦ 已固化）：
+      · WidgetElement 内部的内容层用 **`inline-flex`**（shrink-to-fit）。blockify 不会打掉它：
+        `css/display.dart:86-140` 只在**父**是 flex/grid 容器时 blockify，而 WidgetElement 默认
+        `display: block`（`widget/widget_element.dart:17-19`）。
+      · 嵌套 flex 容器给**显式 `width`**。必须是 `width` —— 放松条件只看 `width.isAuto`，
+        写 `flex-basis` 无效；改 `inline-flex` 也无效（它自己是 flex item，会被 blockify 回 flex）。
+    - **⛔ 不要给 WidgetElement 加 `max-width` 来夹住 base size**：`hasExplicitInlineWidth`
+      （`rendering/widget.dart:103-104`）会让 `_layoutChild` 改走 inline-block 分支（`:157-165`），
+      把 intrinsic pass 下那个 **∞ 直接透给 hosted Flutter subtree** → 撞 §3.2 第 11 条的
+      `Infinity or NaN toInt`。
+    - **⛔ 也不要只把 `wrap` 改成 `nowrap`**：换行是没了，但 base size 仍是 viewport 宽度，
+      单行内按 flex-shrink 均分 → 按钮变成等宽铺开，仍然不对。
+    - **为什么列表行 `.dl-row` 从来没出过这个问题**（对照组，也是修法的范本）：它 `flex-wrap`
+      取默认 `nowrap`（压根不进换行判定），且每列都是**显式 flex 比例**
+      （`.dl-col-title{flex:2 1 0}`、`.dl-col-cb{flex:0 0 48px}`），不依赖 intrinsic 测量。
+      出问题的两处恰好是全项目唯一的 **wrap + auto basis** 组合。
+    - 修复后实测（截图量像素，换算成 CSS px）：三个筛选项 170/170/169（设定 `width:170px`）、
+      搜索项 244（`200px` + `flex:1` 吃余量）、三个按钮 51/76/107（各自内容宽度）。
+
+22. **⚠️ 插件页的 `console.log` 转发（`[plugin][console]`）经常整体失效 —— 不要把「日志里没有」
+    当成「代码没跑」。** 这是第 16 条的一个**未被记下的后果**：`onJSLog` 是在 `createController`
+    里赋值的（`plugin_render_surface_webf.dart:531`），而 controller 命中 `WebFControllerManager`
+    的预加载 / 进程内缓存时 `createController` **一个都不跑**。
+    2026-08-05 实测：整份客户端日志里 `[plugin][console]` **零命中**，而 `engine.js` 里那条
+    `console.log` 是无条件执行的、页面也确实画出来了（`WebF: start for loading …` 有 17 条）。
+    - 于是**第 16 条列的三连后果要加第 ④ 条**：页面 console 与 JS 侧的一切自定义诊断输出全部丢失
+      —— 这等于把 §0 说的「排错闭环已建立」在**最常见的那条路径上**打掉了。
+    - 落地影响：布局类问题改用**截图量像素**取证（第 14 条记了那套方法，本轮第 21 条就是这么定案的）。
+      想靠 `console.log` 打诊断前，先确认日志里真能看到它 —— 否则会像本轮一样白等一轮。
+    - 日志文件位置（macOS，沙盒容器内）：
+      `~/Library/Containers/com.songloft.songloftFlutter/Data/Library/Application Support/com.songloft.songloftFlutter/logs/songloft_<date>.log`
+      （`onJSLog` → `debugPrint` → `FileLogger`，`lib/main.dart:98-105`；`debugPrint` 同时进 stdout，
+      所以直接跑 Debug 二进制并重定向输出也能拿到同一份）。
+
+23. **cupertino button 的 `variant` 配色对不上宿主主题，而且 `filled` 的底色压根改不了 ——
+    统一走 `plain` 分支、外观全交给 CSS。** 2026-08-05 在 downloader 上落地。
+    - `button.dart` 三个分支里只有 `default`（plain）与 `tinted` 会把 CSS 的 `background-color`
+      当自己的底色（`color: backgroundColor`）；**`CupertinoButton.filled` 的构造器不接受
+      color**，固定用 `CupertinoTheme.primaryColor` → 画出来是 iOS 配色，与 M3 色板无关。
+    - 圆角同理：filled 分支在没有 CSS `border-radius` 时是 `BorderRadius.zero`（**直角**），
+      plain / tinted 是固定 `circular(8)` —— 都不是 M3 的胶囊。
+    - 落地写法：模板里**不传** `variant`（默认即 plain），底色 / 圆角 / 边框 / 前景色全部由 CSS 给，
+      与宿主 `common.css` 的 `.btn-filled` / `.btn-outlined` 语义一一对齐。前景色本来就只能由
+      CSS 给（第 11 条：文字与图标读 renderStyle，widget 侧的 DefaultTextStyle 到不了）。
+    - **`disabled` 的变灰也只能由 CSS 表达**：plain 分支的 `disabledColor` 是
+      `Colors.transparent`，挡不住 WebF 按 CSS 画的那层底色，于是 disabled 按钮看起来跟可用的
+      一模一样。要用**class** 而不是 `[disabled]` 属性选择器 —— disabled 是命令式赋的 JS 属性
+      （第 3 条），不反映到 HTML 属性上。
+    - 顺带修了宿主侧的一个对称缺陷：`common.css` **没有任何 `:disabled` 规则**，所以 webview
+      分支的 disabled 按钮一直是「看起来完全可点」的实心主色。downloader 在自己的 CSS 里补了
+      `.btn:disabled`，**没动 common.css**（那会影响所有插件，属独立议题）。
+
+    **两条 CSS 属性在 WidgetElement 上语义不同，都是实测校准出来的**：
+    - **`padding` 会被应用两次**（写目标值的一半）：WebF 的 `RenderWidget` 按 CSS padding 内缩
+      content box（`_setChildrenOffset` 里 `borderLeftWidth + paddingLeftWidth`），而
+      `button.dart` 在 `hasPadding` 为真时又把**同一份** `renderStyle.padding` 交给
+      CupertinoButton。M3 要左右 24px → CSS 写 `0 12px`，实测按钮宽 76.7px 对目标 76px。
+    - **高度必须用 `height`，`min-height` 不管用**（写 `min-height: 40px` 实测量出 33px）：
+      `min-height` 只经 `hasMinHeight` 喂给 `minimumSize`，那是 Flutter widget **自绘**的下限；
+      而 WebF 盒子的高度是 `size = getBoxSize(childSize)`（第 21 条同一处，
+      `rendering/widget.dart:268`）—— 跟着子节点内容走，**CSS 边框也画在这个盒子上**。
+      写 `height` 才会经 `renderStyle.height.isNotAuto` 把子树 tighten 到指定高度。
+      改完实测边框高度 = 40px（按 `--md-primary` 的 RGB 扫像素定位边框行，不靠目视）。
+
+24. **下拉浮层（`position: absolute`）在 WebF 下可行 —— 能盖住 `<webf-list-view>`。**
+    这推翻了 downloader 原先「刻意不用浮层」的设计决策（理由曾是「浮层要赌 WebF 的层叠与命中
+    测试，面板得盖在歌曲列表那个 Flutter widget 上」）。改的动机是内联块盒的代价更难接受：
+    一展开就把工具栏和整张列表往下顶。
+    - **已实测**：`.dl-select-wrap{position:relative}` + 面板 `absolute` + `z-index` 后，面板正常
+      悬浮，**盖住了表头、歌曲行与 `<webf-list-view>`**（截图确证），下方内容不再被顶开。
+      即「WidgetElement 的绘制不遵守 CSS 层叠顺序」这个担心**不成立**。
+    - ⚠️ **未实测**：点面板里的选项能否选中（命中测试是否被 Flutter ListView 的手势竞技场抢走）。
+      判据与退路写在 `style.css` 的 `.dl-select-panel` 注释里。
+    - **踩到一个连带问题**：浮层脱离常规流后，**祖先链上任何 `overflow: hidden` 都会把它整段
+      切掉**。downloader 的 `.dl-card` 原有 `overflow: hidden`（内联时代无害，因为面板会把卡片
+      撑高），改浮层后艺术家一多面板底部就消失 → 已去掉，并留空规则 + 注释防止被加回来。
+      面板另加 `max-height` + `overflow-y` 作为**降级保护**（不是依赖：WebF 下 CSS overflow 滚动
+      仍未验证，但至少面板高度有界、不会盖满整页）。
+
+25. **⚠️ 受控文本框被外部改写会让整页白屏（debug 构建）—— `Text layout not available` +
+    `!_debugDuringDeviceUpdate` 无限刷屏。** 2026-08-05 在 downloader 上实测到，
+    表现是「页面画得好好的，数据一加载完就整页白掉」，且**日志里没有任何插件侧的错误**。
+    - **崩溃链（栈已确证）**：受控输入的 `val` 变化 → Flutter 的
+      `_Editable.updateRenderObject` → `RenderEditable.text=` → `TextPainter.markNeedsLayout`
+      → 同一帧 `MouseTracker.updateAllDevices` 做 hit test →
+      `RenderWidget.hitTestChildren`（`webf/src/rendering/widget.dart:907`）→
+      `RenderEventListener.hitTest` → `_RenderBaselineAlignedStack.hitTestChildren`
+      （`flutter/src/cupertino/text_field.dart:1947`）→ `RenderEditable.hitTestChildren`
+      → `TextPainter.getClosestGlyphForOffset` → 撞 `assert(_debugAssertTextLayoutIsValid)`。
+      随后 `mouse_tracker.dart:199` 的 `!_debugDuringDeviceUpdate` 每帧刷屏，帧循环烂掉。
+    - **触发条件是「那一帧鼠标正停在插件页上」** —— 所以它极容易被误判成偶发/与改动无关：
+      本轮前几次验证都没撞到，只因为截图时鼠标不在客户端窗口里（MouseTracker 无设备位置就
+      不做 hit test）。**用截图脚本验证时永远撞不到这条。**
+    - **换 HTML `<input>` 绕不开**：WebF 自己的 `<input>` 也是 WidgetElement + Flutter
+      `TextField`（`webf/lib/src/html/form/base_input.dart:615`），底下是同一个 `RenderEditable`。
+    - **debug-only**：两个抛出点都是 `assert`（`text_painter.dart:1688` 的
+      `assert(_debugAssertTextLayoutIsValid)`）。release 构建会整条剥掉 → 不会烂成白屏。
+      但**不能因此说生产无事**：紧接的下一行是 `_layoutCache!`，release 下若真为 null 会抛
+      NPE，只是不会连锁刷屏。
+    - **规避（downloader 已落地）**：让受控输入**等值到齐后再挂载**（`v-if="settingsLoaded"`），
+      首次赋值走 mount 而不是 update，消掉最主要那条路径。**无法根除** —— 任何「外部纠正
+      显示值」的场景（downloader 里是 `-4 → 0` 的间隔规范化）仍会走 update。
+    - 这是 WebF 侧的时序问题（hit test 打到了 layout 未就绪的 hosted Flutter 子树），
+      已写成 `upstream-issues.md` 第 9 条。
+
+26. ~~**同一个 WebF controller 被两个渲染面持有 = 其中一个整页白屏。**~~
+    **⛔ 本条作为「白屏根因」已被推翻，见第 27 条。** 保留原文是因为它记录的
+    *机制* 仍然成立（`attachToFlutter` 无重入防护是真的），而且它引出的 redirect
+    仍然值得保留 —— 只是**理由变了**，且它不是白屏的原因。
+    - **仍然成立的部分**：`WebFController.attachToFlutter`（webf `controller.dart:1518`）
+      确实**没有重入防护** —— 直接覆写 `_ownerFlutterView`、重新
+      `view.attachToFlutter(context)`、`pushNewBuildContext(...)`。
+      两个渲染面同时持有一个 controller 是真的危险。
+    - **被推翻的部分**：~~「Tab 页靠 shell 层 Offstage 保活、永不释放，所以只要插件在
+      Tab 里，独立路由就必然与它冲突」~~ —— **桌面端根本不保活**。
+      `shared/layouts/shell_layout.dart` 里 Offstage 保活**只对 Web 与移动端**生效；
+      Windows/macOS/Linux 走的是「只渲染当前激活的插件 tab，**切走即销毁**」
+      （为规避 #246 的 WebView2 残留灰块）。所以在 macOS 上两个渲染面**从不共存**，
+      而是**先后**挂载 —— 探针（下一条）实测一次都没触发，正是这个事实的证据。
+    - **redirect 保留，理由改为**：让同一插件只有一个入口，避免「独立页 push/pop 一次
+      = Tab 页渲染面被销毁再重建」这种白丢页面状态的抖动。
+    - **`_liveSurfacesByController` 从诊断探针升级为归属表**：现在它决定「谁有权在
+      dispose 时销毁缓存的 controller」（第 27 条的修法需要它来处理同帧交接）。
+    - **教训**：这是我在同一个白屏上第**三**次归因错误（hot reload → 文本框断言 →
+      controller 抢占）。第三次错在**把一个真实存在的危险机制当成了本案的成因**，
+      而没有先去核对「两个渲染面真的同时活着吗」——探针本来就是为回答这个问题加的，
+      我却在它给出否定答案之前就把结论写进了文档。**判据要先跑，再下结论。**
+
+27. **⚠️⚠️ 渲染面重新挂载 + controller 命中缓存 = 静默白屏。这才是「过一会白屏」的根因。**
+    2026-08-05 定案（songloft-org/songloft#341）。与第 25 条（文本框断言）**彼此独立、
+    都真实存在**；本次那一轮的白屏是本条，日志里**零异常**可证。
+    - **因果链**：桌面端插件 Tab **切走即销毁**（上一条）→ 每次离开再回来都是一次完整的
+      `dispose` + 重新挂载 → 重新挂载时 controller 命中进程内缓存（`evaluated: true`）→
+      `createController` / `onLoad` / `onLoadError` / `onJSLog` **一个都不跑**（第 16、22 条）
+      → `_adoptPreloadedController()` 又**无条件**上报 `onLoadStop`
+      → 于是这条路径上**任何**失败都必然表现为「整页白屏 + 日志一个字都没有」。
+    - **日志判据（不用猜，直接看）**：白屏总是紧随**第二条**
+      `WebF: start for loading ...`，且该行前面那条 `WebF: loading with controller: ...`
+      带 `evaluated: true`。只 mount 过一次（`evaluated: false`）的会话从不白屏 ——
+      此前所有「页面正常」的截图都来自那种会话。
+      两条打印分别出自 webf `widget/webf.dart:384` 与 `:813`，后者在 element 的
+      `mount()` 里，所以**一条 `start for loading` = 一次重新 mount**，可直接用来数挂载次数。
+    - **修法（已落地）**：渲染面 `dispose()` 时**连带销毁缓存里的 controller**
+      （`_dropCachedController` → `WebFControllerManager.removeAndDisposeController`），
+      即「不跨渲染面生命周期复用 controller」。这样每次挂载都退回**正常路径**：
+      有 loading、有 20s 超时、有错误 UI、有 console 转发。
+      **代价**：页面 JS 状态（筛选项、滚动位置）归零、bundle 要重取 —— 与 webview 分支在
+      桌面端的行为**一致**（原生 WebView 被销毁后同样重载），所以不会再出现
+      「两条渲染路径行为不对称」这种更难排查的情形。
+    - **同帧交接的坑（必须防）**：同一 URL 的新旧渲染面在**同一帧内**交接时，新面的
+      `initState` **早于**旧面的 `dispose` —— Flutter 先在 build 阶段 inflate 新子树，
+      到帧末 `BuildOwner.finalizeTree()` 才拆 inactive 元素。若旧面无条件销毁 controller，
+      销毁掉的正是新面刚认领的那个。故用 `_liveSurfacesByController` 判「登记的还是自己吗」，
+      新面 `initState` 会改写归属，旧面据此让权。
+    - **顺带修掉两条长期拖慢排查的坑**：重装插件后不必再完全退出客户端才能看到新 bundle
+      （第 14 条）；`[plugin][console]` 转发不再因命中缓存而静默失效（第 22 条）。
+    - **不要**改用 `forceLoad: true` 达到同样效果：那只是每次重新取 bundle，缓存里那个
+      controller 仍然留着不放，内存与 `maxAliveInstances` 配额照旧被占。
+    - **上游侧刻意没写成草稿**：我们绕开了这条路径，但**从未隔离出它到底哪一步坏了**
+      （`detachFromFlutter` 把 `viewport` / `_isFrameBindingAttached` /
+      `_frameFlushLoopEnabled` 全置否，而 `attachToFlutter` 并不逐一恢复，这只是
+      **候选**，未证实）。没有最小复现和确定机制就去提 issue，只会得到
+      「你的复现里还有别的问题」。真要提，先做一个「加载同一 URL、挂载→卸载→再挂载」
+      的最小 Flutter 例子。第 28 条那个 `onLoad` 问题相反 —— 调用链已确证，
+      已写成 `upstream-issues.md` 第 10 条。
+
+28. **⚠️ `onLoad` 在「同一进程内第二次加载」时不来 —— 不能把它当唯一的就绪信号。**
+    2026-08-05 实测（第 27 条的修复落地后暴露出来的下一层）。
+    - **现象**：丢掉缓存后第二次挂载会**新建** controller、bundle 完整加载、JS 真的执行
+      （页面自己那行 `[downloader] engine: ...` 打出来了）、四个 API 全部 200 ——
+      然后页面被 `PluginRenderView` 的 20s 超时定时器换成「页面加载失败·页面加载超时」。
+      即**页面是好的，只是没人报告「好了」**。
+    - **机理**：`onLoad` 只由 `dispatchWindowLoadEvent()` 调，而后者只由
+      `checkCompleted()`（webf `controller.dart:1718`）调。`checkCompleted()` 有**四道
+      early-return**：`document.parsing`、`isDelayingDOMContentLoadedEvent`、
+      `hasPendingRequest`、`isDelayingLoadEvent`。任一条命中就直接 return，
+      而**没有任何东西保证它之后会被再调一次**。
+    - **为什么第二次才犯**：这是个竞态。第二次挂载所有资源都已在本机热着 ——
+      日志里 bundle `266ms → 55ms`、四个 API `279/277/277/52ms → 6/6/6/10ms`。
+      时序一变，`checkCompleted()` 就撞在了不同的 guard 上。
+    - **修法（已落地）**：改用 **`onBuildSuccess`** 作主信号（`onLoad` 降为次要信号，
+      两条都指向幂等的 `_markPageReady`，谁先到算谁）。`onBuildSuccess` 在
+      `buildRootView()` 真把根视图建出来之后 post-frame 回调，且**只在成功分支**调
+      （webf `widget/webf.dart:673` / `:723`，所有 error 分支都不调）——
+      语义正是我们要的「页面画出来了」。
+    - **幂等守卫不是可选的**：`onBuildSuccess` 每次 `buildRootView` 都回调，而
+      `onLoadStop` 会 setState 祖先 → 重建 → WebF 重建 → 又一次 `buildRootView`
+      → 又一次回调。**不守卫就是无限重建循环。**
+    - **一般化的教训**：这一整轮（第 16、22、27、28 条）都是同一个形状 ——
+      **把「宿主自己假定的成功」当成了「引擎报告的成功」**。第 16 条补调 `onLoadStop`、
+      第 27 条无条件上报成功，都是在替引擎打包票。正确做法是找一个**引擎真的做完那件事
+      才会发**的信号。
+
+29. **⚠️⚠️ flex 容器里再套 flex 容器 = 整个子树一个像素都不画。无异常、无日志、结构全对。**
+    2026-08-05 实测并已修复（downloader）。**这是第 21 条那个 base size 缺陷的另一副面孔，
+    但后果严重得多** —— 第 21 条只是排版难看，这条是内容整片消失。
+    - **机制（Flutter 侧，确证）**：`RenderObject._paintWithContext` 开头就是
+      `if (_needsLayout) return;`，源码注释写明「说明我们在 layout 阶段被跳过了，
+      因此不需要绘制」。**停在 `needsLayout` 的 render object 被静默跳过绘制。**
+      独立佐证：日志里 `editable.dart:2018` 的 `assert(!debugNeedsLayout)`
+      （`RenderEditable.handleEvent` 里，点击命中了 layout 未完成的文本框）。
+    - **触发条件（相关性 100%）**：容器的**子节点自己也是 `display:flex`**。
+      `.dl-container`(flex col)→`.card`、`.dl-card-body`(flex col)→`.dl-field`(flex col)、
+      `.dl-filter-bar`(flex row)→`.dl-filter-item`(flex col) **全不绘制**；
+      `.dl-toolbar`(flex row)→按钮/span、SongList→`<webf-list-view>` **全正常**。
+      根因同第 21 条：WebF 用「以放松约束试排一遍」测 base size，而它自己那个 §9.2 补丁的
+      入口条件是 `child is RenderFlowLayout`，**嵌套 flex 容器不在覆盖范围内**。
+    - **修法**：**竖向堆叠一律用块流**（`display:block` + `margin`），不用
+      `flex-direction:column` + `gap`。视觉等价，但块流完全不碰那套测量。
+      横向 flex 行保留 —— 问题从来不在它们自己，在**子节点**也是 flex 容器。
+      写成了 `style.css` 的约束 ⑧。
+    - **为什么第 21 条的修复只对了一半**：那轮我给 `.dl-filter-item` 补 `width` 修好了
+      **主轴** base size（排版正常了、像素也量过），就此结案。但同一个试排层还会把子树留在
+      `needsLayout`，而那个症状在当时的窗口尺寸/时序下没暴露。**「排版对了」不等于
+      「这条缺陷绕开了」。**
+    - **取证方法（本轮唯一有效的那条）**：`getBoundingClientRect()` 与 DOM 计数**全部正常**，
+      靠结构完全查不出来。定案靠**按区域数非背景像素**——FilterBar 应在的区域内只有 184 个
+      非背景像素（全是它自己那条 `border-bottom`），修复后同区域涨到数千。
+      这正是本目录反复强调的那条判据：**「盒子有尺寸」≠「图被画出来了」。**
+
 #### 仍然要主动规避的（webf-ui 救不了的）
 
 `<base href>` 不被采纳（第 2 条）、`display: none` 仍占位、内联 `style.display=''` 不可靠、
 layout 异步、`resize` 不一定派发、`max()`/`min()` 未实现、无界 flex 触发
-`Infinity or NaN toInt`、`btoa` 不是二进制安全。
+`Infinity or NaN toInt`、`btoa` 不是二进制安全、**`flex-wrap: wrap` 下子项 base size 被测成
+容器宽度**（第 21 条）、**`[plugin][console]` 转发在缓存命中时静默失效**（第 22 条）。
 
 ---
 

@@ -8,7 +8,12 @@
 > 产品面向用户的 WebF 内容**不在这里**，在 `docs/js-plugin-development-guide.md` §8
 > 「WebF 渲染引擎与原生元素」及其英文版（双语铁律适用），以及 `CHANGELOG.md`。
 >
-> 最后更新：2026-08-03。
+> 最后更新：2026-08-05（**flex 套 flex → 子树静默不绘制**，定案并修复，见 `handoff.md`
+> 第 29 条与 `upstream-issues.md` 第 8 条新增的小节；同日：白屏根因定案为
+> 「渲染面重新挂载 + controller 命中缓存」，
+> `handoff.md` 第 26 条被推翻、新增第 27 条 + `upstream-issues.md` 第 10 条；
+> 同日此前：downloader 的 flex `wrap` base size 缺陷修复 + `console` 取证通道被推翻，
+> 见 `handoff.md` 第 21 / 22 条与 `upstream-issues.md` 第 8 条）。
 
 ---
 
@@ -24,10 +29,10 @@
 
 | 文档 | 什么时候读 | 行数量级 |
 |---|---|---|
-| **[handoff.md](handoff.md)** | **接手就读这份，它是入口。** 现状、硬约束、11 条已确诊上游缺陷、剩余工作、验证环境配方、铁律 | ~1000 |
+| **[handoff.md](handoff.md)** | **接手就读这份，它是入口。** 现状、硬约束、11 条已确诊上游缺陷、剩余工作、验证环境配方、铁律 | ~1100 |
 | [step4-design.md](step4-design.md) | 要动表格 / `input[type=file]` 时读。四方案对比与选型依据 | ~1150 |
 | [recon-step456.md](recon-step456.md) | 想知道「为什么不那样做」时读。Step 4/5/6 预研，**证伪了两条既定方案** | ~880 |
-| [upstream-issues.md](upstream-issues.md) | 要给 WebF 上游报 bug 时读。7 条草稿，**英文正文** | ~1200 |
+| [upstream-issues.md](upstream-issues.md) | 要给 WebF 上游报 bug 时读。10 条草稿，**英文正文** | ~1350 |
 
 **只想干活、不想读完**：`handoff.md` 的 §0（现状 + 范围边界）→ §3.1（API 事实）→ §3.2（缺陷台账）
 → §5（验证环境）。§3.2 是全套文档里复用率最高的一节。
@@ -62,7 +67,7 @@
 | Step 5 安全区 `--sl-safe-*` | ✅ 已实测 |
 | Step 6 `window.open` / `blobToDataURL` / `input[type=file]` | ✅ 已实测 |
 | 许可合规（GPL-3.0） | ✅ 含 App 内许可页 + 许可全文随包分发 |
-| 上游报 bug | 📝 7 条草稿已写，**未提交**（需用户批准 + 人工排重） |
+| 上游报 bug | 📝 10 条草稿已写，**未提交**（需用户批准 + 人工排重） |
 
 **未验证的三件事**（只能靠真机手测）：真机刘海安全区（容器里 `MediaQuery.viewPadding` 恒为 0）；
 真实用户手指滚动下的表现（合成滚轮驱动不了 WebF 的滚动容器）；系统 WebView 路径
@@ -98,6 +103,14 @@
 | data URL **出不了图**（据一次目视观察） | **实测能出图**（4 项绘制判据全过，各 196px） | `common.js` 的 `blobToDataURL` 注释 |
 | `Infinity or NaN toInt` 是 **lxmusic 特有** | downloader 页也会出现（栈在 `InlineFormattingContext`，无 grid 帧） | `handoff.md` §3.2 第 11 条、§6 |
 | 「必须保留运行时全局回退开关」 | 用户明确放弃，风险改由「默认 `webview` + 逐插件声明」承担 | `handoff.md` §6 |
+| 插件页 `console.log` 是**真机上可靠的取证通道**（多处文档与代码注释这么写） | **在最常见的那条路径上整体失效**：`onJSLog` 在 `createController` 里赋值，而 controller 命中预加载/进程内缓存时那条路径不跑。2026-08-05 实测：整份日志 `[plugin][console]` 零命中，而页面确实画出来了。布局问题改用**截图量像素** | `handoff.md` 第 22 条（及第 16 条的后果 ④） |
+| webf-ui 路线让「布局相关的整批缺陷不再命中」 | **收窄**：`flex-wrap: wrap` 下 WidgetElement 与嵌套 flex 的 base size 仍被测成容器宽度（每项独占一行铺满）。原生元素绕开了 grid/table，但没绕开 flex 的 base size 测量 | `handoff.md` 第 21 条 |
+| 下拉面板**不能用浮层**，只能用常规流块盒（怕 WebF 的层叠与命中测试） | **层叠部分证伪**：`position:absolute` + `z-index` 能正常盖住 `<webf-list-view>` 这个 Flutter widget。已改为浮层（命中测试仍待验证）。连带发现：祖先链上的 `overflow:hidden` 会把浮层整段切掉 | `handoff.md` 第 24 条 |
+| 「用截图脚本验证就够了」 | **不够**：受控文本框被外部改写 + 鼠标停在页面上 = 整页白屏（debug），而截图脚本运行时鼠标从不在窗口里，这条**永远撞不到**。真机手动操作是不可替代的一环 | `handoff.md` 第 25 条 |
+| 白屏 = 第 16 条的加载超时 / hot reload / 文本框断言 / **同一 controller 被两个渲染面抢占** | **四条全错**（文本框断言真实存在但不是这次）。真根因：**渲染面重新挂载 + controller 命中缓存** → `createController`/`onLoad`/`onJSLog` 全不跑 + `_adoptPreloadedController()` 无条件报成功 → 任何失败都静默白屏。同一个白屏连错三次归因 | `handoff.md` 第 27 条（第 26 条为被推翻的第三次） |
+| Tab 页靠 shell 层 **Offstage 保活、永不释放**（据此推断两个渲染面必然共存） | **桌面端根本不保活**：Offstage 保活只对 Web / 移动端生效，Windows/macOS/Linux 是「切走即销毁」（规避 #246 的 WebView2 灰块）。所以 macOS 上两个渲染面从不共存，而是先后挂载 —— 为验证共存而加的探针**一次都没触发**，我却在它给出否定答案前就把结论写进了文档 | `handoff.md` 第 26 条 |
+| flex `wrap` 的 base size 缺陷「已修复并真机验证」（第 21 条，给 `.dl-filter-item` 补 `width`） | **只修对了一半**：主轴排版确实正常了、像素也量过，但同一个「试排一遍」的测量层还会把**嵌套 flex 子树留在 `needsLayout`**，而 Flutter 会**静默跳过绘制**它 → 整片内容消失。「排版对了」≠「这条缺陷绕开了」 | `handoff.md` 第 29 条 |
+| cupertino button 的 `variant` 可以直接用来表达按钮层级 | **不能**：`CupertinoButton.filled` 的底色固定是 `CupertinoTheme.primaryColor`、构造器不接受 color，圆角默认还是直角。统一走 `plain` + CSS 给外观 | `handoff.md` 第 23 条 |
 
 **方法论教训（两次方向相反的翻车，各记一次）**：
 源码推理与实测冲突时**以实测为准**（sticky、data URL 都是源码/目视给了乐观或悲观的错误结论）；

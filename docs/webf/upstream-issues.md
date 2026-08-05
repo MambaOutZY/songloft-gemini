@@ -1130,15 +1130,398 @@ demonstrable from the source and need no runtime observation.
 
 ---
 
+## 8. Flex: base size of `RenderWidget` / nested-flex items measures as the container width — items wrap onto their own line, and nested-flex subtrees can end up never painted at all (the existing §9.2 workaround only covers `RenderFlowLayout`)
+
+**Title (one line):**
+`flex-wrap: wrap`: flex base size of WidgetElement and nested-flex children resolves to the container width — each item wraps onto its own line, and nested-flex subtrees are silently left unpainted
+
+### Environment
+
+- webf `0.24.27` (pub.dev), `webf_cupertino_ui` `0.4.1`
+- Flutter: host app constrains `flutter: '>=3.29.0'`, `sdk: ^3.7.0`
+- Platform: macOS 15 (arm64), observed in a release-mode host app
+
+### Description
+
+In a `display: flex; flex-wrap: wrap` row container, children whose render object is a
+`RenderWidget` (any `WidgetElement` — e.g. `<flutter-cupertino-button>`, or WebF's own
+`<webf-list-view>`) or a nested flex container (`RenderFlexLayout`) get a **flex base size equal to
+the flex container's available width**. The wrap algorithm therefore decides that the second child
+does not fit, and **every child ends up on a line of its own, stretched to the full line width**.
+
+Authors see a horizontal toolbar collapse into a vertical stack of full-width buttons. Nothing is
+logged, and the same markup is correct in every browser.
+
+WebF **already recognises this class of bug** and carries a targeted workaround, whose comment
+states the problem precisely (`lib/src/rendering/flex.dart:5331-5340`):
+
+```dart
+// CSS Flexbox §9.2: For flex-basis:auto with an auto main-size, the flex base size
+// should come from the item's max-content contribution in the main axis, not from
+// the block formatting context's "fill-available" used size. Our intrinsic pass can
+// mistakenly inherit a container-bounded width for block-level items that establish
+// an inline formatting context (IFC), causing the base size to equal the container
+// width. Detect that case and prefer the IFC's max-intrinsic width instead.
+if (isHorizontal && child is RenderFlowLayout) {
+```
+
+The guard is `child is RenderFlowLayout`, so the correction never applies to `RenderWidget` or
+`RenderFlexLayout` children, even though they reach the same wrong base size by the same route.
+
+### Root cause
+
+The base size is not a max-content measurement at all — it is **the width the child happens to take
+when laid out once with relaxed constraints** (`flex.dart:5470-5474`):
+
+```dart
+childSize = Size.copy(_getChildSize(child)!);
+_transientChildSizeOverrides![child] = childSize;
+intrinsicMain = isHorizontal ? childSize.width : childSize.height;
+```
+
+For a `WidgetElement` child the chain closes as follows:
+
+1. `_getIntrinsicConstraints` relaxes `maxWidth` to infinity for non-replaced auto-width items
+   (`flex.dart:2461-2482`). A `WidgetElement` is **not** replaced — `isSelfRenderReplaced()` tests
+   `attachedRenderBoxModel is RenderReplaced` (`css/render_style.dart:1131-1133`) while a
+   `WidgetElement` attaches a `RenderWidget` (`rendering/widget.dart:17`).
+2. `RenderWidget._layoutChild` refuses to pass that unbounded width down and **clamps it back to the
+   viewport width** (`rendering/widget.dart:169-187`); `allowsInfiniteWidth` defaults to `false`
+   (`widget/widget_element.dart:119`). The clamp is deliberate — the comment notes an unbounded
+   width would crash a hosted `Row` + `Expanded`.
+3. The hosted content element is block-level (e.g. `display: flex`), so with `width: auto` it
+   fill-availables to that clamped width; only `inline-block` / `inline-flex` / `inline-grid` /
+   `inline` leave `logicalWidth == null` and shrink-to-fit
+   (`css/render_style.dart:3425-3432`).
+4. `RenderWidget` then shrink-wraps to that child: `size = getBoxSize(childSize)`
+   (`rendering/widget.dart:268`).
+5. Back in flex, `intrinsicMain == viewport width`, so
+   `isExceedFlexLineLimit` (`flex.dart:5476-5480`) is true from the second child onward.
+
+A nested flex container (`RenderFlexLayout`) reaches step 3's fill-available result directly, without
+the `RenderWidget` detour — and is likewise skipped by the `RenderFlowLayout` guard.
+
+### Expected vs actual
+
+Given a 900px-wide container:
+
+```html
+<div style="display:flex; flex-wrap:wrap; gap:8px">
+  <flutter-cupertino-button><span style="display:flex">Select all</span></flutter-cupertino-button>
+  <flutter-cupertino-button><span style="display:flex">Refresh</span></flutter-cupertino-button>
+</div>
+```
+
+- **Expected** (and what every browser does with a `<button>` in place of the custom element): both
+  buttons on one line, each as wide as its own content.
+- **Actual**: two lines, each button stretched to ~900px.
+
+### Minimal reproduction
+
+1. Register any `WidgetElement` (the bug needs no third-party package — WebF's own
+   `<webf-list-view>` reproduces it, as does a two-line custom element).
+2. Put two of them in a `display:flex; flex-wrap:wrap` container, each wrapping one block-level
+   child (`<span style="display:flex">text</span>`).
+3. Observe one item per line, each at full container width.
+4. Change the inner `display: flex` to `inline-flex` — the layout becomes correct, confirming step 3
+   of the chain.
+5. Remove `flex-wrap: wrap` — items stay on one line but are now sized by `flex-shrink` from the
+   inflated base size, i.e. all equal width rather than content width. This confirms the base size
+   itself is wrong, independently of the wrap decision.
+
+### Second, more severe symptom: the nested-flex subtree is never painted at all
+
+The same measurement path has a worse consequence than bad wrapping. When a flex container's child
+is itself a flex container, that child's subtree can end up **permanently unpainted** — the
+container draws its own border/background, and none of its descendants appear.
+
+There is no exception and no log line, and the DOM side looks perfectly healthy:
+`getBoundingClientRect()` returns correct, non-zero, correctly-positioned boxes for every element in
+the invisible subtree. The only way we could detect it was by counting non-background pixels in a
+screenshot: the region occupied by one such container held **184** non-background pixels (all of them
+its own 1px `border-bottom`) and rose to several thousand once the nested flex was removed.
+
+The mechanism on the Flutter side is `RenderObject._paintWithContext`:
+
+```dart
+// If we still need layout, then that means that we were skipped in the layout
+// phase and therefore don't need painting.
+if (_needsLayout) {
+  return;
+}
+```
+
+So any render object left in `needsLayout` is silently skipped during paint. Independent
+corroboration from the same session: a single `editable.dart:2018` assertion,
+`RenderEditable.handleEvent` → `assert(!debugNeedsLayout)`, i.e. a pointer-down was dispatched to a
+hosted text field whose layout had not completed — proving that render objects really are stuck in
+`needsLayout`, not merely mispositioned.
+
+Correlation observed across one page (every container tested, no exceptions):
+
+| container | child | painted? |
+|---|---|---|
+| `display:flex; flex-direction:column` | block `div` | **no** |
+| `display:flex; flex-direction:column` | `display:flex; flex-direction:column` | **no** |
+| `display:flex` (row, `wrap`) | `display:flex; flex-direction:column` | **no** |
+| `display:flex` (row, `wrap`) | `WidgetElement` / `span` | yes |
+| block | `<webf-list-view>` | yes |
+
+Our workaround was to remove nested flex entirely — every vertical stack became block flow
+(`display:block` + `margin`) instead of `flex-direction:column` + `gap`. Visually identical, and it
+never enters the trial-layout path.
+
+### Suggested fix
+
+The narrow fix is to extend the §9.2 correction beyond `RenderFlowLayout`:
+
+```diff
+-          if (isHorizontal && child is RenderFlowLayout) {
++          if (isHorizontal && child is RenderBoxModel) {
+```
+
+with the candidate width taken from `child.getMaxIntrinsicWidth(double.infinity)` for children that
+have no `inlineFormattingContext` — the fallback branch at `flex.dart:5356-5362` already does exactly
+this, so the change is mostly about widening the type test. `RenderWidget` implements
+`computeMaxIntrinsicWidth` by forwarding to its primary child (`rendering/widget.dart:596-618`), so a
+usable max-content value is available.
+
+The structural fix is to stop deriving flex base size from a trial layout under relaxed constraints,
+and use the intrinsic (`getMaxIntrinsicWidth`) contribution as the spec requires. That is a larger
+change, but the current approach is why the same defect keeps reappearing per render-object type.
+
+**Workaround for authors** (what we shipped): give the inner content layer of a `WidgetElement`
+`display: inline-flex` so it shrink-to-fits, and give nested flex items an explicit `width`. Note
+that `flex-basis` does **not** work as a substitute — the relaxation test at `flex.dart:2461` reads
+`width.isAuto` only. And `max-width` must be avoided on a `WidgetElement`: it flips
+`hasExplicitInlineWidth` (`rendering/widget.dart:103-104`), which routes `_layoutChild` through the
+inline-block branch and forwards the unbounded `maxWidth` into the hosted Flutter subtree — the very
+crash the clamp in step 2 exists to prevent.
+
+### Confidence
+
+**Source-verified end to end, plus a real-device before/after.** Every step of the chain was read in
+`webf-0.24.27` in pub-cache. The fix was verified on macOS by pixel-measuring screenshots (the host's
+JS-console forwarding is unavailable on the cached-controller path, so no runtime numbers could be
+logged from inside the page): after switching the content layer to `inline-flex`, three filter items
+measured 170/170/169 CSS px against a declared `width: 170px`, the grow item 244 px, and three
+buttons 51/76/107 px — their own content widths — all on one line.
+
+Not verified: whether the same defect occurs with `flex-direction: column` + `wrap` (the relaxation
+code at `flex.dart:2484+` is symmetric, so it likely does), and whether `RenderReplaced` children
+(e.g. `<img>`) are affected — they are explicitly excluded from the relaxation, so probably not.
+
+---
+
+## 9. Hit test reaches a hosted text field whose text layout was invalidated in the same frame — `Text layout not available`, then `!_debugDuringDeviceUpdate` floods every frame
+
+**Title (one line):**
+`MouseTracker` hit test on a `WidgetElement`-hosted `TextField` asserts `Text layout not available` after the text was set in the same frame
+
+### Environment
+
+- webf `0.24.27` (pub.dev), `webf_cupertino_ui` `0.4.1`
+- Flutter: host app constrains `flutter: '>=3.29.0'`, `sdk: ^3.7.0`
+- Platform: macOS 15 (arm64), **debug build**
+
+### Description
+
+When a hosted text field's text is set programmatically (a controlled input whose value arrives
+from an async load), and the pointer happens to rest over the WebF viewport in that same frame,
+`MouseTracker`'s hit test walks into the field's `RenderEditable` before its `TextPainter` has been
+re-laid-out, and trips `assert(_debugAssertTextLayoutIsValid)`.
+
+The first exception is survivable, but it aborts the hit-test pass **while
+`MouseTracker._debugDuringDeviceUpdate` is still set**, so every subsequent frame throws
+`'!_debugDuringDeviceUpdate': is not true` — hundreds of lines per second — and the app renders
+blank from that point on.
+
+This reproduces with both `<flutter-cupertino-input>` (`webf_cupertino_ui`) and WebF's own
+`<input>`, because the latter is also a `WidgetElement` hosting a Flutter `TextField`
+(`lib/src/html/form/base_input.dart:615`) — i.e. the same `RenderEditable` underneath.
+
+### Root cause
+
+The invalidation and the hit test happen in the same frame, in this order:
+
+```
+_Editable.updateRenderObject (editable_text.dart:6133)
+  → RenderEditable.text=            (editable.dart:789)
+    → TextPainter.markNeedsLayout   (text_painter.dart:787)   // layout cache dropped
+...
+MouseTracker.updateAllDevices       (mouse_tracker.dart:367)
+  → RendererBinding.hitTestInView   (binding.dart:676)
+    → RenderWidget.hitTestChildren  (webf/src/rendering/widget.dart:907)
+      → RenderEventListener.hitTest (webf/src/rendering/event_listener.dart:152)
+        → _RenderBaselineAlignedStack.hitTestChildren (cupertino/text_field.dart:1947)
+          → RenderEditable.hitTestChildren            (editable.dart:1990)
+            → TextPainter.getClosestGlyphForOffset    (text_painter.dart:1688)
+              → assert(_debugAssertTextLayoutIsValid) // throws
+```
+
+In a plain Flutter app the hosted subtree would have been laid out before the post-frame mouse
+tracker pass. Under WebF the `RenderWidget` subtree's layout is driven by WebF's own pipeline, so a
+`markNeedsLayout` issued during the build phase is not necessarily flushed before
+`hitTestInView` runs.
+
+### Expected vs actual
+
+- **Expected**: setting a hosted text field's value while the pointer rests over the view is a
+  no-op for hit testing; the field re-lays-out and the hit test either misses or resolves normally.
+- **Actual**: assertion in debug, then a per-frame assertion flood and a blank view. Nothing in the
+  log points at the embedding app, which makes this very hard to attribute.
+
+### Minimal reproduction
+
+1. Host any text field via a `WidgetElement` (WebF's own `<input>` suffices).
+2. Bind its value to something that arrives asynchronously (e.g. set it from a `fetch` callback a
+   few hundred ms after load), so the text is assigned *after* first paint.
+3. **Leave the mouse cursor sitting over the view** — this is the part that makes it look flaky;
+   with the pointer outside the window `MouseTracker` has no device position and never hit-tests.
+4. Observe `Text layout not available`, followed by an unbounded flood of
+   `'!_debugDuringDeviceUpdate': is not true`, and a blank view.
+
+### Suggested fix
+
+Ensure the hosted Flutter subtree's layout is flushed before WebF participates in a hit test, or
+make `RenderWidget.hitTestChildren` skip children that currently need layout:
+
+```dart
+// lib/src/rendering/widget.dart, in hitTestChildren
+if (child.debugNeedsLayout) return false;   // or: skip this child
+```
+
+Skipping is safe here — a box that needs layout has no trustworthy geometry to hit-test against,
+so the correct answer is "no hit" rather than "read stale glyph data". A narrower variant is to
+guard only the `RenderEventListener` path, but the general check is cheaper to reason about.
+
+Note that the debug asserts are hiding a real hazard rather than being the whole problem: the line
+right after the assert is `final _TextPainterLayoutCacheWithOffset cachedLayout = _layoutCache!;`,
+so in release the same state yields a null-check exception instead.
+
+### Confidence
+
+**Source-verified for the chain and the fix location; reproduction is condition-dependent.**
+The full stack above is verbatim from a real run. The `assert`-only nature of both throw sites was
+checked against the local Flutter SDK (`text_painter.dart:1688`). Not verified: whether
+`debugNeedsLayout` is the cleanest predicate available inside WebF's hit-test path, and whether the
+same crash occurs on other platforms (only macOS was exercised).
+
+---
+
+## 10. `onLoad` never fires on the second load in the same process — `checkCompleted()` bails on one of four guards and is never re-entered
+
+**Title (one line):**
+`WebFController.onLoad` is not called for a second page load in the same process, so embedders that gate their loading UI on it hang forever
+
+### Environment
+
+- webf `0.24.27` (pub.dev)
+- Flutter: host app constrains `flutter: '>=3.29.0'`, `sdk: ^3.7.0`
+- Platform: macOS 15 (arm64), debug build
+- Loading mode: `WebFControllerManager` preloading (`WebF.fromControllerName` with a `bundle`)
+
+### Description
+
+An embedder that shows a spinner until `onLoad` and gives up after a timeout works on the first
+load of a page and **hangs on the second load of the same URL in the same process** — even though
+the second load is, by every other measure, completely successful:
+
+- a fresh `WebFController` is created (the previous one was removed and disposed),
+- the bundle is fetched and `load success` / `load complete with bundle` are logged,
+- the page's own JavaScript runs (its `console.log` reaches `onJSLog`),
+- every `fetch()` the page issues returns `200`,
+- and the content is visibly rendered.
+
+Only the Dart-side `onLoad` callback never arrives.
+
+`onLoad` is invoked exclusively from `dispatchWindowLoadEvent()`
+(`lib/src/launcher/controller.dart:1821`), which is invoked exclusively from `checkCompleted()`
+(`lib/src/launcher/controller.dart:1718`). `checkCompleted()` has four early returns:
+
+```dart
+void checkCompleted() {
+  if (_view!.document.parsing) return;
+  if (_view!.document.isDelayingDOMContentLoadedEvent) return;
+  if (_isDOMComplete) return;
+  ...
+  if (_view!.document.hasPendingRequest) return;
+  if (_view!.document.isDelayingLoadEvent) return;
+  ...
+  dispatchWindowLoadEvent();
+}
+```
+
+Whichever guard is hit, `checkCompleted()` simply returns — and **nothing guarantees it will be
+called again** once the blocking condition clears. The call sites are the end of each loading-mode
+routine plus resource-completion paths, so if the last blocker clears outside those paths, the load
+event is lost permanently.
+
+### Why it only reproduces on the second load
+
+It looks like a straightforward race that the second load loses because everything is already warm.
+From one run, first load vs second load of the same URL:
+
+| | first load | second load |
+|---|---|---|
+| bundle `load complete` | 266 ms | 55 ms |
+| the page's four `fetch()` calls | 279 / 277 / 277 / 52 ms | 6 / 6 / 6 / 10 ms |
+
+Same document, same scripts, same requests — only the timing differs, and only the fast one fails
+to emit `load`.
+
+### Impact
+
+`onLoad` is the natural "page is ready" signal for an embedder, and it is the one the public API
+advertises. When it silently never fires, the embedder cannot distinguish "still loading" from
+"loaded fine" and will eventually show a spurious error to the user over a perfectly good page.
+
+### Suggested fix
+
+Either of these would be sufficient, and they are complementary:
+
+1. **Re-run `checkCompleted()` when a blocker clears.** Each guard corresponds to a counter or flag
+   (`parsing`, `isDelayingDOMContentLoadedEvent`, `hasPendingRequest`, `isDelayingLoadEvent`);
+   have the code that decrements/clears each one call `checkCompleted()` again, so the check is
+   level-triggered rather than edge-triggered.
+2. **Document `onBuildSuccess` as the render-readiness signal** (or add an explicit
+   `onFirstContentfulPaint`). `onBuildSuccess` is currently reliable — it is called post-frame from
+   the two success paths of `buildRootView()` (`lib/src/widget/webf.dart:673` and `:723`) and never
+   from the error paths — but it is undocumented and reads like an internal hook, so embedders
+   naturally reach for `onLoad` instead.
+
+### Workaround (what we shipped)
+
+Treat `onBuildSuccess` as the primary readiness signal and `onLoad` as a secondary one, both
+funnelling into one idempotent handler. **The idempotency is mandatory**: `onBuildSuccess` fires on
+every `buildRootView()`, so if the handler triggers a `setState` on an ancestor of the `WebF`
+widget, the resulting rebuild re-enters `buildRootView()` and the callback loops forever.
+
+### Confidence
+
+**Symptom reproducible and the call chain source-verified; the specific guard is not isolated.**
+We confirmed that `onLoad` → `dispatchWindowLoadEvent()` → `checkCompleted()` is the only path, and
+that `checkCompleted()` returns early without any re-entry guarantee. We did **not** instrument
+which of the four guards is hit on the failing run — that is the first thing to nail down before
+filing, ideally with a minimal repro that loads the same URL twice with a warm HTTP cache.
+
+---
+
 ## 提交前检查清单
 
 > 这一节由主 agent 补写（起草 agent 在写到这里之前因账号当日额度用尽被中断，
 > 7 条正文都已完成）。
+>
+> 📌 **2026-08-05 追加第 8 条**（flex `wrap` 下 base size 被测成容器宽度）。下面凡是写「7 条」
+> 的地方都请按 **8 条**读 —— 排重、模板确认、用户批准这三件事对第 8 条同样适用，它一条都没查过重。
+> 与前 7 条不同的是，**第 8 条有真机 before/after 佐证**（截图量像素），而且上游源码里已经带着
+> 一个只覆盖 `RenderFlowLayout` 的同类修正，`Suggested fix` 因此是「把已有修正的类型判据放宽」，
+> 属于最容易被接受的形状 —— 值得与第 1、7 条一起优先提。
 
 ### 必须由人做的三件事
 
 1. **搜一遍上游已有 issue，逐条排重。** 起草时刻意禁用了联网（此前有 agent 因
-   WebSearch / WebFetch 反复超时死掉），所以**这 7 条一条都没查过重**。
+   WebSearch / WebFetch 反复超时死掉），所以**这 10 条一条都没查过重**。
    已知至少存在一处重复风险：`env(safe-area-inset-*)` 那条对应上游 **#907（open）**，
    说明这类缺陷上游是有人报过的。搜索建议按报错原文而不是我们的措辞来搜
    （例如 `Bytecode are not valid to execute`、`Attempting to navigate WebF to an external`），
@@ -1147,7 +1530,7 @@ demonstrable from the source and need no runtime observation.
    字段顺序或 checkbox，本文档的结构（Environment / Description / Root cause /
    Expected vs actual / Minimal reproduction / Suggested fix / Confidence）是按开源惯例
    拟的，可能需要重排。
-3. **用户批准后再提。** 向第三方仓库提 issue 是**外发动作**，且这 7 条里带着我们的
+3. **用户批准后再提。** 向第三方仓库提 issue 是**外发动作**，且这 10 条里带着我们的
    源码分析与项目信息。**未经用户明确同意不要提交任何一条。**
 
 ### 提交时的注意事项
@@ -1167,7 +1550,8 @@ demonstrable from the source and need no runtime observation.
 
 ### 复核状态
 
-7 条的 `file:line` 都在 0.24.27 源码里逐条核对过（起草 agent 的报告未能送出，
+第 1–7 条的 `file:line` 都在 0.24.27 源码里逐条核对过（起草 agent 的报告未能送出，
 但正文里每条都带了核对结论）。**第 7 条的行号由主 agent 独立复核过一遍**，
+第 8–10 条为 2026-08-05 追加，各自的 `Confidence` 一节写明了核实到哪一步（第 10 条**未隔离出具体 guard**，提交前必须补最小复现）。
 `_isPositionedGridChild` 的 12 处调用点 + `:1958` 的内联重复、3 条 placeholder
 注释、`:4592` 的 sticky 偏移、以及 `flow.dart` 的 3 处对照全部对上。
