@@ -292,12 +292,12 @@ Native clients have two paths for rendering a plugin page: the system WebView, a
 
 #### When to declare `webf`
 
-**Only declare it once the plugin page has been verified to actually work under WebF.** WebF is not a browser and lacks a number of HTML/CSS capabilities (built-in elements, `env()`, `window.open`, `URL.createObjectURL`, …). The capability boundary, the gaps already shimmed by the host, and the native elements available to you are documented in [§8 · The WebF Rendering Engine and Native Elements](#the-webf-rendering-engine-and-native-elements) — that section is what you judge "can my page run on WebF" against; do **not** conclude anything from how it looks in a browser alone.
+**Only declare it once the plugin page has been verified to actually work under WebF.** WebF is not a browser and lacks a number of HTML/CSS capabilities (built-in elements, `env()`, `window.open`, `URL.createObjectURL`, …). The capability boundary, the gaps already shimmed by the host, and the native elements available to you are documented in [§9 · WebF Native Rendering](#9-webf-native-rendering) — that section is what you judge "can my page run on WebF" against; do **not** conclude anything from how it looks in a browser alone.
 
 What you take on by declaring it:
 
 - **Verifying every page yourself** under WebF, rendering and interaction alike — especially tables, sliders, file pickers and external links, which tend to degrade silently
-- Using the `html.webf-engine` class (added automatically by the host) when you need to branch on the engine; see [§8 · The WebF Rendering Engine and Native Elements](#the-webf-rendering-engine-and-native-elements)
+- Using the `html.webf-engine` class (added automatically by the host) when you need to branch on the engine; see [§9 · WebF Native Rendering](#9-webf-native-rendering)
 - WebF is currently **0.x beta**. The host keeps **no global fallback switch**: if your page breaks under WebF, all a user can do is **disable your plugin**, or wait for you to ship a version that switches back to `webview`. Treat that as the cost of declaring `webf`
 
 #### Platform limits (read before declaring)
@@ -1148,6 +1148,101 @@ document.addEventListener('songloft-color-scheme-change', e => {
 >
 > The color scheme is guaranteed to land **before** `songloft-theme-change` is dispatched, so calling `getColorScheme()` inside an `onThemeChange` callback always yields the new values. Switching theme packs may leave light/dark unchanged while the colors change — only `songloft-color-scheme-change` fires in that case, so listen to both events for full coverage.
 
+### Access Paths
+
+After installation, static files are accessed via the following paths (note: the runtime route is the singular `jsplugin`, different from the management API `/api/v1/jsplugins`, which is plural):
+
+```
+GET /api/v1/jsplugin/{entryPath}/                 → static/index.html (auto-injected)
+GET /api/v1/jsplugin/{entryPath}/static           → static/index.html
+GET /api/v1/jsplugin/{entryPath}/static/<file>    → any static asset
+GET /api/v1/jsplugin-assets/*                     → main program common assets (CSS/JS/fonts)
+```
+
+### Notes
+
+- Static files are extracted from the ZIP to `data/jsplugins_data/{entryPath}/static/` at install time
+- Static files are re-extracted when the plugin is updated
+- Use relative paths to reference the plugin API
+- Common assets are provided by the main program; plugins need not, and should not, bundle their own CSS variables/fonts/API utility library
+
+---
+
+## 9. WebF Native Rendering
+
+On some platforms, newer clients can render plugin pages with [WebF](https://openwebf.com/) (an in-house W3C runtime rendered entirely by Flutter) instead of the system WebView, giving plugin pages **native rendering** whose look and performance match the main app. **This is a per-plugin choice**: only plugins that declare `"renderEngine": "webf"` in `plugin.json` get the WebF rendering surface; the default is still the system WebView, and the web build always uses the iframe path — see [§3 · renderEngine — Declaring the Rendering Engine](#renderengine--declaring-the-rendering-engine) for the field semantics and platform limits. WebF **is not a browser** and lacks a number of HTML/CSS capabilities. The main program's `webf-shims.js` (with companion styles `webf-shims.css`) shims the common gaps (empty `img src`, `<details>` collapsing, etc.) and adds a `webf-engine` class to `<html>` so plugins can branch on the engine:
+
+```css
+html.webf-engine .only-in-webf { display: block; }
+```
+
+WebF is still **0.x beta** with its share of pitfalls, but as long as you follow the set of practices the official plugins have distilled (reuse the host's component styles for theming, obey the 8 layout constraints below, and gate controls through a feature-detecting wrapper layer), you get native rendering reliably. This chapter organizes those practices into a **recommended form**: the recommended template and theme/layout approach first, then the full per-element and per-API reference behind them.
+
+### Starting from the Recommended Template
+
+**The easiest way to build a new WebF plugin is to pick the "WebF Native Rendering" option in the official scaffolder**, which gives you a skeleton with every recommended practice in this chapter (Vue 3 + Vite, engine feature detection, host theme reuse, a full set of `Sl*` form-control wrappers, and the layout constraints that work around WebF's defects):
+
+```bash
+npm create songloft-plugin@latest my-plugin
+# For the frontend mode, choose "WebF Native Rendering (Vue 3 + host native components, renderEngine=webf)"
+```
+
+For a complete reference implementation, see the `frontend/` of the official [songloft-plugin-downloader](https://github.com/songloft-org/songloft-plugin-downloader) plugin — this chapter's practices are all distilled from it. Its `frontend/src/` structure (also the structure of the scaffolder's WebF template):
+
+| File | Responsibility |
+|------|----------------|
+| `engine.js` | Rendering-engine **feature detection** (`useNativeUI` / `useNativeListView`) — decides whether wrapper components use native elements or an HTML fallback |
+| `layout.js` | Open-mode detection (tab / fullscreen / browser) and measuring the usable height of `<webf-list-view>` |
+| `ui/Sl*.vue` | 7 form-control wrappers (button / icon / input / switch / checkbox / select / list) — business code is written once |
+| `ui/native-props.js` | **Imperative** binding of boolean properties (works around Vue's prop/attr heuristic for custom elements) |
+| `ui/select-open-state.js` | Shared "which dropdown is open" mutual-exclusion state (must live in a standalone module, see below) |
+| `main.js` / `App.vue` / `style.css` | Entry assertion, page skeleton, a WebF-safe subset of CSS |
+
+> ⚠️ Any page-wide singleton state in `engine.js` / `layout.js` / `select-open-state.js` / `store.js` **must live in a standalone `.js` module**, not at the top level of a component's `<script setup>` — that block is compiled into `setup()` and becomes **one copy per component instance**, silently breaking mutual-exclusion and singleton semantics.
+
+### Theme Style (Recommended Form)
+
+A WebF plugin page's colors **follow the main app's theme automatically** (including user-defined ThemePacks); a plugin writes almost no theming code. The key is to **reuse the host's injected layer** rather than rolling your own:
+
+- **Do not self-include `common.css` / `common.js`**: the host injects them into `<head>` automatically (order: base → auth bridge → common.css → common.js, all render-blocking). The palette, reset, fonts, radius/shadow tokens, and safe-area variables all come from here; including them again double-loads.
+- **Use the host's `--md-*` variables for color**: the main program pushes the real `ColorScheme` down at runtime as inline variables on `documentElement`, overriding the static fallback values. Write all colors as `var(--md-primary)` / `var(--md-on-surface)` etc. and they follow the theme automatically, with no JS. Full variable list: [§8 · Theme Adaptation · Variable Reference](#variable-reference).
+- **Reuse the host's `components.css` component classes directly for component appearance** — matching the main app's UI and following the theme automatically. This is the easiest and most recommended approach for WebF plugins:
+
+  | Host class | Component | Notes |
+  |------------|-----------|-------|
+  | `.card` | Card | SectionCard shape: surface-container background + outline-variant border + 16 radius |
+  | `.btn` / `.btn-filled` / `.btn-outlined` / `.btn-text` | Buttons | Match FilledButton / OutlinedButton / TextButton |
+  | `.switch` / `.switch-track` / `.switch-thumb` | Switch | Matches M3 Switch; track/thumb use `var(--md-*)` |
+  | `.progress-linear` / `.progress-linear-bar` | Linear progress bar | |
+  | `.material-symbols-outlined` | Icon font | Pre-registered by the host via Flutter FontLoader, so glyphs render under WebF too |
+
+  The scaffolder's WebF template `SlButton` / `SlSwitch` / `SlIcon` do exactly this — a single HTML implementation that attaches these classes, with no native-element dual branch.
+
+- When you **need to read a color from JS** (to feed a native control's property, e.g. cupertino components that only accept literal hex), you **must call `SongloftPlugin.getColorScheme()`**: WebF's `getComputedStyle` returns an empty string for custom properties, so `var(--md-*)` cannot be read out. See [How the color follows the theme](#how-the-color-follows-the-theme) and [The Host Pushes Down the Real Color Scheme at Runtime](#the-host-pushes-down-the-real-color-scheme-at-runtime).
+- For **safe areas**, use the host-injected `--sl-safe-*` variables, not `env(safe-area-inset-*)` (WebF has no `env()`); see [Safe areas: use --sl-safe-\*, never env(safe-area-inset-\*)](#safe-areas-use-sl-safe-never-env-safe-area-inset).
+
+### Page Layout (Recommended Form)
+
+WebF lays out with Flutter, so a batch of things that are second nature in a browser **silently fail or crash** on it. The 8 **hard layout constraints** below are what the official plugins distilled through repeated rework (each has empirical backing — don't change them as if they were aesthetic preferences); the scaffolder template's `style.css` header restates this same list:
+
+| # | Constraint | Reason |
+|---|------------|--------|
+| ① | List/cell text must be `white-space: nowrap` + ellipsis | Wrappable CJK text is measured as "one character per line" on several measurement paths |
+| ② | Don't use `position: sticky` | Globally ineffective under WebF (page level too) |
+| ③ | Don't use `transform` to move a `position: fixed` element | Positioning goes wrong |
+| ④ | Hide elements with `v-if`, not `display: none` | The latter still mounts a 0-size box with unpredictable hit-testing |
+| ⑤ | `<webf-list-view>` must have a **definite height** (not `max-height`) | An unbounded constraint hits `Infinity or NaN toInt` |
+| ⑥ | No `max()` / `min()` (unimplemented); `clamp()` works and accepts `var()` in its args | |
+| ⑦ | Children of a `flex-wrap: wrap` container must have an **explicit width** | Otherwise the base size is measured as the container width and each item takes its own row |
+| ⑧ | **Don't nest a flex container inside a flex container** | Otherwise the whole subtree silently isn't painted; stack vertically with block flow (`display:block` + `margin`); horizontal flex rows themselves are fine |
+
+On top of these 8, the official template has a few **page-level recommended patterns**:
+
+- **Prefer `<webf-list-view>` for scrollable lists** (a webf built-in element with built-in recycling), which sidesteps the two nastiest defects of CSS Grid: `auto` row height and the sticky header. It has two hard constraints (list items must be direct children; `shrink-wrap` must be explicitly turned off and given a definite height), see [Two hard constraints on `<webf-list-view>`](#two-hard-constraints-on-webf-list-view).
+- **Measure list height in JS**: constraint ⑤ requires a definite height, while vertical flex is banned by ⑧, so measure the distance from the list's top edge to the viewport bottom and write it as an inline `height` (the CSS keeps a `calc(100vh - constant)` fallback for the first frame). WebF renders **asynchronously**, so the first frame may measure 0 — retry on the next frame. The template's `layout.js#measureListHeight` is a ready-made implementation.
+- **Adapt to the three open modes**: a plugin page may open as a tab (main-program tab, URL carries `embed`), fullscreen (a full-screen page entered from the home screen, the host already has an AppBar), or browser (the bare "open in browser" page). The host chrome differs, so **whether you draw your own header depends on it** (drawing one under fullscreen double-titles). The criteria are the `embed` class + `SongloftPlugin.host.isAvailable()`, wrapped in the template's `layout.js#detectMode`.
+- **Use an overlay for multi-level pages, not a `v-if` full-page swap**: keep the main page mounted and make the settings page a `position:fixed` full-screen overlay (`v-if` mounts only the few settings controls). WebF's large-scale render-tree teardown leaves dangling disposed-but-referenced render objects that trip a per-frame assertion → whole-page white screen; an overlay is a pure mount/unmount and is safe. Back-key integration is covered in the next section.
+
 ### In-Page Navigation and the Back Key
 
 Plugin pages are **single-page**. If yours has multiple internal views (e.g. "main → settings"), you need two things:
@@ -1167,13 +1262,9 @@ SongloftPlugin.onHostBack(() => {
 >
 > ⚠️ **Do not use `history.pushState` to express in-page levels.** WebF does not implement SPA history routing (the official answer is the native screen stack from `@openwebf/*-router`). After a `pushState`, `history.length > 1` makes the host's fallback check report "consumed", but WebF never fires `popstate` — nothing happens on screen and **the back key becomes a dead key**.
 
-### The WebF Rendering Engine and Native Elements
+### Native Elements and API Reference
 
-On some platforms, newer clients can render plugin pages with [WebF](https://openwebf.com/) (an in-house W3C runtime rendered entirely by Flutter) instead of the system WebView. **This is a per-plugin choice**: only plugins that declare `"renderEngine": "webf"` in `plugin.json` get the WebF rendering surface; the default is still the system WebView, and the web build always uses the iframe path — see [§3 · renderEngine — Declaring the Rendering Engine](#renderengine--declaring-the-rendering-engine) for the field semantics and platform limits. WebF **is not a browser** and lacks a number of HTML/CSS capabilities. The main program's `webf-shims.js` (with companion styles `webf-shims.css`) shims the common gaps (empty `img src`, `<details>` collapsing, etc.) and adds a `webf-engine` class to `<html>` so plugins can branch on the engine:
-
-```css
-html.webf-engine .only-in-webf { display: block; }
-```
+> This section lists, item by item, how WebF differs from a browser, the gaps already shimmed by the host, and the native elements and host APIs available to you — as a lookup reference. The "Theme Style" and "Page Layout" sections above give the **recommended approach**; this section is the full rationale behind them.
 
 #### Real limitations of inline SVG under WebF
 
@@ -1944,35 +2035,9 @@ and the rows through CSS custom properties. **Do not use grid** — you would ru
 `auto` row heights measured at min-content width" defect described in the previous section. Cells
 should still use `white-space: nowrap` plus ellipsis, with the full text in a `title` attribute.
 
-##### Reference implementation
-
-The official [songloft-plugin-downloader](https://github.com/songloft-org/songloft-plugin-downloader)
-plugin (from the version that has a `frontend/` directory onwards) is a complete example of this
-approach: Vue 3 + Vite, with
-`frontend/src/ui/` as the wrapper layer, `frontend/src/engine.js` doing feature detection, and
-`frontend/src/ui/native-props.js` handling the imperative boolean binding.
-
-### Access Paths
-
-After installation, static files are accessed via the following paths (note: the runtime route is the singular `jsplugin`, different from the management API `/api/v1/jsplugins`, which is plural):
-
-```
-GET /api/v1/jsplugin/{entryPath}/                 → static/index.html (auto-injected)
-GET /api/v1/jsplugin/{entryPath}/static           → static/index.html
-GET /api/v1/jsplugin/{entryPath}/static/<file>    → any static asset
-GET /api/v1/jsplugin-assets/*                     → main program common assets (CSS/JS/fonts)
-```
-
-### Notes
-
-- Static files are extracted from the ZIP to `data/jsplugins_data/{entryPath}/static/` at install time
-- Static files are re-extracted when the plugin is updated
-- Use relative paths to reference the plugin API
-- Common assets are provided by the main program; plugins need not, and should not, bundle their own CSS variables/fonts/API utility library
-
 ---
 
-## 9. Security Mechanisms
+## 10. Security Mechanisms
 
 ### Two-Layer Hash Verification
 
@@ -2007,7 +2072,7 @@ The entry file is read directly from the ZIP into memory and is not written to t
 
 ---
 
-## 10. Packaging and Publishing
+## 11. Packaging and Publishing
 
 ### Packaging Steps
 
@@ -2056,7 +2121,7 @@ Regardless of the method, if the original plugin is in the `active` state, the b
 
 ---
 
-## 11. Hot Reload
+## 12. Hot Reload
 
 Plugins support runtime updates without restarting the Songloft service.
 
@@ -2097,7 +2162,7 @@ If the new version fails to load, the system attempts to roll back to the old ve
 
 ---
 
-## 12. Best Practices
+## 13. Best Practices
 
 ### Performance Tips
 

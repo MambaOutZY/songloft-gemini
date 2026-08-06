@@ -292,12 +292,12 @@ static/              # 静态资源目录（可选）
 
 #### 什么时候该声明 `webf`
 
-**只有插件页在 WebF 下已经实测可用时才声明。** WebF 不是浏览器，有一批 HTML/CSS 能力缺失（内建元素、`env()`、`window.open`、`URL.createObjectURL` 等），能力边界、已垫掉的缺口、以及可用的原生元素见 [§8 · WebF 渲染引擎与原生元素](#webf-渲染引擎与原生元素)——那一节是判断「我的页面能不能上 WebF」的依据，**不要**只按浏览器里的表现下结论。
+**只有插件页在 WebF 下已经实测可用时才声明。** WebF 不是浏览器，有一批 HTML/CSS 能力缺失（内建元素、`env()`、`window.open`、`URL.createObjectURL` 等），能力边界、已垫掉的缺口、以及可用的原生元素见 [§9 · WebF 原生渲染](#9-webf-原生渲染)——那一节是判断「我的页面能不能上 WebF」的依据，**不要**只按浏览器里的表现下结论。
 
 声明之后作者要承担的事：
 
 - **自己验证**每个页面在 WebF 下的渲染与交互，包括表格、滑块、文件选择、外链跳转这类容易静默降级的控件
-- 需要按引擎分叉时用 `html.webf-engine` class（主程序自动加），见 [§8 · WebF 渲染引擎与原生元素](#webf-渲染引擎与原生元素)
+- 需要按引擎分叉时用 `html.webf-engine` class（主程序自动加），见 [§9 · WebF 原生渲染](#9-webf-原生渲染)
 - WebF 目前是 **0.x beta**。宿主**不保留任何全局回退开关**：页面在 WebF 下出问题时，用户能做的只是**禁用这个插件**，或等你发一个改回 `webview` 的版本。把这条当成声明 `webf` 的成本
 
 #### 平台限制（声明前必看）
@@ -1147,6 +1147,101 @@ document.addEventListener('songloft-color-scheme-change', e => {
 >
 > 色板保证在 `songloft-theme-change` 派发**之前**就已落地，所以在 `onThemeChange` 回调里直接调 `getColorScheme()` 拿到的一定是新值。切换主题包时亮暗可能没变、只有色值变——那种情况只有 `songloft-color-scheme-change` 会派发，两个事件都监听才完整。
 
+### 访问路径
+
+安装后，静态文件通过以下路径访问（注意：运行时路由是单数 `jsplugin`，与管理 API `/api/v1/jsplugins`（复数）不同）：
+
+```
+GET /api/v1/jsplugin/{entryPath}/                 → static/index.html（自动注入）
+GET /api/v1/jsplugin/{entryPath}/static           → static/index.html
+GET /api/v1/jsplugin/{entryPath}/static/<file>    → 任意静态资源
+GET /api/v1/jsplugin-assets/*                     → 主程序公共资源（CSS/JS/字体）
+```
+
+### 注意事项
+
+- 静态文件在安装时从 ZIP 解压到 `data/jsplugins_data/{entryPath}/static/`
+- 更新插件时会重新解压静态文件
+- 建议使用相对路径引用插件 API
+- 公共资源由主程序提供，插件不需要也不应该打包自己的 CSS 变量/字体/API 工具库
+
+---
+
+## 9. WebF 原生渲染
+
+新版客户端在部分平台上可以用 [WebF](https://openwebf.com/)（自研 W3C 运行时，纯 Flutter 渲染）替代系统 WebView 渲染插件页，让插件页**原生渲染**、观感与性能对齐主程序。**这是逐插件选择的**：只有在 `plugin.json` 里声明 `"renderEngine": "webf"` 的插件才走 WebF 渲染面，默认仍是系统 WebView，Web 端永远走 iframe——字段语义与平台限制见 [§3 · renderEngine 渲染引擎声明](#renderengine-渲染引擎声明)。WebF **不是浏览器**，有一批 HTML/CSS 能力缺失，主程序的 `webf-shims.js`（配套样式 `webf-shims.css`）会统一垫掉常见缺口（空 `img src`、`<details>` 折叠等），并给 `<html>` 加上 `webf-engine` class 供插件按引擎分叉：
+
+```css
+html.webf-engine .only-in-webf { display: block; }
+```
+
+WebF 仍是 **0.x beta**、有不少坑，但只要沿用官方沉淀的一套写法（主题复用宿主组件、布局遵守下面 8 条约束、控件走特性探测的包装层），就能稳定拿到原生渲染的收益。本章把这套写法整理成**推荐形式**：先给推荐模板与主题/布局做法，再给背后每个原生元素与 API 的完整参考。
+
+### 从推荐模板起步
+
+**新建 WebF 插件，最省事的方式是用官方脚手架选「WebF 原生渲染」档**，一键得到本章所有推荐实践的骨架（Vue 3 + Vite、引擎特性探测、宿主主题复用、一整套 `Sl*` 表单控件包装、绕开 WebF 缺陷的布局约束）：
+
+```bash
+npm create songloft-plugin@latest my-plugin
+# 前端开发模式选择 “WebF 原生渲染 (Vue 3 + 宿主原生组件，renderEngine=webf)”
+```
+
+想直接读一份完整实现，参考官方插件 [songloft-plugin-downloader](https://github.com/songloft-org/songloft-plugin-downloader) 的 `frontend/`——本章的做法都从它沉淀而来。其 `frontend/src/` 结构（也是脚手架 WebF 模板的结构）：
+
+| 文件 | 职责 |
+|------|------|
+| `engine.js` | 渲染引擎**特性探测**（`useNativeUI` / `useNativeListView`），决定包装组件走原生元素还是 HTML 回落 |
+| `layout.js` | 打开方式判定（tab / fullscreen / browser）、`<webf-list-view>` 可用高度实测 |
+| `ui/Sl*.vue` | 7 个表单控件包装（按钮 / 图标 / 输入框 / 开关 / 复选框 / 下拉 / 列表），业务代码只写一套 |
+| `ui/native-props.js` | 布尔属性的**命令式**绑定（绕开 Vue 对自定义元素 prop/attr 的启发式选择） |
+| `ui/select-open-state.js` | 多个下拉互斥展开的共享状态（必须放独立模块，见下文） |
+| `main.js` / `App.vue` / `style.css` | 入口断言、页面骨架、WebF 可用的 CSS 子集 |
+
+> ⚠️ `engine.js` / `layout.js` / `select-open-state.js` / `store.js` 里的全页唯一状态**必须放在独立 `.js` 模块**，不能写进某个组件的 `<script setup>` 顶层——那段会被编译进 `setup()`，变成**每个组件实例各一份**，互斥、单例语义会静默失效。
+
+### 主题风格（推荐形式）
+
+WebF 插件页的配色**自动跟随主程序主题**（含用户自定义 ThemePack），插件几乎不用为主题写代码，关键是**复用宿主注入层**、不要自己另起一套：
+
+- **不要自引 `common.css` / `common.js`**：宿主会在 `<head>` 自动注入（顺序 base → auth bridge → common.css → common.js，全部 render-blocking）。色板、reset、字体、圆角/阴影令牌、安全区变量全部来自这里，插件再引会重复加载。
+- **配色用宿主 `--md-*` 变量**：主程序在运行时把真实 `ColorScheme` 下推成 `documentElement` 的内联变量，覆盖静态兜底值。插件所有颜色写 `var(--md-primary)` / `var(--md-on-surface)` 等即可自动跟随，无需任何 JS。完整变量清单见 [§8 · 主题适配 · 变量清单](#变量清单)。
+- **组件外观直接复用宿主 `components.css` 的组件类**，与主程序 UI 一致、自动跟随主题——这是 WebF 插件最省事也最推荐的做法：
+
+  | 宿主类 | 对应组件 | 说明 |
+  |--------|---------|------|
+  | `.card` | 卡片 | SectionCard 形制：surface-container 底 + outline-variant 描边 + 16 圆角 |
+  | `.btn` / `.btn-filled` / `.btn-outlined` / `.btn-text` | 按钮 | 对齐 FilledButton / OutlinedButton / TextButton |
+  | `.switch` / `.switch-track` / `.switch-thumb` | 开关 | 对齐 M3 Switch，track/thumb 走 `var(--md-*)` |
+  | `.progress-linear` / `.progress-linear-bar` | 线性进度条 | |
+  | `.material-symbols-outlined` | 图标字体 | 宿主用 Flutter FontLoader 预注册，WebF 下也能出字形 |
+
+  脚手架 WebF 模板的 `SlButton` / `SlSwitch` / `SlIcon` 就是这么做的——单一 HTML 实现直接挂这些类，不走原生元素双分支。
+
+- **需要用 JS 读色**（喂给原生控件属性，如 cupertino 组件只认字面 hex 的场景）时，**必须调 `SongloftPlugin.getColorScheme()`**：WebF 的 `getComputedStyle` 对自定义属性一律返回空串，`var(--md-*)` 读不出来。详见 [颜色如何跟随主题](#颜色如何跟随主题) 与 [宿主实时下推真实色板](#宿主实时下推真实色板)。
+- **安全区**用宿主注入的 `--sl-safe-*` 变量，不要写 `env(safe-area-inset-*)`（WebF 无 `env()`），详见 [安全区：用 --sl-safe-\*，不要写 env(safe-area-inset-\*)](#安全区-用-sl-safe-不要写-env-safe-area-inset)。
+
+### 页面布局（推荐形式）
+
+WebF 用 Flutter 排版，一批浏览器里习以为常的写法在它上面会**静默失效或崩溃**。下面 8 条是官方插件反复返工沉淀的**布局硬约束**（都有实测依据，别当成观感偏好改掉），脚手架模板的 `style.css` 文件头也复述了这一份：
+
+| # | 约束 | 原因 |
+|---|------|------|
+| ① | 列表/单元文本必须 `white-space: nowrap` + 省略号 | 可换行的 CJK 文本在若干测量路径上被按「每字一行」估高 |
+| ② | 不用 `position: sticky` | WebF 下全局不生效（页面级也一样） |
+| ③ | 不用 `transform` 位移 `position: fixed` 元素 | 定位会错乱 |
+| ④ | 隐藏元素用 `v-if` 条件渲染，不用 `display: none` | 后者仍挂一个 0 尺寸盒子，命中测试等行为不可控 |
+| ⑤ | `<webf-list-view>` 必须有**确定 height**（不能 `max-height`） | 无界约束会撞 `Infinity or NaN toInt` |
+| ⑥ | 不用 `max()` / `min()`（未实现）；`clamp()` 可用且参数里能塞 `var()` | |
+| ⑦ | `flex-wrap: wrap` 容器的子项必须给**显式 width** | 否则 base size 被测成容器宽、每项独占一行 |
+| ⑧ | **flex 容器里不套 flex 容器** | 否则整个子树静默不绘制；竖向堆叠一律用块流（`display:block` + `margin`），横向 flex 行本身没问题 |
+
+在这 8 条之上，官方模板还有几条**页面级推荐范式**：
+
+- **可滚动列表优先 `<webf-list-view>`**（webf 内建元素，自带回收），绕开 CSS Grid 的 `auto` 行高与 sticky 表头两个最难缠的坑。它有两条硬约束（列表项须是直接子节点、`shrink-wrap` 必须显式关掉并给确定高度），详见 [`<webf-list-view>` 的两条硬约束](#webf-list-view-的两条硬约束)。
+- **列表高度用 JS 实测**：约束 ⑤ 要求确定高度，而竖向 flex 又被 ⑧ 禁掉，于是量出列表顶边到视口底的距离写成内联 `height`（CSS 里留 `calc(100vh - 常量)` 兜底保证首帧）。WebF 是**异步渲染**，首帧可能量到 0，需下一帧重试。模板的 `layout.js#measureListHeight` 是现成实现。
+- **三种打开方式要分别适配**：插件页可能以 tab（主程序标签页，URL 带 `embed`）、fullscreen（从首页点进的全屏页，宿主已有 AppBar）、browser（「在浏览器打开」的裸页面）三种方式打开，宿主给的 chrome 不同，**页头要不要自己画取决于它**（fullscreen 下自绘会双标题）。判据：`embed` class + `SongloftPlugin.host.isAvailable()`，模板的 `layout.js#detectMode` 已封装。
+- **多级页面用覆盖层，不要用 `v-if` 整片换页**：主页始终挂载，设置页做成 `position:fixed` 的全屏覆盖层（`v-if` 只挂设置页那几件控件）。WebF 的大规模渲染树拆除会留下已 dispose 却仍被引用的 render object，触发每帧刷断言 → 整页白屏；覆盖层是纯挂载/纯卸载，安全。返回键的对接见下一节。
+
 ### 页面内导航与返回键
 
 插件页是**单页**的，如果内部有多级视图（如「主页 → 设置页」），需要两件事：
@@ -1166,13 +1261,9 @@ SongloftPlugin.onHostBack(() => {
 >
 > ⚠️ **不要用 `history.pushState` 表达页面内层级。** WebF 不实现 SPA history 路由（官方方案是 `@openwebf/*-router` 的原生屏栈）。`pushState` 之后 `history.length > 1` 会让宿主的兜底判断误报「已消费」，而 WebF 又不 fire `popstate`——页面毫无变化，**返回键直接变成死键**。
 
-### WebF 渲染引擎与原生元素
+### 原生元素与 API 参考手册
 
-新版客户端在部分平台上可以用 [WebF](https://openwebf.com/)（自研 W3C 运行时，纯 Flutter 渲染）替代系统 WebView 渲染插件页。**这是逐插件选择的**：只有在 `plugin.json` 里声明 `"renderEngine": "webf"` 的插件才走 WebF 渲染面，默认仍是系统 WebView，Web 端永远走 iframe——字段语义与平台限制见 [§3 · renderEngine 渲染引擎声明](#renderengine-渲染引擎声明)。WebF **不是浏览器**，有一批 HTML/CSS 能力缺失，主程序的 `webf-shims.js`（配套样式 `webf-shims.css`）会统一垫掉常见缺口（空 `img src`、`<details>` 折叠等），并给 `<html>` 加上 `webf-engine` class 供插件按引擎分叉：
-
-```css
-html.webf-engine .only-in-webf { display: block; }
-```
+> 本节逐项列出 WebF 相对浏览器的能力差异、已垫掉的缺口，以及可用的原生元素与宿主 API，供对照查阅。上面的「主题风格」「页面布局」两节给的是**推荐做法**，本节是背后的完整依据。
 
 #### WebF 下内联 SVG 的真实限制
 
@@ -1895,33 +1986,9 @@ widget 那份落在 content box 上、被 `padding` 内缩一圈。
 grid** —— 会撞上「grid `auto` 行高在 min-content 宽度下测量」那个缺陷（见上一节）。单元格
 仍然建议 `white-space: nowrap` + 省略号 + `title` 属性放全文。
 
-##### 参考实现
-
-官方插件 [songloft-plugin-downloader](https://github.com/songloft-org/songloft-plugin-downloader)
-（有 `frontend/` 目录的那一版起）是这套做法的完整样例：Vue 3 + Vite，`frontend/src/ui/` 是包装层、
-`frontend/src/engine.js` 是特性探测、`frontend/src/ui/native-props.js` 是布尔属性的命令式绑定。
-
-### 访问路径
-
-安装后，静态文件通过以下路径访问（注意：运行时路由是单数 `jsplugin`，与管理 API `/api/v1/jsplugins`（复数）不同）：
-
-```
-GET /api/v1/jsplugin/{entryPath}/                 → static/index.html（自动注入）
-GET /api/v1/jsplugin/{entryPath}/static           → static/index.html
-GET /api/v1/jsplugin/{entryPath}/static/<file>    → 任意静态资源
-GET /api/v1/jsplugin-assets/*                     → 主程序公共资源（CSS/JS/字体）
-```
-
-### 注意事项
-
-- 静态文件在安装时从 ZIP 解压到 `data/jsplugins_data/{entryPath}/static/`
-- 更新插件时会重新解压静态文件
-- 建议使用相对路径引用插件 API
-- 公共资源由主程序提供，插件不需要也不应该打包自己的 CSS 变量/字体/API 工具库
-
 ---
 
-## 9. 安全机制
+## 10. 安全机制
 
 ### 双层 Hash 校验
 
@@ -1956,7 +2023,7 @@ GET /api/v1/jsplugin-assets/*                     → 主程序公共资源（CS
 
 ---
 
-## 10. 打包发布
+## 11. 打包发布
 
 ### 打包步骤
 
@@ -2005,7 +2072,7 @@ ZIP 文件名格式：`{entryPath}.jsplugin.zip`
 
 ---
 
-## 11. 热更新
+## 12. 热更新
 
 插件支持运行时更新，无需重启 Songloft 服务。
 
@@ -2046,7 +2113,7 @@ ZIP 文件名格式：`{entryPath}.jsplugin.zip`
 
 ---
 
-## 12. 最佳实践
+## 13. 最佳实践
 
 ### 性能建议
 
