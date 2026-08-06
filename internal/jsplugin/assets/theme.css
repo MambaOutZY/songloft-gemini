@@ -199,6 +199,22 @@ html[data-theme="dark"] {
 /* ── Reset ── */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* ── 滚动条:跟随主题 ──
+ * 插件页的滚动条默认落到 WebF / 浏览器原生样式,深色主题下会露出一条浅色条
+ * （songloft-org/songloft-plugin-downloader 的下载列表即此现象）。这里用 --md-*
+ * 令牌统一着色,所有插件自动跟随主程序主题,无需各自重复。
+ * WebF 已验证支持 `::-webkit-scrollbar` + `var()`(见 radio 插件)。
+ * 局部想隐藏滚动条的容器仍可用更具体的选择器覆盖(如 `scrollbar-width: none`)。 */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: var(--md-outline-variant);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--md-outline); }
+/* Firefox / 标准属性兜底 */
+* { scrollbar-color: var(--md-outline-variant) transparent; }
+
 /* ── 嵌入态：始终保留纵向滚动条，杜绝滚动条增删引起的重排抖动 ──
  * 插件页内容高度恰好卡在视口高度附近时，文档级纵向滚动条会「按需出现→内容变窄→
  * 重排→高度变化→滚动条消失→…」形成无限抖动回路（songloft-org/songloft#278）。

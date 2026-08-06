@@ -245,12 +245,26 @@ html[data-theme="dark"] .btn-icon:hover {
     gap: 8px;
 }
 
-/* ── Snackbar ── 对齐 SnackBarTheme（floating + sm 圆角 + inverseSurface）。 */
+/* ── Snackbar ── 对齐 SnackBarTheme（floating + sm 圆角 + inverseSurface）。
+ *
+ * ⚠️ **不用 transform 定位/动画**：WebF **不对 `position: fixed` 元素应用 transform**
+ * （docs/webf/handoff.md webf-ui 事实第 8 条实测），旧写法 `left:50% + translateX(-50%)`
+ * 在 WebF 下会让 snackbar 停在 left:50%（左缘居中、右溢出）、且无入场动画。改为：
+ *   · 居中：`left:0; right:0; margin:0 auto; width:fit-content`（标准 abs 居中，不碰
+ *     transform）。fixed 的包含块是视口、宽度确定，`margin:auto` 能解析。
+ *   · 降级：万一 WebF 不认 `fit-content` → 退回 `width:auto` 铺满成底部横条，`text-align:
+ *     center` 保证文字仍居中可读（不会跑到屏外）。
+ *   · 动画：用 `opacity` 而非 transform（fixed 上 transform 无效）。
+ * `max-width` 用 calc（WebF 支持）不用 min()（WebF 不支持）。 */
 .snackbar {
     position: fixed;
     bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%) translateY(100px);
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: fit-content;
+    max-width: calc(100% - 32px);
+    text-align: center;
     background: var(--md-inverse-surface);
     color: var(--md-on-inverse-surface);
     padding: 14px 24px;
@@ -258,10 +272,13 @@ html[data-theme="dark"] .btn-icon:hover {
     font-size: 14px;
     box-shadow: var(--md-shadow-2);
     z-index: 300;
-    transition: transform .3s ease;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s ease;
 }
 .snackbar.show {
-    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
 }
 
 /* ── Switch ──
@@ -432,15 +449,17 @@ html[data-theme="dark"] .tab-item:hover:not(.active) { background: rgba(170,199,
         margin-left: 80px;
         padding-bottom: 24px;
     }
+    /* Rail 占左侧 80px：snackbar 在「rail 右缘→视口右缘」的内容区里居中
+     * （left:80 + right:0 + margin:auto），不用 transform。 */
     .snackbar {
-        left: calc(50% + 40px);
+        left: 80px;
     }
 }
 @media (min-width: 1440px) {
     .tab-bar { width: 100px; padding-top: 80px; }
     .app-bar { left: 100px; }
     .tab-content { margin-left: 100px; }
-    .snackbar { left: calc(50% + 50px); }
+    .snackbar { left: 100px; }
 }
 
 /* ── embed 模式：嵌入 App Tab 时的布局 ── */
@@ -492,7 +511,8 @@ html.embed .tab-content {
     margin-left: 0 !important;
 }
 html.embed .snackbar {
-    left: 50% !important;
+    /* embed 是顶部 tab、无左侧 rail，覆盖 rail 断点的 left 偏移，回到全宽居中 */
+    left: 0 !important;
     bottom: 24px !important;
 }
 
