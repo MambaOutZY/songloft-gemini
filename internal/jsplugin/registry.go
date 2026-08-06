@@ -277,10 +277,10 @@ func (s *RegistryService) resolvePluginJSON(ctx context.Context, rawURL string, 
 	}
 
 	if manifest.Icon != "" {
-		// Icon 是前端 Image.network 直接加载的展示地址，保持套代理（无降级机会）
 		iconBase := httputil.ApplyGithubProxy(rawURL, githubProxy)
 		if lastSlash := strings.LastIndex(iconBase, "/"); lastSlash >= 0 {
-			entry.Icon = iconBase[:lastSlash+1] + "static/" + manifest.Icon
+			externalURL := iconBase[:lastSlash+1] + "static/" + manifest.Icon
+			entry.Icon = "/api/v1/proxy?url=" + url.QueryEscape(externalURL)
 		}
 	}
 
