@@ -75,7 +75,34 @@
     // ⚠️ 插件想用 **JS** 读色必须调 `SongloftPlugin.getColorScheme()`，不能读 CSS：
     // WebF 的 `getComputedStyle` 对自定义属性一律返回空串，而 `<flutter-cupertino-*>`
     // 的属性值也不展开 `var()`、只吃字面 hex。
-    var lastColorScheme = null;
+    //
+    // **色板必须像 `songloft-theme`（亮暗）一样持久化到 localStorage 并在加载时恢复**
+    // （songloft-org/songloft#341）。宿主的色板下推是一条 **fire-and-forget** 的
+    // `window.postMessage`，没有回执。WebF 下二次进入插件页时页面是**全新加载**
+    // （桌面端 Tab 切走即销毁 controller），而它的就绪信号是 `onBuildSuccess` 而非
+    // 真正的 `load` 事件（第二次挂载 `onLoad` 根本不来）—— 这条推送可能早于本脚本
+    // 注册 `message` 监听器而被静默丢弃，于是页面永久停在 `theme.css` 的**默认 seed
+    // 静态兜底色**，而不是用户自定义 ThemePack 的颜色。表现正是「首次进入主题对、
+    // 切走再进就丢了主题」。
+    //
+    // 恢复上一次的色板让页面**自给自足**、不再依赖推送时序：宿主推送退化为「运行中
+    // 切主题」时的更新（去重后按需重推），加载首帧则直接用持久化的真实色板 ——
+    // 对自定义主题包用户，这也顺带修掉了「首帧闪一下默认色再跳到自定义色」。
+    var COLOR_SCHEME_STORAGE_KEY = 'songloft-color-scheme';
+
+    function readPersistedColorScheme() {
+        try {
+            var raw = localStorage.getItem(COLOR_SCHEME_STORAGE_KEY);
+            if (!raw) return null;
+            var parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') return parsed;
+        } catch (e) {
+            // 损坏 / 不可用：当作没有持久化色板，回退到 theme.css 兜底 + 等宿主推送。
+        }
+        return null;
+    }
+
+    var lastColorScheme = readPersistedColorScheme();
 
     // camelCase → `--md-kebab-case`。key 用 Flutter `ColorScheme` 的字段名，
     // 好让两个仓库的表能逐字段对照审计，不必另记一套映射。
@@ -132,6 +159,13 @@
     function applyColorScheme(colors) {
         if (!colors || typeof colors !== 'object') return;
         lastColorScheme = colors;
+        // 持久化，供下次全新加载时同步恢复（见 lastColorScheme 声明处的注释）。
+        // 失败只吞掉：localStorage 满 / 隐私模式下写不进不该连带打掉当次的色板落地。
+        try {
+            localStorage.setItem(COLOR_SCHEME_STORAGE_KEY, JSON.stringify(colors));
+        } catch (e) {
+            // ignore
+        }
         var de = document.documentElement;
         // 特性探测而不是假定：setProperty 拿不到就静默留给 ready 相重试。
         if (!de || !de.style || typeof de.style.setProperty !== 'function') return;
