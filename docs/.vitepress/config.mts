@@ -2,6 +2,7 @@ import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 import AutoSidebar from 'vite-plugin-vitepress-auto-sidebar';
 import taskLists from 'markdown-it-task-lists'
+import llmstxt from 'vitepress-plugin-llms'
 
 export default async () => {
   return withMermaid(defineConfig({
@@ -143,6 +144,11 @@ export default async () => {
           // 与上面的 srcExclude 配对：那些页不建，侧边栏也不能留指向它们的死链。
           // 'webf' 是目录名 —— 整个 docs/webf/ 不进侧边栏。
           ignoreList: ['webf'],
+        }),
+        // 每页生成同名 .md 源文件 + 站点级 /llms.txt、/llms-full.txt，供「复制给 LLM」按钮
+        // （CopyForLLM 组件）和外部 AI 抓取使用。ignoreFiles 与上面的 srcExclude 保持一致。
+        llmstxt({
+          ignoreFiles: ['webf/**'],
         }),
       ],
     },
