@@ -920,7 +920,7 @@ my-plugin/
         └── app.js       # 插件自定义逻辑
 ```
 
-> 公共资源（CSS 变量/reset/MD3 组件样式、字体文件、API 工具库 `common.js`）由主程序自动注入，**无需**在插件中打包。
+> 公共资源（设计令牌/reset/MD3 组件样式、字体文件、API 工具库 `common.js`）由主程序自动注入，**无需**在插件中打包。
 
 ### 主程序自动注入
 
@@ -928,8 +928,13 @@ my-plugin/
 
 1. **`<base>`** — 设置相对路径基准，HTML 中可直接用相对路径引用 `static/...` 和插件 API
 2. **Auth bridge 脚本** — 从 URL `?access_token=` 写入 localStorage、fetch 503 自动重试
-3. **`common.css`** — MD3 颜色变量（含亮/暗双主题）、CSS reset、字体声明、通用组件样式
-4. **`common.js`** — embed 检测、主题桥接、`window.SongloftPlugin` 全局 API
+3. **`theme.css`** — MD3 颜色令牌（含亮/暗双主题）、字体声明、CSS reset、`body` 基样、安全区默认值
+4. **`components.css`** — 与客户端 Flutter 组件对齐的共享组件库（`.card`/`.btn*`/`.switch`/`.tab-bar` 等）
+5. **`webf-shims.css`** — WebF 引擎垫片样式（仅 WebF 渲染面命中）
+6. **`common.js`** — embed 检测、主题桥接、`window.SongloftPlugin` 全局 API
+7. **`webf-shims.js`** — WebF 引擎能力垫片（空 `img src`、`<details>`、滑块、文件选择、安全区等；仅 WebF 生效）
+
+> `common.css` 已退役并拆成 `theme.css` + `components.css`；WebF 兼容层从 `common.js` 抽离到 `webf-shims.js`。插件无需改动——公共 API（`window.SongloftPlugin`）表面不变。
 
 因此插件 HTML **不需要**：
 - `<link>` 引用 fonts.css 或 style.css（主程序提供）
@@ -951,6 +956,11 @@ SongloftPlugin.apiDelete(path)       // DELETE 请求
 // 主题
 SongloftPlugin.getTheme()            // 返回 'light' | 'dark'
 SongloftPlugin.onThemeChange(cb)     // 监听主题变化，cb(theme: 'light' | 'dark')
+SongloftPlugin.getColorScheme()      // 宿主真实色板 {primary:'#415F91', ...}；未下推时 null
+SongloftPlugin.forceStyleRecalc()    // 自行改过根节点 CSS 变量后调用（WebF 专用，别处为空操作）
+
+// 页面内导航
+SongloftPlugin.onHostBack(fn)        // 注册返回键钩子，fn 返回 true 表示已消费（仅 WebF）
 ```
 
 插件 JS 可直接使用：
@@ -1066,12 +1076,12 @@ if (info.platform !== 'web') {
 
 ### 主题适配
 
-主程序的 `common.css` 在 `:root` 下定义了 `--md-*` CSS 变量（亮色），并在 `html[data-theme="dark"]` 下覆盖为暗色值。插件页面使用这些变量即可自动适配主题：
+主程序的 `theme.css` 在 `:root` 下定义了 `--md-*` CSS 变量（亮色），并在 `html[data-theme="dark"]` 下覆盖为暗色值。插件页面使用这些变量即可自动适配主题：
 
 ```css
 /* 插件自定义样式 — 引用 --md-* 变量自动跟随主题 */
 .my-card {
-    background: var(--md-surface);
+    background: var(--md-surface-container);
     color: var(--md-on-surface);
     border: 1px solid var(--md-outline-variant);
 }
@@ -1079,14 +1089,86 @@ if (info.platform !== 'web') {
 
 主题变化时（用户在主程序设置中切换），`common.js` 会：
 1. 更新 `<html>` 的 `data-theme` 属性和 `theme-light`/`theme-dark` CSS class
-2. 派发 `songloft-theme-change` CustomEvent
-3. 写入 `localStorage['songloft-theme']`
+2. 用宿主推来的真实色板改写 `--md-*`（见下）
+3. 派发 `songloft-theme-change` CustomEvent
+4. 写入 `localStorage['songloft-theme']`
 
 插件 JS 可通过 `SongloftPlugin.onThemeChange(callback)` 监听主题变化做额外处理。
 
+#### 变量清单
+
+`--md-*` 与 Flutter 的 `ColorScheme` 字段**逐一对应**（camelCase → kebab-case），方便两侧对照：
+
+| 分组 | 变量 |
+|---|---|
+| 主色 | `--md-primary` `--md-on-primary` `--md-primary-container` `--md-on-primary-container` |
+| 次色 | `--md-secondary` `--md-on-secondary` `--md-secondary-container` `--md-on-secondary-container` |
+| 第三色 | `--md-tertiary` `--md-on-tertiary` `--md-tertiary-container` `--md-on-tertiary-container` |
+| 错误 | `--md-error` `--md-on-error` `--md-error-container` `--md-on-error-container` |
+| 表面 | `--md-surface` `--md-on-surface` `--md-on-surface-variant` `--md-surface-dim` `--md-surface-bright` |
+| 表面阶梯 | `--md-surface-container-lowest` `--md-surface-container-low` `--md-surface-container` `--md-surface-container-high` `--md-surface-container-highest` |
+| 描边 / 反色 | `--md-outline` `--md-outline-variant` `--md-inverse-surface` `--md-on-inverse-surface` `--md-inverse-primary` |
+| 本项目自有（M3 无此角色，**不参与下推**） | `--md-success` `--md-success-container` `--md-warning` `--md-warning-container` |
+| 派生别名（组件在用：switch 轨道 / progress 底） | `--md-surface-variant`→`surfaceContainerHighest` |
+| 圆角刻度（对齐 Flutter `AppRadius`） | `--md-radius-sm` 8 · `-md` 12 · `-lg` 16 · `-xl` 24 · `-xxl` 28 · `-full` 50px |
+| 阴影 | `--md-shadow-1` `--md-shadow-2` `--md-shadow-3` |
+
+> 旧的 `--md-surface-1` / `--md-surface-2` 别名已移除，请直接写 `--md-surface-container` / `--md-surface-container-high`。
+
+**`surface` 与 `surface-container` 的关系别搞反**：`--md-surface` 是**页面底色**，卡片 / 输入框 / hover 用 `container` 阶梯依次加深。公共 `.card` 已是 `SectionCard` 形制（描边无阴影 + 16 圆角），组标题用卡外的 `.section-title`（大写小字）——直接套用即与客户端一致，通常无需自定义：
+
+```css
+/* 仅当要自绘卡片时才需要，公共 .card 已经是这个形制 */
+.my-section-card {
+    background: var(--md-surface-container);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+}
+```
+
+#### 宿主实时下推真实色板
+
+`theme.css` 里的静态值只是**首帧兜底**（由默认 seed `#415F91` 导出）。页面就绪后宿主会把**真实的** `ColorScheme` 随 `songloft-theme` 消息推来——含用户自定义 ThemePack——写成 `documentElement` 的**内联**自定义属性。内联优先级最高，连插件自己在 `:root` 里重定义的同名变量也会被压住。
+
+于是纯 CSS 的插件**什么都不用改**就与主程序同色。要在 JS 里读色则必须用 `getColorScheme()`：
+
+```javascript
+// 宿主还没推到时返回 null（此时页面用的是静态兜底色）
+const cs = SongloftPlugin.getColorScheme();
+const primary = (cs && cs.primary) || '#415F91';
+
+// 到达 / 变更时收通知。注意事件派发在 document 上且**不冒泡**，监听 window 收不到。
+document.addEventListener('songloft-color-scheme-change', e => {
+    console.log('新主色:', e.detail.colors.primary);
+});
+```
+
+> ⚠️ **WebF 下这是唯一能读到色值的途径。** `getComputedStyle(document.documentElement).getPropertyValue('--md-primary')` 在 WebF 里一律返回空串；而 `<flutter-cupertino-*>` 的属性值不展开 `var()`、只吃字面 hex（如 `activeColor`）。两条常见套路都走不通，只能靠这个 API 拿字面值再喂进属性。
+>
+> 色板保证在 `songloft-theme-change` 派发**之前**就已落地，所以在 `onThemeChange` 回调里直接调 `getColorScheme()` 拿到的一定是新值。切换主题包时亮暗可能没变、只有色值变——那种情况只有 `songloft-color-scheme-change` 会派发，两个事件都监听才完整。
+
+### 页面内导航与返回键
+
+插件页是**单页**的，如果内部有多级视图（如「主页 → 设置页」），需要两件事：
+
+1. **自绘返回按钮**——全平台都要有，这是主路径。
+2. **让宿主的返回键也跟着走**——Android 硬件返回键、全屏页 AppBar 的返回箭头。
+
+```javascript
+// 返回 true = 本次返回已被页面消费，宿主不退出路由 / 不退出应用
+SongloftPlugin.onHostBack(() => {
+    if (currentPage !== 'main') { currentPage = 'main'; return true; }
+    return false;
+});
+```
+
+> ⚠️ **`onHostBack` 只对 WebF 渲染的插件页生效**（宿主的注册点有 `isWebFHost()` 闸门）。系统 WebView / iframe / 浏览器三条链路的宿主走各自 `controller.canGoBack()`，读的是真实浏览历史，JS 侧拦不到。这个不对称是设计使然：那些环境下自绘返回按钮已经够用。
+>
+> ⚠️ **不要用 `history.pushState` 表达页面内层级。** WebF 不实现 SPA history 路由（官方方案是 `@openwebf/*-router` 的原生屏栈）。`pushState` 之后 `history.length > 1` 会让宿主的兜底判断误报「已消费」，而 WebF 又不 fire `popstate`——页面毫无变化，**返回键直接变成死键**。
+
 ### WebF 渲染引擎与原生元素
 
-新版客户端在部分平台上可以用 [WebF](https://openwebf.com/)（自研 W3C 运行时，纯 Flutter 渲染）替代系统 WebView 渲染插件页。**这是逐插件选择的**：只有在 `plugin.json` 里声明 `"renderEngine": "webf"` 的插件才走 WebF 渲染面，默认仍是系统 WebView，Web 端永远走 iframe——字段语义与平台限制见 [§3 · renderEngine 渲染引擎声明](#renderengine-渲染引擎声明)。WebF **不是浏览器**，有一批 HTML/CSS 能力缺失，主程序的 `common.js` 会统一垫掉常见缺口（空 `img src`、`<details>` 折叠等），并给 `<html>` 加上 `webf-engine` class 供插件按引擎分叉：
+新版客户端在部分平台上可以用 [WebF](https://openwebf.com/)（自研 W3C 运行时，纯 Flutter 渲染）替代系统 WebView 渲染插件页。**这是逐插件选择的**：只有在 `plugin.json` 里声明 `"renderEngine": "webf"` 的插件才走 WebF 渲染面，默认仍是系统 WebView，Web 端永远走 iframe——字段语义与平台限制见 [§3 · renderEngine 渲染引擎声明](#renderengine-渲染引擎声明)。WebF **不是浏览器**，有一批 HTML/CSS 能力缺失，主程序的 `webf-shims.js`（配套样式 `webf-shims.css`）会统一垫掉常见缺口（空 `img src`、`<details>` 折叠等），并给 `<html>` 加上 `webf-engine` class 供插件按引擎分叉：
 
 ```css
 html.webf-engine .only-in-webf { display: block; }
@@ -1152,12 +1234,13 @@ songloft-progress-ring {
                         style="width:48px;height:48px"></songloft-progress-ring>
 ```
 
-`color` 是可继承属性，所以**什么都不配也能跟主题**：它会取继承来的文字色，而 `common.css` 已把文字色绑到 `--md-on-surface`。
+`color` 是可继承属性，所以**什么都不配也能跟主题**：它会取继承来的文字色，而 `theme.css` 已把文字色绑到 `--md-on-surface`。
 
 两个已实测的坑（不要踩）：
 
 - **属性里写 `var(--md-primary)` 不生效**：WebF 的属性值不经过 CSS 变量展开，元素会按「无效颜色」忽略它并退回 ①。要跟变量就用 CSS `color`。
-- **`getComputedStyle(el).getPropertyValue('--md-primary')` 在 WebF 下一律返回空串**：WebF 的 getComputedStyle 不暴露自定义属性，所以「用 JS 读变量再写进属性」这条常见套路走不通。
+- **`getComputedStyle(el).getPropertyValue('--md-primary')` 在 WebF 下一律返回空串**：WebF 的 getComputedStyle 不暴露自定义属性，所以「用 JS 读变量再写进属性」这条常见套路走不通。**替代方案是 `SongloftPlugin.getColorScheme()`**（见 [主题适配 · 宿主实时下推真实色板](#宿主实时下推真实色板)）——它给的是字面 hex，正好能喂进属性。
+- **运行时改 `<html>` 上的 CSS 变量，后代不会重新求值**：WebF 的变量变更只通知**同一个元素**自己的依赖，不向后代遍历。`--md-*` 与 `--sl-safe-*` 的切换由 `common.js` 内部补一次「带后代」的样式重算来兜住，**插件无需改动**；但插件如果自己在运行时改根节点变量（自定义配色、密度开关等），改完必须调 `SongloftPlugin.forceStyleRecalc()`（非 WebF 下是空操作，可以无条件调）。
 
 #### 兼容性与降级
 
@@ -1172,7 +1255,7 @@ html.webf-engine .ring-svg { display: none; }          /* WebF 下藏起 SVG 版
 
 #### `<songloft-slider>` —— 原生滑块（`input[type=range]` 的替身）
 
-**大多数插件什么都不用做。** WebF 没有实现 `input[type=range]`——实测那一整行在 WebF 下**一个像素都不画**：既没有滑块也没有文本框，同一行的兄弟文字与该行自己的 `background` 会一起消失。所以主程序的 `common.js` 垫片在 WebF 下会自动：
+**大多数插件什么都不用做。** WebF 没有实现 `input[type=range]`——实测那一整行在 WebF 下**一个像素都不画**：既没有滑块也没有文本框，同一行的兄弟文字与该行自己的 `background` 会一起消失。所以主程序的 `webf-shims.js` 垫片在 WebF 下会自动：
 
 1. 扫描页面里所有 `input[type="range"]`，在每个 input **后面**插入一个 `<songloft-slider>`；
 2. 把原 `<input>` **隐藏**（加 `.sl-range-hidden` class + inline `display:none`）而**不是移除**；
@@ -1273,7 +1356,7 @@ songloft-slider {
 }
 ```
 
-`common.css` 已经在 `:root` 上给这四个变量备好了默认值，所以**三种环境下都有确定值，插件只写一种形式**：
+`theme.css` 已经在 `:root` 上给这四个变量备好了默认值（WebF 下再由 `webf-shims.css` 压成 0px 后被宿主注入的真值覆盖），所以**三种环境下都有确定值，插件只写一种形式**：
 
 | 环境 | `var(--sl-safe-bottom)` 的值 |
 |------|------|
@@ -1306,7 +1389,7 @@ songloft-slider {
 
 **页面 HTML 一行都不用改，读结果的 JS 必须改。**
 
-WebF 没有实现 `input[type=file]`：它的 `<input>` build 分支只认 radio / checkbox / button / submit / date / time，`type=file` 落到 default → 渲染成一个 Flutter 文本框，**点了什么都不会发生**（也不报错）。所以 `common.js` 的垫片在 WebF 下会自动：
+WebF 没有实现 `input[type=file]`：它的 `<input>` build 分支只认 radio / checkbox / button / submit / date / time，`type=file` 落到 default → 渲染成一个 Flutter 文本框，**点了什么都不会发生**（也不报错）。所以 `webf-shims.js` 的垫片在 WebF 下会自动：
 
 1. 扫描页面里所有 `input[type="file"]`，把它**隐藏**（加 `.sl-file-hidden` class + inline `display:none`）；
 2. 既拦它的 `click` 事件、也覆写它的实例 `click()` 方法 —— 所以「隐藏 input + 外部按钮调 `fileInput.click()`」这种常见写法照样能弹出选择器；
@@ -1458,7 +1541,7 @@ window.open('https://example.com/help', '_blank');
 三条要点：
 
 - **它打开的是外部浏览器，而不是页内新窗口**。所以「弹窗里完成操作后由弹窗回填数据到父页」（`window.opener`、给返回的 window 对象赋值、跨窗口 `postMessage`）这类流程在这里**走不通** —— 请改成「用户回到插件页后由插件轮询 / 或提供一个『我已完成』按钮触发回调」的形态。
-- **同源整页跳转被刻意拦掉**：WebF 里那条路是「把整个插件页 `load()` 成新地址」，会把宿主注入的上下文、loading 状态、返回键行为全部弄错。**WebF 下不要做多页跳转**，单页 + 页内切换视图。
+- **同源整页跳转被刻意拦掉**：WebF 里那条路是「把整个插件页 `load()` 成新地址」，会把宿主注入的上下文、loading 状态、返回键行为全部弄错。**WebF 下不要做多页跳转**，单页 + 页内切换视图，返回键用 [`onHostBack`](#页面内导航与返回键) 对接（**别用 `history.pushState`**，理由见那一节）。
 - 其余 scheme（相对路径、`javascript:`、自定义 scheme）一律不放行。若插件依赖自定义 scheme 唤起第三方 App，请当它在 WebF 下不可用并另做降级。
 
 #### `<table>` 在 WebF 下**不存在**：改用 CSS Grid
@@ -1470,7 +1553,7 @@ window.open('https://example.com/help', '_blank');
 
 WebF 的元素注册表里 `table` / `thead` / `tbody` / `tr` / `th` / `td` **一个都没有注册**，全部落到未知元素（`display:block`）。后果不是「样式差一点」，而是**信息结构丢失** —— 一张 6 列的表会竖排成 6 行，几十条数据变成几百行无标题文本。而且**完全静默**：不报错、不打日志。
 
-宿主只能帮你**发现**它，不能帮你修：WebF 渲染面下 `common.js` 会给页面上每个 `<table>` 打上 `data-sl-table-unsupported` 属性并在 console 打一条 warn（你就是照那条 warn 找到这一节的）。**宿主刻意不做自动改写**，原因见下。
+宿主只能帮你**发现**它，不能帮你修：WebF 渲染面下 `webf-shims.js` 会给页面上每个 `<table>` 打上 `data-sl-table-unsupported` 属性并在 console 打一条 warn（你就是照那条 warn 找到这一节的）。**宿主刻意不做自动改写**，原因见下。
 
 **改法：CSS Grid。** 一行 = 连续 N 个单元格 div，靠 grid 的自动放置换行：
 
@@ -1671,6 +1754,20 @@ attributes['active-color'] = ElementAttributeProperty(...);   // HTML 属性
 `if (_controller.text != val) { 整段替换文本并把光标收到末尾 }`。所以如果你在回写路径上做了
 类型转换（比如数字输入框存成 `Number`），用户敲到一半的中间态就会被改写、光标跳走。
 **数字字段请在状态里存字符串，提交时才 `parseInt`。**
+
+> ⚠️⚠️ **「受控」还意味着一条会让整页白屏的崩溃链（debug 构建）**：对**已挂载**的输入框
+> 回写 `val` 会走 `_Editable.updateRenderObject` → `RenderEditable.text=` →
+> `TextPainter.markNeedsLayout`；若同一帧鼠标正停在插件页上，`MouseTracker.updateAllDevices`
+> 的 hit test 会打到这个 layout 未就绪的 `RenderEditable`，`getClosestGlyphForOffset` 撞
+> `Text layout not available` 断言，异常把 `_debugDuringDeviceUpdate` 永久置位，之后
+> **每帧**刷 `mouse_tracker.dart` 的 `!_debugDuringDeviceUpdate` 断言、帧循环烂掉
+> （2026-08-05 在 downloader 实测，栈已确证；触发要求鼠标停在页面上，截图脚本永远撞不到）。
+>
+> **结论：WebF 原生输入按非受控用 —— `val` 只在挂载时给一次初值，之后只读 `input`
+> 事件，永不回写。** 外部确实要改显示值时（规范化、清空），改 `:key` 让元素**重挂载**，
+> 新值走 mount 而不是 update。downloader 的 `ui/SlInput.vue` 就是这个模式的完整实现。
+> 换 WebF 自己的 HTML `<input>` 也绕不开：它底下同样是 Flutter `TextField`
+> （`webf/lib/src/html/form/base_input.dart`），同一个 `RenderEditable`。
 
 **③ 布尔属性的两个入口语义不同，而框架走哪个是启发式的。**
 

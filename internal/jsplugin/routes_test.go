@@ -6,24 +6,21 @@ import (
 	"testing"
 )
 
-// TestInjectHTMLHeadAssetVersioning 验证注入的 common.css / common.js URL 带内容哈希版本号（#278）。
-// 若丢失版本号，jsplugin-assets 的 immutable 长缓存会让老浏览器永远拿不到 common.css 更新。
+// TestInjectHTMLHeadAssetVersioning 验证注入的每个公共资源 URL 都带内容哈希版本号（#278）。
+// 若丢失版本号，jsplugin-assets 的 immutable 长缓存会让老浏览器永远拿不到资源更新。
 func TestInjectHTMLHeadAssetVersioning(t *testing.T) {
 	out := string(injectHTMLHead([]byte("<head></head><body></body>"), "demo", ""))
 
-	// common.css / common.js 均应带 ?v=<8位hex>
-	reCSS := regexp.MustCompile(`common\.css\?v=[0-9a-f]{8}"`)
-	if !reCSS.MatchString(out) {
-		t.Errorf("注入的 common.css 缺少版本号 (?v=hash)，实际输出:\n%s", out)
-	}
-	reJS := regexp.MustCompile(`common\.js\?v=[0-9a-f]{8}"`)
-	if !reJS.MatchString(out) {
-		t.Errorf("注入的 common.js 缺少版本号 (?v=hash)，实际输出:\n%s", out)
-	}
-
-	// 版本号应与实际嵌入内容的哈希一致
-	if v := assetVersions["common.css"]; v == "" || !strings.Contains(out, "common.css?v="+v) {
-		t.Errorf("common.css 版本号与嵌入内容哈希不一致: got version %q", v)
+	// 五个公共资源（theme.css / components.css / common.js / webf-shims.css /
+	// webf-shims.js）均应带 ?v=<8位hex>，且版本号与嵌入内容哈希一致。
+	for _, name := range []string{"theme.css", "components.css", "common.js", "webf-shims.css", "webf-shims.js"} {
+		re := regexp.MustCompile(regexp.QuoteMeta(name) + `\?v=[0-9a-f]{8}"`)
+		if !re.MatchString(out) {
+			t.Errorf("注入的 %s 缺少版本号 (?v=hash)，实际输出:\n%s", name, out)
+		}
+		if v := assetVersions[name]; v == "" || !strings.Contains(out, name+"?v="+v) {
+			t.Errorf("%s 版本号与嵌入内容哈希不一致: got version %q", name, v)
+		}
 	}
 }
 

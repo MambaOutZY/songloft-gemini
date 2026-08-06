@@ -39,6 +39,15 @@ Step 3（`<songloft-slider>`）、Step 5（安全区 `--sl-safe-*`，见 §2.5�
 **进行中**：Step 4（`<table>` → CSS Grid，方案已重设计）、Step 6（三项经桥下沉）、
 上游 7 条缺陷报告起草。
 
+> **🆕 文件重组（现状，晚于下文各历史条目）**：公共资源已从 `common.css` + `common.js`
+> 两份拆成五份 —— `theme.css`（令牌/字体/reset）、`components.css`（组件库）、`common.js`
+> （运行时核心：主题桥 / API / 宿主桥 / a11y）、`webf-shims.js`（**全部 WebF JS 垫片**：
+> 空 img src / details / range 滑块 / file 选择器 / table 警告 / 安全区）、`webf-shims.css`
+> （`.sl-*` 垫片样式 + `html.webf-engine` 安全区覆盖）。下文历史条目里凡提到「`common.js`
+> 里的某某垫片」「`common.css` 的 `.sl-*` / 安全区」，现在都在对应的 `webf-shims.*` 里；
+> 垫片逻辑是**逐段原样搬迁**、行为不变。两文件经 `window.__SongloftInternal`
+> （`invokeHost` / `forceStyleRecalc`）协作，公共 API `window.SongloftPlugin` 表面不变。
+
 ### 🆕 2026-08-04 之后：webf-ui 路线（downloader 已落地）
 
 > **这一节晚于本文档其余部分，与它们冲突时以本节为准。**
@@ -424,9 +433,15 @@ webf」的铁律（§7），而它需要 import `webf_cupertino_ui`。探针侧�
       `assert(_debugAssertTextLayoutIsValid)`）。release 构建会整条剥掉 → 不会烂成白屏。
       但**不能因此说生产无事**：紧接的下一行是 `_layoutCache!`，release 下若真为 null 会抛
       NPE，只是不会连锁刷屏。
-    - **规避（downloader 已落地）**：让受控输入**等值到齐后再挂载**（`v-if="settingsLoaded"`），
-      首次赋值走 mount 而不是 update，消掉最主要那条路径。**无法根除** —— 任何「外部纠正
-      显示值」的场景（downloader 里是 `-4 → 0` 的间隔规范化）仍会走 update。
+    - **规避（downloader 已落地，两层）**：
+      ① 输入框**等值到齐后再挂载**（`v-if="settingsLoaded"`），首次赋值走 mount 而不是
+      update；
+      ② **原生分支彻底非受控**（2026-08-05 补强）：`ui/SlInput.vue` 的 `:val` 绑的是
+      setup 时快照的**常量**，挂载后 JS 永不回写 val —— 崩溃链的起点
+      （`RenderEditable.text=`）从构造上消失。外部必须改显示值时（间隔规范化
+      `-4 → 0`、切歌单清空关键字）改 `:key` 让输入框**重挂载**，新值走 mount。
+      两层合起来把已知触发面清零；`settingsLoaded` 的语义也随之从「防崩溃护栏」变成
+      「非受控输入的正确性前提」（挂载初值是唯一一次赋值机会）。
     - 这是 WebF 侧的时序问题（hit test 打到了 layout 未就绪的 hosted Flutter 子树），
       已写成 `upstream-issues.md` 第 9 条。
 
@@ -545,12 +560,98 @@ webf」的铁律（§7），而它需要 import `webf_cupertino_ui`。探针侧�
       非背景像素（全是它自己那条 `border-bottom`），修复后同区域涨到数千。
       这正是本目录反复强调的那条判据：**「盒子有尺寸」≠「图被画出来了」。**
 
+30. **⚠️ 大规模 DOM 拆除 + 鼠标停在页面上 = 第 25 条同款白屏的另一张脸（debug 构建）。**
+    2026-08-05 在 downloader 两级页面切换上实测。与第 25 条（受控输入回写）**彼此独立、
+    终点相同**：都是异常在 `MouseTracker._deviceUpdatePhase` 内抛出 → `_debugDuringDeviceUpdate`
+    永久置位 → 每帧刷 `mouse_tracker.dart:199` 断言、帧循环烂掉。
+    - **首发异常（本次日志确证，与第 25 条不同）**：
+      `webf/src/css/transform.dart:170` 的 `hasRenderBox()`（样式对象查不到盒子）与
+      `object.dart` 的 `!_debugDisposed`（**已 dispose 的 render object 仍在被 paint 访问**），
+      两者在首帧交替出现，随后才是 mouse_tracker 断言每帧刷屏。
+    - **触发条件**：一次 Vue `v-if` 换页把**大块 DOM 同一帧卸载**（downloader 里是整张主页：
+      `<webf-list-view>` + 全部歌曲行 + 筛选栏），且鼠标停在插件页上。WebF 的拆除留下了
+      已 dispose 却仍被引用的 render object：同帧 paint 访问它们、MouseTracker 的 hit test
+      打到它们。**小规模拆除没事**——下拉面板（几十个元素）开合了无数次从未触发；
+      问题与单帧拆除规模相关。
+    - **规避（downloader 已落地）**：设置页改成**全屏覆盖层**（`position: fixed` + 不透明底），
+      主页**始终挂载**：打开设置 = 纯挂载（零拆除），关闭设置 = 只卸载设置页那几件控件
+      （与下拉面板同规模）。附带收益：主页滚动位置与筛选状态不再丢。
+    - **推论（未逐条验证，写在这里供后续插件参考）**：任何「鼠标可能停留时发生的大块挂卸」
+      都该怀疑这条链 —— 大列表整体清空、整页换内容等。能拆小就拆小，能覆盖就别卸载。
+
+31. **common.css 的 `.switch`（track+thumb 版）此前缺 `display:inline-block` + `flex-shrink:0`，
+    在 flex 设置行里被压缩 → WebF 下把手错位。** 2026-08-06（songloft-org/songloft#341 用户反馈）。
+    - 命中面：用 common.css 原生 `.switch`（`<label><input><span.switch-track><span.switch-thumb>`）
+      的插件，本轮是 **lyrics**（`renderEngine: webf`，无自带 CSS）。miot 用的是自带 `.switch-slider`
+      版、subsonic 同理，都不走 common.css 这条，所以此前没暴露。
+    - 机理：`.switch-row` 是 `display:flex; justify-content:space-between`，`.switch`（label）默认
+      `flex-shrink:1` 可被压缩；叠加 WebF 的 flex base-size 缺陷（第 21 条：base size 被测成容器宽度），
+      52px 轨道被挤窄，而 `.switch-thumb` 是相对 label 绝对定位的，`left`/位移一算就溢出/错位。
+      **普通浏览器不复现**（flex 测量正常），已用无头 Chrome 逐点量像素确认浏览器侧本来就对。
+    - 修法：对齐 miot 里**已在 WebF 验证可用**的 `.md-switch`（同 track+thumb 结构）——
+      `.switch` 加 `display:inline-block; flex-shrink:0`；选中态一律用 `~`（不用 `+`，`<input>` 是
+      原生 WidgetElement）；把手位移改 `transform: translateX(20px)`（不改 `left`）。三处都在浏览器
+      像素级验过（switch 52×32 不缩、on-thumb 偏移 26px、off-thumb 6px，对称）。**WebF 侧未实机验证**
+      （本机 glibc<2.38 跑不了），但改动是照抄 miot 的既有可用写法，风险低。
+
+32. **common.css 的 `html { overflow-y: scroll }` 收窄为 `html.embed`，消除浏览器独立打开时右侧
+    永久置灰的多余滚动条。** 2026-08-06（songloft-org/songloft#341 用户反馈）。
+    - 那条 `overflow-y:scroll` 是为 #278 的「视口滚动条宽度翻转抖动」加的兜底，但那个反馈回路只在
+      **视口被外层固定 + 内容高度卡在边界**时发生 —— 即嵌入态（Web 独立部署的 iframe、WebF 原生
+      渲染面，两者都带 `?embed` → common.js 加 `embed` class）。普通浏览器直接打开插件页时窗口可
+      自由伸缩、不存在这个边界回路，无条件强制常驻只会平白多一条滚动条。
+    - 已用无头 Chrome 验证：无 embed → `overflow-y: visible`（按需，无多余条）；带 `?embed` →
+      `overflow-y: scroll`（#278 兜底照旧生效）。
+
+33. **⚠️ webf-ui 原生控件（`<flutter-cupertino-*>`）跟随的是操作系统深浅色，不是插件页主题 ——
+    宿主渲染面此前没有任何 CupertinoTheme 祖先。** 2026-08-06（songloft-org/songloft#341，
+    「切暗色异常、半亮半暗」的真根因）。
+    - 现象：downloader 设置页里 `<flutter-cupertino-input>` 底色是深的、页面 CSS（`--md-*`）是浅的；
+      切应用主题时输入框纹丝不动，只有重启客户端（重新加载、首帧碰巧系统/主题一致）才看着正常。
+    - 机理（读 `webf_cupertino_ui-0.4.1` 源码确证）：`input.dart:330` 无 CSS 背景时底色是
+      `CupertinoColors.systemGrey6.resolveFrom(context)` —— 动态色，`resolveFrom` 先读
+      `CupertinoTheme.maybeBrightnessOf(context)`，取不到才回落 `MediaQuery.platformBrightness`
+      （= 系统外观）。而 `plugin_render_surface_webf.dart` 的 build 直接返回 `WebF.fromControllerName`，
+      **没有 CupertinoTheme 祖先** → 全按系统外观取色，且 `platformBrightness` 不随应用主题切换而变。
+    - 修法（Dart 侧，已落地）：把缓存的 `_webfChild` 包一层
+      `CupertinoTheme(data: CupertinoThemeData(brightness: widget.theme=='dark'?dark:light))`。
+      · `resolveFrom` 命中它 → 原生控件底色/描边跟随插件页主题；
+      · 它是 InheritedWidget，切主题时 `widget.theme` 变→本 widget 重建→新 data→依赖它的原生控件
+        收到通知重算，实时跟随；· 包外层、child 仍是缓存实例 → `Element.updateChild` 照旧短路 WebF
+        子树，缓存语义不变。只设 brightness（按钮走 plain+CSS 配色、开关主色由插件 getColorScheme 显式喂，
+        都不依赖 CupertinoTheme.primaryColor）。**WebF 侧未实机验证**（本机跑不了），但根因来自包源码、
+        修法是标准 Flutter 主题传递。`flutter analyze` 通过。
+
+34. **downloader `.dl-switch-native`（`<flutter-cupertino-switch>`）此前无显式 width → 不右对齐。**
+    2026-08-06（songloft-org/songloft#341，issue 2 用户指认「应该右对齐」）。
+    - 与第 21 条同一个缺陷：WidgetElement 在 flex 行里 width:auto，base size 被测成容器宽度，
+      于是在 `.dl-switch-row`(`justify-content:space-between`) 里这个 flex item 撑满整行、真正的
+      CupertinoSwitch 靠**左**画 → 看着「没右对齐」。**注意 nowrap 行不出「各占一行」的症状，
+      但一样会 base-size 撑满** —— 第 21 条那句「nowrap 就没事」只对「换行」那半成立。
+    - 修法：`.dl-switch-native` 给显式 `width:59px; height:39px` —— Flutter `CupertinoSwitch` 的固有
+      布局尺寸 `_kSwitchSize = Size(59,39)`（轨道 51×31 居中）。base size 变 59px → space-between 推到
+      最右；WebF 把子树 tighten 到 59×39 恰好等于固有尺寸、不裁切（第 23 条：用 width/height 不用 min-*，
+      别用 max-width）。已重建 downloader bundle 确认 `dl-switch-native{...width:59px;height:39px}` 进产物。
+
+> ⚠️ **本轮改动分属三个不同产物，各自的生效路径不同**：
+> ① common.css/js（第 31、32 条 + 5.x 主题）→ `//go:embed` 烘进 **Go 后端**，须 `make build` 重编后端；
+> ② `plugin_render_surface_webf.dart`（第 33 条）→ **Flutter 客户端**，须重编客户端；
+> ③ downloader `style.css`（第 34 条）→ **downloader 插件 bundle**，须在该子模块 `npm run build` 后
+>   重新安装插件（不是重编后端/客户端能带出来的）。
+>
+> ⚠️ **三个资源（common.css / common.js / 字体）都由后端 `//go:embed assets/*` 烘进 Go 二进制**
+> （URL 带内容哈希 `?v=`）。所以上面这些改动 —— 连同 5.x 那条主题切换的 `forceNestedStyleRecalc`
+> —— **必须 `make build` 重编后端并重新部署才会到设备**。「切暗色异常、重启客户端才正常」这类现象，
+> 先确认设备跑的是含改动的新二进制，再怀疑代码：重启客户端只让页面按 `?theme=` 重新加载（首帧配色
+> 自然对），并不会换掉设备上那个旧后端二进制里的旧 common.js。
+
 #### 仍然要主动规避的（webf-ui 救不了的）
 
 `<base href>` 不被采纳（第 2 条）、`display: none` 仍占位、内联 `style.display=''` 不可靠、
 layout 异步、`resize` 不一定派发、`max()`/`min()` 未实现、无界 flex 触发
 `Infinity or NaN toInt`、`btoa` 不是二进制安全、**`flex-wrap: wrap` 下子项 base size 被测成
-容器宽度**（第 21 条）、**`[plugin][console]` 转发在缓存命中时静默失效**（第 22 条）。
+容器宽度**（第 21 条）、**`[plugin][console]` 转发在缓存命中时静默失效**（第 22 条）、
+**对已挂载的原生输入框回写 `val`**（第 25 条）、**鼠标停留时大块 DOM 同帧卸载**（第 30 条）。
 
 ---
 
@@ -1207,6 +1308,45 @@ HOST_NETWORK=1 PROBE_URL='http://127.0.0.1:58191/api/v1/jsplugin/miot/?embed=&th
 - 断言铁律（与仓库既有的无头浏览器验证一致）：**截图只证明"渲染对了"**，
   交互是否真生效必须落在后端可观测状态上（`curl` 对应 `/settings/<name>`、`play_history` 有无新记录等）。
   数进程用 `pgrep -x`，**不要** `ps -ef | grep | wc -l`
+
+---
+
+## 5.x 运行时改根节点 CSS 变量，后代不重新求值（已定位 + 已绕过）
+
+**症状**：插件页加载时配色是对的，此后**任何**主题切换都只改到 `<html>` 自己 ——
+整页停在加载那一刻的亮/暗，而原生 WidgetElement（`<flutter-cupertino-input>` 等）跟着
+Flutter 的真实主题走 → **一半亮一半暗**。2026-08-05 downloader 全屏页实测截图为证。
+
+**根因**（WebF 0.24.27，读源码确证，两条路都断）：
+
+| 路径 | 断在哪 |
+|---|---|
+| `de.style.setProperty('--md-x', v)` | `css/variable.dart:191` 的 `setCSSVariable` 只通知**本元素自己**的 `_propertyDependencies`（哪些自有属性引用了它），**没有向后代遍历** |
+| `setAttribute('data-theme','dark')` 让 html 命中另一条规则 | `dom/element.dart:1680` 确实算出了 `isNeedRecalculate`（`data-theme` 因 `html[data-theme="dark"]` 被解析而进了 `selectorKeySet`），但紧接着 `if (_shouldBatchRecalculateStyle)` 分支把它**整个丢掉**，只调 `markElementStyleDirty(reason:'batch:attr:…')`；而 `dom/document.dart:133` **只在 `reason.startsWith('childList-')` 时**才登记 rebuildNested |
+
+即：`recalculateStyle` 的后代递归条件是 `rebuildNested || hasInheritedPendingProperty`，
+而 `hasInheritedPendingProperty` 走 `isInheritedPropertyString` → `CSSPropertyNameMap[name]`
+对 `--` 开头的自定义属性返回 null → **false**。自定义属性虽然在 CSS 语义上是继承的，
+但在 WebF 的这张表里不算继承属性。
+
+**绕过**（`common.js` 的 `forceNestedStyleRecalc()`，已随 `applyTheme` / `applyColorScheme` /
+`applySafeAreaInsets` 自动调用，插件无需改动）：往 `<body>` 里插一个空 `<span>` 再立刻摘掉。
+childList 变更是**唯一**能拿到 rebuildNested 的入口，两次变更都会把 body 标成
+「带后代重算」，body 子树因此重新解析 `var()`。
+
+三个容易改错的点：
+
+- **必须是 `<body>`，不能是 `documentElement`** —— `dom/container_node.dart:99` 明确把
+  `HTMLElement` / `HeadElement` 排除在 childList 标脏之外，poke 根节点等于什么都没做
+- **同步 poke 是对的，不要改成 `setTimeout` / rAF**：setProperty 与 appendChild 进同一批
+  UI command，而 `bridge/ui_command.dart:487` 是在**整批执行完之后**才统一
+  `flushPendingStyleProperties` 把 html 上待写的自定义属性落到 renderStyle；childList 变更
+  本身只 `markElementStyleDirty` + `scheduleStyleUpdate`，真正重算在那之后。属性那条路同理，
+  html 先标脏、body 后标脏，`_styleDirtyElements` 是 LinkedHashSet 按插入序刷
+- **`--sl-safe-*` 是同一个坑**：安全区也写在根节点、也被后代 `calc()` 消费。刘海屏 / 手势条
+  上「宿主推了但一个像素没变」就是这个原因（本轮一并修了）
+
+插件若**自己**在运行时改根变量，改完要调 `SongloftPlugin.forceStyleRecalc()`（非 WebF 下是空操作）。
 
 ---
 

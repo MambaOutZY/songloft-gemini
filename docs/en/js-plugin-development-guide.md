@@ -920,7 +920,7 @@ my-plugin/
         └── app.js       # Plugin custom logic
 ```
 
-> Common assets (CSS variables/reset/MD3 component styles, font files, the `common.js` API utility library) are injected automatically by the main program and **do not** need to be bundled in the plugin.
+> Common assets (design tokens/reset/MD3 component styles, font files, the `common.js` API utility library) are injected automatically by the main program and **do not** need to be bundled in the plugin.
 
 ### Automatic Injection by the Main Program
 
@@ -928,8 +928,13 @@ When returning a plugin's HTML page, the backend automatically injects the follo
 
 1. **`<base>`** — sets the relative path baseline, so relative paths in the HTML can directly reference `static/...` and the plugin API
 2. **Auth bridge script** — writes the URL `?access_token=` into localStorage, and automatically retries on a fetch 503
-3. **`common.css`** — MD3 color variables (including light/dark dual themes), CSS reset, font declarations, common component styles
-4. **`common.js`** — embed detection, theme bridging, the `window.SongloftPlugin` global API
+3. **`theme.css`** — MD3 color tokens (including light/dark dual themes), font declarations, CSS reset, `body` base styles, safe-area defaults
+4. **`components.css`** — the shared component library aligned with the client's Flutter widgets (`.card`/`.btn*`/`.switch`/`.tab-bar`, etc.)
+5. **`webf-shims.css`** — WebF engine shim styles (only matched on the WebF rendering surface)
+6. **`common.js`** — embed detection, theme bridging, the `window.SongloftPlugin` global API
+7. **`webf-shims.js`** — WebF engine capability shims (empty `img src`, `<details>`, slider, file picker, safe area, etc.; WebF only)
+
+> `common.css` is retired and split into `theme.css` + `components.css`; the WebF compatibility layer is extracted from `common.js` into `webf-shims.js`. Plugins need no changes — the public API (`window.SongloftPlugin`) surface is unchanged.
 
 Therefore a plugin's HTML **does not need**:
 - `<link>` references to fonts.css or style.css (provided by the main program)
@@ -951,6 +956,11 @@ SongloftPlugin.apiDelete(path)       // DELETE request
 // Theme
 SongloftPlugin.getTheme()            // Returns 'light' | 'dark'
 SongloftPlugin.onThemeChange(cb)     // Listen for theme changes, cb(theme: 'light' | 'dark')
+SongloftPlugin.getColorScheme()      // Host's real color scheme {primary:'#415F91', ...}; null before push-down
+SongloftPlugin.forceStyleRecalc()    // Call after changing root CSS variables yourself (WebF-only; a no-op elsewhere)
+
+// In-page navigation
+SongloftPlugin.onHostBack(fn)        // Register a back-key hook; fn returns true = consumed (WebF only)
 ```
 
 Plugin JS can use them directly:
@@ -1066,12 +1076,12 @@ if (info.platform !== 'web') {
 
 ### Theme Adaptation
 
-The main program's `common.css` defines `--md-*` CSS variables under `:root` (light values), and overrides them with dark values under `html[data-theme="dark"]`. Plugin pages that use these variables adapt to the theme automatically:
+The main program's `theme.css` defines `--md-*` CSS variables under `:root` (light values), and overrides them with dark values under `html[data-theme="dark"]`. Plugin pages that use these variables adapt to the theme automatically:
 
 ```css
 /* Plugin custom styles — referencing --md-* variables automatically follows the theme */
 .my-card {
-    background: var(--md-surface);
+    background: var(--md-surface-container);
     color: var(--md-on-surface);
     border: 1px solid var(--md-outline-variant);
 }
@@ -1079,14 +1089,87 @@ The main program's `common.css` defines `--md-*` CSS variables under `:root` (li
 
 When the theme changes (the user switches it in the main program's settings), `common.js` will:
 1. Update the `data-theme` attribute and the `theme-light`/`theme-dark` CSS classes on `<html>`
-2. Dispatch a `songloft-theme-change` CustomEvent
-3. Write to `localStorage['songloft-theme']`
+2. Rewrite `--md-*` with the real color scheme pushed down by the host (see below)
+3. Dispatch a `songloft-theme-change` CustomEvent
+4. Write to `localStorage['songloft-theme']`
 
 Plugin JS can listen for theme changes via `SongloftPlugin.onThemeChange(callback)` to perform additional handling.
 
+#### Variable Reference
+
+The `--md-*` variables map **one-to-one** onto Flutter's `ColorScheme` fields (camelCase → kebab-case), so the two sides can be audited against each other:
+
+| Group | Variables |
+|---|---|
+| Primary | `--md-primary` `--md-on-primary` `--md-primary-container` `--md-on-primary-container` |
+| Secondary | `--md-secondary` `--md-on-secondary` `--md-secondary-container` `--md-on-secondary-container` |
+| Tertiary | `--md-tertiary` `--md-on-tertiary` `--md-tertiary-container` `--md-on-tertiary-container` |
+| Error | `--md-error` `--md-on-error` `--md-error-container` `--md-on-error-container` |
+| Surface | `--md-surface` `--md-on-surface` `--md-on-surface-variant` `--md-surface-dim` `--md-surface-bright` |
+| Surface ladder | `--md-surface-container-lowest` `--md-surface-container-low` `--md-surface-container` `--md-surface-container-high` `--md-surface-container-highest` |
+| Outline / inverse | `--md-outline` `--md-outline-variant` `--md-inverse-surface` `--md-on-inverse-surface` `--md-inverse-primary` |
+| Songloft-specific (no M3 role, **not pushed down**) | `--md-success` `--md-success-container` `--md-warning` `--md-warning-container` |
+| Derived alias (used by components: switch track / progress background) | `--md-surface-variant`→`surfaceContainerHighest` |
+| Corner radii (aligned with Flutter's `AppRadius`) | `--md-radius-sm` 8 · `-md` 12 · `-lg` 16 · `-xl` 24 · `-xxl` 28 · `-full` 50px |
+| Shadows | `--md-shadow-1` `--md-shadow-2` `--md-shadow-3` |
+
+> The old `--md-surface-1` / `--md-surface-2` aliases have been removed — use `--md-surface-container` / `--md-surface-container-high` directly.
+
+**Don't invert `surface` and `surface-container`**: `--md-surface` is the **page background**; cards, inputs and hover states step up through the `container` ladder. The shared `.card` is already the `SectionCard` form (outlined, no shadow, 16 radius), with the group label handled by `.section-title` (small uppercase text) outside the card — use them directly to match the client; you usually need no custom styles:
+
+```css
+/* only needed when hand-drawing a card; the shared .card is already this form */
+.my-section-card {
+    background: var(--md-surface-container);
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--md-radius-lg);
+}
+```
+
+#### The Host Pushes Down the Real Color Scheme at Runtime
+
+The static values in `theme.css` are only a **first-frame fallback** (derived from the default seed `#415F91`). Once the page is ready, the host pushes down the **real** `ColorScheme` — including the user's custom ThemePack — alongside the `songloft-theme` message, writing it as **inline** custom properties on `documentElement`. Inline styles win over everything, even a same-named variable the plugin redefines in its own `:root`.
+
+So CSS-only plugins need **no changes at all** to match the main program's colors. Reading colors from JS, however, requires `getColorScheme()`:
+
+```javascript
+// Returns null before the host has pushed anything (the page is on static fallback colors)
+const cs = SongloftPlugin.getColorScheme();
+const primary = (cs && cs.primary) || '#415F91';
+
+// Get notified on arrival / change. The event fires on document and does **not** bubble,
+// so a listener on window will never see it.
+document.addEventListener('songloft-color-scheme-change', e => {
+    console.log('new primary:', e.detail.colors.primary);
+});
+```
+
+> ⚠️ **Under WebF this is the only way to read a color value.** `getComputedStyle(document.documentElement).getPropertyValue('--md-primary')` always returns an empty string in WebF, and `<flutter-cupertino-*>` attribute values are not `var()`-expanded — they only accept literal hex (e.g. `activeColor`). Both of the usual tricks are dead ends; this API is how you get a literal value to feed into the attribute.
+>
+> The color scheme is guaranteed to land **before** `songloft-theme-change` is dispatched, so calling `getColorScheme()` inside an `onThemeChange` callback always yields the new values. Switching theme packs may leave light/dark unchanged while the colors change — only `songloft-color-scheme-change` fires in that case, so listen to both events for full coverage.
+
+### In-Page Navigation and the Back Key
+
+Plugin pages are **single-page**. If yours has multiple internal views (e.g. "main → settings"), you need two things:
+
+1. **Draw your own back button** — required on every platform; this is the primary path.
+2. **Make the host's back key follow along** — the Android hardware back key and the back arrow in the full-screen page's AppBar.
+
+```javascript
+// Returning true = this back press was consumed by the page; the host won't pop the route or exit the app
+SongloftPlugin.onHostBack(() => {
+    if (currentPage !== 'main') { currentPage = 'main'; return true; }
+    return false;
+});
+```
+
+> ⚠️ **`onHostBack` only takes effect on WebF-rendered plugin pages** (the host's registration point is gated on `isWebFHost()`). On the system WebView / iframe / browser paths the host uses each surface's own `controller.canGoBack()`, which reads real browser history and cannot be intercepted from JS. This asymmetry is deliberate: a self-drawn back button is sufficient in those environments.
+>
+> ⚠️ **Do not use `history.pushState` to express in-page levels.** WebF does not implement SPA history routing (the official answer is the native screen stack from `@openwebf/*-router`). After a `pushState`, `history.length > 1` makes the host's fallback check report "consumed", but WebF never fires `popstate` — nothing happens on screen and **the back key becomes a dead key**.
+
 ### The WebF Rendering Engine and Native Elements
 
-On some platforms, newer clients can render plugin pages with [WebF](https://openwebf.com/) (an in-house W3C runtime rendered entirely by Flutter) instead of the system WebView. **This is a per-plugin choice**: only plugins that declare `"renderEngine": "webf"` in `plugin.json` get the WebF rendering surface; the default is still the system WebView, and the web build always uses the iframe path — see [§3 · renderEngine — Declaring the Rendering Engine](#renderengine--declaring-the-rendering-engine) for the field semantics and platform limits. WebF **is not a browser** and lacks a number of HTML/CSS capabilities. The main program's `common.js` shims the common gaps (empty `img src`, `<details>` collapsing, etc.) and adds a `webf-engine` class to `<html>` so plugins can branch on the engine:
+On some platforms, newer clients can render plugin pages with [WebF](https://openwebf.com/) (an in-house W3C runtime rendered entirely by Flutter) instead of the system WebView. **This is a per-plugin choice**: only plugins that declare `"renderEngine": "webf"` in `plugin.json` get the WebF rendering surface; the default is still the system WebView, and the web build always uses the iframe path — see [§3 · renderEngine — Declaring the Rendering Engine](#renderengine--declaring-the-rendering-engine) for the field semantics and platform limits. WebF **is not a browser** and lacks a number of HTML/CSS capabilities. The main program's `webf-shims.js` (with companion styles `webf-shims.css`) shims the common gaps (empty `img src`, `<details>` collapsing, etc.) and adds a `webf-engine` class to `<html>` so plugins can branch on the engine:
 
 ```css
 html.webf-engine .only-in-webf { display: block; }
@@ -1153,12 +1236,13 @@ songloft-progress-ring {
                         style="width:48px;height:48px"></songloft-progress-ring>
 ```
 
-`color` is an inherited property, so **it follows the theme even with zero configuration**: it picks up the inherited text color, and `common.css` already binds the text color to `--md-on-surface`.
+`color` is an inherited property, so **it follows the theme even with zero configuration**: it picks up the inherited text color, and `theme.css` already binds the text color to `--md-on-surface`.
 
 Two verified pitfalls (do not step in them):
 
 - **Writing `var(--md-primary)` in the attribute does not work**: WebF does not expand CSS variables in attribute values, so the element treats it as an invalid color, ignores it, and falls back to ①. Use CSS `color` if you want to track a variable.
-- **`getComputedStyle(el).getPropertyValue('--md-primary')` always returns an empty string under WebF**: WebF's getComputedStyle does not expose custom properties, so the common trick of "read the variable in JS, then write it into the attribute" does not work.
+- **`getComputedStyle(el).getPropertyValue('--md-primary')` always returns an empty string under WebF**: WebF's getComputedStyle does not expose custom properties, so the common trick of "read the variable in JS, then write it into the attribute" does not work. **Use `SongloftPlugin.getColorScheme()` instead** (see [Theme Adaptation · The Host Pushes Down the Real Color Scheme at Runtime](#the-host-pushes-down-the-real-color-scheme-at-runtime)) — it hands you literal hex, which is exactly what the attribute needs.
+- **Changing a CSS variable on `<html>` at runtime does not re-resolve descendants**: WebF notifies only the same element's own dependents on a variable change; it does not walk into descendants. Switching `--md-*` and `--sl-safe-*` is handled inside `common.js`, which forces a nested style recalculation — **plugins need no changes**. But if your plugin changes root-level variables itself at runtime (custom palettes, density switches, …), call `SongloftPlugin.forceStyleRecalc()` afterwards (a no-op outside WebF, so it is always safe to call).
 
 #### Compatibility and graceful degradation
 
@@ -1173,7 +1257,7 @@ html.webf-engine .ring-svg { display: none; }          /* hide the SVG version u
 
 #### `<songloft-slider>` — a native slider (stand-in for `input[type=range]`)
 
-**Most plugins have to do nothing at all.** WebF does not implement `input[type=range]` — measured behavior is that the whole line **paints zero pixels** under WebF: no slider, no text box, and the sibling text on that line plus the line's own `background` disappear along with it. So the main program's `common.js` shim automatically does the following under WebF:
+**Most plugins have to do nothing at all.** WebF does not implement `input[type=range]` — measured behavior is that the whole line **paints zero pixels** under WebF: no slider, no text box, and the sibling text on that line plus the line's own `background` disappear along with it. So the main program's `webf-shims.js` shim automatically does the following under WebF:
 
 1. Scan every `input[type="range"]` on the page and insert a `<songloft-slider>` **after** each input;
 2. **Hide** the original `<input>` (add the `.sl-range-hidden` class plus inline `display:none`) instead of **removing** it;
@@ -1274,7 +1358,7 @@ The host therefore injects the real safe area (Flutter's `MediaQuery.viewPadding
 }
 ```
 
-`common.css` already declares defaults for all four on `:root`, so **every runtime yields a defined value and plugins only ever write one form**:
+`theme.css` already declares defaults for all four on `:root` (under WebF they are then squashed to 0px by `webf-shims.css` and overwritten by the host-injected real values), so **every runtime yields a defined value and plugins only ever write one form**:
 
 | Runtime | Value of `var(--sl-safe-bottom)` |
 |------|------|
@@ -1307,7 +1391,7 @@ Note that the injected value is **whatever is left for the page to handle**: the
 
 **Your HTML needs no changes at all; the JS that reads the result must change.**
 
-WebF does not implement `input[type=file]`: its `<input>` build switch only knows radio / checkbox / button / submit / date / time, so `type=file` falls through to the default branch and renders a Flutter text field — **clicking it does nothing at all** (and raises no error). So under WebF the `common.js` shim automatically:
+WebF does not implement `input[type=file]`: its `<input>` build switch only knows radio / checkbox / button / submit / date / time, so `type=file` falls through to the default branch and renders a Flutter text field — **clicking it does nothing at all** (and raises no error). So under WebF the `webf-shims.js` shim automatically:
 
 1. Scans every `input[type="file"]` on the page and **hides it** (adds the `.sl-file-hidden` class plus inline `display:none`);
 2. Intercepts its `click` event **and** overrides its instance `click()` method — so the common "hidden input + external button calling `fileInput.click()`" pattern still opens the picker;
@@ -1460,7 +1544,7 @@ window.open('https://example.com/help', '_blank');
 Three things to keep in mind:
 
 - **It opens an external browser, not an in-page popup window.** So flows where "the popup writes data back into the opener after the user finishes" (`window.opener`, assigning to the returned window object, cross-window `postMessage`) **do not work here** — restructure them so that the plugin polls after the user returns to the page, or offer an explicit "I'm done" button that triggers the callback.
-- **Same-origin full-page navigation is deliberately blocked**: under WebF that path means "`load()` the whole plugin page at a new address", which invalidates the context injected by the host, the loading state and the back-button behavior. **Do not do multi-page navigation under WebF** — stay single-page and switch views in place.
+- **Same-origin full-page navigation is deliberately blocked**: under WebF that path means "`load()` the whole plugin page at a new address", which invalidates the context injected by the host, the loading state and the back-button behavior. **Do not do multi-page navigation under WebF** — stay single-page, switch views in place, and wire the back key through [`onHostBack`](#in-page-navigation-and-the-back-key) (**not** `history.pushState`; see that section for why).
 - Any other scheme (relative paths, `javascript:`, custom schemes) is not allowed through. If your plugin relies on a custom scheme to launch a third-party app, treat that as unavailable under WebF and provide a fallback.
 
 #### `<table>` **does not exist** under WebF: use CSS Grid instead
@@ -1475,7 +1559,7 @@ Three things to keep in mind:
 
 WebF's element registry registers **none** of `table` / `thead` / `tbody` / `tr` / `th` / `td` — they all fall through to unknown elements (`display:block`). The consequence is not "slightly off styling" but **loss of information structure**: a 6-column table stacks into 6 rows, and a few dozen records become several hundred lines of unlabeled text. And it is **completely silent** — no error, no log.
 
-The host can only help you **discover** it, not fix it: on the WebF surface, `common.js` tags every `<table>` on the page with `data-sl-table-unsupported` and prints one `console.warn` (that warning is what pointed you at this section). **The host deliberately does not rewrite the tags** — see the rationale below.
+The host can only help you **discover** it, not fix it: on the WebF surface, `webf-shims.js` tags every `<table>` on the page with `data-sl-table-unsupported` and prints one `console.warn` (that warning is what pointed you at this section). **The host deliberately does not rewrite the tags** — see the rationale below.
 
 **The fix: CSS Grid.** One row = N consecutive cell divs, wrapped by grid auto-placement:
 
@@ -1699,6 +1783,24 @@ On every build `<flutter-cupertino-input>` performs
 your write-back path performs a type conversion (e.g. storing a numeric field as a `Number`), the
 half-typed intermediate value gets rewritten and the caret jumps. **Keep numeric fields as
 strings in state and `parseInt` only on submit.**
+
+> ⚠️⚠️ **"Controlled" also implies a whole-page white-screen crash chain (debug builds):** writing
+> `val` back to an **already-mounted** input goes through `_Editable.updateRenderObject` →
+> `RenderEditable.text=` → `TextPainter.markNeedsLayout`; if the mouse is resting on the plugin
+> page that same frame, `MouseTracker.updateAllDevices` hit-tests that not-yet-relaid
+> `RenderEditable`, `getClosestGlyphForOffset` trips the `Text layout not available` assertion,
+> the exception leaves `_debugDuringDeviceUpdate` stuck true, and from then on **every frame**
+> spams the `!_debugDuringDeviceUpdate` assertion from `mouse_tracker.dart` until the frame loop
+> is unusable (reproduced on downloader 2026-08-05 with a confirmed stack trace; triggering it
+> requires the mouse to be over the page, so screenshot automation never hits it).
+>
+> **Conclusion: treat WebF native inputs as uncontrolled — give `val` its initial value exactly
+> once at mount, then only read `input` events and never write back.** When an external change
+> really must update the visible value (normalization, clearing), change the element's `:key` so
+> it **remounts** — the new value then arrives via mount instead of update. Downloader's
+> `ui/SlInput.vue` is a complete implementation of this pattern. Switching to WebF's own HTML
+> `<input>` does not help: it is also backed by a Flutter `TextField`
+> (`webf/lib/src/html/form/base_input.dart`) — the same `RenderEditable`.
 
 **③ Boolean attributes have two entry points with different semantics, and frameworks choose
 heuristically.**

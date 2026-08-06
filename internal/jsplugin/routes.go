@@ -28,20 +28,21 @@ import (
 //go:embed assets/*
 var pluginAssets embed.FS
 
-// assetVersions 缓存公共资源（common.css / common.js）内容哈希的前 8 位 hex，
-// 用于给 injectHTMLHead 注入的资源 URL 加 ?v=<hash> 做 cache-busting。
+// assetVersions 缓存公共资源（theme.css / components.css / common.js /
+// webf-shims.css / webf-shims.js）内容哈希的前 8 位 hex，用于给 injectHTMLHead
+// 注入的资源 URL 加 ?v=<hash> 做 cache-busting。
 //
-// 背景（#278）：jsplugin-assets 用固定无版本 URL（/api/v1/jsplugin-assets/common.css）
+// 背景（#278）：jsplugin-assets 用固定无版本 URL（/api/v1/jsplugin-assets/<name>）
 // + "immutable, max-age=1年" 长缓存服务。immutable 意味着浏览器连重新验证都不做——
-// 一旦某个浏览器缓存了旧 common.css，之后再改 common.css（如滚动条抖动修复）也永远
-// 到不了该用户，表现为"修了还抖"。加内容哈希版本号后，文件一变 URL 就变，老缓存自然失效；
+// 一旦某个浏览器缓存了旧资源，之后再改（如滚动条抖动修复）也永远到不了该用户，
+// 表现为"修了还抖"。加内容哈希版本号后，文件一变 URL 就变，老缓存自然失效；
 // 承载页 HTML 是 no-cache，每次都会带出最新版本号，故修复能即时下发。内容不变时 URL 恒定，
 // immutable 长缓存依旧生效。
 var assetVersions = computeAssetVersions()
 
 func computeAssetVersions() map[string]string {
-	versions := make(map[string]string, 2)
-	for _, name := range []string{"common.css", "common.js"} {
+	versions := make(map[string]string, 5)
+	for _, name := range []string{"theme.css", "components.css", "common.js", "webf-shims.css", "webf-shims.js"} {
 		data, err := pluginAssets.ReadFile("assets/" + name)
 		if err != nil {
 			continue
@@ -93,7 +94,7 @@ func (m *Manager) RegisterStaticRoutes(r chi.Router) {
 // handlePluginAssets 服务插件公共资源（CSS/JS/字体）。
 //
 // @Summary     插件公共资源
-// @Description 服务由主程序嵌入的插件通用 CSS、JS 和字体文件，自动注入到所有插件 HTML 页面。
+// @Description 服务由主程序嵌入的插件公共资源（theme.css / components.css / common.js / webf-shims.css / webf-shims.js 及字体），自动注入到所有插件 HTML 页面。
 // @Tags        JS 插件
 // @Produce     octet-stream
 // @Param       * path string true "资源路径"
@@ -444,8 +445,14 @@ func (m *Manager) tryServeStaticFile(w http.ResponseWriter, r *http.Request, sta
 
 // injectHTMLHead 在 HTML 的 <head> 后（紧跟开标签）注入 <base> 标签、auth bridge 脚本和公共资源引用。
 //
-// 注入顺序：base → auth bridge → common.css link → common.js script
-// common.js 内含 embed 检测和主题桥接逻辑，render-blocking 保证在页面内容前执行。
+// 注入顺序：base → auth bridge → theme.css → components.css → webf-shims.css →
+// common.js → webf-shims.js。
+//   - CSS 三层：theme.css（令牌契约/字体/reset）→ components.css（组件库）→
+//     webf-shims.css（WebF 垫片样式）。var() 跨文件解析与顺序无关，但按语义排列。
+//   - JS 两层：common.js（运行时核心，建 window.SongloftPlugin 与内部句柄）→
+//     webf-shims.js（WebF 垫片，回填 applyShims / lastPickedFiles，故须在其后）。
+//
+// 全部 render-blocking，保证在页面内容前执行。
 //
 // <base> 标签使浏览器以 /api/v1/jsplugin/{entryPath}/ 为基准解析相对路径。
 // 关键：<base> 必须在所有使用相对 URL 的元素（<link>, <script> 等）之前注入，
@@ -476,14 +483,20 @@ func injectHTMLHead(html []byte, entryPath, basePath string) []byte {
 	baseTag := []byte(`<base href="` + basePath + `/api/v1/jsplugin/` + entryPath + `/">`)
 	authScript := []byte(authBridgeScriptTpl)
 	assetsBase := basePath + "/api/v1/jsplugin-assets/"
-	cssLink := []byte(`<link rel="stylesheet" href="` + assetURL(assetsBase, "common.css") + `">`)
+	themeLink := []byte(`<link rel="stylesheet" href="` + assetURL(assetsBase, "theme.css") + `">`)
+	componentsLink := []byte(`<link rel="stylesheet" href="` + assetURL(assetsBase, "components.css") + `">`)
+	shimsLink := []byte(`<link rel="stylesheet" href="` + assetURL(assetsBase, "webf-shims.css") + `">`)
 	jsScript := []byte(`<script src="` + assetURL(assetsBase, "common.js") + `"></script>`)
+	shimsScript := []byte(`<script src="` + assetURL(assetsBase, "webf-shims.js") + `"></script>`)
 
-	injectPayload := make([]byte, 0, len(baseTag)+len(authScript)+len(cssLink)+len(jsScript))
+	injectPayload := make([]byte, 0, len(baseTag)+len(authScript)+len(themeLink)+len(componentsLink)+len(shimsLink)+len(jsScript)+len(shimsScript))
 	injectPayload = append(injectPayload, baseTag...)
 	injectPayload = append(injectPayload, authScript...)
-	injectPayload = append(injectPayload, cssLink...)
+	injectPayload = append(injectPayload, themeLink...)
+	injectPayload = append(injectPayload, componentsLink...)
+	injectPayload = append(injectPayload, shimsLink...)
 	injectPayload = append(injectPayload, jsScript...)
+	injectPayload = append(injectPayload, shimsScript...)
 
 	// 优先在 <head> 开标签之后注入（确保 <base> 出现在所有 <link>/<script> 之前）
 	headOpenIdx := bytes.Index(html, []byte("<head>"))
