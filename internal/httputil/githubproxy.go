@@ -74,26 +74,36 @@ func getWithFallback(ctx context.Context, client *http.Client, rawURL, proxiedUR
 		}
 		slog.Warn("github proxy request failed, falling back to direct",
 			"failed_url", proxiedURL, "url", rawURL, "proxy", proxyPrefix, "error", err)
-		if opts.ProxyDown != nil {
-			opts.ProxyDown.Store(true)
-		}
 		resp, err = doGet(ctx, client, rawURL, opts)
 		if err != nil {
 			slog.Warn("direct request also failed after proxy fallback",
 				"failed_url", rawURL, "error", err)
+			// 直连也失败：无法判定代理是否专门挂了（可能两条路径都不通），
+			// 不置位 proxyDown，让后续并发请求仍尝试代理。
+			return resp, err
+		}
+		// 代理失败但直连成功：代理确实挂了，置位让后续请求跳过代理。
+		if opts.ProxyDown != nil {
+			opts.ProxyDown.Store(true)
 		}
 		return resp, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		proxyStatus := resp.StatusCode
 		drainAndClose(resp.Body)
 		slog.Warn("github proxy request failed, falling back to direct",
-			"failed_url", proxiedURL, "url", rawURL, "proxy", proxyPrefix, "status", resp.StatusCode)
-		// 5xx 多为代理自身故障（停服代理常快速返回网关错误页），置位避免后续
-		// 请求继续双倍打代理；4xx 可能只是单个资源不存在，不据此判代理失效
-		if resp.StatusCode >= 500 && opts.ProxyDown != nil {
+			"failed_url", proxiedURL, "url", rawURL, "proxy", proxyPrefix, "status", proxyStatus)
+		resp, err = doGet(ctx, client, rawURL, opts)
+		if err != nil {
+			// 直连也不通，不据此判定代理失效。
+			return resp, err
+		}
+		// 代理非 2xx 但直连成功：5xx 置位 proxyDown（代理自身故障），
+		// 4xx 不置位（可能只是单个资源不存在）。
+		if proxyStatus >= 500 && opts.ProxyDown != nil {
 			opts.ProxyDown.Store(true)
 		}
-		return doGet(ctx, client, rawURL, opts)
+		return resp, nil
 	}
 	return resp, nil
 }

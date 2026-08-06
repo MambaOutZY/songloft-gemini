@@ -240,3 +240,47 @@ func TestAttemptTimeout(t *testing.T) {
 		t.Errorf("body = %q, want ok-direct-body", got)
 	}
 }
+
+func TestProxyDownNotSetWhenBothFail(t *testing.T) {
+	// 代理死掉（连接拒绝），直连也死掉（连接拒绝）。
+	// 两条路都不通时不能判定代理专门挂了，proxyDown 不应置位。
+	dead1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	proxyURL := dead1.URL
+	dead1.Close()
+
+	dead2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	directURL := dead2.URL
+	dead2.Close()
+
+	var down atomic.Bool
+	_, err := getWithFallback(context.Background(), http.DefaultClient, directURL, proxyURL, "proxy",
+		GithubGetOptions{ProxyDown: &down})
+	if err == nil {
+		t.Fatal("expected error when both proxy and direct fail")
+	}
+	if down.Load() {
+		t.Error("ProxyDown should NOT be set when both proxy and direct fail")
+	}
+}
+
+func TestProxyDownNotSetWhenBothFail5xx(t *testing.T) {
+	// 代理返回 5xx，直连也死掉。proxyDown 不应置位。
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad gateway", http.StatusBadGateway)
+	}))
+	defer proxy.Close()
+
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	directURL := dead.URL
+	dead.Close()
+
+	var down atomic.Bool
+	_, err := getWithFallback(context.Background(), proxy.Client(), directURL, proxy.URL, "proxy",
+		GithubGetOptions{ProxyDown: &down})
+	if err == nil {
+		t.Fatal("expected error when direct fails")
+	}
+	if down.Load() {
+		t.Error("ProxyDown should NOT be set when direct also fails (can't blame proxy)")
+	}
+}
