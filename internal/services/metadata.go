@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -99,9 +100,16 @@ type FFProbeStream struct {
 // Unlike exec.LookPath, it avoids the faccessat2 syscall which triggers
 // SIGSYS on platforms with restrictive seccomp filters (e.g., Termux on Android).
 func safeLookPath(name string) (string, error) {
+	exts := pathExts()
+
 	if strings.Contains(name, string(filepath.Separator)) {
-		if fi, err := os.Stat(name); err == nil && !fi.IsDir() {
+		if fi, err := os.Stat(name); err == nil && isExecutable(fi) {
 			return name, nil
+		}
+		for _, ext := range exts {
+			if fi, err := os.Stat(name + ext); err == nil && isExecutable(fi) {
+				return name + ext, nil
+			}
 		}
 		return "", fmt.Errorf("%s: not found", name)
 	}
@@ -112,11 +120,50 @@ func safeLookPath(name string) (string, error) {
 			dir = "."
 		}
 		path := filepath.Join(dir, name)
-		if fi, err := os.Stat(path); err == nil && !fi.IsDir() {
+		if fi, err := os.Stat(path); err == nil && isExecutable(fi) {
 			return path, nil
+		}
+		for _, ext := range exts {
+			p := filepath.Join(dir, name+ext)
+			if fi, err := os.Stat(p); err == nil && isExecutable(fi) {
+				return p, nil
+			}
 		}
 	}
 	return "", fmt.Errorf("%s: not found in PATH", name)
+}
+
+// isExecutable checks whether a FileInfo represents an executable file.
+// On Windows any non-directory file is considered executable (PATHEXT governs discovery).
+// On Unix it checks that at least one execute bit is set in the permission mode,
+// avoiding the faccessat2 syscall that triggers SIGSYS on Termux.
+func isExecutable(fi os.FileInfo) bool {
+	if fi.IsDir() {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	return fi.Mode().Perm()&0111 != 0
+}
+
+// pathExts returns the list of executable file extensions to try on Windows
+// (from the PATHEXT environment variable). Returns nil on non-Windows platforms.
+func pathExts() []string {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	ext := os.Getenv("PATHEXT")
+	if ext == "" {
+		return []string{".com", ".exe", ".bat", ".cmd"}
+	}
+	var exts []string
+	for _, e := range strings.Split(strings.ToLower(ext), ";") {
+		if e != "" {
+			exts = append(exts, e)
+		}
+	}
+	return exts
 }
 
 // NewMetadataExtractor 创建新的元数据提取器
