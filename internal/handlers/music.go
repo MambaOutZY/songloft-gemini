@@ -135,6 +135,7 @@ func (h *SongHandler) SetURLResolver(r *services.InternalURLResolver) {
 }
 
 const remoteTitleSourceConfigKey = "remote_title_source"
+const volumeNormalizeConfigKey = "volume_normalize"
 const songCoverProxyTimeout = 5 * time.Second
 
 // remoteTitleSourceRequest /settings/remote-title-source 请求/响应体
@@ -189,6 +190,60 @@ func (h *SongHandler) UpdateRemoteTitleSourceSetting(w http.ResponseWriter, r *h
 		return
 	}
 	respondJSON(w, http.StatusOK, remoteTitleSourceRequest{TitleSource: req.TitleSource})
+}
+
+// volumeNormalizeRequest /settings/volume-normalize 请求/响应体
+type volumeNormalizeRequest struct {
+	Enabled bool `json:"enabled" example:"false"`
+}
+
+// GetVolumeNormalizeSetting GET /api/v1/settings/volume-normalize
+// @Summary 获取音量均衡配置
+// @Description 返回是否启用 EBU R128 音量均衡。启用后，播放请求未显式携带 normalize 参数时，服务端自动对音频执行 loudnorm 滤镜。默认关闭。
+// @Tags 设置
+// @Produce json
+// @Success 200 {object} volumeNormalizeRequest "当前启用状态"
+// @Security BearerAuth
+// @Router /settings/volume-normalize [get]
+func (h *SongHandler) GetVolumeNormalizeSetting(w http.ResponseWriter, r *http.Request) {
+	enabled := false
+	if h.configService != nil {
+		enabled = h.configService.GetBool(volumeNormalizeConfigKey, false)
+	}
+	respondJSON(w, http.StatusOK, volumeNormalizeRequest{Enabled: enabled})
+}
+
+// UpdateVolumeNormalizeSetting PUT /api/v1/settings/volume-normalize
+// @Summary 更新音量均衡配置
+// @Description 启用或关闭 EBU R128 音量均衡。启用后，所有不含显式 normalize 查询参数的播放请求将自动应用 loudnorm 滤镜（需要 ffmpeg）。
+// @Tags 设置
+// @Accept json
+// @Produce json
+// @Param request body volumeNormalizeRequest true "启用状态"
+// @Success 200 {object} volumeNormalizeRequest "更新后的启用状态"
+// @Failure 400 {object} map[string]string "请求格式错误"
+// @Failure 500 {object} map[string]string "保存配置失败"
+// @Security BearerAuth
+// @Router /settings/volume-normalize [put]
+func (h *SongHandler) UpdateVolumeNormalizeSetting(w http.ResponseWriter, r *http.Request) {
+	if h.configService == nil {
+		respondError(w, http.StatusInternalServerError, "configService 未注入", nil)
+		return
+	}
+	var req volumeNormalizeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	val := "false"
+	if req.Enabled {
+		val = "true"
+	}
+	if err := h.configService.Set(volumeNormalizeConfigKey, val); err != nil {
+		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
+		return
+	}
+	respondJSON(w, http.StatusOK, volumeNormalizeRequest{Enabled: req.Enabled})
 }
 
 // StartMetadataRefresh 触发刷新歌曲元数据
@@ -1207,7 +1262,7 @@ func (h *SongHandler) UpdateSongLyrics(w http.ResponseWriter, r *http.Request) {
 // @Param prefetch query string false "传 1 时异步预热缓存/转码，立即返回 202"
 // @Param media query string false "传 video 时按视频播放：直出原容器（忽略 format/quality 转码，避免 -vn 丢画面），并按容器真实类型返回 Content-Type（如 video/mp4）。用于应用内视频画面渲染与 DLNA 视频投屏"
 // @Param hls query string false "仅电台(HLS)有效。传 direct 时强制 302 直连源站、绕过本机 HLS 反代（即使 /settings/hls-proxy 已开）。原生 player 无 CORS 限制，直连可避免直播切片经反代往返后过期(404)；浏览器不传此参数以继续走反代解决 CORS"
-// @Param normalize query string false "传 1 时启用 EBU R128 音量均衡（ffmpeg loudnorm=I=-16:LRA=11:TP=-1.5），用于消除不同音源之间的响度落差。需要重编码，未同时指定 format 时默认转为 mp3。均衡产物有独立缓存（文件名带 norm. 标记）；产物尚未生成时服务端边转边发一条 chunked MP3 流（无 Content-Length、不可 Range、Cache-Control 为 no-store），因此首字节不必等整首转完。media=video 忽略（-vn 会丢画面）；缺 ffmpeg 时优雅降级为原始音频"
+// @Param normalize query string false "传 1 显式开启、0 显式关闭 EBU R128 音量均衡；不传时由服务端 /settings/volume-normalize 配置决定（默认关闭）。启用后使用 ffmpeg loudnorm=I=-16:LRA=11:TP=-1.5 消除不同音源之间的响度落差。需要重编码，未同时指定 format 时默认转为 mp3。均衡产物有独立缓存（文件名带 norm. 标记）；产物尚未生成时服务端边转边发一条 chunked MP3 流（无 Content-Length、不可 Range、Cache-Control 为 no-store），因此首字节不必等整首转完。media=video 忽略（-vn 会丢画面）；缺 ffmpeg 时优雅降级为原始音频"
 // @Param radio_transcode query string false "仅电台有效。传目标格式（如 mp3）时，服务端用 ffmpeg 把电台流实时转码为该格式（HLS 与裸流均适用）。用于只支持 MP3、无法解码 AAC/HE-AAC 或不支持 HLS 的音箱。缺 ffmpeg 或坏源时优雅降级为原样代理/302。与 format 分离：电台侧忽略 format，只认此参数"
 // @Param seek query number false "从第 N 秒起播。面向不支持 HTTP Range seek 的推流客户端（如小爱音箱经 player_play_url 只会从头拉流）：服务端用 ffmpeg input seek 产出一条以第 N 秒为开头的 chunked MP3 流，因此响应无 Content-Length、不可 Range、Cache-Control 为 no-store；浏览器等支持 Range 的客户端请用 Range 而非此参数。仅本地歌曲与已缓存的网络歌曲有效（电台是直播、未缓存的网络歌曲会阻塞整首下载，均忽略）；media=video 与 HEAD 忽略；缺 ffmpeg / seek 越过时长时优雅降级为从头完整播放"
 // @Success 200 {file} binary "音频文件"
@@ -1268,13 +1323,23 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// normalize=1：启用 EBU R128 音量均衡（songloft-org/songloft#315）。
+	// normalize：启用 EBU R128 音量均衡（songloft-org/songloft#315, songloft-org/songloft-player#33）。
 	// 需要转码，若未指定 format 则默认使用 mp3。
+	//
+	// 优先级：?normalize=1 显式开启；?normalize=0 显式关闭；
+	// 无参数时由服务端 volume_normalize 配置决定（默认 false）。
 	//
 	// videoIntent 下必须强制关掉：上面刚为了保住画面清空了 targetFormat，若这里又把它填成 mp3，
 	// 转码的 `-vn` 会把视频轨切掉，`media=video` 就只剩纯音频——正是那段代码要避免的结果。
 	// 均衡本身也没有「保留画面」的实现路径（`-vn` 是 loudnorm 这条链的固定前提）。
-	normalize := r.URL.Query().Get("normalize") == "1" && !videoIntent
+	normalizeParam := r.URL.Query().Get("normalize")
+	var normalize bool
+	if normalizeParam != "" {
+		normalize = normalizeParam == "1"
+	} else if h.configService != nil {
+		normalize = h.configService.GetBool(volumeNormalizeConfigKey, false)
+	}
+	normalize = normalize && !videoIntent
 	if normalize && targetFormat == "" {
 		targetFormat = "mp3"
 	}
@@ -1859,7 +1924,7 @@ func isHLSURL(rawURL string) bool {
 // - 插件来源歌曲:走 CacheService.Get(下载缓存)
 // - 纯外链歌曲:走 ServeRemoteResource(直接代理)
 // 失败时:返回 502,后台异步切源(若注入了 reassigner),客户端下次播放该 song 会用新源。
-// targetFormat 非空且与原格式不同时,对已缓存文件走 ffmpeg 转码。
+// targetFormat 非空且与原格式不同时,对已缓存文件走 ffmpeg 转��。
 func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *models.Song, opts servePlayOptions) {
 	// 1. 缓存命中 → 直接 ServeFile
 	if song.CachePath != "" {
@@ -1870,7 +1935,7 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 		h.cacheService.ClearStaleCachePath(song.ID)
 	}
 
-	// fallback: 旧格式缓存（兼容升级过渡）
+	// fallback: 旧格式缓存（��容升级过渡）
 	if cachedPath, ok := h.cacheService.FindCachedFileBySong(song); ok {
 		h.serveCachedFile(w, r, song, cachedPath, opts)
 		return

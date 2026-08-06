@@ -153,6 +153,8 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/songs/{id}/played", songHandler.SongPlayed)
 			r.Get("/settings/remote-title-source", songHandler.GetRemoteTitleSourceSetting)
 			r.Put("/settings/remote-title-source", songHandler.UpdateRemoteTitleSourceSetting)
+			r.Get("/settings/volume-normalize", songHandler.GetVolumeNormalizeSetting)
+			r.Put("/settings/volume-normalize", songHandler.UpdateVolumeNormalizeSetting)
 			r.Post("/songs/refresh-metadata", songHandler.StartMetadataRefresh)
 			r.Get("/songs/refresh-metadata/progress", songHandler.GetMetadataRefreshProgress)
 			r.Post("/songs/refresh-metadata/cancel", songHandler.CancelMetadataRefresh)

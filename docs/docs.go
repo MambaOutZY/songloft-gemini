@@ -25,7 +25,7 @@ const docTemplate = `{
     "paths": {
         "/api/v1/jsplugin-assets/{path}": {
             "get": {
-                "description": "服务由主程序嵌入的插件通用 CSS、JS 和字体文件，自动注入到所有插件 HTML 页面。",
+                "description": "服务由主程序嵌入的插件公共资源（theme.css / components.css / common.js / webf-shims.css / webf-shims.js 及字体），自动注入到所有插件 HTML 页面。",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -5603,6 +5603,86 @@ const docTemplate = `{
                 }
             }
         },
+        "/settings/volume-normalize": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回是否启用 EBU R128 音量均衡。启用后，播放请求未显式携带 normalize 参数时，服务端自动对音频执行 loudnorm 滤镜。默认关闭。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "获取音量均衡配置",
+                "responses": {
+                    "200": {
+                        "description": "当前启用状态",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.volumeNormalizeRequest"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "启用或关闭 EBU R128 音量均衡。启用后，所有不含显式 normalize 查询参数的播放请求将自动应用 loudnorm 滤镜（需要 ffmpeg）。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "更新音量均衡配置",
+                "parameters": [
+                    {
+                        "description": "启用状态",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.volumeNormalizeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的启用状态",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.volumeNormalizeRequest"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "保存配置失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/songs": {
             "get": {
                 "security": [
@@ -7233,7 +7313,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "传 1 时启用 EBU R128 音量均衡（ffmpeg loudnorm=I=-16:LRA=11:TP=-1.5），用于消除不同音源之间的响度落差。需要重编码，未同时指定 format 时默认转为 mp3。均衡产物有独立缓存（文件名带 norm. 标记）；产物尚未生成时服务端边转边发一条 chunked MP3 流（无 Content-Length、不可 Range、Cache-Control 为 no-store），因此首字节不必等整首转完。media=video 忽略（-vn 会丢画面）；缺 ffmpeg 时优雅降级为原始音频",
+                        "description": "传 1 显式开启、0 显式关闭 EBU R128 音量均衡；不传时由服务端 /settings/volume-normalize 配置决定（默认关闭）。启用后使用 ffmpeg loudnorm=I=-16:LRA=11:TP=-1.5 消除不同音源之间的响度落差。需要重编码，未同时指定 format 时默认转为 mp3。均衡产物有独立缓存（文件名带 norm. 标记）；产物尚未生成时服务端边转边发一条 chunked MP3 流（无 Content-Length、不可 Range、Cache-Control 为 no-store），因此首字节不必等整首转完。media=video 忽略（-vn 会丢画面）；缺 ffmpeg 时优雅降级为原始音频",
                         "name": "normalize",
                         "in": "query"
                     },
@@ -7345,7 +7425,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "传 1 时启用 EBU R128 音量均衡（ffmpeg loudnorm=I=-16:LRA=11:TP=-1.5），用于消除不同音源之间的响度落差。需要重编码，未同时指定 format 时默认转为 mp3。均衡产物有独立缓存（文件名带 norm. 标记）；产物尚未生成时服务端边转边发一条 chunked MP3 流（无 Content-Length、不可 Range、Cache-Control 为 no-store），因此首字节不必等整首转完。media=video 忽略（-vn 会丢画面）；缺 ffmpeg 时优雅降级为原始音频",
+                        "description": "传 1 显式开启、0 显式关闭 EBU R128 音量均衡；不传时由服务端 /settings/volume-normalize 配置决定（默认关闭）。启用后使用 ffmpeg loudnorm=I=-16:LRA=11:TP=-1.5 消除不同音源之间的响度落差。需要重编码，未同时指定 format 时默认转为 mp3。均衡产物有独立缓存（文件名带 norm. 标记）；产物尚未生成时服务端边转边发一条 chunked MP3 流（无 Content-Length、不可 Range、Cache-Control 为 no-store），因此首字节不必等整首转完。media=video 忽略（-vn 会丢画面）；缺 ffmpeg 时优雅降级为原始音频",
                         "name": "normalize",
                         "in": "query"
                     },
@@ -8934,6 +9014,15 @@ const docTemplate = `{
                 },
                 "volume": {
                     "type": "number"
+                }
+            }
+        },
+        "handlers.volumeNormalizeRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": false
                 }
             }
         },
