@@ -1223,8 +1223,9 @@ func (h *BridgeHandler) handlePlaylists(action, data string) (string, error) {
 			Limit   int   `json:"limit"`
 			Offset  int   `json:"offset"`
 			Options struct {
-				Limit  int `json:"limit"`
-				Offset int `json:"offset"`
+				Limit  int  `json:"limit"`
+				Offset int  `json:"offset"`
+				Brief  bool `json:"brief"`
 			} `json:"options"`
 		}
 		if err := json.Unmarshal([]byte(data), &req); err != nil {
@@ -1247,7 +1248,19 @@ func (h *BridgeHandler) handlePlaylists(action, data string) (string, error) {
 			return "", fmt.Errorf("handlePlaylists: getSongs: %w", err)
 		}
 		slog.Info("bridge playlists.getSongs",
-			"playlistID", req.ID, "limit", limit, "offset", offset, "count", len(songs))
+			"playlistID", req.ID, "limit", limit, "offset", offset,
+			"count", len(songs), "brief", req.Options.Brief)
+		if req.Options.Brief {
+			briefs := make([]models.SongBrief, len(songs))
+			for i, s := range songs {
+				briefs[i] = s.Brief()
+			}
+			result, err := json.Marshal(briefs)
+			if err != nil {
+				return "", fmt.Errorf("handlePlaylists: marshal getSongs brief: %w", err)
+			}
+			return string(result), nil
+		}
 		result, err := json.Marshal(songs)
 		if err != nil {
 			return "", fmt.Errorf("handlePlaylists: marshal getSongs: %w", err)

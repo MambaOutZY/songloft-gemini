@@ -113,6 +113,28 @@ type Song struct {
 	FileModifiedAt *time.Time `json:"file_modified_at,omitempty"`                // 文件修改时间(mtime，本地歌曲扫描时记录；未知为 nil)
 }
 
+// SongBrief is a lightweight song representation for list display.
+type SongBrief struct {
+	ID       int64   `json:"id"`
+	Title    string  `json:"title"`
+	Artist   string  `json:"artist"`
+	Album    string  `json:"album"`
+	Duration float64 `json:"duration"`
+	CoverURL string  `json:"cover_url"`
+}
+
+// Brief returns a lightweight representation for list display.
+func (s *Song) Brief() SongBrief {
+	return SongBrief{
+		ID:       s.ID,
+		Title:    s.Title,
+		Artist:   s.Artist,
+		Album:    s.Album,
+		Duration: s.Duration,
+		CoverURL: s.CoverURLPath(),
+	}
+}
+
 // IsPluginSourced 判断是否插件来源的歌曲
 func (s *Song) IsPluginSourced() bool {
 	return s.PluginEntryPath != "" && s.SourceData != ""
