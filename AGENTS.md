@@ -218,7 +218,7 @@ Songloft 文档站（`docs/`）用 **VitePress + 自定义主题**（`docs/.vite
 
 - **直接提交到 `main` 分支**，不新建功能分支、不走 PR 流程（本仓库约定）
 - 提交信息**禁止**添加 `Co-Authored-By` 尾部标记
-- 遵循 Conventional Commits 格式：`type(scope): description`
+- 遵循 Conventional Commits 格式：`type(scope): description`，description 和 body 尽量用中文
 - 关联 GitHub issue 的提交信息必须带 issue 引用
 - issue 引用规则：短写 `#123` 永远指向**当前 commit 所在仓库**的 issue；只要引用的不是当前仓库的 issue，就必须写完整 `owner/repo#123`
   - 父仓库 `songloft-org/songloft` 的 commit 引用父仓库 issue：可写 `#155`，也可写 `songloft-org/songloft#155`

@@ -69,7 +69,8 @@ web/dev-dist
 .idea/
 .aone_copilot/
 .qoder/
-.claude/
+.claude/*
+!.claude/skills/
 .opencode
 *.swp
 *.swo

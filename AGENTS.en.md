@@ -218,7 +218,7 @@ The Songloft docs site (`docs/`) uses **VitePress + a custom theme** (`docs/.vit
 
 - **Commit directly to the `main` branch** — do not create feature branches or open PRs (this repo's convention)
 - Commit messages **must not** include a `Co-Authored-By` trailer
-- Follow the Conventional Commits format: `type(scope): description`
+- Follow the Conventional Commits format: `type(scope): description`, prefer Chinese for description and body
 - Commit messages that reference a GitHub issue must include the issue reference
 - Issue reference rules: the short form `#123` always points to an issue in **the repo where the commit lives**; whenever the referenced issue is not in the current repo, you must write the full `owner/repo#123`
   - A commit in the parent repo `songloft-org/songloft` referencing a parent-repo issue: may write `#155`, or `songloft-org/songloft#155`
