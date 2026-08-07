@@ -31,6 +31,7 @@ type SongRepository interface {
 	Count(ctx context.Context, filter *database.SongFilter) (int64, error)
 	BatchDelete(ctx context.Context, ids []int64) (int, error)
 	BatchCreate(ctx context.Context, songs []*models.Song) error
+	ListByIDs(ctx context.Context, ids []int64) ([]*models.Song, error)
 	UpsertRemote(ctx context.Context, song *models.Song) error
 	UpdateLyrics(ctx context.Context, id int64, lyric, lyricSource, lyricRemoteURL string) error
 	UpdateCoverURL(ctx context.Context, id int64, coverURL string) error
@@ -195,16 +196,17 @@ func (s *SongService) BatchDelete(ctx context.Context, ids []int64, deleteFiles 
 	coverPathSet := make(map[string]struct{})
 	cachePaths := make(map[int64]string)
 	filePathSet := make(map[string]struct{})
-	for _, id := range ids {
-		song, err := s.GetByID(ctx, id)
-		if err != nil || song == nil {
-			continue
-		}
+
+	songs, err := s.songs.ListByIDs(ctx, ids)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list songs for batch delete: %w", err)
+	}
+	for _, song := range songs {
 		if song.CoverPath != "" {
 			coverPathSet[song.CoverPath] = struct{}{}
 		}
 		if song.CachePath != "" {
-			cachePaths[id] = song.CachePath
+			cachePaths[song.ID] = song.CachePath
 		}
 		if deleteFiles && song.Type == models.TypeLocal && song.FilePath != "" && song.CueSourcePath == "" {
 			filePathSet[song.FilePath] = struct{}{}
@@ -1077,8 +1079,8 @@ func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, erro
 	}
 
 	result := &CleanResult{}
+	var toDelete []int64
 	for _, song := range songs {
-		// CUE track 由 cleanStaleCueRecords 统一管理，不在此逐条处理
 		if song.CueSourcePath != "" {
 			continue
 		}
@@ -1097,16 +1099,19 @@ func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, erro
 		}
 
 		if shouldClean {
-			if err := s.Delete(ctx, song.ID, false); err != nil {
-				slog.Warn("删除无效歌曲失败", "songId", song.ID, "filePath", song.FilePath, "reason", reason, "error", err)
-				if reason == "file_not_found" {
-					result.FileNotFound--
-				} else {
-					result.InExcludedDir--
-				}
-				continue
-			}
+			toDelete = append(toDelete, song.ID)
 			slog.Info("清理无效歌曲", "songId", song.ID, "filePath", song.FilePath, "reason", reason)
+		}
+	}
+
+	if len(toDelete) > 0 {
+		deleted, err := s.BatchDelete(ctx, toDelete, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to batch delete invalid songs: %w", err)
+		}
+		if deleted < len(toDelete) {
+			diff := len(toDelete) - deleted
+			result.FileNotFound -= diff
 		}
 	}
 

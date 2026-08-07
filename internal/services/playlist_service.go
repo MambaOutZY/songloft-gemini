@@ -268,11 +268,11 @@ func (s *PlaylistService) AddSong(ctx context.Context, playlistID, songID int64)
 		return fmt.Errorf("cannot add %s to %s playlist", song.Type, playlist.Type)
 	}
 
-	songs, err := s.playlistSongs.GetSongs(ctx, playlistID)
+	maxPos, err := s.playlistSongs.MaxPosition(ctx, playlistID)
 	if err != nil {
-		return fmt.Errorf("failed to get playlist songs: %w", err)
+		return fmt.Errorf("failed to get max position: %w", err)
 	}
-	position := len(songs) + 1
+	position := maxPos + 1
 
 	if err := s.playlistSongs.AddSong(ctx, playlistID, songID, position); err != nil {
 		return fmt.Errorf("failed to add song to playlist: %w", err)
