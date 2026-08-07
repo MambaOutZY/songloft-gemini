@@ -228,6 +228,11 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 		req.PageSize = 20
 	}
 
+	// 注册表拉取可能耗时十余秒（最多 500 个 plugin.json，8 并发，单请求 15s 超时）。
+	// 使用脱离请求的 context：即使客户端中途断开，拉取仍会完成并写入缓存，
+	// 下一次请求可直接命中缓存而非再等 15 秒。
+	fetchCtx := context.WithoutCancel(r.Context())
+
 	// 复用 handler 持有的 RegistryService：结果在 TTL 内缓存，翻页与搜索都在
 	// 缓存的完整列表上做切片/过滤，不再重拉整棵注册表树。force=true 时绕过缓存。
 	var (
@@ -246,18 +251,19 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 				enabled = append(enabled, src)
 			}
 		}
-		entries, warnings = h.registrySvc.FetchAndMergeMultiCached(r.Context(), enabled, req.GithubProxy, req.Force)
+		entries, warnings = h.registrySvc.FetchAndMergeMultiCached(fetchCtx, enabled, req.GithubProxy, req.Force)
 	} else {
 		var err error
-		entries, warnings, err = h.registrySvc.FetchAndMergeCached(r.Context(), req.RegistryURL, req.GithubProxy, req.Token, req.Force)
+		entries, warnings, err = h.registrySvc.FetchAndMergeCached(fetchCtx, req.RegistryURL, req.GithubProxy, req.Token, req.Force)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "拉取注册表失败", err)
 			return
 		}
 	}
 
-	// 获取已安装插件，构建 entryPath -> 已安装信息映射
-	installedMap := h.buildInstalledMap(r.Context())
+	// 获取已安装插件，构建 entryPath -> 已安装信息映射。
+	// 同样使用脱离请求的 context：这是毫秒级的本地 DB 查询，不应因客户端断开而失败。
+	installedMap := h.buildInstalledMap(fetchCtx)
 	sourceNames := h.buildSourceNames()
 
 	// 搜索过滤
