@@ -310,6 +310,43 @@ func (h *PlaylistHandler) TouchPlaylist(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// UpdatePlaylistSort 更新歌单视图排序偏好
+// @Summary 更新歌单视图排序偏好
+// @Description 保存歌单的视图排序设置（非破坏性排序），下次打开歌单时恢复该排序
+// @Tags 歌单管理
+// @Accept json
+// @Produce json
+// @Param id path int true "歌单ID"
+// @Param request body object true "排序设置 {sort_by, sort_order}"
+// @Success 200 {object} map[string]string "更新成功"
+// @Failure 400 {object} map[string]string "无效参数"
+// @Failure 500 {object} map[string]string "更新失败"
+// @Security BearerAuth
+// @Router /playlists/{id}/sort [put]
+func (h *PlaylistHandler) UpdatePlaylistSort(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "无效的歌单ID", err)
+		return
+	}
+
+	var req struct {
+		SortBy    string `json:"sort_by"`
+		SortOrder string `json:"sort_order"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
+		return
+	}
+
+	if err := h.playlistService.UpdateSort(r.Context(), id, req.SortBy, req.SortOrder); err != nil {
+		respondError(w, http.StatusInternalServerError, "更新排序偏好失败", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"message": "ok"})
+}
+
 // DeletePlaylist 删除歌单
 // @Summary 删除歌单
 // @Description 根据歌单ID删除歌单。delete_songs=true 时，同时删除仅属于本歌单的孤儿歌曲（不属于任何其他歌单，含内置的收藏/电台收藏保护）——本地歌曲连同磁盘文件一并删除，网络/电台歌曲清理数据库记录与缓存。

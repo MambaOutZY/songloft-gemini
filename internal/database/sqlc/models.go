@@ -75,6 +75,8 @@ type Playlist struct {
 	Position    int64
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	SortBy      string
+	SortOrder   string
 }
 
 type PlaylistSong struct {

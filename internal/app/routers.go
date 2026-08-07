@@ -179,6 +179,7 @@ func (a *App) setupAPIV1Router() {
 			r.Delete("/playlists/{id}/songs/{songId}", playlistHandler.RemoveSongFromPlaylist)
 			r.Put("/playlists/{id}/visibility", playlistHandler.SetPlaylistVisibility)
 			r.Post("/playlists/{id}/touch", playlistHandler.TouchPlaylist)
+			r.Put("/playlists/{id}/sort", playlistHandler.UpdatePlaylistSort)
 			r.Post("/playlists/{id}/cover", playlistHandler.UploadPlaylistCover)
 			r.Get("/playlists/{id}/cover", playlistHandler.GetPlaylistCover)
 

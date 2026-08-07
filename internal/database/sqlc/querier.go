@@ -93,6 +93,7 @@ type Querier interface {
 	UpdateJSPluginStatus(ctx context.Context, arg UpdateJSPluginStatusParams) error
 	UpdatePlaylist(ctx context.Context, arg UpdatePlaylistParams) (int64, error)
 	UpdatePlaylistPosition(ctx context.Context, arg UpdatePlaylistPositionParams) (int64, error)
+	UpdatePlaylistSort(ctx context.Context, arg UpdatePlaylistSortParams) (int64, error)
 	UpdateRemoteSongMutable(ctx context.Context, arg UpdateRemoteSongMutableParams) error
 	UpdateSong(ctx context.Context, arg UpdateSongParams) (int64, error)
 	UpdateSongCoverURL(ctx context.Context, arg UpdateSongCoverURLParams) (int64, error)

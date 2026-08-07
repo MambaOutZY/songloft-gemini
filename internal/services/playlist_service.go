@@ -16,6 +16,7 @@ type PlaylistRepository interface {
 	Create(ctx context.Context, playlist *models.Playlist) error
 	GetByID(ctx context.Context, id int64) (*models.Playlist, error)
 	Update(ctx context.Context, playlist *models.Playlist) error
+	UpdateSort(ctx context.Context, id int64, sortBy, sortOrder string) error
 	Touch(ctx context.Context, id int64) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, filter *database.PlaylistFilter) ([]*models.Playlist, error)
@@ -149,6 +150,24 @@ func (s *PlaylistService) Update(ctx context.Context, playlist *models.Playlist)
 func (s *PlaylistService) Touch(ctx context.Context, id int64) error {
 	if err := s.playlists.Touch(ctx, id); err != nil {
 		return fmt.Errorf("failed to touch playlist: %w", err)
+	}
+	return nil
+}
+
+// UpdateSort 更新歌单的视图排序偏好
+func (s *PlaylistService) UpdateSort(ctx context.Context, id int64, sortBy, sortOrder string) error {
+	validSortFields := map[string]bool{
+		"position": true, "added_at": true, "file_modified_at": true,
+		"title": true, "artist": true, "album": true, "duration": true, "updated_at": true,
+	}
+	if !validSortFields[sortBy] {
+		sortBy = "position"
+	}
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "asc"
+	}
+	if err := s.playlists.UpdateSort(ctx, id, sortBy, sortOrder); err != nil {
+		return fmt.Errorf("failed to update playlist sort: %w", err)
 	}
 	return nil
 }

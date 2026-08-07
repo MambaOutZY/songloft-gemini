@@ -138,6 +138,22 @@ func (r *PlaylistRepository) Update(ctx context.Context, playlist *models.Playli
 	})
 }
 
+// UpdateSort 更新歌单的视图排序偏好，找不到返回 ErrNotFound。
+func (r *PlaylistRepository) UpdateSort(ctx context.Context, id int64, sortBy, sortOrder string) error {
+	rows, err := r.queries.UpdatePlaylistSort(ctx, sqlc.UpdatePlaylistSortParams{
+		SortBy:    sortBy,
+		SortOrder: sortOrder,
+		ID:        id,
+	})
+	if err != nil {
+		return fmt.Errorf("update playlist sort %d: %w", id, err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // Touch 更新歌单的 updated_at 时间戳，找不到返回 ErrNotFound。
 func (r *PlaylistRepository) Touch(ctx context.Context, id int64) error {
 	rows, err := r.queries.TouchPlaylist(ctx, sqlc.TouchPlaylistParams{
@@ -629,6 +645,7 @@ func playlistSelectBuilder() sq.SelectBuilder {
 	return sq.Select(
 		"p.id", "p.type", "p.name", "p.description",
 		"p.cover_path", "p.cover_url", "p.labels",
+		"p.sort_by", "p.sort_order",
 		"p.created_at", "p.updated_at",
 		"COALESCE(cnt.song_count, 0) AS song_count",
 	).From("playlists p").
@@ -664,6 +681,7 @@ func scanPlaylistRow(scanner interface {
 	if err := scanner.Scan(
 		&p.ID, &p.Type, &p.Name, &p.Description,
 		&p.CoverPath, &p.CoverURL, &labelsJSON,
+		&p.SortBy, &p.SortOrder,
 		&p.CreatedAt, &p.UpdatedAt, &songCount,
 	); err != nil {
 		return nil, fmt.Errorf("scan playlist: %w", err)
@@ -682,6 +700,8 @@ func playlistRowToModel(row sqlc.GetPlaylistByIDRow) *models.Playlist {
 		CoverPath:   row.CoverPath,
 		CoverURL:    row.CoverUrl,
 		Labels:      parseLabelsJSON(sql.NullString{String: row.Labels, Valid: row.Labels != ""}),
+		SortBy:      row.SortBy,
+		SortOrder:   row.SortOrder,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
 		SongCount:   int(row.SongCount),

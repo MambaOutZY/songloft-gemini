@@ -328,6 +328,8 @@ type Playlist struct {
 	CoverPath   string    `json:"-"`                                                    // 封面图片本地路径(内部使用,不暴露给客户端)
 	CoverURL    string    `json:"cover_url" example:"https://example.com/playlist.jpg"` // 封面图片 URL
 	Labels      []string  `json:"labels" example:"[\"built_in\"]"`                      // 歌单标签，如 ["built_in"]
+	SortBy      string    `json:"sort_by" example:"position"`                           // 视图排序字段：position/added_at/file_modified_at/title/artist/duration
+	SortOrder   string    `json:"sort_order" example:"asc"`                             // 视图排序方向：asc/desc
 	SongCount   int       `json:"song_count" example:"10"`                              // 歌曲数量
 	CreatedAt   time.Time `json:"created_at" example:"2024-01-01T12:00:00Z"`            // 创建时间
 	UpdatedAt   time.Time `json:"updated_at" example:"2024-01-01T12:00:00Z"`            // 最后更新时间

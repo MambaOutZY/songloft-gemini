@@ -93,7 +93,7 @@ func (q *Queries) GetMaxPlaylistPosition(ctx context.Context) (int64, error) {
 
 const getPlaylistByID = `-- name: GetPlaylistByID :one
 SELECT p.id, p.type, p.name, p.description, p.cover_path, p.cover_url, p.labels,
-    p.position, p.created_at, p.updated_at,
+    p.position, p.sort_by, p.sort_order, p.created_at, p.updated_at,
     COALESCE(cnt.song_count, 0) as song_count
 FROM playlists p
 LEFT JOIN (SELECT playlist_id, COUNT(*) as song_count FROM playlist_songs WHERE playlist_id = ? GROUP BY playlist_id) cnt
@@ -115,6 +115,8 @@ type GetPlaylistByIDRow struct {
 	CoverUrl    string
 	Labels      string
 	Position    int64
+	SortBy      string
+	SortOrder   string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	SongCount   int64
@@ -132,6 +134,8 @@ func (q *Queries) GetPlaylistByID(ctx context.Context, arg GetPlaylistByIDParams
 		&i.CoverUrl,
 		&i.Labels,
 		&i.Position,
+		&i.SortBy,
+		&i.SortOrder,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.SongCount,
@@ -322,6 +326,24 @@ type UpdatePlaylistPositionParams struct {
 
 func (q *Queries) UpdatePlaylistPosition(ctx context.Context, arg UpdatePlaylistPositionParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, updatePlaylistPosition, arg.Position, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const updatePlaylistSort = `-- name: UpdatePlaylistSort :execrows
+UPDATE playlists SET sort_by = ?, sort_order = ? WHERE id = ?
+`
+
+type UpdatePlaylistSortParams struct {
+	SortBy    string
+	SortOrder string
+	ID        int64
+}
+
+func (q *Queries) UpdatePlaylistSort(ctx context.Context, arg UpdatePlaylistSortParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updatePlaylistSort, arg.SortBy, arg.SortOrder, arg.ID)
 	if err != nil {
 		return 0, err
 	}
