@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -213,10 +214,8 @@ func isLogFile(name string) bool {
 // nowFunc 便于测试注入固定时间；生产恒为 time.Now。
 var nowFunc = time.Now
 
-// ListLogFiles 返回目录下本包产出的所有日志文件的绝对路径，按文件名升序。
-// 文件名升序恰好对应时间从旧到新：跨日按日期升序；同日内归档文件
-// songloft-DATE.<seq>.log（内容更旧）排在主文件 songloft-DATE.log 之前
-// （'.' 后数字的 ASCII 小于 'l'）。供导出端点按时间顺序拼接读取。
+// ListLogFiles 返回目录下本包产出的所有日志文件的绝对路径，按内容时间从旧到新排序：
+// 先比较日期，再按归档自然序号排列，最后放置当天主文件。供导出端点顺序拼接读取。
 func ListLogFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -231,10 +230,50 @@ func ListLogFiles(dir string) ([]string, error) {
 			names = append(names, e.Name())
 		}
 	}
-	sort.Strings(names)
+	sort.Slice(names, func(i, j int) bool {
+		leftDate, leftSeq, leftOK := parseLogFileOrder(names[i])
+		rightDate, rightSeq, rightOK := parseLogFileOrder(names[j])
+		if leftOK != rightOK {
+			return leftOK
+		}
+		if !leftOK {
+			return names[i] < names[j]
+		}
+		if leftDate != rightDate {
+			return leftDate < rightDate
+		}
+		return leftSeq < rightSeq
+	})
 	paths := make([]string, len(names))
 	for i, n := range names {
 		paths[i] = filepath.Join(dir, n)
 	}
 	return paths, nil
+}
+
+// parseLogFileOrder 返回日志日期和同日顺序。归档序号越小内容越旧，当天主文件
+// 没有序号且始终最新。自然序号避免 .10 被字符串排序到 .2 前面。
+func parseLogFileOrder(name string) (date string, seq int, ok bool) {
+	if !isLogFile(name) {
+		return "", 0, false
+	}
+	stem := strings.TrimSuffix(strings.TrimPrefix(name, filePrefix), fileExt)
+	if len(stem) < len(dateLayout) {
+		return "", 0, false
+	}
+	date = stem[:len(dateLayout)]
+	if _, err := time.Parse(dateLayout, date); err != nil {
+		return "", 0, false
+	}
+	if len(stem) == len(dateLayout) {
+		return date, int(^uint(0) >> 1), true
+	}
+	if stem[len(dateLayout)] != '.' {
+		return "", 0, false
+	}
+	seq, err := strconv.Atoi(stem[len(dateLayout)+1:])
+	if err != nil || seq < 1 {
+		return "", 0, false
+	}
+	return date, seq, true
 }

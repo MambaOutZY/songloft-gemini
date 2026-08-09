@@ -78,6 +78,38 @@ func TestRotateWriter_SizeRotation(t *testing.T) {
 	}
 }
 
+func TestListLogFiles_NaturalSequenceOrder(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{
+		"songloft-2026-07-22.log",
+		"songloft-2026-07-22.10.log",
+		"songloft-2026-07-22.2.log",
+		"songloft-2026-07-22.1.log",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files, err := ListLogFiles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, len(files))
+	for i, path := range files {
+		got[i] = filepath.Base(path)
+	}
+	want := []string{
+		"songloft-2026-07-22.1.log",
+		"songloft-2026-07-22.2.log",
+		"songloft-2026-07-22.10.log",
+		"songloft-2026-07-22.log",
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("日志顺序不符：got=%v want=%v", got, want)
+	}
+}
+
 func TestRotateWriter_DateRollover(t *testing.T) {
 	dir := t.TempDir()
 	base := time.Date(2026, 7, 22, 23, 59, 0, 0, time.UTC)
