@@ -3,7 +3,7 @@
 
 # 关键：固定在原生构建平台（amd64）编译，靠 Go 交叉编译产出目标架构二进制，
 # 避免在 QEMU 模拟下跑 Go 编译 + UPX（arm64/armv7 会慢 6~8 倍）。
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS go-builder
+FROM --platform=$BUILDPLATFORM ghcr.io/songloft-org/songloft-base-golang:1.26-alpine AS go-builder
 
 WORKDIR /app
 
@@ -75,8 +75,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # 是这些层的 digest 在版本间稳定。alpine:latest 会随上游跳小版本（3.24→3.25）导致
 # base 层与 apk 解析结果一起变，用户被迫重拉 ~8MiB 的 apk 层。pin 到 3.24 分支后，
 # 该层仅在分支内偶发安全补丁时才变，长期命中本地缓存。
-# 刷新方式：docker pull alpine:3.24 && docker inspect --format '{{index .RepoDigests 0}}' alpine:3.24
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+# 发布工作流先将上游镜像原样同步到 GHCR；digest 与上游一致。
+# 刷新方式：运行 release workflow，它会先同步 alpine:3.24 再构建。
+FROM ghcr.io/songloft-org/songloft-base-alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 # 分层顺序按「变更频率」由低到高排列：越少变动的层越靠前，配合上面的 base pin，
 # 保证用户 docker pull 更新时只需下载末尾变动的二进制层，前面的大层命中本地缓存。
@@ -104,9 +105,9 @@ RUN mkdir -p /app/music /app/data
 
 # --link 使 COPY 层与 parent 层解耦：即使 apk add 层因包更新而变化，
 # 下面这些层的 digest 也保持不变（不再受 parent chain 影响）。
-# 直接引用 hanxi/ffmpeg:latest，始终拉取上游最新的 ffmpeg/ffprobe，无需手动维护/刷新 digest。
-COPY --link --from=hanxi/ffmpeg:latest /ffmpeg /bin/ffmpeg
-COPY --link --from=hanxi/ffmpeg:latest /ffprobe /bin/ffprobe
+# 引用发布工作流同步到 GHCR 的 latest，始终使用上游最新的 ffmpeg/ffprobe。
+COPY --link --from=ghcr.io/songloft-org/songloft-base-ffmpeg:latest /ffmpeg /bin/ffmpeg
+COPY --link --from=ghcr.io/songloft-org/songloft-base-ffmpeg:latest /ffprobe /bin/ffprobe
 
 # 启动脚本小、极少变动（--chmod 合并原独立 chmod 层）
 COPY --link --chmod=0755 scripts/docker-entrypoint.sh /app/docker-entrypoint.sh

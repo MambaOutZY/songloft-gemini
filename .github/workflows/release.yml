@@ -16,6 +16,12 @@ on:
       - 'home-assistant-addon'
   workflow_dispatch: # 手动触发同样走 dev 路径
 
+# main push、tag push 和手动发布共用 Docker Hub/GHCR，必须串行，避免共享出口 IP
+# 在短时间内并发查询大量 manifest 而触发 Docker Hub abuse rate limit。
+concurrency:
+  group: songloft-release
+  cancel-in-progress: false
+
 env:
   GO_VERSION: '1.26'
   # 原生 bundle(桌面/移动)统一 stable 3.44.6(下方各 bundle job 复用此变量)。
@@ -124,6 +130,67 @@ jobs:
           fi
 
           echo "previous_tag=${PREV_TAG}" >> $GITHUB_OUTPUT
+
+  # ============================================================
+  # Docker 基础镜像镜像到 GHCR
+  # 每轮发布只访问 Docker Hub 一次，后续多平台构建全部从 GHCR 拉取，避免反复
+  # 查询 Docker Hub manifest。前置同步也解决 GHCR 镜像首次尚不存在的引导问题。
+  # ============================================================
+  mirror-docker-bases:
+    name: Mirror Docker base images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Skopeo
+        run: |
+          if ! command -v skopeo >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y skopeo
+          fi
+
+      - name: Mirror base images
+        run: |
+          set -euo pipefail
+          retry() {
+            local delays=(60 180 420)
+            local attempt
+            for attempt in 1 2 3 4; do
+              if "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -lt 4 ]; then
+                local delay=$((delays[attempt - 1] + RANDOM % 31))
+                echo "::warning::Mirror failed (attempt $attempt/4), retrying in ${delay}s..."
+                sleep "$delay"
+              fi
+            done
+            return 1
+          }
+
+          retry skopeo copy --all --preserve-digests \
+            docker://docker.io/library/golang:1.26-alpine \
+            docker://ghcr.io/songloft-org/songloft-base-golang:1.26-alpine
+          retry skopeo copy --all --preserve-digests \
+            docker://docker.io/library/alpine:3.24 \
+            docker://ghcr.io/songloft-org/songloft-base-alpine:3.24
+          retry skopeo copy --all --preserve-digests \
+            docker://docker.io/hanxi/ffmpeg:latest \
+            docker://ghcr.io/songloft-org/songloft-base-ffmpeg:latest
 
   # ============================================================
   # Job 2: 构建 Flutter Web（嵌入模式）
@@ -293,8 +360,11 @@ jobs:
   # ============================================================
   docker-build-push:
     name: Docker Build & Push
-    needs: [prepare, build-frontend]
+    needs: [prepare, build-frontend, mirror-docker-bases]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -325,6 +395,13 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set build metadata
         id: meta
@@ -359,15 +436,14 @@ jobs:
       - name: Create output directory
         run: mkdir -p docker-tars
 
-      # Docker Hub 限流（429）重试函数：GitHub Actions 并发高时 manifest HEAD 易触发 rate limit，
-      # 重试 3 次（间隔 30s/60s）可覆盖绝大多数瞬态限流。
+      # Registry 瞬态错误重试：长指数退避覆盖限流窗口，并用随机抖动避免多个请求同时重放。
       - name: Define retry helper
         run: |
           cat > /tmp/docker-retry.sh <<'RETRY_EOF'
           #!/usr/bin/env bash
           set -o pipefail
-          MAX_RETRIES=3
-          RETRY_DELAY=30
+          MAX_RETRIES=4
+          RETRY_DELAYS=(60 180 420)
           for i in $(seq 1 $MAX_RETRIES); do
             echo "::group::Attempt $i/$MAX_RETRIES"
             if "$@"; then
@@ -376,7 +452,8 @@ jobs:
             fi
             echo "::endgroup::"
             if [ $i -lt $MAX_RETRIES ]; then
-              SLEEP=$((RETRY_DELAY * i))
+              BASE_DELAY=${RETRY_DELAYS[$((i - 1))]}
+              SLEEP=$((BASE_DELAY + RANDOM % 31))
               echo "::warning::Build failed (attempt $i/$MAX_RETRIES), retrying in ${SLEEP}s..."
               sleep $SLEEP
             fi
@@ -399,8 +476,6 @@ jobs:
             --platform linux/amd64 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-amd64 \
             --cache-from type=gha,scope=full-linux-amd64 \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:dev \
             --cache-to type=gha,scope=full-linux-amd64,mode=max \
             --load \
             .
@@ -420,8 +495,6 @@ jobs:
             --platform linux/arm64 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-arm64 \
             --cache-from type=gha,scope=full-linux-arm64 \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:dev \
             --cache-to type=gha,scope=full-linux-arm64,mode=max \
             --load \
             .
@@ -441,8 +514,6 @@ jobs:
             --platform linux/arm/v7 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-full-armv7 \
             --cache-from type=gha,scope=full-linux-armv7 \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:dev \
             --cache-to type=gha,scope=full-linux-armv7,mode=max \
             --load \
             .
@@ -470,8 +541,6 @@ jobs:
             --cache-from type=gha,scope=full-linux-amd64 \
             --cache-from type=gha,scope=full-linux-arm64 \
             --cache-from type=gha,scope=full-linux-armv7 \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:dev \
             --cache-to type=inline \
             --push \
             .
@@ -489,8 +558,6 @@ jobs:
             --platform linux/amd64 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-amd64 \
             --cache-from type=gha,scope=lite-linux-amd64 \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:lite \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:dev-lite \
             --cache-to type=gha,scope=lite-linux-amd64,mode=max \
             --load \
             .
@@ -511,8 +578,6 @@ jobs:
             --platform linux/arm64 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-arm64 \
             --cache-from type=gha,scope=lite-linux-arm64 \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:lite \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:dev-lite \
             --cache-to type=gha,scope=lite-linux-arm64,mode=max \
             --load \
             .
@@ -533,8 +598,6 @@ jobs:
             --platform linux/arm/v7 \
             --tag ${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:tmp-lite-armv7 \
             --cache-from type=gha,scope=lite-linux-armv7 \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:lite \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:dev-lite \
             --cache-to type=gha,scope=lite-linux-armv7,mode=max \
             --load \
             .
@@ -563,8 +626,6 @@ jobs:
             --cache-from type=gha,scope=lite-linux-amd64 \
             --cache-from type=gha,scope=lite-linux-arm64 \
             --cache-from type=gha,scope=lite-linux-armv7 \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:lite \
-            --cache-from type=registry,ref=${{ env.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:dev-lite \
             --cache-to type=inline \
             --push \
             .
