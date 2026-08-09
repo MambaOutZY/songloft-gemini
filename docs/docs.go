@@ -3531,6 +3531,73 @@ const docTemplate = `{
                 }
             }
         },
+        "/playlists/{id}/sort": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存歌单的视图排序设置（非破坏性排序），下次打开歌单时恢复该排序",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌单管理"
+                ],
+                "summary": "更新歌单视图排序偏好",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌单ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "排序设置 {sort_by, sort_order}",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "无效参数",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "更新失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/playlists/{id}/touch": {
             "post": {
                 "security": [
@@ -9432,6 +9499,16 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 10
                 },
+                "sort_by": {
+                    "description": "视图排序字段：position/added_at/file_modified_at/title/artist/duration",
+                    "type": "string",
+                    "example": "position"
+                },
+                "sort_order": {
+                    "description": "视图排序方向：asc/desc",
+                    "type": "string",
+                    "example": "asc"
+                },
                 "type": {
                     "description": "歌单类型：normal/radio",
                     "type": "string",
@@ -10359,7 +10436,7 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "2.11.1",
+	Version:          "2.11.2",
 	Host:             "localhost:58091",
 	BasePath:         "/api/v1",
 	Schemes:          []string{},

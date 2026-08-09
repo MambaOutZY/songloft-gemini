@@ -769,6 +769,14 @@ definitions:
         description: 歌曲数量
         example: 10
         type: integer
+      sort_by:
+        description: 视图排序字段：position/added_at/file_modified_at/title/artist/duration
+        example: position
+        type: string
+      sort_order:
+        description: 视图排序方向：asc/desc
+        example: asc
+        type: string
       type:
         description: 歌单类型：normal/radio
         enum:
@@ -1451,7 +1459,7 @@ info:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
   title: Songloft API
-  version: 2.11.1
+  version: 2.11.2
 paths:
   /api/v1/jsplugin-assets/{path}:
     get:
@@ -3617,6 +3625,49 @@ paths:
       security:
       - BearerAuth: []
       summary: 重新排序歌单中的歌曲
+      tags:
+      - 歌单管理
+  /playlists/{id}/sort:
+    put:
+      consumes:
+      - application/json
+      description: 保存歌单的视图排序设置（非破坏性排序），下次打开歌单时恢复该排序
+      parameters:
+      - description: 歌单ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 排序设置 {sort_by, sort_order}
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新成功
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 无效参数
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 更新失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新歌单视图排序偏好
       tags:
       - 歌单管理
   /playlists/{id}/touch:
