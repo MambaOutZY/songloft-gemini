@@ -1,3 +1,13 @@
+## [v2.11.3] - 2026-08-09
+### :bug: Bug Fixes
+- [`42b0906`](https://github.com/songloft-org/songloft/commit/42b090604e40df7050182ea21e6cf3ea62d3943c) - **plugin-builder**: 更新前端源码监听修复 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`faf0a38`](https://github.com/songloft-org/songloft/commit/faf0a3888c52a57f853f08da626cbf4cd951db1f) - **player**: 同步 Web 更新检测修复 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`eb30e90`](https://github.com/songloft-org/songloft/commit/eb30e907fe7e7bf2dafd611ccdcd38baa86c8690) - 修复客户端更新问题 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`cf3e198`](https://github.com/songloft-org/songloft/commit/cf3e19842080ab62444ffa2a594ca5b4ccc65248) - release version 2.11.3 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.11.1] - 2026-08-03
 ### :boom: BREAKING CHANGES
 - due to [`a9a5938`](https://github.com/songloft-org/songloft/commit/a9a5938f01a6c1d620bc3b5a9152a5b62103aa53) - 本地 .lrc 歌词文件优先适配 *(commit by [@hanxi](https://github.com/hanxi))*:
@@ -2064,3 +2074,4 @@
 [v2.10.0]: https://github.com/songloft-org/songloft/compare/v2.9.6...v2.10.0
 [v2.11.0]: https://github.com/songloft-org/songloft/compare/v2.10.0...v2.11.0
 [v2.11.1]: https://github.com/songloft-org/songloft/compare/v2.11.0...v2.11.1
+[v2.11.3]: https://github.com/songloft-org/songloft/compare/v2.11.2...v2.11.3
