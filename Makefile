@@ -249,7 +249,7 @@ build-all-prod-lite: build-linux-prod-lite build-windows-prod-lite build-darwin-
 build-cross: ## 交叉编译（用法：make build-cross GOOS=linux GOARCH=amd64 OUTPUT=songloft-linux-amd64 [EXTRA_TAGS=lite]）
 	@echo "$(BLUE)正在编译 $(GOOS)/$(GOARCH)...$(NC)"
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) $(if $(GOARM),GOARM=$(GOARM)) GOAMD64=v1 go build $(GOFLAGS) $(if $(strip $(_DEV_TAG) $(EXTRA_TAGS)),-tags "$(strip $(_DEV_TAG) $(EXTRA_TAGS))") -ldflags="$(LDFLAGS)" -o $(OUTPUT) .
-	@if command -v upx >/dev/null 2>&1 && echo " linux/amd64 linux/arm64 linux/arm windows/amd64 " | grep -q " $(GOOS)/$(GOARCH) "; then \
+	@if command -v upx >/dev/null 2>&1 && echo " linux/amd64 linux/arm64 windows/amd64 " | grep -q " $(GOOS)/$(GOARCH) "; then \
 		echo "$(BLUE)正在使用 UPX 压缩...$(NC)"; \
 		upx -9 $(OUTPUT) >/dev/null 2>&1 || true; \
 		echo "$(GREEN)✓ $(OUTPUT) (UPX 压缩)$(NC)"; \
