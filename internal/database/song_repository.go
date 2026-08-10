@@ -224,6 +224,12 @@ type LocalPathInfo struct {
 	LyricSource   string
 }
 
+// RelativePathSong 用于路径规范化清理。
+type RelativePathSong struct {
+	ID       int64
+	FilePath string
+}
+
 // ListLocalPaths 返回所有本地歌曲的 file_path → LocalPathInfo 映射，用于扫描去重。
 func (r *SongRepository) ListLocalPaths(ctx context.Context) (map[string]LocalPathInfo, error) {
 	rows, err := r.queries.ListLocalSongPaths(ctx)
@@ -238,6 +244,34 @@ func (r *SongRepository) ListLocalPaths(ctx context.Context) (map[string]LocalPa
 		paths[row.FilePath] = LocalPathInfo{SongID: row.ID, Duration: row.Duration, CueSourcePath: row.CueSourcePath, LyricSource: row.LyricSource}
 	}
 	return paths, nil
+}
+
+// ListLocalSongsWithRelativePaths 返回所有 file_path 非绝对路径的本地歌曲。
+func (r *SongRepository) ListLocalSongsWithRelativePaths(ctx context.Context) ([]RelativePathSong, error) {
+	rows, err := r.queries.ListLocalSongsWithRelativePaths(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list local songs with relative paths: %w", err)
+	}
+	result := make([]RelativePathSong, len(rows))
+	for i, row := range rows {
+		result[i] = RelativePathSong{ID: row.ID, FilePath: row.FilePath}
+	}
+	return result, nil
+}
+
+// UpdateSongFilePath 仅更新歌曲的 file_path 字段。
+func (r *SongRepository) UpdateSongFilePath(ctx context.Context, id int64, newPath string) error {
+	rows, err := r.queries.UpdateSongFilePath(ctx, sqlc.UpdateSongFilePathParams{
+		FilePath: newPath,
+		ID:       id,
+	})
+	if err != nil {
+		return fmt.Errorf("update song file_path %d: %w", id, err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // CountPlaylistsContaining 统计某首歌曲被多少个歌单引用。

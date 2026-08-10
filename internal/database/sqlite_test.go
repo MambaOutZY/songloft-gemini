@@ -758,6 +758,50 @@ func TestAutoCreateExcludesCueSourceFromDir(t *testing.T) {
 	}
 }
 
+// TestAutoCreateDeduplicatesByFilePath 验证同一物理文件因路径格式不同
+// （相对/绝对）存在多条 song 行时，AutoCreate 只产生 1 个歌单而非 2 个。
+func TestAutoCreateDeduplicatesByFilePath(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	repo := db.PlaylistRepository()
+	songRepo := db.SongRepository()
+
+	songs := []*models.Song{
+		{Type: models.TypeLocal, Title: "s1-abs", FilePath: "/app/music/Rock/1.mp3"},
+		{Type: models.TypeLocal, Title: "s2-abs", FilePath: "/app/music/Rock/2.mp3"},
+		{Type: models.TypeLocal, Title: "s1-rel", FilePath: "music/Rock/1.mp3"},
+		{Type: models.TypeLocal, Title: "s2-rel", FilePath: "music/Rock/2.mp3"},
+		{Type: models.TypeLocal, Title: "j1", FilePath: "/app/music/Jazz/1.mp3"},
+	}
+	if err := songRepo.BatchCreate(ctx, songs); err != nil {
+		t.Fatalf("BatchCreate error = %v", err)
+	}
+
+	resp, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	if err != nil {
+		t.Fatalf("AutoCreate error = %v", err)
+	}
+
+	ids := nameToID(resp)
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 playlists (Rock + Jazz), got %d: %+v", len(ids), ids)
+	}
+	if _, ok := ids["Rock"]; !ok {
+		t.Errorf("expected Rock playlist, got %+v", ids)
+	}
+	if _, ok := ids["Jazz"]; !ok {
+		t.Errorf("expected Jazz playlist, got %+v", ids)
+	}
+
+	for _, p := range resp.Playlists {
+		if p.Name == "Rock" && p.SongCount != 2 {
+			t.Errorf("Rock should have 2 songs (deduped), got %d", p.SongCount)
+		}
+	}
+}
+
 // TestPickSongCoverDeterministic 直接锁定 pickSongCover 的确定性：
 // 同一输入多次调用必须返回同一结果，且取排序后第一首有封面的歌。
 func TestPickSongCoverDeterministic(t *testing.T) {

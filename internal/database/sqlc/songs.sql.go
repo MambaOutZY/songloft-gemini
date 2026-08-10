@@ -452,6 +452,39 @@ func (q *Queries) ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsR
 	return items, nil
 }
 
+const listLocalSongsWithRelativePaths = `-- name: ListLocalSongsWithRelativePaths :many
+SELECT id, file_path FROM songs
+WHERE type = 'local' AND file_path != '' AND substr(file_path, 1, 1) != '/'
+`
+
+type ListLocalSongsWithRelativePathsRow struct {
+	ID       int64
+	FilePath string
+}
+
+func (q *Queries) ListLocalSongsWithRelativePaths(ctx context.Context) ([]ListLocalSongsWithRelativePathsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLocalSongsWithRelativePaths)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLocalSongsWithRelativePathsRow{}
+	for rows.Next() {
+		var i ListLocalSongsWithRelativePathsRow
+		if err := rows.Scan(&i.ID, &i.FilePath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLocalWithoutFingerprint = `-- name: ListLocalWithoutFingerprint :many
 SELECT id, file_path, cue_start_seconds, cue_end_seconds FROM songs
 WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at = 0
@@ -931,6 +964,23 @@ type UpdateSongDurationParams struct {
 func (q *Queries) UpdateSongDuration(ctx context.Context, arg UpdateSongDurationParams) error {
 	_, err := q.db.ExecContext(ctx, updateSongDuration, arg.Duration, arg.ID)
 	return err
+}
+
+const updateSongFilePath = `-- name: UpdateSongFilePath :execrows
+UPDATE songs SET file_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type UpdateSongFilePathParams struct {
+	FilePath string
+	ID       int64
+}
+
+func (q *Queries) UpdateSongFilePath(ctx context.Context, arg UpdateSongFilePathParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateSongFilePath, arg.FilePath, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateSongFingerprint = `-- name: UpdateSongFingerprint :exec

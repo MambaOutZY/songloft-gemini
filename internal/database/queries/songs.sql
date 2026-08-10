@@ -199,5 +199,12 @@ FROM songs WHERE cue_source_path = ? AND cue_audio_path != '';
 -- name: DeleteByCueSource :execrows
 DELETE FROM songs WHERE cue_source_path = ?;
 
+-- name: ListLocalSongsWithRelativePaths :many
+SELECT id, file_path FROM songs
+WHERE type = 'local' AND file_path != '' AND substr(file_path, 1, 1) != '/';
+
+-- name: UpdateSongFilePath :execrows
+UPDATE songs SET file_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
+
 -- 标签分类聚合（facet）已改为 song_repository.go 内的 squirrel 动态查询，
 -- 以支持可选 keyword / 动态排序 / 分页 / 代表封面。sqlc 固定查询无法表达故此处不再定义。

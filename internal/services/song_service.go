@@ -38,6 +38,8 @@ type SongRepository interface {
 	UpdateDuration(ctx context.Context, id int64, duration float64) error
 	UpdateSource(ctx context.Context, id int64, pluginEntryPath, sourceData string) error
 	ListLocalPaths(ctx context.Context) (map[string]database.LocalPathInfo, error)
+	ListLocalSongsWithRelativePaths(ctx context.Context) ([]database.RelativePathSong, error)
+	UpdateSongFilePath(ctx context.Context, id int64, newPath string) error
 	ListTypesByIDs(ctx context.Context, ids []int64) (map[int64]string, error)
 	FilterOrphanSongIDs(ctx context.Context, ids []int64) ([]int64, error)
 	CountCoverPathReferences(ctx context.Context, coverPath string) (int, error)
@@ -464,6 +466,8 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 
 	s.scanProgressManager.SetTotalFiles(len(files))
 
+	s.deduplicateLocalSongPaths(ctx)
+
 	existingPaths, err := s.songs.ListLocalPaths(ctx)
 	if err != nil {
 		slog.Warn("ListLocalPaths 查询失败，重试一次", "error", err)
@@ -677,6 +681,69 @@ func (s *SongService) runCueProcessing(ctx context.Context, scanResult *ScanResu
 	s.processCueFiles(ctx, scanResult.CueFiles, reimport)
 	s.processEmbeddedCueSheets(ctx, files, reimport)
 	s.cleanStaleCueRecords(ctx, scopeRoots)
+}
+
+// deduplicateLocalSongPaths 规范化非绝对路径的本地歌曲 file_path，
+// 修复因历史版本 music_path 配置变更导致的同一文件存在相对/绝对两条记录的问题。
+// 有绝对路径副本的删除相对路径行；无副本的 UPDATE 为绝对路径。
+func (s *SongService) deduplicateLocalSongPaths(ctx context.Context) {
+	if s.scanner == nil {
+		return
+	}
+	musicPath := s.scanner.GetMusicPath()
+	if musicPath == "" || !filepath.IsAbs(musicPath) {
+		return
+	}
+
+	relativeSongs, err := s.songs.ListLocalSongsWithRelativePaths(ctx)
+	if err != nil {
+		slog.Warn("dedup: 查询相对路径歌曲失败", "error", err)
+		return
+	}
+	if len(relativeSongs) == 0 {
+		return
+	}
+
+	existingPaths, err := s.songs.ListLocalPaths(ctx)
+	if err != nil {
+		slog.Warn("dedup: 加载已有路径失败", "error", err)
+		return
+	}
+
+	var toDelete []int64
+	var toUpdate []struct {
+		id      int64
+		newPath string
+	}
+
+	for _, song := range relativeSongs {
+		absPath := filepath.Join(musicPath, song.FilePath)
+		if _, exists := existingPaths[absPath]; exists {
+			toDelete = append(toDelete, song.ID)
+		} else {
+			toUpdate = append(toUpdate, struct {
+				id      int64
+				newPath string
+			}{id: song.ID, newPath: absPath})
+		}
+	}
+
+	for _, u := range toUpdate {
+		if err := s.songs.UpdateSongFilePath(ctx, u.id, u.newPath); err != nil {
+			slog.Warn("dedup: 更新路径失败", "id", u.id, "newPath", u.newPath, "error", err)
+		}
+	}
+
+	if len(toDelete) > 0 {
+		deleted, err := s.songs.BatchDelete(ctx, toDelete)
+		if err != nil {
+			slog.Warn("dedup: 删除重复歌曲失败", "error", err, "count", len(toDelete))
+		} else if deleted > 0 {
+			slog.Info("dedup: 已清理路径重复的歌曲", "deleted", deleted, "updated", len(toUpdate))
+		}
+	} else if len(toUpdate) > 0 {
+		slog.Info("dedup: 已规范化歌曲路径", "updated", len(toUpdate))
+	}
 }
 
 // runAutoCreatePlaylists 扫描完成后按当前 playlistMode 配置重建 auto_created 歌单。

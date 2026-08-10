@@ -349,6 +349,28 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 		}
 	}
 
+	// 按「目录名/文件名」去重：同一物理文件若因路径格式不同（相对/绝对）
+	// 存在多条 song 行，只保留第一条参与歌单分组，避免产生重复歌单。
+	type pathKey struct{ dir, file string }
+	seenFiles := make(map[pathKey]struct{}, len(songs))
+	dedupSongs := make([]*models.Song, 0, len(songs))
+	for _, song := range songs {
+		if song.CueSourcePath != "" || song.FilePath == "" {
+			dedupSongs = append(dedupSongs, song)
+			continue
+		}
+		key := pathKey{
+			dir:  filepath.Base(filepath.Dir(song.FilePath)),
+			file: filepath.Base(song.FilePath),
+		}
+		if _, dup := seenFiles[key]; dup {
+			continue
+		}
+		seenFiles[key] = struct{}{}
+		dedupSongs = append(dedupSongs, song)
+	}
+	songs = dedupSongs
+
 	dirToSongs := make(map[string][]int64)
 	for _, song := range songs {
 		if song.FilePath == "" {

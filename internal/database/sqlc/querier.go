@@ -66,6 +66,7 @@ type Querier interface {
 	ListDuplicateFingerprints(ctx context.Context) ([]ListDuplicateFingerprintsRow, error)
 	ListJSPlugins(ctx context.Context) ([]JsPlugin, error)
 	ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsRow, error)
+	ListLocalSongsWithRelativePaths(ctx context.Context) ([]ListLocalSongsWithRelativePathsRow, error)
 	ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalWithoutFingerprintRow, error)
 	ListPlayHistory(ctx context.Context, arg ListPlayHistoryParams) ([]ListPlayHistoryRow, error)
 	ListPlaylistSongIDsOrdered(ctx context.Context, playlistID int64) ([]int64, error)
@@ -98,6 +99,7 @@ type Querier interface {
 	UpdateSong(ctx context.Context, arg UpdateSongParams) (int64, error)
 	UpdateSongCoverURL(ctx context.Context, arg UpdateSongCoverURLParams) (int64, error)
 	UpdateSongDuration(ctx context.Context, arg UpdateSongDurationParams) error
+	UpdateSongFilePath(ctx context.Context, arg UpdateSongFilePathParams) (int64, error)
 	UpdateSongFingerprint(ctx context.Context, arg UpdateSongFingerprintParams) error
 	UpdateSongLyrics(ctx context.Context, arg UpdateSongLyricsParams) (int64, error)
 	UpdateSongMetadata(ctx context.Context, arg UpdateSongMetadataParams) error
