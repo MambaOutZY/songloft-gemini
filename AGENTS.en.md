@@ -266,6 +266,13 @@ The Docker image contains a base package `/app/songloft`, while the persistent d
 | Both release + same type + base package version > data version | Replace | Release upgrade |
 | Both release + same type + data version >= base package | Don't replace | The data may have been upgraded online via the API |
 
+### Docker Non-Root Operation (PUID/PGID, songloft-org/songloft#380)
+
+- **Unset by default = keeps running as root**, identical to prior behavior with zero migration risk. Non-root mode only activates when `PUID` or `PGID` is explicitly set (either one is enough; the unset one defaults to `1000`); the entrypoint drops privileges to that uid:gid via Alpine's built-in `su-exec` (lighter than `gosu`, ships in the official repo with no extra download) right before `exec`ing the main program
+- **`/app/data` is recursively `chown`ed on every startup, `/app/music` only has its top-level directory `chown`ed, never recursively**: `/app/data` is small (db, covers, cache, etc.) and must be fixed up to remove ownership left over from a prior root-based run, otherwise the new user can't open the old database; `/app/music` can be a personal library with hundreds of thousands of files / multiple TB, and the IO cost of recursively walking it on every startup is unacceptable. Once the top-level directory is writable, newly downloaded/written files are already created with the correct target uid:gid — no follow-up fix needed
+- **Pre-existing root-owned files left inside `/app/music` from before the upgrade are not auto-fixed** (e.g. old files that had tags written into them) — this is a deliberate performance trade-off, not an oversight. Set `FIX_MUSIC_PERMISSIONS=true` when you need a one-time recursive fixup; this is meant to be run manually once after switching to non-root, not as a default behavior
+- **`home-assistant-addon` is unaffected**: its `run.sh` overrides the image's `ENTRYPOINT` entirely, bypassing `docker-entrypoint.sh`; its permission model is managed separately by the HA supervisor
+
 ---
 
 ## Frontend UI Verification (Dockerized Headless Browser)

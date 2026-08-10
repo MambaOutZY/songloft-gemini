@@ -258,8 +258,11 @@ docker run -d \
   -v /path/to/data:/app/data \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD='your_strong_password' \
+  -e PUID=$(id -u) -e PGID=$(id -g) \
   songloft/songloft:latest
 ```
+
+> 👤 **非 root 运行（可选）**：加上 `-e PUID=$(id -u) -e PGID=$(id -g)` 后，容器内主程序会以宿主机当前用户身份运行，挂载目录下新产生的文件不再是 root 属主。不设置则保持容器默认的 root 运行方式，不影响现有部署。
 
 #### 📥 从 Release 离线导入镜像
 
@@ -299,6 +302,8 @@ services:
       - ADMIN_USERNAME=admin
       - ADMIN_PASSWORD=your_strong_password
       - LISTEN_PORT=58091
+      - PUID=1000 # 可选：非 root 运行，改成宿主机对应用户的 uid
+      - PGID=1000 # 可选：非 root 运行，改成宿主机对应用户的 gid
 ```
 
 将上述内容保存为 `docker-compose.yml` 文件，然后运行：
@@ -367,8 +372,12 @@ Songloft 仅依赖少量启动期配置（凭证、端口、数据库路径）�
 | `DB_PATH` | 💾 数据库文件路径 | data/songloft.db |
 | `BASE_PATH` | 🔗 URL 基础路径（反向代理子路径部署用，如 `/songloft`） | 空（根路径） |
 | `MUSIC_DIR` | 🎵 音乐目录（非空时覆盖数据库中的默认值，等价于 `-music` 参数） | 空 |
+| `PUID` | 👤 **（仅 Docker）** 设置后以该 uid 非 root 运行主程序，未设置时保持 root 运行 | 空（root） |
+| `PGID` | 👤 **（仅 Docker）** 设置后以该 gid 非 root 运行主程序，未设置时保持 root 运行 | 空（root） |
+| `FIX_MUSIC_PERMISSIONS` | 🔧 **（仅 Docker）** 设为 `true` 时递归修复 `/app/music` 下所有文件的属主为 `PUID:PGID`（默认仅修复顶层目录，音乐库较大时递归修复可能耗时较长，一般只在升级为非 root 运行后需要用一次） | false |
 
 > 📁 Docker 镜像中音乐目录与数据目录默认为 `/app/music` 与 `/app/data`，通过 `-v` 挂载即可；如需指向其他路径，可用 `MUSIC_DIR` 指定音乐目录。
+> 👤 **非 root 运行**：`PUID`/`PGID` 任一设置即启用，未设置的一方默认补 `1000`；`/app/data` 会自动递归修复属主（解决从 root 运行升级过来的历史文件），`/app/music` 默认仅修复顶层目录，如需连同库内历史文件一起修复请设置 `FIX_MUSIC_PERMISSIONS=true`。
 
 ### 💻 命令行参数
 
@@ -417,6 +426,7 @@ docker run -d \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD='your_strong_password' \
   -e BASE_PATH=/songloft \
+  -e PUID=$(id -u) -e PGID=$(id -g) \
   songloft/songloft:latest
 ```
 
@@ -460,6 +470,8 @@ services:
       - ADMIN_USERNAME=admin
       - ADMIN_PASSWORD=your_strong_password
       - BASE_PATH=/songloft
+      - PUID=1000 # 可选：非 root 运行，改成宿主机对应用户的 uid
+      - PGID=1000 # 可选：非 root 运行，改成宿主机对应用户的 gid
 ```
 
 ## 💻 系统要求

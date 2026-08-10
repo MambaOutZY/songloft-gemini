@@ -256,9 +256,37 @@ chmod +x "$BINARY_TARGET"
 # 切换到工作目录
 cd /app
 
+# PUID / PGID：任一非空即启用非 root 运行，未设置的一方默认补 1000。
+# 默认（两者都不设置）保持 root 运行，不影响现有部署。
+if [ -n "$PUID" ] || [ -n "$PGID" ]; then
+    PUID="${PUID:-1000}"
+    PGID="${PGID:-1000}"
+
+    echo ""
+    echo "以非 root 用户运行：PUID=$PUID PGID=$PGID"
+
+    # /app/data 体量小（db、封面、缓存等），递归 chown 可接受；
+    # 用于修复此前以 root 运行遗留的属主，否则新用户打不开旧数据
+    chown -R "$PUID:$PGID" /app/data
+
+    # /app/music 只 chown 顶层目录，不递归：音乐库可能几十万文件/数 TB，
+    # 每次启动递归扫描代价不可接受。顶层可写后，新写入的文件本身就会以
+    # $PUID:$PGID 创建，天然正确，无需事后修复
+    chown "$PUID:$PGID" /app/music
+
+    if [ "${FIX_MUSIC_PERMISSIONS:-false}" = "true" ]; then
+        echo "FIX_MUSIC_PERMISSIONS=true，递归修复 /app/music 属主（音乐库较大时可能耗时较长）..."
+        chown -R "$PUID:$PGID" /app/music
+    fi
+fi
+
 echo ""
 echo "启动 Songloft..."
 echo ""
 
-# 执行二进制文件，传递所有参数
-exec "$BINARY_TARGET" "$@"
+# 执行二进制文件，传递所有参数；启用 PUID/PGID 时通过 su-exec 降权执行
+if [ -n "$PUID" ] || [ -n "$PGID" ]; then
+    exec su-exec "$PUID:$PGID" "$BINARY_TARGET" "$@"
+else
+    exec "$BINARY_TARGET" "$@"
+fi

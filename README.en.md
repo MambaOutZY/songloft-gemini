@@ -258,8 +258,11 @@ docker run -d \
   -v /path/to/data:/app/data \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD='your_strong_password' \
+  -e PUID=$(id -u) -e PGID=$(id -g) \
   songloft/songloft:latest
 ```
+
+> 👤 **Run as non-root (optional)**: adding `-e PUID=$(id -u) -e PGID=$(id -g)` makes the container's main process run as your current host user, so newly created files under the mounted directories are no longer owned by root. Omit it to keep the container's default root-based startup — existing deployments are unaffected.
 
 #### 📥 Import the Image Offline from a Release
 
@@ -299,6 +302,8 @@ services:
       - ADMIN_USERNAME=admin
       - ADMIN_PASSWORD=your_strong_password
       - LISTEN_PORT=58091
+      - PUID=1000 # optional: run as non-root, set to your host user's uid
+      - PGID=1000 # optional: run as non-root, set to your host user's gid
 ```
 
 Save the above as a `docker-compose.yml` file, then run:
@@ -367,8 +372,12 @@ Songloft relies on only a few startup-time settings (credentials, port, database
 | `DB_PATH` | 💾 Database file path | data/songloft.db |
 | `BASE_PATH` | 🔗 URL base path (for reverse-proxy subpath deployment, e.g. `/songloft`) | empty (root path) |
 | `MUSIC_DIR` | 🎵 Music directory (overrides the database default when non-empty; equivalent to `-music`) | empty |
+| `PUID` | 👤 **(Docker only)** When set, runs the main process as this non-root uid; unset keeps the default root startup | empty (root) |
+| `PGID` | 👤 **(Docker only)** When set, runs the main process as this non-root gid; unset keeps the default root startup | empty (root) |
+| `FIX_MUSIC_PERMISSIONS` | 🔧 **(Docker only)** When `true`, recursively fixes ownership of every file under `/app/music` to `PUID:PGID` (by default only the top-level directory is fixed; recursive fixup can take a while for large libraries, and is usually only needed once after switching to non-root) | false |
 
 > 📁 In the Docker image, the music directory and data directory default to `/app/music` and `/app/data` — just mount them with `-v`; to point elsewhere, use `MUSIC_DIR` to set the music directory.
+> 👤 **Running as non-root**: setting either `PUID` or `PGID` enables this mode; the unset one defaults to `1000`. `/app/data` is always fixed up recursively (to resolve leftover root-owned files from a previous root-based run); `/app/music` only has its top-level directory fixed by default — set `FIX_MUSIC_PERMISSIONS=true` if you also need pre-existing files inside the library fixed.
 
 ### 💻 Command-Line Arguments
 
@@ -417,6 +426,7 @@ docker run -d \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD='your_strong_password' \
   -e BASE_PATH=/songloft \
+  -e PUID=$(id -u) -e PGID=$(id -g) \
   songloft/songloft:latest
 ```
 
@@ -460,6 +470,8 @@ services:
       - ADMIN_USERNAME=admin
       - ADMIN_PASSWORD=your_strong_password
       - BASE_PATH=/songloft
+      - PUID=1000 # optional: run as non-root, set to your host user's uid
+      - PGID=1000 # optional: run as non-root, set to your host user's gid
 ```
 
 ## 💻 System Requirements

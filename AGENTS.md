@@ -266,6 +266,13 @@ Docker 镜像内含底包 `/app/songloft`，持久化 data 卷存放实际运行
 | 同为 release + 同类型 + 底包版本 > data 版本 | 替换 | 正式版升级 |
 | 同为 release + 同类型 + data 版本 >= 底包 | 不替换 | data 可能通过 API 在线升级过 |
 
+### Docker 非 root 运行（PUID/PGID，songloft-org/songloft#380）
+
+- **默认不设置 = 保持 root 运行**，与旧版本行为完全一致，零迁移风险。只有显式设置 `PUID` 或 `PGID`（任一即可，另一个默认补 `1000`）才启用降权，entrypoint 末尾用 Alpine 自带的 `su-exec`（比 `gosu` 轻，官方仓库自带无需额外下载）切到该 uid:gid 再 `exec` 主程序
+- **`/app/data` 每次启动都递归 `chown`，`/app/music` 默认只 chown 顶层目录，不递归**：`/app/data` 体量小（db、封面、缓存等）且必须修复旧 root 运行遗留的属主，否则新用户打不开旧数据库；`/app/music` 可能是几十万文件/数 TB 的个人曲库，每次启动递归扫描的 IO 代价不可接受。顶层目录可写之后，新下载/新写入的文件本身就会以目标 uid:gid 创建，天然正确，不需要事后再修一遍
+- **升级前遗留在 `/app/music` 内的历史 root 属主文件不会被自动修复**（如插入/覆盖标签写入过的旧文件），这是刻意的性能取舍而非遗漏。需要时设置 `FIX_MUSIC_PERMISSIONS=true` 显式触发一次递归修复，仅推荐在切换为非 root 运行后手动跑一次，不要做成默认行为
+- **`home-assistant-addon` 不受影响**：其 `run.sh` 直接覆盖了镜像的 `ENTRYPOINT`，完全绕开 `docker-entrypoint.sh`，权限模型由 HA supervisor 另行管理
+
 ---
 
 ## 前端 UI 验证（Docker 无头浏览器）
@@ -502,7 +509,7 @@ manager/scheduler 的内存 map 键，以及 `plugin_storage.plugin_entry_path` 
   ——那会动所有 `/songs` 分页调用方，属独立 issue。同理 `ListSongIDsOrdered` 与 `GetPlaylistSongsPaginated`
   都只按 `position ASC` 无次级键，仅在同歌单出现重复 position（并发 reorder 中断）时才会错位
 - **客户端起播 = 首曲直起 + 后台环形补齐**：历史条目自带完整 `Song`，先用它当队列**零请求**出声，
-  再后台拉有序 ID 列表（歌单 `GET /playlists/{id}/song-ids`、分面 `GET /songs/ids`）`indexOf` 定位，
+  再后台拉有序 ID 列表（歌单 `GET /playlists/{id}/song-ids`、分面 `GET /songs/ids`）`indexOf` 定��，
   依次补「目标之后」与回卷的「开头…目标之前」。`currentIndex` 全程为 0 不动，
   不牵连随机模式的 `_playedIndices` / `_preSelectedNextIndex`；歌单与 7 个分面走同一条代码路径
 - **只有 `type=play` 落库**：写入挂在既有打点端点 `POST /songs/{id}/played` 的 `context_type`/`context_key`
