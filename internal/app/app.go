@@ -432,7 +432,7 @@ func (a *App) Init() error {
 			AppSecret:         tracelycfg.AppSecret,
 			Host:              tracelycfg.Host,
 			EnableHeartbeat:   true,
-			HeartbeatInterval: 60 * time.Second,
+			HeartbeatInterval: 1 * time.Hour,,
 			Tags: map[string]string{
 				"version": version.GetFullVersion(),
 			},
