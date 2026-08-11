@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -62,7 +63,7 @@ func TestStreamSeekedMP3Unavailable(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cw := &countingWriter{}
-			err := tc.cs.StreamSeekedMP3(context.Background(), cw, tc.opts)
+			err := tc.cs.StreamSeekedMP3(context.Background(), context.Background(), cw, tc.opts)
 			if !errors.Is(err, ErrSeekStreamUnavailable) {
 				t.Fatalf("err = %v, want ErrSeekStreamUnavailable", err)
 			}
@@ -87,7 +88,7 @@ func TestStreamSeekedMP3FFmpegArgs(t *testing.T) {
 		}
 		cs := &CacheService{ffmpegPath: "/bin/echo"}
 		var buf bytes.Buffer
-		if err := cs.StreamSeekedMP3(context.Background(), &buf, SeekStreamOptions{
+		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: 61.5, RemainingSecond: 100,
 		}); err != nil {
 			t.Fatalf("StreamSeekedMP3: %v", err)
@@ -136,7 +137,7 @@ func TestStreamSeekedMP3NormalizeArgs(t *testing.T) {
 		t.Helper()
 		cs := &CacheService{ffmpegPath: "/bin/echo"}
 		var buf bytes.Buffer
-		if err := cs.StreamSeekedMP3(context.Background(), &buf, SeekStreamOptions{
+		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: startSecond, RemainingSecond: 100, Normalize: true,
 		}); err != nil {
 			t.Fatalf("StreamSeekedMP3: %v", err)
@@ -174,6 +175,71 @@ func TestStreamSeekedMP3NormalizeArgs(t *testing.T) {
 	})
 }
 
+// TestStreamSeekedMP3AbortedByActivity 钉住 songloft-org/songloft-player#35 的根因修复：
+// ctx 被 playActivity.Activate 提前取消（用户切歌，让 ffmpeg 让位），但 connCtx（真实连接）
+// 仍存活时，必须返回 ErrSeekStreamAborted，而不是把这次截断当作"正常结束"。
+//
+// 修复前的行为是 `if ctx.Err() != nil { return nil }`——不区分两种取消来源，会让客户端把
+// 截断的音频误判为下载完整并永久缓存，此后再也不会重新请求转码。
+func TestStreamSeekedMP3AbortedByActivity(t *testing.T) {
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not available")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "tone.mp3")
+	gen := exec.Command(ffmpegPath, "-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=30", "-codec:a", "libmp3lame", "-y", src)
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Skipf("generate sample mp3 failed: %v (%s)", err, out)
+	}
+
+	cs := &CacheService{ffmpegPath: ffmpegPath}
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	connCtx := context.Background() // 模拟底层 TCP 连接仍存活，客户端仍在读
+
+	// 收到第一个字节（即 io.Copy 真正开始）之后才 cancel，避免与 ffmpeg 启动耗时竞争——
+	// 否则 cancel 可能在 Peek(1) 拿到首字节之前就杀掉进程，落到 ErrSeekStreamUnavailable
+	// 分支而不是本测试要验证的中途取消分支。之后的固定小睡把 io.Copy 拉长到能让
+	// cancel 生效于「已写出部分字节、尚未整体结束」的中间状态。
+	w := newStallingWriter(10 * time.Millisecond)
+	go func() {
+		<-w.firstWrite
+		cancelCtx() // 模拟 playActivity.Activate：只取消 ctx，不动 connCtx
+	}()
+
+	err = cs.StreamSeekedMP3(ctx, connCtx, w, SeekStreamOptions{
+		SourcePath: src, StartSecond: 0, RemainingSecond: 30, Normalize: true,
+	})
+	if !errors.Is(err, ErrSeekStreamAborted) {
+		t.Fatalf("err = %v, want ErrSeekStreamAborted", err)
+	}
+	if w.writes == 0 {
+		t.Error("writes = 0，期望已经写出部分字节（否则应该走 ErrSeekStreamUnavailable 降级路径）")
+	}
+}
+
+// stallingWriter 每次 Write 都小睡固定时长，用于在测试里把 io.Copy 循环拉长到
+// 能被外部 goroutine 中途 cancel 的量级；firstWrite 在第一次 Write 时关闭，
+// 供调用方等待"复制已经真正开始"再触发 cancel。
+type stallingWriter struct {
+	delay      time.Duration
+	writes     int
+	firstOnce  sync.Once
+	firstWrite chan struct{}
+}
+
+func newStallingWriter(delay time.Duration) *stallingWriter {
+	return &stallingWriter{delay: delay, firstWrite: make(chan struct{})}
+}
+
+func (w *stallingWriter) Write(p []byte) (int, error) {
+	w.writes++
+	w.firstOnce.Do(func() { close(w.firstWrite) })
+	time.Sleep(w.delay)
+	return len(p), nil
+}
+
 // TestSeekStreamUnknownDurationTimeout 钉住「剩余时长未知时的硬超时不能退化成 5 分钟」。
 //
 // 5 分钟对整首流不是宽限而是硬上限：客户端边播边读时恰好只送出 5 分钟音频就被 CommandContext
@@ -207,7 +273,7 @@ func TestStreamSeekedMP3NormalizeRealFFmpeg(t *testing.T) {
 
 	cs := &CacheService{ffmpegPath: ffmpegPath}
 	var buf bytes.Buffer
-	if err := cs.StreamSeekedMP3(context.Background(), &buf, SeekStreamOptions{
+	if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 		SourcePath: src, StartSecond: 0, RemainingSecond: 6, Normalize: true,
 	}); err != nil {
 		t.Fatalf("StreamSeekedMP3: %v", err)
@@ -244,7 +310,7 @@ func TestStreamSeekedMP3RealFFmpeg(t *testing.T) {
 
 	cs := &CacheService{ffmpegPath: ffmpegPath}
 	var buf bytes.Buffer
-	if err := cs.StreamSeekedMP3(context.Background(), &buf, SeekStreamOptions{
+	if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 		SourcePath: src, StartSecond: 4, RemainingSecond: 2,
 	}); err != nil {
 		t.Fatalf("StreamSeekedMP3: %v", err)

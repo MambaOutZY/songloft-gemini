@@ -1429,7 +1429,7 @@ func (h *SongHandler) trySeekStream(w http.ResponseWriter, r *http.Request, song
 	if opts.seekSeconds <= 0 || h.cacheService == nil {
 		return false
 	}
-	return h.streamPipedMP3(r.Context(), w, song, services.SeekStreamOptions{
+	return h.streamPipedMP3(r.Context(), r.Context(), w, song, services.SeekStreamOptions{
 		SourcePath:      path,
 		StartSecond:     opts.seekSeconds,
 		RemainingSecond: remainingAfter(song, opts.seekSeconds),
@@ -1480,7 +1480,7 @@ func (h *SongHandler) tryLiveNormalizeStream(w http.ResponseWriter, r *http.Requ
 	trackedCtx, release := h.trackActivity(r.Context(), sk, song.ID, playactivity.CatTranscode)
 	defer release()
 
-	return h.streamPipedMP3(trackedCtx, w, song, services.SeekStreamOptions{
+	return h.streamPipedMP3(trackedCtx, r.Context(), w, song, services.SeekStreamOptions{
 		SourcePath:      path,
 		StartSecond:     opts.seekSeconds, // 可为 0（纯均衡）；> 0 时与均衡由同一条 ffmpeg 一起做
 		RemainingSecond: remainingAfter(song, opts.seekSeconds),
@@ -1491,16 +1491,30 @@ func (h *SongHandler) tryLiveNormalizeStream(w http.ResponseWriter, r *http.Requ
 // streamPipedMP3 调用 StreamSeekedMP3 并处理「先设响应头、降级时原样还原」的契约。
 // 返回 true 表示已接管响应（正常结束，或已写出部分字节后失败、无法再降级）。
 //
-// ctx 由调用方决定：seek 流直接用 r.Context()，均衡流额外套一层 playActivity 追踪的 ctx。
-func (h *SongHandler) streamPipedMP3(ctx context.Context, w http.ResponseWriter, song *models.Song, sopts services.SeekStreamOptions, reason string) bool {
+// ctx 驱动 ffmpeg 生命周期，可能被 playActivity.Activate 提前取消；connCtx 是真正的
+// HTTP 请求/连接 ctx（seek 流直接用 r.Context() 传两次，均衡流的 ctx 是 trackedCtx、
+// connCtx 是 r.Context()），只在客户端真的断开时才会 Done——两者的区分详见
+// services.StreamSeekedMP3 注释与 songloft-org/songloft-player#35。
+func (h *SongHandler) streamPipedMP3(ctx, connCtx context.Context, w http.ResponseWriter, song *models.Song, sopts services.SeekStreamOptions, reason string) bool {
 	// 先设响应头：StreamSeekedMP3 一旦写出字节就无法再改。降级时下面会原样删掉。
 	// 降级时 Del 是**必需**的而非可选：http.ServeFile 只在 Content-Type 缺失时才按扩展名推断，
 	// 残留的 audio/mpeg 会让降级后提供的 mp4/flac 拿到错误的 Content-Type。
 	w.Header().Set("Content-Type", "audio/mpeg")
 	w.Header().Set("Cache-Control", "no-store")
 
-	err := h.cacheService.StreamSeekedMP3(ctx, w, sopts)
+	err := h.cacheService.StreamSeekedMP3(ctx, connCtx, w, sopts)
 	if err == nil {
+		return true
+	}
+	if errors.Is(err, services.ErrSeekStreamAborted) {
+		// ffmpeg 被 playActivity.Activate 提前掐掉，但连接仍存活：绝不能让 chunked 响应
+		// 优雅收尾（客户端会把截断的音频误判为下载成功并永久缓存）。强制切断底层连接，
+		// 让客户端的 HTTP 层感知为读取失败（songloft-org/songloft-player#35）。
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, herr := hj.Hijack(); herr == nil {
+				_ = conn.Close()
+			}
+		}
 		return true
 	}
 	if !errors.Is(err, services.ErrSeekStreamUnavailable) {
@@ -1924,7 +1938,7 @@ func isHLSURL(rawURL string) bool {
 // - 插件来源歌曲:走 CacheService.Get(下载缓存)
 // - 纯外链歌曲:走 ServeRemoteResource(直接代理)
 // 失败时:返回 502,后台异步切源(若注入了 reassigner),客户端下次播放该 song 会用新源。
-// targetFormat 非空且与原格式不同时,对已缓存文件走 ffmpeg 转��。
+// targetFormat 非空且与原格式不同时,对已缓存文件走 ffmpeg 转码。
 func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *models.Song, opts servePlayOptions) {
 	// 1. 缓存命中 → 直接 ServeFile
 	if song.CachePath != "" {
@@ -1935,7 +1949,7 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 		h.cacheService.ClearStaleCachePath(song.ID)
 	}
 
-	// fallback: 旧格式缓存（��容升级过渡）
+	// fallback: 旧格式缓存（兼容升级过渡）
 	if cachedPath, ok := h.cacheService.FindCachedFileBySong(song); ok {
 		h.serveCachedFile(w, r, song, cachedPath, opts)
 		return

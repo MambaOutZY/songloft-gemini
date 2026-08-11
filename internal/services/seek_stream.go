@@ -19,6 +19,15 @@ import (
 // 可安全降级为「从头完整提供该文件」。
 var ErrSeekStreamUnavailable = errors.New("seek stream unavailable")
 
+// ErrSeekStreamAborted 表示已经写出部分字节，但驱动本次转码的 ctx 被 playActivity.Activate
+// 提前取消（用户切歌，让 ffmpeg 让位省 CPU），而 connCtx（真正的 HTTP 请求/连接）仍然存活——
+// 客户端可能仍在读取这条响应。此时绝不能让响应看起来"优雅结束"：ffmpeg 被杀导致音频被截断，
+// 若放任 chunked 响应正常收尾，客户端（如 just_audio 的 LockCachingAudioSource）会把这段
+// 截断内容当作下载成功永久缓存，且后续播放也不会再触发重新转码
+// （songloft-org/songloft-player#35）。调用方收到此错误必须强制断开底层连接（如
+// http.Hijacker + Close），而不能优雅返回。
+var ErrSeekStreamAborted = errors.New("seek stream aborted by activity cancellation")
+
 // seekStreamMaxConcurrent 同时存活的 seek / 均衡流上限。
 //
 // 这些流不占用 transcodeSem（见 StreamSeekedMP3 注释），所以必须自带闸门：seek 流由「用户每按一次
@@ -68,7 +77,7 @@ type SeekStreamOptions struct {
 }
 
 // StreamSeekedMP3 阻塞运行 ffmpeg，把 SourcePath 从 StartSecond 起的音频以 MP3 流写入 w，
-// 直到 ffmpeg 结束或 ctx 取消（客户端断开）。
+// 直到 ffmpeg 结束或 ctx 取消。
 //
 // 用于不支持 HTTP Range seek 的推流客户端：小爱音箱经 player_play_url 收到 URL 后只会从头拉，
 // 想「从第 N 秒续播」只能让服务端产出一条以第 N 秒为开头的流（songloft-plugin-miot#60）。
@@ -79,11 +88,23 @@ type SeekStreamOptions struct {
 // 与 runFFmpeg 不同，本函数 **不占用** c.transcodeSem：进程会存活整首歌的剩余时长，
 // 持串行信号量会长时间饿死其他有限文件的转码。并发由 seekStreamSem 单独限。
 //
-// 返回值语义与 StreamTranscodedRadio 一致：
-//   - nil：正常结束（含客户端断开导致的 ctx 取消）。
+// ctx 与 connCtx 是两条独立的取消信号，必须分开传：
+//   - ctx 驱动 ffmpeg 生命周期，可能被 playActivity.Activate 提前取消（用户切歌时为省 CPU
+//     主动掐掉），这不代表客户端已经断开。
+//   - connCtx 是真正的 HTTP 请求/连接 ctx（如 r.Context()），只在客户端真的断开 TCP 连接
+//     时才会 Done。
+//
+// 二者不区分会导致 songloft-org/songloft-player#35：Activate 掐掉 ffmpeg 后，若把这当作
+// "正常结束"，chunked 响应会优雅收尾，客户端（仍连着、仍在读）拿到一段语法完整但内容被
+// 截断的 MP3，误判为下载成功并永久缓存，此后再也不会重新请求转码。
+//
+// 返回值语义：
+//   - nil：正常结束，或 connCtx 也已取消（客户端真的断开，无人在听，无害）。
 //   - ErrSeekStreamUnavailable：在写出任何字节前失败，调用方应降级为从头提供文件（此时 w 未被写入）。
+//   - ErrSeekStreamAborted：已写出部分字节，ctx 被提前取消但 connCtx 仍存活——调用方必须强制
+//     断开底层连接（如 http.Hijacker + Close），不能优雅返回。
 //   - 其他 error：已写出部分字节后中途失败，无法再降级。
-func (c *CacheService) StreamSeekedMP3(ctx context.Context, w io.Writer, opts SeekStreamOptions) error {
+func (c *CacheService) StreamSeekedMP3(ctx, connCtx context.Context, w io.Writer, opts SeekStreamOptions) error {
 	if opts.StartSecond <= 0 && !opts.Normalize {
 		return fmt.Errorf("%w: non-positive start second", ErrSeekStreamUnavailable)
 	}
@@ -181,7 +202,13 @@ func (c *CacheService) StreamSeekedMP3(ctx context.Context, w io.Writer, opts Se
 	waitErr := cmd.Wait()
 
 	if ctx.Err() != nil {
-		return nil
+		if connCtx == nil || connCtx.Err() != nil {
+			// connCtx 也已取消：客户端真的断开了 TCP 连接，无人在听，无害。
+			return nil
+		}
+		// ctx 被 playActivity.Activate 提前取消，但 connCtx（真实连接）仍存活——客户端可能仍在
+		// 读这条响应。绝不能让它看起来"优雅结束"，否则截断的音频会被误判为下载完整并永久缓存。
+		return ErrSeekStreamAborted
 	}
 	if copyErr != nil {
 		return copyErr

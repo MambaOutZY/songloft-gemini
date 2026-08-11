@@ -754,7 +754,7 @@ func (m *Manager) handleServeFileDirective(w http.ResponseWriter, r *http.Reques
 				}
 				w.Header().Set("Content-Type", "audio/mpeg")
 				w.Header().Set("Cache-Control", "no-store")
-				sErr := m.cacheService.StreamSeekedMP3(r.Context(), w, services.SeekStreamOptions{
+				sErr := m.cacheService.StreamSeekedMP3(r.Context(), r.Context(), w, services.SeekStreamOptions{
 					SourcePath:      absPath,
 					StartSecond:     directive.SeekSeconds,
 					RemainingSecond: remaining,
