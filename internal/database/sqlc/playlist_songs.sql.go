@@ -253,35 +253,6 @@ func (q *Queries) GetPlaylistSongsPaginated(ctx context.Context, arg GetPlaylist
 	return items, nil
 }
 
-const listPlaylistSongIDsOrdered = `-- name: ListPlaylistSongIDsOrdered :many
-SELECT song_id FROM playlist_songs
-WHERE playlist_id = ?
-ORDER BY position ASC
-`
-
-func (q *Queries) ListPlaylistSongIDsOrdered(ctx context.Context, playlistID int64) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, listPlaylistSongIDsOrdered, playlistID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []int64{}
-	for rows.Next() {
-		var song_id int64
-		if err := rows.Scan(&song_id); err != nil {
-			return nil, err
-		}
-		items = append(items, song_id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listPlaylistsContainingSong = `-- name: ListPlaylistsContainingSong :many
 SELECT ps.playlist_id
 FROM playlist_songs ps

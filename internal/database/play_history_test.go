@@ -341,7 +341,7 @@ func TestListPlaylistSongIDsOrdered(t *testing.T) {
 		}
 	}
 
-	got, err := psRepo.ListSongIDsOrdered(ctx, playlist.ID)
+	got, err := psRepo.ListSongIDsOrdered(ctx, playlist.ID, "", "")
 	if err != nil {
 		t.Fatalf("ListSongIDsOrdered: %v", err)
 	}
@@ -355,12 +355,27 @@ func TestListPlaylistSongIDsOrdered(t *testing.T) {
 		}
 	}
 
+	// 显式传 sort=title 时应改用标题排序，而非固定 position（歌单自定义排序场景）。
+	gotByTitle, err := psRepo.ListSongIDsOrdered(ctx, playlist.ID, "title", "asc")
+	if err != nil {
+		t.Fatalf("ListSongIDsOrdered(sort=title): %v", err)
+	}
+	wantByTitle := []int64{ids[0], ids[1], ids[2]}
+	if len(gotByTitle) != len(wantByTitle) {
+		t.Fatalf("expected %d ids, got %d", len(wantByTitle), len(gotByTitle))
+	}
+	for i := range wantByTitle {
+		if gotByTitle[i] != wantByTitle[i] {
+			t.Errorf("sort=title index %d: expected %d, got %d", i, wantByTitle[i], gotByTitle[i])
+		}
+	}
+
 	// 空歌单返回空切片而非 nil，方便客户端直接遍历。
 	empty := &models.Playlist{Type: models.PlaylistTypeNormal, Name: "空歌单"}
 	if err := db.PlaylistRepository().Create(ctx, empty); err != nil {
 		t.Fatalf("Create empty playlist: %v", err)
 	}
-	emptyIDs, err := psRepo.ListSongIDsOrdered(ctx, empty.ID)
+	emptyIDs, err := psRepo.ListSongIDsOrdered(ctx, empty.ID, "", "")
 	if err != nil {
 		t.Fatalf("ListSongIDsOrdered on empty: %v", err)
 	}

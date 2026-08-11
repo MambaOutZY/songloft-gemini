@@ -37,7 +37,7 @@ type PlaylistSongRepository interface {
 	BatchUpdatePositions(ctx context.Context, playlistID int64, songIDs []int64) error
 	MaxPosition(ctx context.Context, playlistID int64) (int, error)
 	AddSongsBatch(ctx context.Context, playlistID int64, startPos int, songIDs []int64) (added int, skipped int, err error)
-	ListSongIDsOrdered(ctx context.Context, playlistID int64) ([]int64, error)
+	ListSongIDsOrdered(ctx context.Context, playlistID int64, sort, order string) ([]int64, error)
 }
 
 // PlayHistoryCleaner 在删除歌单时清理其播放历史。
@@ -72,10 +72,10 @@ func (s *PlaylistService) clearPlayHistory(ctx context.Context, playlistID int64
 	}
 }
 
-// SongIDsOrdered 返回歌单内全部歌曲 ID，顺序与分页查询歌单歌曲一致。
-// 供客户端定位「某首歌在歌单里排第几」用，避免为此拉取完整歌曲对象。
-func (s *PlaylistService) SongIDsOrdered(ctx context.Context, playlistID int64) ([]int64, error) {
-	ids, err := s.playlistSongs.ListSongIDsOrdered(ctx, playlistID)
+// SongIDsOrdered 返回歌单内全部歌曲 ID，顺序与分页查询歌单歌曲一致（同一套 sort/order 逻辑）。
+// 供客户端定位「某首歌在歌单里排第几」用，避免为此拉取完整歌曲对象；sort/order 为空时默认 position asc。
+func (s *PlaylistService) SongIDsOrdered(ctx context.Context, playlistID int64, sort, order string) ([]int64, error) {
+	ids, err := s.playlistSongs.ListSongIDsOrdered(ctx, playlistID, sort, order)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list playlist song ids: %w", err)
 	}

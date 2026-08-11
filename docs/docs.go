@@ -3184,7 +3184,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回歌单内全部歌曲的 ID，顺序与 GET /playlists/{id}/songs 的默认顺序（position 升序）严格一致，不分页。\n用途：客户端需要知道「某首歌在歌单里排第几」时（如从播放历史里的某首歌接着往下播），用本端点拿到有序 ID 数组后取下标，即可直接作为 /playlists/{id}/songs 的 offset 使用，避免为此拉取全部歌曲对象。\n形态与 GET /songs/ids 对齐。",
+                "description": "返回歌单内全部歌曲的 ID，不分页。sort/order 语义与 GET /playlists/{id}/songs 完全一致（同一套排序逻辑），省略时默认 position 升序。\n用途：客户端需要知道「某首歌在歌单里排第几」时（如从播放历史里的某首歌接着往下播），用本端点拿到有序 ID 数组后取下标，即可直接作为 /playlists/{id}/songs 的 offset 使用（传相同的 sort/order），避免为此拉取全部歌曲对象。\n形态与 GET /songs/ids 对齐。",
                 "produces": [
                     "application/json"
                 ],
@@ -3199,6 +3199,18 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序字段: position(默认)/added_at/title/artist/album/duration/updated_at/file_modified_at",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "排序方向: asc(默认)/desc",
+                        "name": "order",
+                        "in": "query"
                     }
                 ],
                 "responses": {

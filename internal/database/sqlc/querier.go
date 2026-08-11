@@ -69,7 +69,6 @@ type Querier interface {
 	ListLocalSongsWithRelativePaths(ctx context.Context) ([]ListLocalSongsWithRelativePathsRow, error)
 	ListLocalWithoutFingerprint(ctx context.Context) ([]ListLocalWithoutFingerprintRow, error)
 	ListPlayHistory(ctx context.Context, arg ListPlayHistoryParams) ([]ListPlayHistoryRow, error)
-	ListPlaylistSongIDsOrdered(ctx context.Context, playlistID int64) ([]int64, error)
 	ListPlaylistsContainingSong(ctx context.Context, songID int64) ([]int64, error)
 	ListPluginStorageEntryPaths(ctx context.Context) ([]string, error)
 	ListPluginStorageKeys(ctx context.Context, pluginEntryPath string) ([]string, error)

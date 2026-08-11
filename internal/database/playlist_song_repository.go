@@ -311,16 +311,37 @@ func replaceSongInPlaylistTx(ctx context.Context, q *sqlc.Queries, playlistID, o
 	return nil
 }
 
-// ListSongIDsOrdered 返回歌单内全部歌曲 ID，顺序与 GetPlaylistSongs 分页查询严格一致
-// （均为 position ASC）。客户端用它做「某首歌在歌单里排第几」的定位，因此这里
-// 不能额外加 tie-break 列，否则算出的下标当作分页 offset 用时会错位。
-func (r *PlaylistSongRepository) ListSongIDsOrdered(ctx context.Context, playlistID int64) ([]int64, error) {
-	ids, err := r.queries.ListPlaylistSongIDsOrdered(ctx, playlistID)
+// ListSongIDsOrdered 返回歌单内全部歌曲 ID，顺序与 GetSongsFiltered 分页查询严格一致
+// （复用同一个 applyPlaylistSongOrder，sort/order 为空时默认 position ASC）。客户端
+// 用它做「某首歌在歌单里排第几」的定位，因此这里不能额外加 tie-break 列，否则算出的
+// 下标当作分页 offset 用时会错位。
+func (r *PlaylistSongRepository) ListSongIDsOrdered(ctx context.Context, playlistID int64, orderBy, order string) ([]int64, error) {
+	sb := sq.Select("ps.song_id").
+		From("playlist_songs ps").
+		InnerJoin("songs s ON s.id = ps.song_id").
+		Where(sq.Eq{"ps.playlist_id": playlistID})
+	sb = applyPlaylistSongOrder(sb, orderBy, order)
+
+	query, args, err := sb.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build playlist song ids sql: %w", err)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list playlist song ids: %w", err)
 	}
-	if ids == nil {
-		return []int64{}, nil
+	defer rows.Close()
+
+	ids := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan playlist song id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate playlist song ids: %w", err)
 	}
 	return ids, nil
 }
