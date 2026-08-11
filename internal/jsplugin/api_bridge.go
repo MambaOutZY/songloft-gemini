@@ -1223,9 +1223,11 @@ func (h *BridgeHandler) handlePlaylists(action, data string) (string, error) {
 			Limit   int   `json:"limit"`
 			Offset  int   `json:"offset"`
 			Options struct {
-				Limit  int  `json:"limit"`
-				Offset int  `json:"offset"`
-				Brief  bool `json:"brief"`
+				Limit  int    `json:"limit"`
+				Offset int    `json:"offset"`
+				Brief  bool   `json:"brief"`
+				Sort   string `json:"sort"`
+				Order  string `json:"order"`
 			} `json:"options"`
 		}
 		if err := json.Unmarshal([]byte(data), &req); err != nil {
@@ -1243,12 +1245,18 @@ func (h *BridgeHandler) handlePlaylists(action, data string) (string, error) {
 		if limit <= 0 {
 			limit = 100000
 		}
-		songs, err := h.db.PlaylistSongRepository().GetSongsPaginated(ctx, req.ID, limit, offset)
+		songs, err := h.db.PlaylistSongRepository().GetSongsFiltered(ctx, req.ID, database.PlaylistSongFilter{
+			OrderBy: req.Options.Sort,
+			Order:   req.Options.Order,
+			Limit:   limit,
+			Offset:  offset,
+		})
 		if err != nil {
 			return "", fmt.Errorf("handlePlaylists: getSongs: %w", err)
 		}
 		slog.Info("bridge playlists.getSongs",
 			"playlistID", req.ID, "limit", limit, "offset", offset,
+			"sort", req.Options.Sort, "order", req.Options.Order,
 			"count", len(songs), "brief", req.Options.Brief)
 		if req.Options.Brief {
 			briefs := make([]models.SongBrief, len(songs))
