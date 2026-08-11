@@ -1265,6 +1265,7 @@ func (h *SongHandler) UpdateSongLyrics(w http.ResponseWriter, r *http.Request) {
 // @Param normalize query string false "传 1 显式开启、0 显式关闭 EBU R128 音量均衡；不传时由服务端 /settings/volume-normalize 配置决定（默认关闭）。启用后使用 ffmpeg loudnorm=I=-16:LRA=11:TP=-1.5 消除不同音源之间的响度落差。需要重编码，未同时指定 format 时默认转为 mp3。均衡产物有独立缓存（文件名带 norm. 标记）；产物尚未生成时服务端边转边发一条 chunked MP3 流（无 Content-Length、不可 Range、Cache-Control 为 no-store），因此首字节不必等整首转完。media=video 忽略（-vn 会丢画面）；缺 ffmpeg 时优雅降级为原始音频"
 // @Param radio_transcode query string false "仅电台有效。传目标格式（如 mp3）时，服务端用 ffmpeg 把电台流实时转码为该格式（HLS 与裸流均适用）。用于只支持 MP3、无法解码 AAC/HE-AAC 或不支持 HLS 的音箱。缺 ffmpeg 或坏源时优雅降级为原样代理/302。与 format 分离：电台侧忽略 format，只认此参数"
 // @Param seek query number false "从第 N 秒起播。面向不支持 HTTP Range seek 的推流客户端（如小爱音箱经 player_play_url 只会从头拉流）：服务端用 ffmpeg input seek 产出一条以第 N 秒为开头的 chunked MP3 流，因此响应无 Content-Length、不可 Range、Cache-Control 为 no-store；浏览器等支持 Range 的客户端请用 Range 而非此参数。仅本地歌曲与已缓存的网络歌曲有效（电台是直播、未缓存的网络歌曲会阻塞整首下载，均忽略）；media=video 与 HEAD 忽略；缺 ffmpeg / seek 越过时长时优雅降级为从头完整播放"
+// @Param speed query number false "播放倍速，取值夹到 [0.5, 2.0]（超出该区间需要链式拼接多个 atempo，暂不支持）。服务端用 ffmpeg atempo 滤镜实时变速不变调，产出 chunked MP3 流（同 seek，无 Content-Length、不可 Range）；可与 seek/normalize 组合，由同一条 ffmpeg 一起处理。仅本地歌曲与已缓存的网络歌曲有效；电台、media=video、HEAD 忽略；缺 ffmpeg 或值非法时优雅降级为原速播放"
 // @Success 200 {file} binary "音频文件"
 // @Success 202 {string} string "预拉取已触发"
 // @Success 302 {string} string "电台流重定向"
@@ -1351,6 +1352,14 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 		seekSeconds = parseSeekSeconds(r.URL.Query().Get("seek"), song.Duration)
 	}
 
+	// speed=N：播放倍速（0.5–2.0），服务端用 ffmpeg atempo 滤镜实时变速（不变调）。
+	// 与 seek 同理：videoIntent 下忽略（-vn 会丢画面，且视频变速需要 setpts，不是本参数的职责范围）；
+	// HEAD 忽略（探测请求不该起 ffmpeg）；电台是直播流，serveRadio 不读取 opts，天然忽略。
+	var speed float64 = 1.0
+	if !videoIntent && r.Method != http.MethodHead {
+		speed = parseSpeed(r.URL.Query().Get("speed"))
+	}
+
 	// 预拉取模式：异步触发缓存 + 转码预热，立即返回 202。
 	// 不能用 r.Context()，否则 202 发出后客户端断开会 Kill ffmpeg，预热失败。
 	// 通过 playActivity.Track 注册进 registry（CatPrefetch），但 Activate 不会取消 prefetch
@@ -1373,6 +1382,7 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 		trackIndex:   trackIndex,
 		normalize:    normalize,
 		seekSeconds:  seekSeconds,
+		speed:        speed,
 	}
 
 	switch song.Type {
@@ -1397,6 +1407,7 @@ type servePlayOptions struct {
 	trackIndex   int     // 抽轨（audio-relative 0-based），< 0 = 不抽轨
 	normalize    bool    // EBU R128 音量均衡
 	seekSeconds  float64 // 从第 N 秒起播，0 = 从头
+	speed        float64 // 播放倍速 [0.5, 2.0]，1.0 = 不变速
 }
 
 // parseSeekSeconds 解析 seek 查询参数。
@@ -1421,18 +1432,43 @@ func parseSeekSeconds(raw string, duration float64) float64 {
 // seekTailGuardSeconds seek 距歌曲结尾的最小保留秒数，见 parseSeekSeconds。
 const seekTailGuardSeconds = 3
 
-// trySeekStream 尝试以「从 opts.seekSeconds 起的 MP3 流」提供 path，成功接管响应返回 true。
+// speedMin / speedMax 播放倍速允许范围，对齐 ffmpeg atempo 单滤镜原生支持区间 [0.5, 2.0]。
+// 超出该区间需要链式拼接多个 atempo 才能实现，目前不支持，越界值直接夹紧。
+const speedMin = 0.5
+const speedMax = 2.0
+
+// parseSpeed 解析 speed 查询参数。非法/缺省值回退到 1.0（不变速）；合法值夹到 [speedMin, speedMax]。
+func parseSpeed(raw string) float64 {
+	if raw == "" {
+		return 1.0
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || v <= 0 || math.IsInf(v, 0) || math.IsNaN(v) {
+		return 1.0
+	}
+	if v < speedMin {
+		return speedMin
+	}
+	if v > speedMax {
+		return speedMax
+	}
+	return v
+}
+
+// trySeekStream 尝试以「从 opts.seekSeconds 起、按 opts.speed 变速的 MP3 流」提供 path，
+// 成功接管响应返回 true。
 //
-// 返回 false 表示尚未向响应写入任何字节（含未请求 seek、ffmpeg 缺失/并发满/零输出等），
-// 调用方应继续走原本的 http.ServeFile 从头提供文件。
+// 返回 false 表示尚未向响应写入任何字节（含未请求 seek/变速、ffmpeg 缺失/并发满/零输出等），
+// 调用方应继续走原本的 http.ServeFile 从头、原速提供文件。
 func (h *SongHandler) trySeekStream(w http.ResponseWriter, r *http.Request, song *models.Song, path string, opts servePlayOptions) bool {
-	if opts.seekSeconds <= 0 || h.cacheService == nil {
+	if (opts.seekSeconds <= 0 && (opts.speed == 0 || opts.speed == 1.0)) || h.cacheService == nil {
 		return false
 	}
 	return h.streamPipedMP3(r.Context(), r.Context(), w, song, services.SeekStreamOptions{
 		SourcePath:      path,
 		StartSecond:     opts.seekSeconds,
 		RemainingSecond: remainingAfter(song, opts.seekSeconds),
+		Speed:           opts.speed,
 	}, "seek stream")
 }
 
@@ -1485,6 +1521,7 @@ func (h *SongHandler) tryLiveNormalizeStream(w http.ResponseWriter, r *http.Requ
 		StartSecond:     opts.seekSeconds, // 可为 0（纯均衡）；> 0 时与均衡由同一条 ffmpeg 一起做
 		RemainingSecond: remainingAfter(song, opts.seekSeconds),
 		Normalize:       true,
+		Speed:           opts.speed, // 均衡与变速可与同一条 ffmpeg 一起做，见 StreamSeekedMP3 的滤镜拼接
 	}, "live normalize stream")
 }
 
@@ -1876,7 +1913,7 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 		}
 	}
 	// 透传 ICY 头:icy-metaint 仅在原生路径转发(浏览器路径已去交织,转发反而误导);
-	// 其余 icy-* 是纯 HTTP 头,对浏览器无害,一律透传。
+	// 其余 icy-* 是纯 HTTP 头,对浏览��无害,一律透传。
 	for _, hdr := range []string{"icy-metaint", "icy-name", "icy-genre", "icy-br", "icy-description", "icy-url", "icy-pub", "icy-audio-info"} {
 		if hdr == "icy-metaint" && !forwardMetaint {
 			continue
@@ -1893,7 +1930,7 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 // normalizeAudioContentType 把上游返回的非标准音频 MIME 归一化为浏览器 / 解码器能识别的标准值。
 // 典型:Shoutcast/streamtheworld 类 HE-AAC 电台返回 `audio/aacp`(遗留 MIME),浏览器 <audio>
 // 与部分播放器无法据此选对解码器;实际负载是标准 ADTS AAC,改标 `audio/aac` 更兼容。(#275)
-// 只改 MIME 主类型,保留可能存在的参数(如 charset);未命中的一律原样透传。
+// 只改 MIME 主类��,保留可能存在的参数(如 charset);未命中的一律原样��传。
 func normalizeAudioContentType(ct string) string {
 	base, params, _ := strings.Cut(ct, ";")
 	switch strings.ToLower(strings.TrimSpace(base)) {
@@ -1957,8 +1994,12 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 
 	// 到这里缓存未命中：seek 只服务已缓存的网络歌曲。未命中时拿到本地文件必须先同步下载整首，
 	// 会让「续播」这一下按键卡住一整首歌的下载时长；而刚在播的歌几乎必然已缓存，代价可忽略。
+	// 变速同理：atempo 也只服务已缓存的网络歌曲，未命中时直接原速代理原始流。
 	if opts.seekSeconds > 0 {
 		slog.Info("seek ignored for uncached remote song", "songId", song.ID, "seek", opts.seekSeconds)
+	}
+	if opts.speed != 0 && opts.speed != 1.0 {
+		slog.Info("speed ignored for uncached remote song", "songId", song.ID, "speed", opts.speed)
 	}
 
 	// 2. 缓存未命中：解析播放 URL

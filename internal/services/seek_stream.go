@@ -74,6 +74,35 @@ type SeekStreamOptions struct {
 	// （songloft-org/songloft-plugin-miot#61）。此时 StartSecond 允许为 0（纯均衡、不 seek），
 	// 也允许 > 0（续播 + 均衡，一条 ffmpeg 同时做 -ss 与 -af）。
 	Normalize bool
+	// Speed 播放倍速，0 或 1.0 表示不变速。取值需落在 atempo 单滤镜原生支持的 [0.5, 2.0]
+	// 区间内（调用方已夹紧，此处不再二次校验）——单个 atempo 滤镜只支持这个范围，
+	// 超出需要链式拼接多个 atempo，目前不支持。
+	// 与 StartSecond=0 场景一样，Speed!=1.0 本身也应触发「必须走实时流」，
+	// 因为 atempo 需要重编码，静态文件的 http.ServeFile 快路径做不到变速。
+	Speed float64
+}
+
+// speedActive 判断 speed 是否需要实际生效（区分「未指定」与「显式传 1.0」，两者效果一致）。
+func speedActive(speed float64) bool {
+	return speed != 0 && speed != 1.0
+}
+
+// seekStreamTimeout 根据剩余时长与倍速算 ffmpeg 硬超时。
+//
+// RemainingSecond 是歌曲域（曲内）剩余秒数，但变速后 ffmpeg 实际要写出的音频时长是
+// RemainingSecond / Speed：2x 下一首剩 200 秒的歌只需 100 秒墙钟就能转完写完；0.5x 反而
+// 要 400 秒。不按 Speed 换算的话，0.5x 播放会在音频还没转完时就被硬超时掐断（截断收尾，
+// 参考 ErrSeekStreamAborted 的说明），表现为「变速播放到一半突然断掉」。
+// 剩余时长未知（<= 0）时退化成 seekStreamUnknownDurationTimeout，不用倍速换算。
+func seekStreamTimeout(remainingSecond, speed float64) time.Duration {
+	if remainingSecond <= 0 {
+		return seekStreamUnknownDurationTimeout
+	}
+	wallClockRemaining := remainingSecond
+	if speedActive(speed) {
+		wallClockRemaining = remainingSecond / speed
+	}
+	return seekStreamGrace + time.Duration(wallClockRemaining*float64(time.Second))
 }
 
 // StreamSeekedMP3 阻塞运行 ffmpeg，把 SourcePath 从 StartSecond 起的音频以 MP3 流写入 w，
@@ -84,6 +113,9 @@ type SeekStreamOptions struct {
 //
 // opts.Normalize 时另兼「边转边发音量均衡」，此时 StartSecond 允许为 0——两件事需要的都是
 // 同一套 pipe + Peek(1) 降级骨架，见 SeekStreamOptions.Normalize。
+//
+// opts.Speed 时同理兼「边转边发变速播放」（atempo 滤镜），StartSecond 同样允许为 0（从头即变速）；
+// 可与 Normalize/StartSecond 任意组合，一条 ffmpeg 用逗号拼接的 -af 同时处理。
 //
 // 与 runFFmpeg 不同，本函数 **不占用** c.transcodeSem：进程会存活整首歌的剩余时长，
 // 持串行信号量会长时间饿死其他有限文件的转码。并发由 seekStreamSem 单独限。
@@ -105,7 +137,7 @@ type SeekStreamOptions struct {
 //     断开底层连接（如 http.Hijacker + Close），不能优雅返回。
 //   - 其他 error：已写出部分字节后中途失败，无法再降级。
 func (c *CacheService) StreamSeekedMP3(ctx, connCtx context.Context, w io.Writer, opts SeekStreamOptions) error {
-	if opts.StartSecond <= 0 && !opts.Normalize {
+	if opts.StartSecond <= 0 && !opts.Normalize && !speedActive(opts.Speed) {
 		return fmt.Errorf("%w: non-positive start second", ErrSeekStreamUnavailable)
 	}
 	ffmpegPath := c.ffmpegPath
@@ -130,10 +162,11 @@ func (c *CacheService) StreamSeekedMP3(ctx, connCtx context.Context, w io.Writer
 	// 已知残留：源本身是 VBR MP3（含 force_mp3/normalize 转码产物，那条路径用 -q:a 0）时走 copy，
 	// 这个时长估算同样会偏几个百分点。只影响客户端自己显示的总时长——插件的进度与自动切歌都由
 	// 它本地计时驱动（见 PlaylistManager.playCurrent）——故不为此放弃零开销的 copy 快路径。
-	// Normalize 必须重编码（loudnorm 是滤镜，copy 下滤镜不生效），故不吃上面的 copy 快路径。
+	// Normalize 必须重编码（loudnorm 是滤镜，copy 下滤镜不生效），Speed!=1.0 同理（atempo 是
+	// 时域滤镜，直接影响采样点，copy 下不生效），两者都不吃上面的 copy 快路径。
 	encoder := "libmp3lame"
 	var qualityArgs []string
-	if !opts.Normalize && NormalizeFormat(filepath.Ext(opts.SourcePath)) == "mp3" {
+	if !opts.Normalize && !speedActive(opts.Speed) && NormalizeFormat(filepath.Ext(opts.SourcePath)) == "mp3" {
 		encoder = "copy"
 	} else {
 		qualityArgs = []string{"-b:a", "320k"}
@@ -141,7 +174,7 @@ func (c *CacheService) StreamSeekedMP3(ctx, connCtx context.Context, w io.Writer
 
 	args := []string{"-hide_banner", "-loglevel", "error"}
 	// -ss 放在 -i 之前用 input seek（O(1)），放后面会解码丢弃前 N 秒。
-	// StartSecond 为 0（纯均衡流）时不加 -ss：ffmpeg 认 -ss 0 但没必要，且少一个参数少一处踩坑面。
+	// StartSecond 为 0（纯均衡/纯变速流）时不加 -ss：ffmpeg 认 -ss 0 但没必要，且少一个参数少一处踩坑面。
 	if opts.StartSecond > 0 {
 		args = append(args, "-ss", fmt.Sprintf("%.3f", opts.StartSecond))
 	}
@@ -149,8 +182,17 @@ func (c *CacheService) StreamSeekedMP3(ctx, connCtx context.Context, w io.Writer
 	// -map 0:a:0 必需：mp3 muxer 只接受单条音频流，双音轨源（.mka，songloft-org/songloft#298）
 	// 不显式选轨会让 ffmpeg 直接报错退出，静默降级回「从头播」。
 	args = append(args, "-map", "0:a:0", "-vn", "-codec:a", encoder)
+	// 滤镜链：atempo 放前面先变速，loudnorm 再对变速后的信号做响度分析，两者同开时结果符合直觉。
+	// atempo 只支持单滤镜 [0.5, 2.0]，调用方已夹紧到该区间，此处不做二次校验/链式拼接。
+	var filters []string
+	if speedActive(opts.Speed) {
+		filters = append(filters, fmt.Sprintf("atempo=%.3f", opts.Speed))
+	}
 	if opts.Normalize {
-		args = append(args, "-af", loudnormFilter)
+		filters = append(filters, loudnormFilter)
+	}
+	if len(filters) > 0 {
+		args = append(args, "-af", strings.Join(filters, ","))
 	}
 	args = append(args, qualityArgs...)
 	// -write_xing 0 必需：pipe 不可 seek，mp3 muxer 无法回写 Xing 帧的真实时长，
@@ -158,10 +200,7 @@ func (c *CacheService) StreamSeekedMP3(ctx, connCtx context.Context, w io.Writer
 	args = append(args, "-write_xing", "0", "-f", "mp3", "pipe:1")
 
 	// 音箱只挂着连接不再读数据时 r.Context() 不取消，用硬超时回收孤儿 ffmpeg。
-	timeout := seekStreamUnknownDurationTimeout
-	if opts.RemainingSecond > 0 {
-		timeout = seekStreamGrace + time.Duration(opts.RemainingSecond)*time.Second
-	}
+	timeout := seekStreamTimeout(opts.RemainingSecond, opts.Speed)
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -218,7 +257,7 @@ func (c *CacheService) StreamSeekedMP3(ctx, connCtx context.Context, w io.Writer
 	if runCtx.Err() != nil {
 		slog.Error("seek stream truncated by hard timeout",
 			"src", opts.SourcePath, "seek", opts.StartSecond, "normalize", opts.Normalize,
-			"remainingSecond", opts.RemainingSecond, "timeout", timeout)
+			"speed", opts.Speed, "remainingSecond", opts.RemainingSecond, "timeout", timeout)
 		return nil
 	}
 	if waitErr != nil {

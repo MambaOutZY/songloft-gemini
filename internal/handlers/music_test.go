@@ -764,6 +764,38 @@ func TestParseSeekSeconds(t *testing.T) {
 	}
 }
 
+// TestParseSpeed 验证倍速参数解析与 [0.5, 2.0] 夹紧。
+// 超出该区间需要链式拼接多个 atempo（单个 atempo 只支持 0.5–2.0），目前不支持，越界直接夹紧。
+// 非法值回退 1.0（不变速），让缺省/坏参数的客户端拿到原速播放而非报错。
+func TestParseSpeed(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want float64
+	}{
+		{"空值", "", 1.0},
+		{"零", "0", 1.0},
+		{"负数", "-1.5", 1.0},
+		{"非数字", "fast", 1.0},
+		{"无穷", "Inf", 1.0},
+		{"NaN", "NaN", 1.0},
+		{"正常1倍", "1.0", 1.0},
+		{"正常1.5倍", "1.5", 1.5},
+		{"正常0.75倍", "0.75", 0.75},
+		{"低于下界夹紧", "0.3", speedMin},
+		{"高于上界夹紧", "3.0", speedMax},
+		{"下界本身", "0.5", 0.5},
+		{"上界本身", "2.0", 2.0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseSpeed(tc.raw); got != tc.want {
+				t.Errorf("parseSpeed(%q) = %v, want %v", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
 // newSeekTestHandler 造一个带假 ffmpeg 的 handler：ffmpeg 换成 /bin/echo，
 // 于是响应 body 就是 ffmpeg 的参数列表，可直接断言参数契约。ffmpegPath 传空则模拟缺 ffmpeg。
 func newSeekTestHandler(t *testing.T, ffmpegPath string) (*SongHandler, *database.SongRepository, *services.SongService) {

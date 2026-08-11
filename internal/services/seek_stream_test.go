@@ -175,7 +175,111 @@ func TestStreamSeekedMP3NormalizeArgs(t *testing.T) {
 	})
 }
 
-// TestStreamSeekedMP3AbortedByActivity 钉住 songloft-org/songloft-player#35 的根因修复：
+// TestStreamSeekedMP3SpeedArgs 钉住「变速播放（atempo 滤镜）」的参数契约：
+//   - Speed!=1.0 必须重编码（atempo 是时域滤镜，copy 下不生效），mp3 源也不能走 copy 快路径；
+//   - atempo 滤镜串以 atempo=N.NNN 形式出现在 -af 上，与 loudnorm 同开时用逗号拼接，atempo 在前；
+//   - StartSecond=0 + Speed!=1.0 是合法组合（纯变速流，从头起播但变速），不该被拒绝。
+func TestStreamSeekedMP3SpeedArgs(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "a.mp3")
+	if err := os.WriteFile(src, []byte("x"), 0644); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+
+	t.Run("纯变速从头起播", func(t *testing.T) {
+		cs := &CacheService{ffmpegPath: "/bin/echo"}
+		var buf bytes.Buffer
+		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
+			SourcePath: src, StartSecond: 0, RemainingSecond: 100, Speed: 1.5,
+		}); err != nil {
+			t.Fatalf("StreamSeekedMP3: %v", err)
+		}
+		out := buf.String()
+		for _, want := range []string{"-af atempo=1.500", "-codec:a libmp3lame", "-b:a 320k", "-f mp3", "pipe:1"} {
+			if !bytes.Contains([]byte(out), []byte(want)) {
+				t.Errorf("ffmpeg 参数缺 %q，实际: %s", want, out)
+			}
+		}
+		if bytes.Contains([]byte(out), []byte("-codec:a copy")) {
+			t.Errorf("atempo 必须重编码，却走了 copy: %s", out)
+		}
+		if bytes.Contains([]byte(out), []byte("-ss")) {
+			t.Errorf("StartSecond=0 不该出现 -ss，实际: %s", out)
+		}
+	})
+
+	t.Run("变速叠加 seek", func(t *testing.T) {
+		cs := &CacheService{ffmpegPath: "/bin/echo"}
+		var buf bytes.Buffer
+		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
+			SourcePath: src, StartSecond: 42, RemainingSecond: 100, Speed: 2.0,
+		}); err != nil {
+			t.Fatalf("StreamSeekedMP3: %v", err)
+		}
+		out := buf.String()
+		for _, want := range []string{"-ss 42.000", "-af atempo=2.000", "-codec:a libmp3lame"} {
+			if !bytes.Contains([]byte(out), []byte(want)) {
+				t.Errorf("ffmpeg 参数缺 %q，实际: %s", want, out)
+			}
+		}
+	})
+
+	t.Run("变速叠加均衡滤镜顺序", func(t *testing.T) {
+		cs := &CacheService{ffmpegPath: "/bin/echo"}
+		var buf bytes.Buffer
+		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
+			SourcePath: src, StartSecond: 0, RemainingSecond: 100, Normalize: true, Speed: 1.25,
+		}); err != nil {
+			t.Fatalf("StreamSeekedMP3: %v", err)
+		}
+		out := buf.String()
+		// atempo 必须在 loudnorm 之前：先变速再均衡，响度分析基于变速后的信号
+		idxAtempo := bytes.Index([]byte(out), []byte("atempo=1.250"))
+		idxLoudnorm := bytes.Index([]byte(out), []byte("loudnorm="))
+		if idxAtempo < 0 || idxLoudnorm < 0 {
+			t.Fatalf("缺 atempo 或 loudnorm 滤镜，实际: %s", out)
+		}
+		if idxAtempo > idxLoudnorm {
+			t.Errorf("atempo 应在 loudnorm 之前，实际: %s", out)
+		}
+		// 两者必须由逗号拼接进同一条 -af，而非两条 -af
+		if n := bytes.Count([]byte(out), []byte("-af ")); n != 1 {
+			t.Errorf("-af 出现 %d 次，期望 1（变速与均衡应由同一条 -af 拼接）: %s", n, out)
+		}
+	})
+}
+
+// TestSeekStreamTimeout 钉住倍速下硬超时的换算：
+// 2x 下 ffmpeg 实际只需一半墙钟时间就能转完写完，超时应显著短于 1x；0.5x 反而要翻倍。
+// 漏掉这一步会让 0.5x 播放在音频还没转完时被硬超时掐断，表现为「变速播放到一半突然断掉」。
+func TestSeekStreamTimeout(t *testing.T) {
+	const remaining = 200.0
+	t1 := seekStreamTimeout(remaining, 1.0)
+	t2 := seekStreamTimeout(remaining, 2.0)
+	tHalf := seekStreamTimeout(remaining, 0.5)
+
+	// 2x 超时应明显短于 1x（约一半，加上固定 grace）
+	if t2 >= t1 {
+		t.Errorf("2x 超时 %v 不小于 1x %v，倍速换算未生效", t2, t1)
+	}
+	if t2 >= t1-time.Minute {
+		t.Errorf("2x 超时 %v 与 1x %v 差距太小，期望约减半", t2, t1)
+	}
+	// 0.5x 超时应明显长于 1x（约翻倍）
+	if tHalf <= t1 {
+		t.Errorf("0.5x 超时 %v 不大于 1x %v，倍速换算未生效", tHalf, t1)
+	}
+	// 剩余时长未知时退化成固定兜底，不受倍速影响
+	if got := seekStreamTimeout(0, 2.0); got != seekStreamUnknownDurationTimeout {
+		t.Errorf("未知时长下超时应为 %v，实际 %v", seekStreamUnknownDurationTimeout, got)
+	}
+	// speed=1（不变速）与 speed=0（未指定）行为一致
+	if seekStreamTimeout(remaining, 0) != t1 {
+		t.Errorf("speed=0 应与 speed=1.0 超时一致")
+	}
+}
+
+
 // ctx 被 playActivity.Activate 提前取消（用户切歌，让 ffmpeg 让位），但 connCtx（真实连接）
 // 仍存活时，必须返回 ErrSeekStreamAborted，而不是把这次截断当作"正常结束"。
 //
