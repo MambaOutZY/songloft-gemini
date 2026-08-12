@@ -444,7 +444,10 @@ func (m *MetadataExtractor) ProbeForValidation(ctx context.Context, filePath str
 	if file, err := os.Open(filePath); err == nil {
 		defer file.Close()
 		if tagMeta, err := tag.ReadFrom(file); err == nil {
-			info.Format = NormalizeFormat(strings.TrimPrefix(filepath.Ext(filePath), "."))
+			info.Format = NormalizeFormat(string(tagMeta.FileType()))
+			if info.Format == "" {
+				info.Format = NormalizeFormat(strings.TrimPrefix(filepath.Ext(filePath), "."))
+			}
 			if d := tagMeta.Duration(); d > 0 {
 				info.Duration = d.Seconds()
 			}
@@ -458,7 +461,7 @@ func (m *MetadataExtractor) ProbeForValidation(ctx context.Context, filePath str
 	}
 
 	// duration / bitrate / sample_rate 任一缺失就回退 ffprobe
-	needProbe := info.Duration == 0 || info.BitRate == 0 || info.SampleRate == 0
+	needProbe := info.Duration == 0 || info.BitRate == 0 || info.SampleRate == 0 || info.Format == ""
 	if needProbe {
 		probe, err := m.runFFProbe(ctx, filePath)
 		if err != nil {
