@@ -122,7 +122,7 @@ func (a *App) migrateCueSource(rawDB *sql.DB, sourcePath string) int {
 	cueDir := filepath.Dir(sourcePath)
 
 	// 尝试解析 CUE sheet（外部 .cue 文件或 FLAC 内嵌 CUESHEET）
-	sheet, totalDurations := parseCueForMigration(sourcePath, cueDir)
+	sheet, totalDurations := parseCueForMigration(sourcePath)
 	if sheet == nil {
 		slog.Warn("CUE 迁移：无法解析来源，跳过", "source", sourcePath)
 		return 0
@@ -189,7 +189,7 @@ func (a *App) migrateCueSource(rawDB *sql.DB, sourcePath string) int {
 }
 
 // parseCueForMigration 解析 CUE 来源，支持外部 .cue 文件和 FLAC 内嵌 CUESHEET。
-func parseCueForMigration(sourcePath, cueDir string) (*cue.CUESheet, map[string]float64) {
+func parseCueForMigration(sourcePath string) (*cue.CUESheet, map[string]float64) {
 	// 外部 .cue 文件
 	if ext := filepath.Ext(sourcePath); ext == ".cue" || ext == ".CUE" || ext == ".Cue" {
 		sheet, err := cue.ParseFile(sourcePath)

@@ -279,7 +279,6 @@ func TestSeekStreamTimeout(t *testing.T) {
 	}
 }
 
-
 // ctx 被 playActivity.Activate 提前取消（用户切歌，让 ffmpeg 让位），但 connCtx（真实连接）
 // 仍存活时，必须返回 ErrSeekStreamAborted，而不是把这次截断当作"正常结束"。
 //
