@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { inject, type Ref } from 'vue'
+import { withBase } from 'vitepress'
 import type { Lang } from '../../../data/downloads'
 import { createT } from '../../../data/landing-i18n'
 
@@ -12,14 +13,14 @@ const clients = [
     desc: { zh: 'HarmonyOS NEXT 多源媒体播放器，16 类媒体库一站聚合', en: 'Multi-source media player for HarmonyOS NEXT with 16 library types' },
     platforms: ['HarmonyOS'],
     href: 'https://musicark.pro/',
-    icon: '🚀',
+    img: 'musicark.svg',
   },
   {
     name: { zh: '箭头音乐', en: 'Amcfy Music' },
     desc: { zh: '现代化多平台音乐播放器，兼容多种音乐服务器协议', en: 'Modern multi-platform music player compatible with various music server protocols' },
     platforms: ['Android', 'iOS', 'HarmonyOS', 'Windows', 'macOS'],
     href: 'https://www.amcfy.com/',
-    icon: '🎯',
+    img: 'amcfy.png',
   },
 ]
 </script>
@@ -40,7 +41,7 @@ const clients = [
           target="_blank"
           rel="noreferrer"
         >
-          <span class="client-icon">{{ c.icon }}</span>
+          <img class="client-icon" :src="withBase(`/thirdparty/${c.img}`)" :alt="c.name[lang]" />
           <div class="client-info">
             <span class="client-name">{{ c.name[lang] }}</span>
             <span class="client-desc">{{ c.desc[lang] }}</span>
@@ -85,7 +86,7 @@ const clients = [
   transform: translateY(-3px);
   box-shadow: 0 14px 30px -18px rgba(0, 0, 0, 0.4);
 }
-.client-icon { font-size: 28px; flex-shrink: 0; margin-top: 2px; }
+.client-icon { width: 40px; height: 40px; border-radius: 8px; flex-shrink: 0; }
 .client-info { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .client-name {
   font-weight: 700;

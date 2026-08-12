@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="192px" height="192px" viewBox="0 0 192 192" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <!-- 背景渐变 -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF8A8A"/>
+      <stop offset="100%" stop-color="#FF5252"/>
+    </linearGradient>
+    
+    <!-- 音符渐变 -->
+    <linearGradient id="noteGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F5F5F5"/>
+    </linearGradient>
+    
+    <!-- 旗帜渐变 -->
+    <linearGradient id="flagGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#A8E6FF"/>
+      <stop offset="100%" stop-color="#4FC3F7"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- 背景 -->
+  <rect width="192" height="192" rx="42" fill="url(#bgGradient)"/>
+  
+  <g>
+    <!-- 主音符图标 - 居中放大1.6倍，8度旋转 -->
+    <g transform="translate(96,96) scale(1.6) rotate(8) translate(-96,-96)">
+      <!-- 音符头部 -->
+      <ellipse cx="96" cy="105" rx="19.5" ry="15" fill="white"/>
+      
+      <!-- 音符杆 -->
+      <rect x="105" y="52.5" width="9" height="60" rx="4.5" fill="white"/>
+      
+      <!-- 音符旗帜 -->
+      <path d="M1.875,-37.5 Q18.75,-33 24,-18.75 Q21,-6 15,-11.25 Q9,-22.5 1.875,-30" fill="white" transform="translate(109.5 90)"/>
+    </g>
+    
+    <!-- 水波元素，突出方舟主题，放大1.5倍 -->
+    <ellipse cx="96" cy="140" rx="42.75" ry="7.875" fill="#fff" opacity="0.18"/>
+    <ellipse cx="96" cy="150" rx="31.5" ry="5.625" fill="#fff" opacity="0.12"/>
+    
+    <!-- 音符小星星点缀，放大1.6倍 -->
+    <circle cx="60" cy="40" r="4.8" fill="#fff" opacity="0.7"/>
+    <circle cx="135" cy="40" r="3.6" fill="#fff" opacity="0.5"/>
+    <circle cx="75" cy="70" r="3" fill="#fff" opacity="0.6"/>
+  </g>
+</svg>
+
+
+
+

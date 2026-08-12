@@ -209,8 +209,8 @@ Songloft 提供三种版本，满足不同使用场景：
 
 | 客户端 | 平台 | 说明 |
 |--------|------|------|
-| 🚀 [音乐方舟](https://musicark.pro/) | HarmonyOS | HarmonyOS NEXT 多源媒体播放器，16 类媒体库一站聚合 |
-| 🎯 [箭头音乐](https://www.amcfy.com/) | Android / iOS / HarmonyOS / Windows / macOS | 现代化多平台音乐播放器，兼容多种音乐服务器协议 |
+| [音乐方舟](https://musicark.pro/) | HarmonyOS | HarmonyOS NEXT 多源媒体播放器，16 类媒体库一站聚合 |
+| [箭头音乐](https://www.amcfy.com/) | Android / iOS / HarmonyOS / Windows / macOS | 现代化多平台音乐播放器，兼容多种音乐服务器协议 |
 
 > 💡 第三方客户端由各自开发者维护，与 Songloft 项目无直接关联。如遇问题请联系对应客户端的开发者。
 ## 🚀 快速开始
