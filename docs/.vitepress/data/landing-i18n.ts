@@ -50,6 +50,12 @@ const zh: Dict = {
   'plugins.cta.dev': '插件开发指南',
   'plugins.cta.registry': '插件源制作',
 
+  // Third-party clients
+  'thirdparty.eyebrow': '社区生态',
+  'thirdparty.title': '第三方客户端',
+  'thirdparty.subtitle':
+    '以下第三方客户端由社区开发者独立维护，已适配 Songloft 服务端，为你提供更多平台选择。',
+
   // Compliance
   'compliance.title': '合规与版权',
   'compliance.intro': 'Songloft 是帮助你管理自己合法拥有音乐的工具，请在使用前了解：',
@@ -121,6 +127,11 @@ const en: Dict = {
   'plugins.cta.list': 'Browse plugins',
   'plugins.cta.dev': 'Plugin dev guide',
   'plugins.cta.registry': 'Build a registry',
+
+  'thirdparty.eyebrow': 'Community',
+  'thirdparty.title': 'Third-party clients',
+  'thirdparty.subtitle':
+    'These third-party clients are independently maintained by community developers and support connecting to Songloft servers.',
 
   'compliance.title': 'Compliance & copyright',
   'compliance.intro': 'Songloft helps you manage music you legally own. Before using it, please note:',

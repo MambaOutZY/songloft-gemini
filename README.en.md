@@ -203,6 +203,16 @@ Routers and ONTs (optical network terminals) are common home network devices tha
 
 🔗 **GitHub repository**: [songloft-org/songloft-for-router](https://github.com/songloft-org/songloft-for-router)
 
+### 🌐 Third-party Clients
+
+The following third-party clients are independently maintained by community developers and support connecting to Songloft servers:
+
+| Client | Platforms | Description |
+|--------|-----------|-------------|
+| 🚀 [MusicArk (音乐方舟)](https://musicark.pro/) | HarmonyOS | Multi-source media player for HarmonyOS NEXT with 16 library types |
+| 🎯 [Amcfy Music (箭头音乐)](https://www.amcfy.com/) | Android / iOS / HarmonyOS / Windows / macOS | Modern multi-platform music player compatible with various music server protocols |
+
+> 💡 Third-party clients are maintained by their respective developers and are not directly affiliated with the Songloft project. If you encounter issues, please contact the corresponding client's developer.
 ## 🚀 Quick Start
 
 > 🔐 **Security notice (must read)**: The default admin account is `admin / admin`, which is **suitable for local testing only**. For any deployment exposed to the internet or accessed by multiple devices, be sure to set a strong password via the `ADMIN_USERNAME` / `ADMIN_PASSWORD` environment variables before starting; otherwise your music library may be accessible to strangers.

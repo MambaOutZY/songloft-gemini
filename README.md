@@ -203,6 +203,16 @@ Songloft 提供三种版本，满足不同使用场景：
 
 🔗 **GitHub 仓库**：[songloft-org/songloft-for-router](https://github.com/songloft-org/songloft-for-router)
 
+### 🌐 第三方客户端
+
+以下第三方客户端由社区开发者独立维护，已适配 Songloft 服务端，为你提供更多平台选择：
+
+| 客户端 | 平台 | 说明 |
+|--------|------|------|
+| 🚀 [音乐方舟](https://musicark.pro/) | HarmonyOS | HarmonyOS NEXT 多源媒体播放器，16 类媒体库一站聚合 |
+| 🎯 [箭头音乐](https://www.amcfy.com/) | Android / iOS / HarmonyOS / Windows / macOS | 现代化多平台音乐播放器，兼容多种音乐服务器协议 |
+
+> 💡 第三方客户端由各自开发者维护，与 Songloft 项目无直接关联。如遇问题请联系对应客户端的开发者。
 ## 🚀 快速开始
 
 > 🔐 **安全提示（必读）**：默认管理员账号是 `admin / admin`，**仅适用于本地测试**。任何对外网暴露或多设备访问的部署，请务必通过环境变量 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 设置强密码后再启动；否则你的音乐库可能被陌生人访问。

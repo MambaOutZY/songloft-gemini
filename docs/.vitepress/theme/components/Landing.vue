@@ -12,6 +12,7 @@ import LandingFeatureRow from './landing/LandingFeatureRow.vue'
 import LandingScreenshots from './landing/LandingScreenshots.vue'
 import LandingInstaller from './landing/LandingInstaller.vue'
 import LandingPlugins from './landing/LandingPlugins.vue'
+import LandingThirdPartyClients from './landing/LandingThirdPartyClients.vue'
 import LandingCompliance from './landing/LandingCompliance.vue'
 import LandingNotice from './landing/LandingNotice.vue'
 import LandingCTA from './landing/LandingCTA.vue'
@@ -45,6 +46,7 @@ useReveal()
     <LandingInstaller />
     <LandingNotice />
     <LandingPlugins />
+    <LandingThirdPartyClients />
     <LandingCompliance />
     <LandingCTA />
   </div>
