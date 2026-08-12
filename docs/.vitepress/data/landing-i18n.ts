@@ -5,7 +5,7 @@ export type Dict = Record<string, string>
 
 const zh: Dict = {
   // Hero
-  'hero.badge': '自托管 · 开源 · 无遥测',
+  'hero.badge': '自托管 · 开源 · 零用户追踪',
   'hero.title': '你的音乐，你的服务器',
   'hero.subtitle':
     'Songloft 是面向个人的自托管音乐服务器：数据完全自主、插件化扩展、跨平台客户端，仅管理你合法拥有的音乐。',
@@ -62,7 +62,7 @@ const zh: Dict = {
   'compliance.i1': '不内置、不分发任何受版权保护的音乐内容',
   'compliance.i2': '请仅管理你合法拥有的音乐（购买 / 自录 / 公有领域 / CC 授权等）',
   'compliance.i3': '第三方插件由社区维护，音源版权责任由使用者自负',
-  'compliance.i4': '仅供个人非商业使用，服务端无任何遥测',
+  'compliance.i4': '仅供个人非商业使用，不采集任何用户数据',
   'compliance.more': '详见',
   'compliance.notice': 'NOTICE',
   'compliance.privacy': '隐私说明',
@@ -88,7 +88,7 @@ const zh: Dict = {
 }
 
 const en: Dict = {
-  'hero.badge': 'Self-hosted · Open source · No telemetry',
+  'hero.badge': 'Self-hosted · Open source · No user tracking',
   'hero.title': 'Your music, your server',
   'hero.subtitle':
     'Songloft is a self-hosted music server for individuals: fully own your data, extend with plugins, play everywhere — for music you legally own.',
@@ -138,7 +138,7 @@ const en: Dict = {
   'compliance.i1': 'It ships and distributes no copyrighted music content',
   'compliance.i2': 'Manage only music you legally own (purchased / self-recorded / public domain / CC)',
   'compliance.i3': 'Third-party plugins are community-maintained; source copyright is the user’s responsibility',
-  'compliance.i4': 'For personal, non-commercial use; the server has no telemetry',
+  'compliance.i4': 'For personal, non-commercial use; no user data is collected',
   'compliance.more': 'See',
   'compliance.notice': 'NOTICE',
   'compliance.privacy': 'Privacy',
