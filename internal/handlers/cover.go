@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,21 @@ const coverThumbMaxWidth = 1024
 
 // coverThumbJPEGQuality 缩略图 JPEG 编码质量。封面为装饰性小图，85 在体积/画质间平衡。
 const coverThumbJPEGQuality = 85
+
+// coverThumbSem 限制并发缩略图解码+缩放操作数。每个操作需将原图全尺寸解码为 RGBA
+// （如 3000×3000 = 36MB），不限并发在弱设备上会 OOM（songloft-org/songloft#389）。
+var coverThumbSem = make(chan struct{}, coverThumbWorkers())
+
+func coverThumbWorkers() int {
+	n := runtime.GOMAXPROCS(0) / 2
+	if n < 1 {
+		return 1
+	}
+	if n > 4 {
+		return 4
+	}
+	return n
+}
 
 // serveCoverFile 统一的本地封面文件服务。
 //
@@ -77,6 +93,13 @@ func serveCoverFile(w http.ResponseWriter, r *http.Request, path string) {
 	if match := r.Header.Get("If-None-Match"); match != "" && etagMatches(match, etag) {
 		slog.Debug("封面缩略 ETag 命中，返回 304", "path", path, "w", width)
 		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	select {
+	case coverThumbSem <- struct{}{}:
+		defer func() { <-coverThumbSem }()
+	case <-r.Context().Done():
 		return
 	}
 
