@@ -475,6 +475,9 @@ definitions:
       enabled:
         example: false
         type: boolean
+      loudness:
+        example: -16
+        type: number
     type: object
   jsplugin.JSPlugin:
     properties:
@@ -5138,13 +5141,13 @@ paths:
       - 设置
   /settings/volume-normalize:
     get:
-      description: 返回是否启用 EBU R128 音量均衡。启用后，播放请求未显式携带 normalize 参数时，服务端自动对音频执行 loudnorm
-        滤镜。默认关闭。
+      description: 返回是否启用 EBU R128 音量均衡，以及目标响度（LUFS，默认 -16）。启用后，播放请求未显式携带 normalize
+        参数时，服务端自动对音频执行 loudnorm 滤镜。默认关闭。
       produces:
       - application/json
       responses:
         "200":
-          description: 当前启用状态
+          description: 当前启用状态与目标响度
           schema:
             $ref: '#/definitions/handlers.volumeNormalizeRequest'
       security:
@@ -5155,10 +5158,10 @@ paths:
     put:
       consumes:
       - application/json
-      description: 启用或关闭 EBU R128 音量均衡。启用后，所有不含显式 normalize 查询参数的播放请求将自动应用 loudnorm
-        滤镜（需要 ffmpeg）。
+      description: 启用或关闭 EBU R128 音量均衡，并可选地设置目标响度（LUFS，范围 -40 ~ -5，默认 -16）。启用后，所有不含显式
+        normalize 查询参数的播放请求将自动应用 loudnorm 滤镜（需要 ffmpeg）。loudness 字段可省略：省略时仅切换开关、不改动响度配置（向后兼容旧前端）。
       parameters:
-      - description: 启用状态
+      - description: 启用状态与（可选）目标响度
         in: body
         name: request
         required: true
@@ -5168,11 +5171,11 @@ paths:
       - application/json
       responses:
         "200":
-          description: 更新后的启用状态
+          description: 更新后的启用状态与目标响度
           schema:
             $ref: '#/definitions/handlers.volumeNormalizeRequest'
         "400":
-          description: 请求格式错误
+          description: 请求格式错误或响度越界
           schema:
             additionalProperties:
               type: string
@@ -5802,6 +5805,12 @@ paths:
         in: query
         name: seek
         type: number
+      - description: 播放倍速，取值夹到 [0.5, 2.0]（超出该区间需要链式拼接多个 atempo，暂不支持）。服务端用 ffmpeg atempo
+          滤镜实时变速不变调，产出 chunked MP3 流（同 seek，无 Content-Length、不可 Range）；可与 seek/normalize
+          组合，由同一条 ffmpeg 一起处理。仅本地歌曲与已缓存的网络歌曲有效；电台、media=video、HEAD 忽略；缺 ffmpeg 或值非法时优雅降级为原速播放
+        in: query
+        name: speed
+        type: number
       produces:
       - application/octet-stream
       responses:
@@ -5887,6 +5896,12 @@ paths:
           与 HEAD 忽略；缺 ffmpeg / seek 越过时长时优雅降级为从头完整播放
         in: query
         name: seek
+        type: number
+      - description: 播放倍速，取值夹到 [0.5, 2.0]（超出该区间需要链式拼接多个 atempo，暂不支持）。服务端用 ffmpeg atempo
+          滤镜实时变速不变调，产出 chunked MP3 流（同 seek，无 Content-Length、不可 Range）；可与 seek/normalize
+          组合，由同一条 ffmpeg 一起处理。仅本地歌曲与已缓存的网络歌曲有效；电台、media=video、HEAD 忽略；缺 ffmpeg 或值非法时优雅降级为原速播放
+        in: query
+        name: speed
         type: number
       produces:
       - application/octet-stream

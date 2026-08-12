@@ -67,7 +67,7 @@ type SeekStreamOptions struct {
 	StartSecond float64
 	// RemainingSecond 预计剩余音频时长（秒），用于设置 ffmpeg 硬超时；<= 0 表示未知（用固定兜底）。
 	RemainingSecond float64
-	// Normalize 边转边发音量均衡（EBU R128）。为 true 时强制重编码并插入 loudnormFilter。
+	// Normalize 边转边发音量均衡（EBU R128）。为 true 时强制重编码并插入 normalizeLoudnessFilter。
 	//
 	// 借用本函数是因为需要的正是同一套「pipe + Peek(1) 确认有输出才提交响应」骨架：
 	// 均衡产物还没落盘时，整首 loudnorm 会把设备的首个 play 请求阻塞 20+ 秒
@@ -189,7 +189,7 @@ func (c *CacheService) StreamSeekedMP3(ctx, connCtx context.Context, w io.Writer
 		filters = append(filters, fmt.Sprintf("atempo=%.3f", opts.Speed))
 	}
 	if opts.Normalize {
-		filters = append(filters, loudnormFilter)
+		filters = append(filters, c.normalizeLoudnessFilter())
 	}
 	if len(filters) > 0 {
 		args = append(args, "-af", strings.Join(filters, ","))

@@ -5689,7 +5689,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回是否启用 EBU R128 音量均衡。启用后，播放请求未显式携带 normalize 参数时，服务端自动对音频执行 loudnorm 滤镜。默认关闭。",
+                "description": "返回是否启用 EBU R128 音量均衡，以及目标响度（LUFS，默认 -16）。启用后，播放请求未显式携带 normalize 参数时，服务端自动对音频执行 loudnorm 滤镜。默认关闭。",
                 "produces": [
                     "application/json"
                 ],
@@ -5699,7 +5699,7 @@ const docTemplate = `{
                 "summary": "获取音量均衡配置",
                 "responses": {
                     "200": {
-                        "description": "当前启用状态",
+                        "description": "当前启用状态与目标响度",
                         "schema": {
                             "$ref": "#/definitions/handlers.volumeNormalizeRequest"
                         }
@@ -5712,7 +5712,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "启用或关闭 EBU R128 音量均衡。启用后，所有不含显式 normalize 查询参数的播放请求将自动应用 loudnorm 滤镜（需要 ffmpeg）。",
+                "description": "启用或关闭 EBU R128 音量均衡，并可选地设置目标响度（LUFS，范围 -40 ~ -5，默认 -16）。启用后，所有不含显式 normalize 查询参数的播放请求将自动应用 loudnorm 滤镜（需要 ffmpeg）。loudness 字段可省略：省略时仅切换开关、不改动响度配置（向后兼容旧前端）。",
                 "consumes": [
                     "application/json"
                 ],
@@ -5725,7 +5725,7 @@ const docTemplate = `{
                 "summary": "更新音量均衡配置",
                 "parameters": [
                     {
-                        "description": "启用状态",
+                        "description": "启用状态与（可选）目标响度",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -5736,13 +5736,13 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "更新后的启用状态",
+                        "description": "更新后的启用状态与目标响度",
                         "schema": {
                             "$ref": "#/definitions/handlers.volumeNormalizeRequest"
                         }
                     },
                     "400": {
-                        "description": "请求格式错误",
+                        "description": "请求格式错误或响度越界",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -7407,6 +7407,12 @@ const docTemplate = `{
                         "description": "从第 N 秒起播。面向不支持 HTTP Range seek 的推流客户端（如小爱音箱经 player_play_url 只会从头拉流）：服务端用 ffmpeg input seek 产出一条以第 N 秒为开头的 chunked MP3 流，因此响应无 Content-Length、不可 Range、Cache-Control 为 no-store；浏览器等支持 Range 的客户端请用 Range 而非此参数。仅本地歌曲与已缓存的网络歌曲有效（电台是直播、未缓存的网络歌曲会阻塞整首下载，均忽略）；media=video 与 HEAD 忽略；缺 ffmpeg / seek 越过时长时优雅降级为从头完整播放",
                         "name": "seek",
                         "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "播放倍速，取值夹到 [0.5, 2.0]（超出该区间需要链式拼接多个 atempo，暂不支持）。服务端用 ffmpeg atempo 滤镜实时变速不变调，产出 chunked MP3 流（同 seek，无 Content-Length、不可 Range）；可与 seek/normalize 组合，由同一条 ffmpeg 一起处理。仅本地歌曲与已缓存的网络歌曲有效；电台、media=video、HEAD 忽略；缺 ffmpeg 或值非法时优雅降级为原速播放",
+                        "name": "speed",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -7518,6 +7524,12 @@ const docTemplate = `{
                         "type": "number",
                         "description": "从第 N 秒起播。面向不支持 HTTP Range seek 的推流客户端（如小爱音箱经 player_play_url 只会从头拉流）：服务端用 ffmpeg input seek 产出一条以第 N 秒为开头的 chunked MP3 流，因此响应无 Content-Length、不可 Range、Cache-Control 为 no-store；浏览器等支持 Range 的客户端请用 Range 而非此参数。仅本地歌曲与已缓存的网络歌曲有效（电台是直播、未缓存的网络歌曲会阻塞整首下载，均忽略）；media=video 与 HEAD 忽略；缺 ffmpeg / seek 越过时长时优雅降级为从头完整播放",
                         "name": "seek",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "播放倍速，取值夹到 [0.5, 2.0]（超出该区间需要链式拼接多个 atempo，暂不支持）。服务端用 ffmpeg atempo 滤镜实时变速不变调，产出 chunked MP3 流（同 seek，无 Content-Length、不可 Range）；可与 seek/normalize 组合，由同一条 ffmpeg 一起处理。仅本地歌曲与已缓存的网络歌曲有效；电台、media=video、HEAD 忽略；缺 ffmpeg 或值非法时优雅降级为原速播放",
+                        "name": "speed",
                         "in": "query"
                     }
                 ],
@@ -9102,6 +9114,10 @@ const docTemplate = `{
                 "enabled": {
                     "type": "boolean",
                     "example": false
+                },
+                "loudness": {
+                    "type": "number",
+                    "example": -16
                 }
             }
         },

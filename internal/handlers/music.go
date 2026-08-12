@@ -136,6 +136,9 @@ func (h *SongHandler) SetURLResolver(r *services.InternalURLResolver) {
 
 const remoteTitleSourceConfigKey = "remote_title_source"
 const volumeNormalizeConfigKey = "volume_normalize"
+
+// 目标响度（LUFS）的 config key 在 services.CacheService 里声明并读取（构建 loudnorm 滤镜），
+// handler 只负责写入，直接引用 services.volumeNormalizeLoudnessKey 避免字符串漂移。
 const songCoverProxyTimeout = 5 * time.Second
 
 // remoteTitleSourceRequest /settings/remote-title-source 请求/响应体
@@ -193,16 +196,19 @@ func (h *SongHandler) UpdateRemoteTitleSourceSetting(w http.ResponseWriter, r *h
 }
 
 // volumeNormalizeRequest /settings/volume-normalize 请求/响应体
+// Loudness 为目标响度（LUFS）：GET 恒返回当前值；PUT 可省略（omitempty + 指针），
+// 省略时不改响度配置（向后兼容旧前端只发 {enabled}）。
 type volumeNormalizeRequest struct {
-	Enabled bool `json:"enabled" example:"false"`
+	Enabled  bool     `json:"enabled" example:"false"`
+	Loudness *float64 `json:"loudness,omitempty" example:"-16"`
 }
 
 // GetVolumeNormalizeSetting GET /api/v1/settings/volume-normalize
 // @Summary 获取音量均衡配置
-// @Description 返回是否启用 EBU R128 音量均衡。启用后，播放请求未显式携带 normalize 参数时，服务端自动对音频执行 loudnorm 滤镜。默认关闭。
+// @Description 返回是否启用 EBU R128 音量均衡，以及目标响度（LUFS，默认 -16）。启用后，播放请求未显式携带 normalize 参数时，服务端自动对音频执行 loudnorm 滤镜。默认关闭。
 // @Tags 设置
 // @Produce json
-// @Success 200 {object} volumeNormalizeRequest "当前启用状态"
+// @Success 200 {object} volumeNormalizeRequest "当前启用状态与目标响度"
 // @Security BearerAuth
 // @Router /settings/volume-normalize [get]
 func (h *SongHandler) GetVolumeNormalizeSetting(w http.ResponseWriter, r *http.Request) {
@@ -210,18 +216,20 @@ func (h *SongHandler) GetVolumeNormalizeSetting(w http.ResponseWriter, r *http.R
 	if h.configService != nil {
 		enabled = h.configService.GetBool(volumeNormalizeConfigKey, false)
 	}
-	respondJSON(w, http.StatusOK, volumeNormalizeRequest{Enabled: enabled})
+	// NormalizeLoudness 是 nil-safety 方法：h.cacheService 为 nil（测试场景）时返回默认 -16。
+	loudness := h.cacheService.NormalizeLoudness()
+	respondJSON(w, http.StatusOK, volumeNormalizeRequest{Enabled: enabled, Loudness: &loudness})
 }
 
 // UpdateVolumeNormalizeSetting PUT /api/v1/settings/volume-normalize
 // @Summary 更新音量均衡配置
-// @Description 启用或关闭 EBU R128 音量均衡。启用后，所有不含显式 normalize 查询参数的播放请求将自动应用 loudnorm 滤镜（需要 ffmpeg）。
+// @Description 启用或关闭 EBU R128 音量均衡，并可选地设置目标响度（LUFS，范围 -40 ~ -5，默认 -16）。启用后，所有不含显式 normalize 查询参数的播放请求将自动应用 loudnorm 滤镜（需要 ffmpeg）。loudness 字段可省略：省略时仅切换开关、不改动响度配置（向后兼容旧前端）。
 // @Tags 设置
 // @Accept json
 // @Produce json
-// @Param request body volumeNormalizeRequest true "启用状态"
-// @Success 200 {object} volumeNormalizeRequest "更新后的启用状态"
-// @Failure 400 {object} map[string]string "请求格式错误"
+// @Param request body volumeNormalizeRequest true "启用状态与（可选）目标响度"
+// @Success 200 {object} volumeNormalizeRequest "更新后的启用状态与目标响度"
+// @Failure 400 {object} map[string]string "请求格式错误或响度越界"
 // @Failure 500 {object} map[string]string "保存配置失败"
 // @Security BearerAuth
 // @Router /settings/volume-normalize [put]
@@ -235,6 +243,17 @@ func (h *SongHandler) UpdateVolumeNormalizeSetting(w http.ResponseWriter, r *htt
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
 		return
 	}
+	// 可选的目标响度：提供则校验 + 写入；省略则保持现有配置不动。
+	if req.Loudness != nil {
+		if err := services.ValidateNormalizeLoudness(*req.Loudness); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error(), err)
+			return
+		}
+		if err := h.configService.Set(services.VolumeNormalizeLoudnessKey, strconv.FormatFloat(*req.Loudness, 'g', -1, 64)); err != nil {
+			respondError(w, http.StatusInternalServerError, "保存响度配置失败", err)
+			return
+		}
+	}
 	val := "false"
 	if req.Enabled {
 		val = "true"
@@ -243,7 +262,9 @@ func (h *SongHandler) UpdateVolumeNormalizeSetting(w http.ResponseWriter, r *htt
 		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
 		return
 	}
-	respondJSON(w, http.StatusOK, volumeNormalizeRequest{Enabled: req.Enabled})
+	// 回显当前生效值：响度从 config 读回（已含刚写入的值或既有值），保证与下次 GET 一致。
+	loudness := h.cacheService.NormalizeLoudness()
+	respondJSON(w, http.StatusOK, volumeNormalizeRequest{Enabled: req.Enabled, Loudness: &loudness})
 }
 
 // StartMetadataRefresh 触发刷新歌曲元数据
