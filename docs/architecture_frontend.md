@@ -258,6 +258,38 @@ ShellLayout (ShellRoute builder)
 - **SnackBar**: Desktop 使用固定宽度居中显示
 - **对话框**: 根据屏幕类型调整最大宽度
 
+## UI 组件设计规范
+
+### 播放按钮形状（PlayControls）
+
+核心播放控制组件 `PlayControls`（`lib/features/player/presentation/widgets/play_controls.dart`）通过 `useRoundedRect` 参数控制按钮形状：
+
+```dart
+final borderRadius =
+    useRoundedRect ? AppRadius.xxlAll : BorderRadius.circular(size);
+```
+
+- **圆形**（`useRoundedRect = false`，默认）：`BorderRadius.circular(size)` 在正方形容器上产生正圆
+- **大圆角矩形**（`useRoundedRect = true`）：固定 28px 圆角（`AppRadius.xxl`），呈超椭圆/胶囊形
+
+**设计原则：按钮尺寸决定形状**
+
+| 平台 / 场景 | 尺寸 | 形状 | 原因 |
+|-------------|------|------|------|
+| 桌面全屏播放器 | 52px | 圆形 | 尺寸适中，圆形视觉比例协调 |
+| 桌面底部播放栏 | 40px | 圆形 | 小尺寸，圆形紧凑 |
+| 车机侧边面板 | 52px | 圆形 | 同桌面 |
+| **移动端全屏播放器** | 76px | 大圆角矩形 | 大尺寸圆形会显得笨重，圆角矩形更现代紧凑 |
+| **视频播放器** | 60px | 大圆角矩形 | 与视频画面比例协调，避免圆形过于突兀 |
+
+**规则**：60px 及以上的主播放按钮使用 `useRoundedRect: true`；52px 及以下使用默认圆形。这不是 bug，是有意为之的视觉平衡决策。新增播放界面时按此规则选择形状。
+
+### 其他播放按钮变体
+
+- **CompactPlayButton**：纯图标按钮（`IconButton`），无背景填充，用于迷你播放栏等空间紧凑场景
+- **Browse Card FAB**：`Material(shape: CircleBorder())` 悬浮圆形按钮，带 elevation，用于网格卡片悬停时的快速播放
+- **"全部播放" FilledButton**：`FilledButton.icon` 药丸形按钮，含文字标签，用于歌单/分类页头部
+
 ## 部署模式
 
 ### 嵌入模式（Embedded）

@@ -258,6 +258,38 @@ The theme dynamically adjusts component sizes based on screen type:
 - **SnackBar**: fixed width, centered on Desktop
 - **Dialogs**: maximum width adjusted by screen type
 
+## UI Component Design Guidelines
+
+### Play Button Shape (PlayControls)
+
+The core play control component `PlayControls` (`lib/features/player/presentation/widgets/play_controls.dart`) uses the `useRoundedRect` parameter to control button shape:
+
+```dart
+final borderRadius =
+    useRoundedRect ? AppRadius.xxlAll : BorderRadius.circular(size);
+```
+
+- **Circle** (`useRoundedRect = false`, default): `BorderRadius.circular(size)` produces a perfect circle on a square container
+- **Rounded rectangle** (`useRoundedRect = true`): fixed 28px corner radius (`AppRadius.xxl`), producing a superellipse/capsule shape
+
+**Design principle: button size determines shape**
+
+| Platform / Context | Size | Shape | Rationale |
+|-------------------|------|-------|-----------|
+| Desktop full player | 52px | Circle | Medium size, circle is visually balanced |
+| Desktop bottom bar | 40px | Circle | Small size, circle is compact |
+| Car-mode side panel | 52px | Circle | Same as desktop |
+| **Mobile full player** | 76px | Rounded rect | Large circle looks bulky; rounded rect is more modern and compact |
+| **Video player** | 60px | Rounded rect | Better proportion with video frame, avoids an overly prominent circle |
+
+**Rule**: Primary play buttons at 60px or above use `useRoundedRect: true`; those at 52px or below use the default circle. This is an intentional visual balance decision, not a bug. Follow this rule when adding new player UIs.
+
+### Other Play Button Variants
+
+- **CompactPlayButton**: Icon-only button (`IconButton`), no background fill, used in compact spaces like the mini player bar
+- **Browse Card FAB**: `Material(shape: CircleBorder())` floating circular button with elevation, shown on grid card hover for quick play
+- **"Play All" FilledButton**: `FilledButton.icon` pill-shaped button with text label, used in playlist/category page headers
+
 ## Deployment Modes
 
 ### Embedded Mode
