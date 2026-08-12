@@ -22,6 +22,13 @@ const clients = [
     href: 'https://www.amcfy.com/',
     img: 'amcfy.png',
   },
+  {
+    name: { zh: '音流', en: 'Stream Music' },
+    desc: { zh: '跨平台 NAS 音乐播放器，支持多种自托管音乐服务', en: 'Cross-platform NAS music player supporting multiple self-hosted music services' },
+    platforms: ['Android', 'iOS', 'macOS', 'Windows'],
+    href: 'https://music.aqzscn.cn/',
+    img: 'stream-music.png',
+  },
 ]
 </script>
 
