@@ -987,7 +987,7 @@ jobs:
               cp macos/Runner/songloft-server "$app_dir/Contents/MacOS/songloft-server"
               chmod +x "$app_dir/Contents/MacOS/songloft-server"
               # 先深度签名整个 app，再单独给子进程签 inherit entitlements；
-              # 顺序不能反：--deep 重签会覆盖子进程 entitlements，导致沙盒下无
+              # 顺序不能反：--deep 重签��覆盖子进程 entitlements，导致沙盒下无
               # network.server 权限，songloft-server 无法 bind，本地模式报错。
               codesign --force --deep --sign "$sign_identity" --entitlements macos/Runner/Release.entitlements "$app_dir"
               codesign --force --sign "$sign_identity" --entitlements macos/Runner/GoBackend.entitlements "$app_dir/Contents/MacOS/songloft-server"
@@ -1113,6 +1113,19 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check all builds succeeded (required for non-dev releases)
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          FAILED=""
+          if [[ "${{ needs.build-bundled-android.result }}" != "success" ]]; then FAILED="${FAILED} build-bundled-android(${{ needs.build-bundled-android.result }})"; fi
+          if [[ "${{ needs.build-bundled-linux.result }}" != "success" ]]; then FAILED="${FAILED} build-bundled-linux(${{ needs.build-bundled-linux.result }})"; fi
+          if [[ "${{ needs.build-bundled-apple.result }}" != "success" ]]; then FAILED="${FAILED} build-bundled-apple(${{ needs.build-bundled-apple.result }})"; fi
+          if [[ "${{ needs.build-bundled-windows.result }}" != "success" ]]; then FAILED="${FAILED} build-bundled-windows(${{ needs.build-bundled-windows.result }})"; fi
+          if [[ -n "$FAILED" ]]; then
+            echo "::error::正式版 release 要求所有平台构建成功。失败的 job:${FAILED}"
+            exit 1
+          fi
+
       - name: Checkout main
         uses: actions/checkout@v4
         with:
