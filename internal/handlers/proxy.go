@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -34,7 +35,12 @@ type RemoteResourceOptions struct {
 type ProxyHandler struct {
 	client        *http.Client
 	configService *services.ConfigService
+	cacheService  *services.CacheService // 转码代理用（/proxy/transcode）
 }
+
+// defaultProxyUserAgent 是远程拉流的默认浏览器 UA。ServeRemoteResource 与
+// /proxy/transcode 共用同一值，避免漂移。
+const defaultProxyUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 // NewProxyHandler 创建代理处理器。
 // configService 可为 nil（测试场景）：此时私网白名单视为空，维持纯内网封禁行为。
@@ -52,6 +58,11 @@ func NewProxyHandler(configService *services.ConfigService) *ProxyHandler {
 		},
 		configService: configService,
 	}
+}
+
+// SetCacheService 注入缓存服务（转码代理 /proxy/transcode 用）。未注入时该端点返回 503。
+func (h *ProxyHandler) SetCacheService(cs *services.CacheService) {
+	h.cacheService = cs
 }
 
 // GetPrivateAllowlist 返回私网代理白名单原始条目（CIDR / 单 IP 字符串）。
@@ -135,6 +146,90 @@ func (h *ProxyHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 
 	// 调用通用代理服务（支持 Range、流式转发）
 	ServeRemoteResource(w, r, targetURL)
+}
+
+// Transcode 代理并实时转码外部音频为 mp3
+// @Summary 代理并实时转码外部音频
+// @Description 服务端拉取远程音频 URL，经 ffmpeg 实时转码为 mp3（CBR 320k）后流式返回。用于「不入库直接播放」场景下，外部搜索源返回 webm/opus 等音箱无法解码的直链：客户端把该端点 URL 推给音箱即可播放。复用 /settings/proxy-private-allowlist 做 SSRF 防护；不落盘、不入库、不缓存。ffmpeg 直拉远程 URL，低首字节延迟；并发与 seek/均衡流共享 cap=4，满则 503。ffmpeg 缺失或上游不可解码时返回 503。
+// @Tags 资源代理
+// @Produce application/octet-stream
+// @Param url query string true "目标音频 URL（URL 编码）"
+// @Param format query string false "目标格式，目前仅 mp3" Enums(mp3)
+// @Param bitrate query int false "目标码率 kbps，默认 320"
+// @Param duration query number false "音频时长（秒），用于设置硬超时；未知可不传"
+// @Param user_agent query string false "拉流 User-Agent，缺省用浏览器 UA"
+// @Param referer query string false "拉流 Referer"
+// @Success 200 {file} binary "转码后的 mp3 音频流"
+// @Failure 400 {object} map[string]string "缺少 url 或 URL 无效"
+// @Failure 403 {object} map[string]string "域名不在白名单"
+// @Failure 503 {object} map[string]string "转码服务未配置 / 并发已满 / ffmpeg 缺失或上游不可解码"
+// @Security BearerAuth
+// @Router /proxy/transcode [get]
+func (h *ProxyHandler) Transcode(w http.ResponseWriter, r *http.Request) {
+	if h.cacheService == nil {
+		respondError(w, http.StatusServiceUnavailable, "转码服务未配置", nil)
+		return
+	}
+	targetURL := r.URL.Query().Get("url")
+	if targetURL == "" {
+		respondError(w, http.StatusBadRequest, "缺少 url 参数", nil)
+		return
+	}
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "无效的 URL", err)
+		return
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		respondError(w, http.StatusBadRequest, "仅支持 http/https 协议", nil)
+		return
+	}
+	// 域名白名单校验：与 /proxy 完全一致（外网放行，私网仅白名单放行）。
+	hostname := strings.ToLower(parsed.Hostname())
+	allowlist, _ := services.ParseAllowlist(h.GetPrivateAllowlist())
+	if !services.IsHostnameAllowedWithAllowlist(hostname, allowlist) {
+		slog.Warn("转码代理请求被拒绝：域名不在白名单中", "hostname", hostname, "url", targetURL)
+		respondError(w, http.StatusForbidden, "该域名不允许代理", nil)
+		return
+	}
+
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "mp3"
+	}
+	bitrate, _ := strconv.Atoi(r.URL.Query().Get("bitrate"))
+	duration, _ := strconv.ParseFloat(r.URL.Query().Get("duration"), 64)
+	userAgent := r.URL.Query().Get("user_agent")
+	if userAgent == "" {
+		userAgent = defaultProxyUserAgent
+	}
+	referer := r.URL.Query().Get("referer")
+
+	// pipe 输出：chunked、无 Content-Length、不可 seek。CBR mp3 让只能按字节估算
+	// 时长的音箱（player_play_url）不提前切歌（同 StreamSeekedMP3 的取舍）。
+	// 响应头在 StreamTranscodedURL 首次 Write（隐式 WriteHeader 200）时生效；
+	// 若转码在吐字节前失败，respondError 会覆盖 Content-Type 返回 503。
+	w.Header().Set("Content-Type", "audio/mpeg")
+	w.Header().Set("Cache-Control", "no-store")
+
+	err = h.cacheService.StreamTranscodedURL(r.Context(), w, services.URLTranscodeOptions{
+		UpstreamURL: targetURL,
+		Format:      format,
+		Bitrate:     bitrate,
+		Duration:    duration,
+		UserAgent:   userAgent,
+		Referer:     referer,
+	})
+	if err != nil {
+		if errors.Is(err, services.ErrURLTranscodeUnavailable) {
+			// 吐字节前失败：响应尚未提交（WriteHeader 未调用），可安全覆盖头返回 503。
+			slog.Warn("转码代理不可用", "url", targetURL, "error", err)
+			respondError(w, http.StatusServiceUnavailable, "转码不可用，请稍后重试", err)
+			return
+		}
+		// 已写出部分字节后失败：无法再改状态码，仅记录。
+		slog.Warn("转码代理中途失败", "url", targetURL, "error", err)
+	}
 }
 
 // proxyAllowlistSettingRequest /settings/proxy-private-allowlist 请求/响应体。
@@ -266,7 +361,7 @@ func ServeRemoteResourceWithOptions(w http.ResponseWriter, r *http.Request, reso
 	}
 
 	// 设置合理的 User-Agent,避免被上游 CDN 拒绝
-	upstreamReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	upstreamReq.Header.Set("User-Agent", defaultProxyUserAgent)
 
 	// 透传 Accept 头
 	if accept := r.Header.Get("Accept"); accept != "" {
@@ -330,7 +425,7 @@ func ServeRemoteResourceWithCache(
 		upstreamReq.Header.Set("Range", rangeHeader)
 	}
 
-	upstreamReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	upstreamReq.Header.Set("User-Agent", defaultProxyUserAgent)
 	if accept := r.Header.Get("Accept"); accept != "" {
 		upstreamReq.Header.Set("Accept", accept)
 	}

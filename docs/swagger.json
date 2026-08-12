@@ -3827,6 +3827,100 @@
                 }
             }
         },
+        "/proxy/transcode": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "服务端拉取远程音频 URL，经 ffmpeg 实时转码为 mp3（CBR 320k）后流式返回。用于「不入库直接播放」场景下，外部搜索源返回 webm/opus 等音箱无法解码的直链：客户端把该端点 URL 推给音箱即可播放。复用 /settings/proxy-private-allowlist 做 SSRF 防护；不落盘、不入库、不缓存。ffmpeg 直拉远程 URL，低首字节延迟；并发与 seek/均衡流共享 cap=4，满则 503。ffmpeg 缺失或上游不可解码时返回 503。",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "资源代理"
+                ],
+                "summary": "代理并实时转码外部音频",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "目标音频 URL（URL 编码）",
+                        "name": "url",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "mp3"
+                        ],
+                        "type": "string",
+                        "description": "目标格式，目前仅 mp3",
+                        "name": "format",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "目标码率 kbps，默认 320",
+                        "name": "bitrate",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "音频时长（秒），用于设置硬超时；未知可不传",
+                        "name": "duration",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "拉流 User-Agent，缺省用浏览器 UA",
+                        "name": "user_agent",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "拉流 Referer",
+                        "name": "referer",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "转码后的 mp3 音频流",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "缺少 url 或 URL 无效",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "域名不在白名单",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "转码服务未配置 / 并发已满 / ffmpeg 缺失或上游不可解码",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/scan": {
             "post": {
                 "security": [

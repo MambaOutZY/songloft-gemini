@@ -509,7 +509,7 @@ manager/scheduler 的内存 map 键，以及 `plugin_storage.plugin_entry_path` 
   ——那会动所有 `/songs` 分页调用方，属独立 issue。同理 `ListSongIDsOrdered` 与 `GetPlaylistSongsPaginated`
   都只按 `position ASC` 无次级键，仅在同歌单出现重复 position（并发 reorder 中断）时才会错位
 - **客户端起播 = 首曲直起 + 后台环形补齐**：历史条目自带完整 `Song`，先用它当队列**零请求**出声，
-  再后台拉有序 ID 列表（歌单 `GET /playlists/{id}/song-ids`、分面 `GET /songs/ids`）`indexOf` 定��，
+  再后台拉有序 ID 列表（歌单 `GET /playlists/{id}/song-ids`、分面 `GET /songs/ids`）`indexOf` 定位，
   依次补「目标之后」与回卷的「开头…目标之前」。`currentIndex` 全程为 0 不动，
   不牵连随机模式的 `_playedIndices` / `_preSelectedNextIndex`；歌单与 7 个分面走同一条代码路径
 - **只有 `type=play` 落库**：写入挂在既有打点端点 `POST /songs/{id}/played` 的 `context_type`/`context_key`
@@ -549,6 +549,7 @@ manager/scheduler 的内存 map 键，以及 `plugin_storage.plugin_entry_path` 
 - 实现：`internal/httputil/proxy.go` 提供全局 `ProxyConfig` + 共享 `*http.Transport`，`httputil.NewClient(timeout)` 创建代理感知的 client
 - 启动时从 config 表加载已保存的代理地址（`app.go`）；PUT 时即时生效无需重启
 - 当前已接入的 service：`jsplugin/registry.go`、`jsplugin/package.go`、`services/upgrade_service.go`、`handlers/jsplugin_registry.go`（downloadZIP）
+- ffmpeg 远程拉流转码路径（`services/radio_transcode.go` 电台转码、`services/url_transcode.go` 转码代理）同样接入：经 `-http_proxy` 传给 ffmpeg。**仅 http/https 代理**，SOCKS5 不支持（ffmpeg `-http_proxy` 限制）
 
 ### 私网代理白名单（/settings/proxy-private-allowlist）
 
@@ -558,6 +559,17 @@ manager/scheduler 的内存 map 键，以及 `plugin_storage.plugin_entry_path` 
 - 判定：`services.IsHostnameAllowedWithAllowlist(hostname, allowlist)`——外网恒放行，私网 IP 仅当命中白名单某条网段才放行；`localhost`/`.local`/空主机名仍字符串级封禁（白名单只按 IP/CIDR 匹配）
 - **仅影响通用 `/proxy`**；HLS 反代（`hls.go`）仍走 `IsHostnameAllowed(nil)`，语义不变
 - 实现：`internal/services/whitelist.go`（`ParseAllowlist` / `IsHostnameAllowedWithAllowlist`）+ `internal/handlers/proxy.go`（`ProxyHandler` 持有 `*ConfigService`，config key `proxy_private_allowlist`）
+
+### 音频转码代理（/proxy/transcode）
+
+- 业务端点：`GET /api/v1/proxy/transcode?url=&format=mp3[&bitrate=&duration=&user_agent=&referer=]`（`@Security BearerAuth`，需 token；token 作为首个查询参数，规避音箱固件把 `&` 替换为空格的坑）
+- 服务端拉取远程音频 URL，经 ffmpeg 实时转码为 mp3（CBR 320k）流式返回。用途：miot「不入库直接播放」场景下，外部搜索源返回 webm/opus 等音箱无法解码的直链（songloft-org/songloft#394），客户端把本端点 URL 推给音箱即可播放
+- 不落盘、不入库、不缓存（与 no-import 语义一致；youtube 直链每次重签，缓存零收益，重播收益走入库路径）
+- SSRF 防护：复用 `/settings/proxy-private-allowlist`，与通用 `/proxy` 同一 `IsHostnameAllowedWithAllowlist` 校验
+- 输出 mp3 CBR + `-write_xing 0` + `-map 0:a:0 -vn`：pipe 不可 seek，音箱靠字节估算时长，CBR 避免提前切歌（同 seek 流取舍）
+- 并发与 seek/均衡流共享 `seekStreamSem`（cap=4），满则 503 不排队
+- ffmpeg 直拉远程 URL（`-i <url>`），经 `-http_proxy` 复用全局 http-proxy（仅 http/https）
+- 实现：`internal/services/url_transcode.go`（`StreamTranscodedURL`）+ `internal/handlers/proxy.go`（`Transcode`，`ProxyHandler` 持有 `*CacheService`）
 
 ### 音乐缓存（cache_service）
 

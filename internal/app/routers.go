@@ -85,6 +85,7 @@ func (a *App) setupAPIV1Router() {
 	healthHandler := handlers.NewHealthHandler()
 	upgradeHandler := handlers.NewUpgradeHandler(a.upgradeService, a.configService)
 	proxyHandler := handlers.NewProxyHandler(a.configService)
+	proxyHandler.SetCacheService(a.cacheService)
 
 	// 创建缓存处理器（使用 App 的 cacheService 和 configService）
 	cacheHandler := handlers.NewCacheHandler(
@@ -259,6 +260,8 @@ func (a *App) setupAPIV1Router() {
 
 			// 资源代理模块（解决外部 CDN 的 CORS 问题）
 			r.Get("/proxy", proxyHandler.Proxy)
+			// 转码代理：服务端拉远程音频→ffmpeg 实时转 mp3 流式返回（no-import 场景下音箱不可解码的直链）
+			r.Get("/proxy/transcode", proxyHandler.Transcode)
 
 			// 歌曲播放端点（流式返回音频，支持 local/remote/radio 三种类型）
 			r.Get("/songs/{id}/play", songHandler.GetSongPlay)

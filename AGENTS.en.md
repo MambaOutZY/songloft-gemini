@@ -601,6 +601,7 @@ Read all of the following before touching this area.
 - Implementation: `internal/httputil/proxy.go` provides a global `ProxyConfig` + a shared `*http.Transport`, and `httputil.NewClient(timeout)` creates a proxy-aware client
 - The saved proxy address is loaded from the config table at startup (`app.go`); a PUT takes effect immediately without a restart
 - Currently integrated services: `jsplugin/registry.go`, `jsplugin/package.go`, `services/upgrade_service.go`, `handlers/jsplugin_registry.go` (downloadZIP)
+- ffmpeg remote-pull transcode paths (`services/radio_transcode.go` radio transcode, `services/url_transcode.go` transcode proxy) are also integrated: passed to ffmpeg via `-http_proxy`. **HTTP/HTTPS proxies only**; SOCKS5 is not supported (ffmpeg `-http_proxy` limitation)
 
 ### Private network proxy allowlist (/settings/proxy-private-allowlist)
 
@@ -610,6 +611,17 @@ Read all of the following before touching this area.
 - Decision: `services.IsHostnameAllowedWithAllowlist(hostname, allowlist)` — public addresses always pass, private IPs pass only when covered by an allowlist range; `localhost`/`.local`/empty hostnames are still string-blocked (the allowlist matches by IP/CIDR only)
 - **Only affects the generic `/proxy`**; HLS reverse proxy (`hls.go`) still uses `IsHostnameAllowed(nil)`, semantics unchanged
 - Implementation: `internal/services/whitelist.go` (`ParseAllowlist` / `IsHostnameAllowedWithAllowlist`) + `internal/handlers/proxy.go` (`ProxyHandler` holds a `*ConfigService`, config key `proxy_private_allowlist`)
+
+### Audio transcode proxy (/proxy/transcode)
+
+- Business endpoint: `GET /api/v1/proxy/transcode?url=&format=mp3[&bitrate=&duration=&user_agent=&referer=]` (`@Security BearerAuth`, token required; token must be the first query param to dodge speaker-firmware replacing `&` with space)
+- The server fetches a remote audio URL and transcodes it to mp3 (CBR 320k) on the fly, streamed back. Use case: in miot's "no-import direct play" scenario, when an external search source returns a direct link in a format the speaker can't decode (webm/opus, songloft-org/songloft#394), the client pushes this endpoint URL to the speaker
+- No disk persistence, no DB entry, no cache (consistent with no-import semantics; youtube direct links are re-signed each search, so caching yields zero benefit — replay benefit goes through the import path)
+- SSRF protection: reuses `/settings/proxy-private-allowlist`, the same `IsHostnameAllowedWithAllowlist` check as the generic `/proxy`
+- Output is mp3 CBR + `-write_xing 0` + `-map 0:a:0 -vn`: the pipe is non-seekable, the speaker estimates duration from byte count, CBR avoids premature track-switching (same trade-off as the seek stream)
+- Concurrency is shared with seek/normalize streams via `seekStreamSem` (cap=4); returns 503 when full, no queueing
+- ffmpeg pulls the remote URL directly (`-i <url>`), reusing the global http-proxy via `-http_proxy` (HTTP/HTTPS only)
+- Implementation: `internal/services/url_transcode.go` (`StreamTranscodedURL`) + `internal/handlers/proxy.go` (`Transcode`; `ProxyHandler` holds a `*CacheService`)
 
 ### Music caching (cache_service)
 

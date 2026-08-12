@@ -3962,6 +3962,70 @@ paths:
       summary: 代理外部资源
       tags:
       - 资源代理
+  /proxy/transcode:
+    get:
+      description: 服务端拉取远程音频 URL，经 ffmpeg 实时转码为 mp3（CBR 320k）后流式返回。用于「不入库直接播放」场景下，外部搜索源返回
+        webm/opus 等音箱无法解码的直链：客户端把该端点 URL 推给音箱即可播放。复用 /settings/proxy-private-allowlist
+        做 SSRF 防护；不落盘、不入库、不缓存。ffmpeg 直拉远程 URL，低首字节延迟；并发与 seek/均衡流共享 cap=4，满则 503。ffmpeg
+        缺失或上游不可解码时返回 503。
+      parameters:
+      - description: 目标音频 URL（URL 编码）
+        in: query
+        name: url
+        required: true
+        type: string
+      - description: 目标格式，目前仅 mp3
+        enum:
+        - mp3
+        in: query
+        name: format
+        type: string
+      - description: 目标码率 kbps，默认 320
+        in: query
+        name: bitrate
+        type: integer
+      - description: 音频时长（秒），用于设置硬超时；未知可不传
+        in: query
+        name: duration
+        type: number
+      - description: 拉流 User-Agent，缺省用浏览器 UA
+        in: query
+        name: user_agent
+        type: string
+      - description: 拉流 Referer
+        in: query
+        name: referer
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: 转码后的 mp3 音频流
+          schema:
+            type: file
+        "400":
+          description: 缺少 url 或 URL 无效
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 域名不在白名单
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: 转码服务未配置 / 并发已满 / ffmpeg 缺失或上游不可解码
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 代理并实时转码外部音频
+      tags:
+      - 资源代理
   /scan:
     post:
       consumes:

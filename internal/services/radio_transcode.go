@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+
+	"songloft/internal/httputil"
 )
 
 // ErrRadioTranscodeUnavailable 表示电台实时转码无法开始（ffmpeg 未配置、启动失败，或进程在吐出
@@ -56,6 +58,12 @@ func (c *CacheService) StreamTranscodedRadio(ctx context.Context, w io.Writer, o
 	if opts.Referer != "" {
 		// ffmpeg 的 http 输入通过 -headers 追加请求头，多个头以 \r\n 分隔。
 		args = append(args, "-headers", "Referer: "+opts.Referer+"\r\n")
+	}
+	// 复用全局 http-proxy（/settings/http-proxy）：电台源可能在 GFW 后，ffmpeg 直拉
+	// 远程 URL 不走 httputil.NewClient 的代理，这里显式注入 -http_proxy（input option，
+	// 须在 -i 之前）。仅 http/https 代理；SOCKS5 不在本方法支持范围。
+	if proxyURL := httputil.GetGlobalProxy(); proxyURL != "" {
+		args = append(args, "-http_proxy", proxyURL)
 	}
 	args = append(args, "-i", opts.UpstreamURL, "-vn", "-codec:a", encoder)
 	args = append(args, qualityArgs...)
