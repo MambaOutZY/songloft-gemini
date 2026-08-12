@@ -43,11 +43,13 @@ const syncItems = [
   { from: 'CHANGELOG.md', to: 'docs/changelog.md' },
   { from: 'NOTICE',       to: 'docs/NOTICE.md' },
   { from: 'PRIVACY.md',   to: 'docs/PRIVACY.md' },
+  { from: 'TERMS.md',    to: 'docs/TERMS.md' },
   // 英文（*.en 源 → docs/en/，en locale）。CHANGELOG 不翻译，故英文侧无 changelog 页，
   // en 模式下 rewriteLinks 会把 CHANGELOG.md 链接指向 GitHub 绝对 URL，避免死链。
   { from: 'README.en.md',  to: 'docs/en/quick-start.md', en: true },
   { from: 'NOTICE.en',     to: 'docs/en/NOTICE.md',      en: true },
   { from: 'PRIVACY.en.md', to: 'docs/en/PRIVACY.md',     en: true },
+  { from: 'TERMS.en.md',   to: 'docs/en/TERMS.md',       en: true },
 
   // ── songloft-player 客户端文档 → docs/player/ ──
   { from: 'songloft-player/docs/cn/architecture.md',    to: 'docs/player/architecture.md',    subdir: 'songloft-player/docs/cn' },

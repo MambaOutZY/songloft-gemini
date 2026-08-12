@@ -12,10 +12,12 @@ quick-start.md
 changelog.md
 NOTICE.md
 PRIVACY.md
+TERMS.md
 # 英文侧同样由 sync 生成（源为 *.en 文件）
 en/quick-start.md
 en/NOTICE.md
 en/PRIVACY.md
+en/TERMS.md
 # 子模块及子项目文档由 sync 生成
 player/
 addon/
