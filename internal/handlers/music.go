@@ -1934,7 +1934,7 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 		}
 	}
 	// 透传 ICY 头:icy-metaint 仅在原生路径转发(浏览器路径已去交织,转发反而误导);
-	// 其余 icy-* 是纯 HTTP 头,对浏览��无害,一律透传。
+	// 其余 icy-* 是纯 HTTP 头,对浏览器无害,一律透传。
 	for _, hdr := range []string{"icy-metaint", "icy-name", "icy-genre", "icy-br", "icy-description", "icy-url", "icy-pub", "icy-audio-info"} {
 		if hdr == "icy-metaint" && !forwardMetaint {
 			continue
@@ -1951,7 +1951,7 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 // normalizeAudioContentType 把上游返回的非标准音频 MIME 归一化为浏览器 / 解码器能识别的标准值。
 // 典型:Shoutcast/streamtheworld 类 HE-AAC 电台返回 `audio/aacp`(遗留 MIME),浏览器 <audio>
 // 与部分播放器无法据此选对解码器;实际负载是标准 ADTS AAC,改标 `audio/aac` 更兼容。(#275)
-// 只改 MIME 主类��,保留可能存在的参数(如 charset);未命中的一律原样��传。
+// 只改 MIME 主类型,保留可能存在的参数(如 charset);未命中的一律原样透传。
 func normalizeAudioContentType(ct string) string {
 	base, params, _ := strings.Cut(ct, ";")
 	switch strings.ToLower(strings.TrimSpace(base)) {
