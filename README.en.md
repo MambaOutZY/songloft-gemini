@@ -212,6 +212,7 @@ The following third-party clients are independently maintained by community deve
 | [MusicArk (音乐方舟)](https://musicark.pro/) | HarmonyOS | Multi-source media player for HarmonyOS NEXT with 16 library types |
 | [Amcfy Music (箭头音乐)](https://www.amcfy.com/) | Android / iOS / HarmonyOS / Windows / macOS | Modern multi-platform music player compatible with various music server protocols |
 | [Stream Music (音流)](https://music.aqzscn.cn/) | Android / iOS / macOS / Windows | Cross-platform NAS music player supporting multiple self-hosted music services |
+| [XGPlayer (流云音盒)](https://xgplayer.com/) | HarmonyOS | Lossless music player for HarmonyOS aggregating local, cloud, WebDAV and NAS libraries |
 
 > 💡 Third-party clients are maintained by their respective developers and are not directly affiliated with the Songloft project. If you encounter issues, please contact the corresponding client's developer.
 ## 🚀 Quick Start

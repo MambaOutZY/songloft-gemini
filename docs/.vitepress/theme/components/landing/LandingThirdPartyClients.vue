@@ -29,6 +29,13 @@ const clients = [
     href: 'https://music.aqzscn.cn/',
     img: 'stream-music.png',
   },
+  {
+    name: { zh: '流云音盒', en: 'XGPlayer' },
+    desc: { zh: 'HarmonyOS 无损音乐播放器，聚合本地、云盘、WebDAV 与 NAS 私有曲库', en: 'Lossless music player for HarmonyOS aggregating local, cloud, WebDAV and NAS libraries' },
+    platforms: ['HarmonyOS'],
+    href: 'https://xgplayer.com/',
+    img: 'xgplayer.png',
+  },
 ]
 </script>
 
