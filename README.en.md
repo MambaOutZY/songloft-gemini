@@ -186,9 +186,9 @@ Beyond the web interface, Songloft also offers a more powerful cross-platform Fl
 
 > 💡 When using the **Lite (-lite)** server, we recommend pairing it directly with the Flutter client (no need to deploy a separate web frontend). If you do need a standalone web frontend, refer to the `flutter build web` process in the [songloft-player](https://github.com/songloft-org/songloft-player) repository to build it yourself and serve the static files via a reverse proxy such as Nginx.
 
-### 📺 TV Client
+### 📺 TV / Car Client
 
-In addition to the Flutter client, for TV we recommend the dedicated **[songloft-tv](https://github.com/boluofan/songloft-tv)** client, designed specifically for Android TV with remote control support.
+In addition to the Flutter client, for TV and in-vehicle infotainment (IVI) systems we recommend the dedicated **[songloft-tv](https://github.com/boluofan/songloft-tv)** client, designed for Android TV and car head units with remote control and touchscreen support.
 
 ### 📺 Kodi Plugin
 
