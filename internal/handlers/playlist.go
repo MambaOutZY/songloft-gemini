@@ -667,12 +667,69 @@ func (h *PlaylistHandler) ReorderPlaylistSongs(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.playlistService.ReorderSongs(ctx, playlistID, req.SongIDs); err != nil {
+		if errors.Is(err, models.ErrBuiltInPlaylist) {
+			respondError(w, http.StatusForbidden, "内置歌单不允许排序", err)
+			return
+		}
 		respondError(w, http.StatusInternalServerError, "重新排序歌单歌曲失败", err)
 		return
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{
 		"message": "歌单歌曲已重新排序",
+	})
+}
+
+// MovePlaylistSong 移动歌单中单首歌曲的位置
+// @Summary 移动歌单内歌曲位置
+// @Description 将指定歌曲移到 after_song_id 之后（after_song_id 为 null 则移到第一位），不改变其余歌曲的相对顺序
+// @Tags 歌单管理
+// @Accept json
+// @Produce json
+// @Param id path int true "歌单 ID"
+// @Param request body object{song_id=int64,after_song_id=int64} true "移动参数（after_song_id 为 null 或省略表示置顶）"
+// @Success 200 {object} map[string]string "移动成功"
+// @Failure 400 {object} map[string]string "请求数据错误"
+// @Failure 403 {object} map[string]string "内置歌单不可操作"
+// @Failure 500 {object} map[string]string "移动失败"
+// @Security BearerAuth
+// @Router /playlists/{id}/songs/move [put]
+func (h *PlaylistHandler) MovePlaylistSong(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	idStr := chi.URLParam(r, "id")
+
+	playlistID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "无效的歌单 ID", err)
+		return
+	}
+
+	var req struct {
+		SongID      int64  `json:"song_id"`
+		AfterSongID *int64 `json:"after_song_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
+		return
+	}
+
+	if req.SongID == 0 {
+		respondError(w, http.StatusBadRequest, "请提供 song_id", nil)
+		return
+	}
+
+	if err := h.playlistService.MoveSong(ctx, playlistID, req.SongID, req.AfterSongID); err != nil {
+		if errors.Is(err, models.ErrBuiltInPlaylist) {
+			respondError(w, http.StatusForbidden, "内置歌单不允许排序", err)
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "移动歌曲位置失败", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{
+		"message": "歌曲位置已更新",
 	})
 }
 

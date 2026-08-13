@@ -49,6 +49,9 @@ var (
 
 	// ErrPlaylistNameConflict 表示已存在同名歌单（不区分类型）
 	ErrPlaylistNameConflict = errors.New("playlist with the same name already exists")
+
+	// ErrBuiltInPlaylist 表示对内置歌单执行了不允许的操作
+	ErrBuiltInPlaylist = errors.New("cannot modify built-in playlist")
 )
 
 // 认证相关常量

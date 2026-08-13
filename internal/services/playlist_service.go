@@ -377,6 +377,14 @@ func (s *PlaylistService) CountSongs(ctx context.Context, playlistID int64, keyw
 
 // ReorderSongs 重新排序歌单中的歌曲
 func (s *PlaylistService) ReorderSongs(ctx context.Context, playlistID int64, songIDs []int64) error {
+	playlist, err := s.playlists.GetByID(ctx, playlistID)
+	if err != nil {
+		return fmt.Errorf("failed to get playlist: %w", err)
+	}
+	if playlist.IsBuiltIn() {
+		return models.ErrBuiltInPlaylist
+	}
+
 	existingSongs, err := s.playlistSongs.GetSongs(ctx, playlistID)
 	if err != nil {
 		return fmt.Errorf("failed to get playlist songs: %w", err)
@@ -386,6 +394,72 @@ func (s *PlaylistService) ReorderSongs(ctx context.Context, playlistID int64, so
 	}
 	if err := s.playlistSongs.BatchUpdatePositions(ctx, playlistID, songIDs); err != nil {
 		return fmt.Errorf("failed to batch update song positions: %w", err)
+	}
+	return nil
+}
+
+// MoveSong 移动歌单中单首歌曲到 afterSongID 之后（nil 表示移到最前面）。
+func (s *PlaylistService) MoveSong(ctx context.Context, playlistID int64, songID int64, afterSongID *int64) error {
+	playlist, err := s.playlists.GetByID(ctx, playlistID)
+	if err != nil {
+		return fmt.Errorf("failed to get playlist: %w", err)
+	}
+	if playlist.IsBuiltIn() {
+		return models.ErrBuiltInPlaylist
+	}
+
+	currentOrder, err := s.playlistSongs.ListSongIDsOrdered(ctx, playlistID, "", "")
+	if err != nil {
+		return fmt.Errorf("failed to get song order: %w", err)
+	}
+
+	songIdx := -1
+	for i, id := range currentOrder {
+		if id == songID {
+			songIdx = i
+			break
+		}
+	}
+	if songIdx == -1 {
+		return fmt.Errorf("song %d not found in playlist", songID)
+	}
+
+	if afterSongID != nil {
+		found := false
+		for _, id := range currentOrder {
+			if id == *afterSongID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("after_song_id %d not found in playlist", *afterSongID)
+		}
+		if songID == *afterSongID {
+			return nil
+		}
+	}
+
+	newOrder := make([]int64, 0, len(currentOrder))
+	for _, id := range currentOrder {
+		if id != songID {
+			newOrder = append(newOrder, id)
+		}
+	}
+
+	if afterSongID == nil {
+		newOrder = slices.Insert(newOrder, 0, songID)
+	} else {
+		for i, id := range newOrder {
+			if id == *afterSongID {
+				newOrder = slices.Insert(newOrder, i+1, songID)
+				break
+			}
+		}
+	}
+
+	if err := s.playlistSongs.BatchUpdatePositions(ctx, playlistID, newOrder); err != nil {
+		return fmt.Errorf("failed to update song positions: %w", err)
 	}
 	return nil
 }
