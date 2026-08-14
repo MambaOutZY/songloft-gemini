@@ -36,7 +36,17 @@ const clients = [
     href: 'https://xgplayer.com/',
     img: 'xgplayer.png',
   },
+  {
+    name: { zh: '流云音乐', en: 'Cloudflow Music' },
+    desc: { zh: '网盘音乐播放器，支持 WebDAV、Navidrome 等多种云盘与自托管音乐服务', en: 'Cloud music player supporting WebDAV, Navidrome and various cloud storage services' },
+    platforms: ['iOS'],
+    href: { zh: 'http://music.lyzo.top/', en: 'https://ly.pyzo.top/' },
+    img: 'cloudflow-music.png',
+  },
 ]
+
+const getHref = (href: string | { zh: string; en: string }) =>
+  typeof href === 'string' ? href : href[lang.value]
 </script>
 
 <template>
@@ -51,7 +61,7 @@ const clients = [
           v-for="c in clients"
           :key="c.href"
           class="client-card"
-          :href="c.href"
+          :href="getHref(c.href)"
           target="_blank"
           rel="noreferrer"
         >
