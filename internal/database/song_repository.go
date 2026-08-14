@@ -432,6 +432,44 @@ func (r *SongRepository) List(ctx context.Context, filter *SongFilter) ([]*model
 	return songs, nil
 }
 
+// ListRandom 与 List 共享过滤条件，随机返回 limit 首歌曲（完整对象）。
+// 使用 SQLite 的 ORDER BY RANDOM() 实现；limit <= 0 时默认返回 50 首。
+func (r *SongRepository) ListRandom(ctx context.Context, filter *SongFilter) ([]*models.Song, error) {
+	if filter == nil {
+		filter = &SongFilter{}
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	sb := songSelectBuilder()
+	sb = applySongFilter(sb, filter)
+	sb = sb.OrderBy("RANDOM()").Limit(uint64(limit))
+
+	query, args, err := sb.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build list random songs sql: %w", err)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list random songs: %w", err)
+	}
+	defer rows.Close()
+
+	songs := []*models.Song{}
+	for rows.Next() {
+		s, err := scanSongRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		songs = append(songs, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate random songs: %w", err)
+	}
+	return songs, nil
+}
+
 // ListIDs 与 List 共享过滤条件，仅返回匹配的歌曲 ID 列表（按 added_at DESC 排序，无分页）。
 // 用于「全选当前筛选范围」场景：避免拉取完整 song 对象的带宽与渲染成本。
 func (r *SongRepository) ListIDs(ctx context.Context, filter *SongFilter) ([]int64, error) {

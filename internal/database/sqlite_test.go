@@ -1761,3 +1761,92 @@ func TestUpsertRemoteSongDedup(t *testing.T) {
 		t.Errorf("empty dedup_key should INSERT every time, got pureA=%d pureB=%d", pureA.ID, pureB.ID)
 	}
 }
+
+// TestListRandomSongs 验证 ListRandom 返回随机歌曲完整对象：
+//   - limit 控制返回数量
+//   - 过滤条件生效
+//   - limit<=0 时默认 50
+//   - 空结果返回空切片
+func TestListRandomSongs(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// 创建 10 首歌曲
+	songs := make([]*models.Song, 10)
+	for i := range 10 {
+		songs[i] = &models.Song{
+			Type:     models.TypeLocal,
+			Title:    fmt.Sprintf("歌曲%d", i+1),
+			FilePath: fmt.Sprintf("/music/%d.mp3", i+1),
+		}
+	}
+	if err := db.SongRepository().BatchCreate(ctx, songs); err != nil {
+		t.Fatalf("BatchCreate: %v", err)
+	}
+
+	// 1) 指定 limit：返回 3 首完整对象
+	got, err := db.SongRepository().ListRandom(ctx, &SongFilter{Limit: 3})
+	if err != nil {
+		t.Fatalf("ListRandom: %v", err)
+	}
+	if len(got) != 3 {
+		t.Errorf("len = %d, want 3", len(got))
+	}
+	for _, s := range got {
+		if s.ID == 0 || s.Title == "" {
+			t.Errorf("返回的歌曲对象不完整: %+v", s)
+		}
+	}
+
+	// 2) 过滤条件生效：只随机 type=local，且已全部是 local
+	got, err = db.SongRepository().ListRandom(ctx, &SongFilter{Type: models.TypeLocal, Limit: 5})
+	if err != nil {
+		t.Fatalf("ListRandom with type filter: %v", err)
+	}
+	if len(got) != 5 {
+		t.Errorf("len = %d, want 5", len(got))
+	}
+	for _, s := range got {
+		if s.Type != models.TypeLocal {
+			t.Errorf("过滤后出现非 local 歌曲: %+v", s)
+		}
+	}
+
+	// 3) 关键词过滤：只匹配部分歌曲
+	got, err = db.SongRepository().ListRandom(ctx, &SongFilter{Keyword: "歌曲1", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListRandom with keyword: %v", err)
+	}
+	// "歌曲1" 命中 "歌曲1" 和 "歌曲10"（LIKE %歌曲1%）
+	if len(got) != 2 {
+		t.Errorf("len = %d, want 2", len(got))
+	}
+
+	// 4) 无匹配返回空切片
+	got, err = db.SongRepository().ListRandom(ctx, &SongFilter{Keyword: "不存在的歌", Limit: 5})
+	if err != nil {
+		t.Fatalf("ListRandom with no match: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("len = %d, want 0", len(got))
+	}
+
+	// 5) limit<=0 默认 50，但池子只有 10 首 → 返回全部
+	got, err = db.SongRepository().ListRandom(ctx, &SongFilter{Limit: 0})
+	if err != nil {
+		t.Fatalf("ListRandom with default limit: %v", err)
+	}
+	if len(got) != 10 {
+		t.Errorf("len = %d, want 10 (all)", len(got))
+	}
+
+	// 6) nil filter 也能工作
+	got, err = db.SongRepository().ListRandom(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListRandom nil filter: %v", err)
+	}
+	if len(got) != 10 {
+		t.Errorf("len = %d, want 10", len(got))
+	}
+}

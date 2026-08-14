@@ -27,6 +27,7 @@ type SongRepository interface {
 	Update(ctx context.Context, song *models.Song) error
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context, filter *database.SongFilter) ([]*models.Song, error)
+	ListRandom(ctx context.Context, filter *database.SongFilter) ([]*models.Song, error)
 	ListIDs(ctx context.Context, filter *database.SongFilter) ([]int64, error)
 	Count(ctx context.Context, filter *database.SongFilter) (int64, error)
 	BatchDelete(ctx context.Context, ids []int64) (int, error)
@@ -314,6 +315,15 @@ func (s *SongService) List(ctx context.Context, filter *database.SongFilter) ([]
 	songs, err := s.songs.List(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list songs: %w", err)
+	}
+	return songs, nil
+}
+
+// ListRandom 随机返回匹配过滤条件的 limit 首歌曲，limit 通过 filter.Limit 传入。
+func (s *SongService) ListRandom(ctx context.Context, filter *database.SongFilter) ([]*models.Song, error) {
+	songs, err := s.songs.ListRandom(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list random songs: %w", err)
 	}
 	return songs, nil
 }

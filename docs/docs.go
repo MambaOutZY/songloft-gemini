@@ -23,221 +23,6 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/api/v1/jsplugin-assets/{path}": {
-            "get": {
-                "description": "服务由主程序嵌入的插件公共资源（theme.css / components.css / common.js / webf-shims.css / webf-shims.js 及字体），自动注入到所有插件 HTML 页面。",
-                "produces": [
-                    "application/octet-stream"
-                ],
-                "tags": [
-                    "JS 插件"
-                ],
-                "summary": "插件公共资源",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "资源路径",
-                        "name": "*",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "资源文件"
-                    },
-                    "404": {
-                        "description": "资源不存在",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/songs/organize": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "批量移动/重命名本地歌曲文件到指定目录结构。target_path 为相对于 music_path 的路径（含目录和文件名），扩展名必须与原文件一致。CUE 拆分歌曲会被跳过（status=skip）；目标文件已存在时拒绝覆盖（status=error）。music_path 由服务端自取。",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "歌曲管理"
-                ],
-                "summary": "批量整理歌曲文件",
-                "parameters": [
-                    {
-                        "description": "整理项目列表",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/services.OrganizeItem"
-                            }
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "整理结果",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/services.OrganizeResult"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "请求错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/songs/organize/preview": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "dry-run 预览目录整理变更，返回每项 old_path→new_path 与状态（ok/conflict/skip/error），不移动任何文件、不改数据库。target_path 为相对 music_path 的路径。CUE 歌曲 skip；目标已存在或批内撞名 conflict。music_path 由服务端自取。",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "歌曲管理"
-                ],
-                "summary": "预览批量整理歌曲文件",
-                "parameters": [
-                    {
-                        "description": "整理项目列表",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/services.OrganizeItem"
-                            }
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "预览结果",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/services.OrganizePreviewResult"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "请求错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/songs/{id}/tags": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "将元数据写入数据库和本地音频文件标签（仅本地歌曲）。cover_data(base64) 优先于 cover_url。非空字段覆盖，空值保留原值。设置 clear_cover=true 可显式清空封面。rename_file=true 时按新标题重命名本地音频文件（保留原目录与扩展名，仅本地非 CUE 歌曲生效）；标题清理后为空或目标文件名已存在时返回 400，与原文件同名则不移动仅写库。",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "歌曲管理"
-                ],
-                "summary": "写入歌曲标签",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "歌曲ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "标签数据",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handlers.WriteSongTagsRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "写入结果",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "file_write": {
-                                    "type": "string"
-                                },
-                                "song": {
-                                    "$ref": "#/definitions/models.Song"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "请求错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "歌曲不存在",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/auth/login": {
             "post": {
                 "description": "用户登录获取访问令牌",
@@ -1072,6 +857,41 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "成功返回健康状态",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/jsplugin-assets/{path}": {
+            "get": {
+                "description": "服务由主程序嵌入的插件公共资源（theme.css / components.css / common.js / webf-shims.css / webf-shims.js 及字体），自动注入到所有插件 HTML 页面。",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "JS 插件"
+                ],
+                "summary": "插件公共资源",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源路径",
+                        "name": "*",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "资源文件"
+                    },
+                    "404": {
+                        "description": "资源不存在",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -6590,6 +6410,114 @@ const docTemplate = `{
                 }
             }
         },
+        "/songs/organize": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "批量移动/重命名本地歌曲文件到指定目录结构。target_path 为相对于 music_path 的路径（含目录和文件名），扩展名必须与原文件一致。CUE 拆分歌曲会被跳过（status=skip）；目标文件已存在时拒绝覆盖（status=error）。music_path 由服务端自取。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "批量整理歌曲文件",
+                "parameters": [
+                    {
+                        "description": "整理项目列表",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.OrganizeItem"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "整理结果",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.OrganizeResult"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/songs/organize/preview": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "dry-run 预览目录整理变更，返回每项 old_path→new_path 与状态（ok/conflict/skip/error），不移动任何文件、不改数据库。target_path 为相对 music_path 的路径。CUE 歌曲 skip；目标已存在或批内撞名 conflict。music_path 由服务端自取。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "预览批量整理歌曲文件",
+                "parameters": [
+                    {
+                        "description": "整理项目列表",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.OrganizeItem"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "预览结果",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.OrganizePreviewResult"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/songs/radio": {
             "post": {
                 "security": [
@@ -6665,6 +6593,120 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "添加失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/songs/random": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "与 /songs 共享过滤条件，随机返回 limit 首歌曲完整对象。用于「随机播放」场景。\n返回字段与 GET /songs 一致（数组包裹在 songs 字段中），total 为实际返回数量。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "随机获取歌曲",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "歌曲类型",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按 file_path 前缀过滤",
+                        "name": "path_prefix",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按流派精确过滤",
+                        "name": "genre",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按歌手精确过滤",
+                        "name": "artist",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按专辑精确过滤",
+                        "name": "album",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按语种精确过滤",
+                        "name": "language",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "按风格精确过滤",
+                        "name": "style",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "按发行年份精确过滤",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "按年代过滤（起始年，如 1990 匹配 1990-1999）",
+                        "name": "decade",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "hidden",
+                        "description": "排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部",
+                        "name": "exclude_playlist_labels",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "随机返回数量，默认 50，上限 500",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功返回随机歌曲列表",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -7905,6 +7947,78 @@ const docTemplate = `{
                         "description": "歌曲不存在",
                         "schema": {
                             "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/songs/{id}/tags": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "将元数据写入数据库和本地音频文件标签（仅本地歌曲）。cover_data(base64) 优先于 cover_url。非空字段覆盖，空值保留原值。设置 clear_cover=true 可显式清空封面。rename_file=true 时按新标题重命名本地音频文件（保留原目录与扩展名，仅本地非 CUE 歌曲生效）；标题清理后为空或目标文件名已存在时返回 400，与原文件同名则不移动仅写库。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "写入歌曲标签",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌曲ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "标签数据",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.WriteSongTagsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "写入结果",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "file_write": {
+                                    "type": "string"
+                                },
+                                "song": {
+                                    "$ref": "#/definitions/models.Song"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "歌曲不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }

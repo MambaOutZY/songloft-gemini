@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1116,5 +1117,109 @@ func TestGetSongPlayPrefetchWarmsNormalized(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("预热没有产出均衡产物：真实播放仍会冷启动整首 loudnorm 并阻塞首个 play 请求")
+	}
+}
+
+// TestListRandomSongs 验证 GET /songs/random handler：
+//   - 返回完整歌曲对象
+//   - limit 参数控制数量
+//   - 默认 limit=50
+//   - limit 上限 500
+//   - 过滤条件生效
+func TestListRandomSongs(t *testing.T) {
+	repo := newTestSongRepo(t)
+	songService := services.NewSongService(repo, nil, nil, nil, nil, nil)
+	handler := NewSongHandler(songService, nil, nil, nil, nil, nil)
+
+	// 创建 5 首歌曲
+	for i := range 5 {
+		seedSong(t, repo, &models.Song{
+			Type:     models.TypeLocal,
+			Title:    fmt.Sprintf("歌曲%d", i+1),
+			FilePath: fmt.Sprintf("/music/%d.mp3", i+1),
+		})
+	}
+	seedSong(t, repo, &models.Song{
+		Type:  models.TypeRemote,
+		Title: "网络歌曲",
+		URL:   "https://example.com/remote.mp3",
+	})
+
+	// 1) 基本请求：返回 200 + 完整歌曲对象
+	req := httptest.NewRequest("GET", "/api/v1/songs/random", nil)
+	rr := httptest.NewRecorder()
+	handler.ListRandomSongs(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rr.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	songs, ok := resp["songs"].([]interface{})
+	if !ok {
+		t.Fatalf("songs field missing or not array: %v", resp)
+	}
+	// 默认 limit=50，池子只有 6 首 → 返回全部 6 首
+	if len(songs) != 6 {
+		t.Errorf("songs len = %d, want 6", len(songs))
+	}
+	if total, ok := resp["total"].(float64); !ok || int(total) != 6 {
+		t.Errorf("total = %v, want 6", resp["total"])
+	}
+
+	// 2) 指定 limit：返回指定数量
+	req = httptest.NewRequest("GET", "/api/v1/songs/random?limit=2", nil)
+	rr = httptest.NewRecorder()
+	handler.ListRandomSongs(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rr.Code)
+	}
+	json.NewDecoder(rr.Body).Decode(&resp)
+	songs = resp["songs"].([]interface{})
+	if len(songs) != 2 {
+		t.Errorf("songs len = %d, want 2", len(songs))
+	}
+
+	// 3) 类型过滤：只随机 local
+	req = httptest.NewRequest("GET", "/api/v1/songs/random?type=local&limit=10", nil)
+	rr = httptest.NewRecorder()
+	handler.ListRandomSongs(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rr.Code)
+	}
+	json.NewDecoder(rr.Body).Decode(&resp)
+	songs = resp["songs"].([]interface{})
+	if len(songs) != 5 {
+		t.Errorf("songs len = %d, want 5 (all local)", len(songs))
+	}
+	if int(resp["total"].(float64)) != 5 {
+		t.Errorf("total = %v, want 5", resp["total"])
+	}
+
+	// 4) limit 上限 500
+	req = httptest.NewRequest("GET", "/api/v1/songs/random?limit=9999", nil)
+	rr = httptest.NewRecorder()
+	handler.ListRandomSongs(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rr.Code)
+	}
+	json.NewDecoder(rr.Body).Decode(&resp)
+	songs = resp["songs"].([]interface{})
+	if len(songs) != 6 {
+		t.Errorf("songs len = %d, want 6 (capped at 500, pool has 6)", len(songs))
+	}
+
+	// 5) 无效 limit 参数回退默认值
+	req = httptest.NewRequest("GET", "/api/v1/songs/random?limit=invalid", nil)
+	rr = httptest.NewRecorder()
+	handler.ListRandomSongs(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rr.Code)
 	}
 }

@@ -438,6 +438,61 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListRandomSongs 随机返回匹配过滤条件的 N 首歌曲（完整对象）。
+// @Summary 随机获取歌曲
+// @Description 与 /songs 共享过滤条件，随机返回 limit 首歌曲完整对象。用于「随机播放」场景。
+// @Description 返回字段与 GET /songs 一致（数组包裹在 songs 字段中），total 为实际返回数量。
+// @Tags 歌曲管理
+// @Accept json
+// @Produce json
+// @Param type query string false "歌曲类型"
+// @Param keyword query string false "搜索关键词"
+// @Param path_prefix query string false "按 file_path 前缀过滤"
+// @Param genre query string false "按流派精确过滤"
+// @Param artist query string false "按歌手精确过滤"
+// @Param album query string false "按专辑精确过滤"
+// @Param language query string false "按语种精确过滤"
+// @Param style query string false "按风格精确过滤"
+// @Param year query int false "按发行年份精确过滤"
+// @Param decade query int false "按年代过滤（起始年，如 1990 匹配 1990-1999）"
+// @Param exclude_playlist_labels query string false "排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部" default(hidden)
+// @Param limit query int false "随机返回数量，默认 50，上限 500" default(50)
+// @Success 200 {object} map[string]any "成功返回随机歌曲列表"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Security BearerAuth
+// @Router /songs/random [get]
+func (h *SongHandler) ListRandomSongs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	limit := 50
+	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 {
+		limit = l
+	}
+	if limit > 500 {
+		limit = 500
+	}
+
+	filter := &database.SongFilter{
+		Type:                  r.URL.Query().Get("type"),
+		Keyword:               r.URL.Query().Get("keyword"),
+		PathPrefix:            r.URL.Query().Get("path_prefix"),
+		ExcludePlaylistLabels: parseExcludePlaylistLabels(r.URL.Query().Get("exclude_playlist_labels")),
+		Limit:                 limit,
+	}
+	applySongTagFilters(filter, r.URL.Query())
+
+	songs, err := h.songService.ListRandom(ctx, filter)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取随机歌曲失败", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"songs": songs,
+		"total": len(songs),
+	})
+}
+
 // ListSongIDs 返回匹配 filter 的歌曲 ID 列表（不分页、不带 song 详情）
 // @Summary 获取匹配歌曲的 ID 列表
 // @Description 与 /songs 共享过滤条件，仅返回 ID。用于「全选当前筛选范围」场景。
