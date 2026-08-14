@@ -2252,7 +2252,7 @@ type WriteSongTagsRequest struct {
 // @Failure 400 {object} map[string]string "请求错误"
 // @Failure 404 {object} map[string]string "歌曲不存在"
 // @Security BearerAuth
-// @Router /api/v1/songs/{id}/tags [put]
+// @Router /songs/{id}/tags [put]
 func (h *SongHandler) WriteTags(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
@@ -2381,7 +2381,7 @@ func detectImageExt(data []byte) string {
 // @Success 200 {array} services.OrganizeResult "整理结果"
 // @Failure 400 {object} map[string]string "请求错误"
 // @Security BearerAuth
-// @Router /api/v1/songs/organize [post]
+// @Router /songs/organize [post]
 func (h *SongHandler) OrganizeSongs(w http.ResponseWriter, r *http.Request) {
 	var items []services.OrganizeItem
 	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {
@@ -2407,7 +2407,7 @@ func (h *SongHandler) OrganizeSongs(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {array} services.OrganizePreviewResult "预览结果"
 // @Failure 400 {object} map[string]string "请求错误"
 // @Security BearerAuth
-// @Router /api/v1/songs/organize/preview [post]
+// @Router /songs/organize/preview [post]
 func (h *SongHandler) PreviewOrganizeSongs(w http.ResponseWriter, r *http.Request) {
 	var items []services.OrganizeItem
 	if err := json.NewDecoder(r.Body).Decode(&items); err != nil {

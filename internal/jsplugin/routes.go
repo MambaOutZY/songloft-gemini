@@ -100,7 +100,7 @@ func (m *Manager) RegisterStaticRoutes(r chi.Router) {
 // @Param       * path string true "资源路径"
 // @Success     200 "资源文件"
 // @Failure     404 {object} map[string]string "资源不存在"
-// @Router      /api/v1/jsplugin-assets/{path} [get]
+// @Router      /jsplugin-assets/{path} [get]
 func handlePluginAssets(w http.ResponseWriter, r *http.Request) {
 	subPath := chi.URLParam(r, "*")
 	if subPath == "" {

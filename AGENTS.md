@@ -123,6 +123,7 @@ func (h *XxxHandler) Method(w http.ResponseWriter, r *http.Request) { ... }
 - 路径参数 / 查询参数用 `@Param <name> path/query <type> true/false "<说明>"`
 - **公开端点**（无需 token，如健康检查）省略 `@Security BearerAuth`
 - **业务 tag 命名**：复用现有 tag（「歌曲管理」「歌单管理」「电台与 HLS」「扫描管理」「配置管理」「缓存管理」「JS 插件」「JS插件管理」「数据备份」「设置」「系统升级」「认证管理」「系统管理」「资源代理」），不要随手造新 tag
+- **`@Router` 路径禁止包含 `/api/v1` 前缀**：`main.go` 已声明 `// @BasePath /api/v1`，swag 会自动给所有 `@Router` 路径加上该前缀。如果写了 `/api/v1`，生成的文档路径会变成 `/api/v1/api/v1/...`。正确写法是相对路径（如 `/songs/{id}/tags`），而非 `/api/v1/songs/{id}/tags`。
 
 ### 多别名 / catch-all 路由
 

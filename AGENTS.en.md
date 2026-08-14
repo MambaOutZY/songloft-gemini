@@ -123,6 +123,7 @@ func (h *XxxHandler) Method(w http.ResponseWriter, r *http.Request) { ... }
 - Path/query parameters use `@Param <name> path/query <type> true/false "<description>"`
 - **Public endpoints** (no token required, e.g. health checks) omit `@Security BearerAuth`
 - **Business tag naming**: reuse existing tags (「歌曲管理」「歌单管理」「电台与 HLS」「扫描管理」「配置管理」「缓存管理」「JS 插件」「JS插件管理」「数据备份」「设置」「系统升级」「认证管理」「系统管理」「资源代理」); do not casually invent new tags
+- **`@Router` paths must NOT contain the `/api/v1` prefix**: `main.go` already declares `// @BasePath /api/v1`, and swag automatically prepends this prefix to every `@Router` path. Including `/api/v1` in the annotation will cause the generated docs to have paths like `/api/v1/api/v1/...`. Always use relative paths (e.g. `/songs/{id}/tags`), never `/api/v1/songs/{id}/tags`.
 
 ### Multi-alias / catch-all routes
 
