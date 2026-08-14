@@ -368,6 +368,104 @@ func TestPlaylistServiceReorderSongsMismatch(t *testing.T) {
 	}
 }
 
+func TestPlaylistServiceSortSongs(t *testing.T) {
+	env := newPlaylistTestEnv(t)
+	service := env.newService()
+	ctx := context.Background()
+
+	playlist := &models.Playlist{
+		Type: models.PlaylistTypeNormal,
+		Name: "测试歌单",
+	}
+	if err := service.Create(ctx, playlist); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	tracks := []*models.Song{
+		{Type: models.TypeLocal, Title: "03. Third", FilePath: "/music/3.mp3"},
+		{Type: models.TypeLocal, Title: "01. First", FilePath: "/music/1.mp3"},
+		{Type: models.TypeLocal, Title: "02. Second", FilePath: "/music/2.mp3"},
+	}
+	for _, song := range tracks {
+		if err := env.songs.Create(ctx, song); err != nil {
+			t.Fatalf("create song: %v", err)
+		}
+		if err := service.AddSong(ctx, playlist.ID, song.ID); err != nil {
+			t.Fatalf("AddSong() error = %v", err)
+		}
+	}
+
+	// name_asc: 01. First, 02. Second, 03. Third
+	t.Run("name_asc", func(t *testing.T) {
+		if err := service.SortSongs(ctx, playlist.ID, "name_asc"); err != nil {
+			t.Fatalf("SortSongs(name_asc) error = %v", err)
+		}
+		songs, _ := service.GetSongs(ctx, playlist.ID, database.PlaylistSongFilter{Limit: 100})
+		if songs[0].Title != "01. First" || songs[1].Title != "02. Second" || songs[2].Title != "03. Third" {
+			t.Errorf("name_asc order wrong: %v, %v, %v", songs[0].Title, songs[1].Title, songs[2].Title)
+		}
+	})
+
+	// name_desc: 03. Third, 02. Second, 01. First
+	t.Run("name_desc", func(t *testing.T) {
+		if err := service.SortSongs(ctx, playlist.ID, "name_desc"); err != nil {
+			t.Fatalf("SortSongs(name_desc) error = %v", err)
+		}
+		songs, _ := service.GetSongs(ctx, playlist.ID, database.PlaylistSongFilter{Limit: 100})
+		if songs[0].Title != "03. Third" || songs[1].Title != "02. Second" || songs[2].Title != "01. First" {
+			t.Errorf("name_desc order wrong: %v, %v, %v", songs[0].Title, songs[1].Title, songs[2].Title)
+		}
+	})
+
+	// number_prefix: 01. First, 02. Second, 03. Third
+	t.Run("number_prefix", func(t *testing.T) {
+		if err := service.SortSongs(ctx, playlist.ID, "number_prefix"); err != nil {
+			t.Fatalf("SortSongs(number_prefix) error = %v", err)
+		}
+		songs, _ := service.GetSongs(ctx, playlist.ID, database.PlaylistSongFilter{Limit: 100})
+		if songs[0].Title != "01. First" || songs[1].Title != "02. Second" || songs[2].Title != "03. Third" {
+			t.Errorf("number_prefix order wrong: %v, %v, %v", songs[0].Title, songs[1].Title, songs[2].Title)
+		}
+	})
+
+	// shuffle: 3 songs should all be present
+	t.Run("shuffle", func(t *testing.T) {
+		if err := service.SortSongs(ctx, playlist.ID, "shuffle"); err != nil {
+			t.Fatalf("SortSongs(shuffle) error = %v", err)
+		}
+		songs, _ := service.GetSongs(ctx, playlist.ID, database.PlaylistSongFilter{Limit: 100})
+		if len(songs) != 3 {
+			t.Errorf("shuffle should keep 3 songs, got %d", len(songs))
+		}
+	})
+
+	// invalid action
+	t.Run("invalid_action", func(t *testing.T) {
+		if err := service.SortSongs(ctx, playlist.ID, "bad_action"); err == nil {
+			t.Error("SortSongs() should return error for invalid action")
+		}
+	})
+}
+
+func TestPlaylistServiceSortSongsBuiltIn(t *testing.T) {
+	env := newPlaylistTestEnv(t)
+	service := env.newService()
+	ctx := context.Background()
+
+	playlist := &models.Playlist{
+		Type:   models.PlaylistTypeNormal,
+		Name:   "内置歌单",
+		Labels: []string{models.PlaylistLabelBuiltIn},
+	}
+	if err := service.Create(ctx, playlist); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if err := service.SortSongs(ctx, playlist.ID, "name_asc"); err == nil {
+		t.Error("SortSongs() should return error for built-in playlist")
+	}
+}
+
 func TestPlaylistServiceUpdateInvalid(t *testing.T) {
 	env := newPlaylistTestEnv(t)
 	service := env.newService()

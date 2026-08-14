@@ -3564,6 +3564,87 @@ const docTemplate = `{
                 }
             }
         },
+        "/playlists/{id}/songs/sort": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "根据 action 参数对歌单内歌曲进行永久排序（更新 position）。\naction 取值：name_asc（按名称 A→Z）、name_desc（按名称 Z→A）、number_prefix（按标题数字前缀）、shuffle（随机打乱）。\n与 /playlists/{id}/songs/reorder 不同，本端点无需客户端传入完整歌曲 ID 列表，排序由服务端完成。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌单管理"
+                ],
+                "summary": "服务端排序歌单内歌曲",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌单 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "排序动作: name_asc / name_desc / number_prefix / shuffle",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "action": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "排序成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "请求数据错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "内置歌单不可操作",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "排序失败",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/playlists/{id}/songs/{songId}": {
             "delete": {
                 "security": [

@@ -680,6 +680,55 @@ func (h *PlaylistHandler) ReorderPlaylistSongs(w http.ResponseWriter, r *http.Re
 	})
 }
 
+// SortPlaylistSongs 服务端排序歌单内歌曲（永久排序）
+// @Summary 服务端排序歌单内歌曲
+// @Description 根据 action 参数对歌单内歌曲进行永久排序（更新 position）。
+// @Description action 取值：name_asc（按名称 A→Z）、name_desc（按名称 Z→A）、number_prefix（按标题数字前缀）、shuffle（随机打乱）。
+// @Description 与 /playlists/{id}/songs/reorder 不同，本端点无需客户端传入完整歌曲 ID 列表，排序由服务端完成。
+// @Tags 歌单管理
+// @Accept json
+// @Produce json
+// @Param id path int true "歌单 ID"
+// @Param request body object{action=string} true "排序动作: name_asc / name_desc / number_prefix / shuffle"
+// @Success 200 {object} map[string]string "排序成功"
+// @Failure 400 {object} map[string]string "请求数据错误"
+// @Failure 403 {object} map[string]string "内置歌单不可操作"
+// @Failure 500 {object} map[string]string "排序失败"
+// @Security BearerAuth
+// @Router /playlists/{id}/songs/sort [post]
+func (h *PlaylistHandler) SortPlaylistSongs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	idStr := chi.URLParam(r, "id")
+
+	playlistID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "无效的歌单 ID", err)
+		return
+	}
+
+	var req struct {
+		Action string `json:"action"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
+		return
+	}
+
+	if err := h.playlistService.SortSongs(ctx, playlistID, req.Action); err != nil {
+		if errors.Is(err, models.ErrBuiltInPlaylist) {
+			respondError(w, http.StatusForbidden, "内置歌单不允许排序", err)
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "排序歌单歌曲失败", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{
+		"message": "歌单歌曲已排序",
+	})
+}
+
 // MovePlaylistSong 移动歌单中单首歌曲的位置
 // @Summary 移动歌单内歌曲位置
 // @Description 将指定歌曲移到 after_song_id 之后（after_song_id 为 null 则移到第一位），不改变其余歌曲的相对顺序

@@ -3694,6 +3694,61 @@ paths:
       summary: 重新排序歌单中的歌曲
       tags:
       - 歌单管理
+  /playlists/{id}/songs/sort:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        根据 action 参数对歌单内歌曲进行永久排序（更新 position）。
+        action 取值：name_asc（按名称 A→Z）、name_desc（按名称 Z→A）、number_prefix（按标题数字前缀）、shuffle（随机打乱）。
+        与 /playlists/{id}/songs/reorder 不同，本端点无需客户端传入完整歌曲 ID 列表，排序由服务端完成。
+      parameters:
+      - description: 歌单 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: '排序动作: name_asc / name_desc / number_prefix / shuffle'
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            action:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 排序成功
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 请求数据错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 内置歌单不可操作
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 排序失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 服务端排序歌单内歌曲
+      tags:
+      - 歌单管理
   /playlists/{id}/sort:
     put:
       consumes:

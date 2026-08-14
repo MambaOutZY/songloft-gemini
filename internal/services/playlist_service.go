@@ -5,7 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
+	"regexp"
 	"slices"
+	"sort"
+	"strconv"
 
 	"songloft/internal/database"
 	"songloft/internal/models"
@@ -396,6 +400,119 @@ func (s *PlaylistService) ReorderSongs(ctx context.Context, playlistID int64, so
 		return fmt.Errorf("failed to batch update song positions: %w", err)
 	}
 	return nil
+}
+
+// validSortActions 是 SortSongs 接受的 action 值白名单。
+var validSortActions = map[string]bool{
+	"name_asc":      true,
+	"name_desc":     true,
+	"number_prefix": true,
+	"shuffle":       true,
+}
+
+// numPrefixRe 提取标题中第一个出现的数字。
+var numPrefixRe = regexp.MustCompile(`(\d+)`)
+
+// extractLeadingNumber 从文本中提取第一个出现的数字，返回 (数值, 是否成功)。
+// 与前端 PlaylistSort.extractLeadingNumber 语义完全一致。
+func extractLeadingNumber(s string) (int, bool) {
+	match := numPrefixRe.FindStringSubmatch(s)
+	if match == nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(match[1])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+// SortSongs 服务端排序歌单内歌曲（永久排序），直接更新 position。
+// action 必须是 name_asc / name_desc / number_prefix / shuffle 之一。
+func (s *PlaylistService) SortSongs(ctx context.Context, playlistID int64, action string) error {
+	if !validSortActions[action] {
+		return fmt.Errorf("invalid sort action: %s", action)
+	}
+
+	playlist, err := s.playlists.GetByID(ctx, playlistID)
+	if err != nil {
+		return fmt.Errorf("failed to get playlist: %w", err)
+	}
+	if playlist.IsBuiltIn() {
+		return models.ErrBuiltInPlaylist
+	}
+
+	var songIDs []int64
+
+	switch action {
+	case "name_asc":
+		songIDs, err = s.playlistSongs.ListSongIDsOrdered(ctx, playlistID, "title", "asc")
+	case "name_desc":
+		songIDs, err = s.playlistSongs.ListSongIDsOrdered(ctx, playlistID, "title", "desc")
+	case "number_prefix":
+		songIDs, err = s.sortByNumberPrefix(ctx, playlistID)
+	case "shuffle":
+		songIDs, err = s.shuffleSongIDs(ctx, playlistID)
+	}
+	if err != nil {
+		return err
+	}
+
+	if err := s.playlistSongs.BatchUpdatePositions(ctx, playlistID, songIDs); err != nil {
+		return fmt.Errorf("failed to batch update song positions: %w", err)
+	}
+	return nil
+}
+
+// sortByNumberPrefix 按标题中第一个数字前缀排序，无数字的排在最后再按标题字母序。
+func (s *PlaylistService) sortByNumberPrefix(ctx context.Context, playlistID int64) ([]int64, error) {
+	songs, err := s.playlistSongs.GetSongs(ctx, playlistID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get playlist songs: %w", err)
+	}
+
+	type songWithNum struct {
+		id  int64
+		num int
+		has bool
+	}
+	items := make([]songWithNum, len(songs))
+	for i, song := range songs {
+		n, ok := extractLeadingNumber(song.Title)
+		items[i] = songWithNum{id: song.ID, num: n, has: ok}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		if a.has != b.has {
+			return a.has // 有数字的优先
+		}
+		if a.has {
+			return a.num < b.num
+		}
+		return false // 无数字的保持原顺序
+	})
+
+	ids := make([]int64, len(items))
+	for i, item := range items {
+		ids[i] = item.id
+	}
+	return ids, nil
+}
+
+// shuffleSongIDs 随机打乱歌单内歌曲 ID 顺序。
+func (s *PlaylistService) shuffleSongIDs(ctx context.Context, playlistID int64) ([]int64, error) {
+	songs, err := s.playlistSongs.GetSongs(ctx, playlistID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get playlist songs: %w", err)
+	}
+	ids := make([]int64, len(songs))
+	for i, song := range songs {
+		ids[i] = song.ID
+	}
+	rand.Shuffle(len(ids), func(i, j int) {
+		ids[i], ids[j] = ids[j], ids[i]
+	})
+	return ids, nil
 }
 
 // MoveSong 移动歌单中单首歌曲到 afterSongID 之后（nil 表示移到最前面）。

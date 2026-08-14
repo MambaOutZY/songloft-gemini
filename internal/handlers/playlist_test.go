@@ -398,6 +398,112 @@ func TestReorderPlaylistSongsInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestSortPlaylistSongs(t *testing.T) {
+	env := newPlaylistHandlerEnv(t)
+	svc := env.newService()
+	handler := NewPlaylistHandler(svc, nil)
+	ctx := context.Background()
+
+	playlist := createTestPlaylist(t, svc, &models.Playlist{
+		Type: models.PlaylistTypeNormal,
+		Name: "测试歌单",
+	})
+
+	tracks := []*models.Song{
+		{Type: models.TypeLocal, Title: "歌曲C", FilePath: "/music/c.mp3"},
+		{Type: models.TypeLocal, Title: "歌曲A", FilePath: "/music/a.mp3"},
+		{Type: models.TypeLocal, Title: "歌曲B", FilePath: "/music/b.mp3"},
+	}
+	for _, song := range tracks {
+		if err := env.songs.Create(ctx, song); err != nil {
+			t.Fatalf("create song: %v", err)
+		}
+		if err := svc.AddSong(ctx, playlist.ID, song.ID); err != nil {
+			t.Fatalf("AddSong() error = %v", err)
+		}
+	}
+
+	tests := []struct {
+		name   string
+		action string
+	}{
+		{"name_asc", "name_asc"},
+		{"name_desc", "name_desc"},
+		{"shuffle", "shuffle"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reqBody := map[string]string{"action": tt.action}
+			body, _ := json.Marshal(reqBody)
+
+			id := strconv.FormatInt(playlist.ID, 10)
+			req := newRouteRequest("POST", "/api/v1/playlists/"+id+"/songs/sort", body, map[string]string{"id": id})
+			rr := httptest.NewRecorder()
+
+			handler.SortPlaylistSongs(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, http.StatusOK)
+			}
+		})
+	}
+}
+
+func TestSortPlaylistSongsInvalidID(t *testing.T) {
+	env := newPlaylistHandlerEnv(t)
+	handler := NewPlaylistHandler(env.newService(), nil)
+
+	reqBody := map[string]string{"action": "name_asc"}
+	body, _ := json.Marshal(reqBody)
+
+	req := newRouteRequest("POST", "/api/v1/playlists/invalid/songs/sort", body, map[string]string{"id": "invalid"})
+	rr := httptest.NewRecorder()
+
+	handler.SortPlaylistSongs(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, http.StatusBadRequest)
+	}
+}
+
+func TestSortPlaylistSongsInvalidAction(t *testing.T) {
+	env := newPlaylistHandlerEnv(t)
+	svc := env.newService()
+	handler := NewPlaylistHandler(svc, nil)
+
+	playlist := createTestPlaylist(t, svc, &models.Playlist{
+		Type: models.PlaylistTypeNormal,
+		Name: "测试歌单",
+	})
+
+	reqBody := map[string]string{"action": "invalid_action"}
+	body, _ := json.Marshal(reqBody)
+
+	id := strconv.FormatInt(playlist.ID, 10)
+	req := newRouteRequest("POST", "/api/v1/playlists/"+id+"/songs/sort", body, map[string]string{"id": id})
+	rr := httptest.NewRecorder()
+
+	handler.SortPlaylistSongs(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestSortPlaylistSongsInvalidJSON(t *testing.T) {
+	env := newPlaylistHandlerEnv(t)
+	handler := NewPlaylistHandler(env.newService(), nil)
+
+	req := newRouteRequest("POST", "/api/v1/playlists/1/songs/sort", []byte("invalid json"), map[string]string{"id": "1"})
+	rr := httptest.NewRecorder()
+
+	handler.SortPlaylistSongs(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, http.StatusBadRequest)
+	}
+}
+
 func TestListPlaylistsWithFilters(t *testing.T) {
 	env := newPlaylistHandlerEnv(t)
 	svc := env.newService()
