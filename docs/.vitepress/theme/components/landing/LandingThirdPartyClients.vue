@@ -88,22 +88,27 @@ const getHref = (href: string | { zh: string; en: string }) =>
 .client-cards {
   margin-top: 34px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 16px;
-  max-width: 800px;
+  max-width: 1100px;
   margin-left: auto;
   margin-right: auto;
 }
 .client-card {
+  grid-column: span 2;
   display: flex;
   align-items: flex-start;
   gap: 14px;
+  min-height: 180px;
   padding: 22px 20px;
   border: 1px solid var(--vp-c-divider);
   border-radius: 14px;
   background: var(--vp-c-bg);
   text-align: left;
   transition: all 0.18s;
+}
+.client-card:nth-last-child(2):nth-child(3n + 1) {
+  grid-column: 2 / span 2;
 }
 .client-card:hover {
   border-color: var(--vp-c-brand-1);
@@ -145,7 +150,16 @@ const getHref = (href: string | { zh: string; en: string }) =>
   flex-shrink: 0;
 }
 .client-card:hover .client-arrow { transform: translateX(4px); }
+@media (max-width: 1023px) {
+  .client-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .client-card,
+  .client-card:nth-last-child(2):nth-child(3n + 1) {
+    grid-column: auto;
+    min-height: 0;
+  }
+}
 @media (max-width: 680px) {
   .client-cards { grid-template-columns: 1fr; }
+  .client-card { padding: 20px 18px; }
 }
 </style>
