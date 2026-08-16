@@ -1,3 +1,32 @@
+## [v2.11.5] - 2026-08-16
+### :sparkles: New Features
+- [`888fb48`](https://github.com/songloft-org/songloft/commit/888fb48cbc1375a91adb1697ec7a228cd9eae183) - add PUT /playlists/{id}/songs/move endpoint for single-song reposition *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c5bf861`](https://github.com/songloft-org/songloft/commit/c5bf86197ab0c8b667e614345c02d67f728a1d79) - **songs**: 新增 GET /songs/random 随机歌曲接口 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`ff42922`](https://github.com/songloft-org/songloft/commit/ff42922fe168b0c36b514575243e0616dad69062) - 修复项目中所有 UTF-8 乱码字符 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a4b906b`](https://github.com/songloft-org/songloft/commit/a4b906bbf787c42b859d2dc7bca95df184547717) - **app**: 修复 Close() 资源泄漏 + .js MIME 补 charset + 注释乱码修正 *(PR [#393](https://github.com/songloft-org/songloft/pull/393) by [@xiaoniao427](https://github.com/xiaoniao427))*
+- [`198bc51`](https://github.com/songloft-org/songloft/commit/198bc51833b56cfef0a156ffd35174da236e3a28) - **docs**: 清理 Swagger @Router 注释中冗余的 /api/v1 前缀，并写入规范文档 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :recycle: Refactors
+- [`f00e426`](https://github.com/songloft-org/songloft/commit/f00e4266b9ebf6023ee8259c1b2b841f50937a5a) - **playlist**: 将歌单永久排序从客户端移至服务端 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :construction_worker: Build System
+- [`bd02ac8`](https://github.com/songloft-org/songloft/commit/bd02ac8ae47909b6bc0339655c3a7efc76e300e8) - 正式版 release 要求所有平台 bundled 构建成功才发布 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`3f0c21e`](https://github.com/songloft-org/songloft/commit/3f0c21ead6946482ba41c0e9268ec6d746b2fd62) - update CHANGELOG for v2.11.4 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`a7f471c`](https://github.com/songloft-org/songloft/commit/a7f471cba9acf93638291d18bfe2251dc01e6d5a) - 第三方客户端新增流云音盒 (xgplayer.com) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3fa51d2`](https://github.com/songloft-org/songloft/commit/3fa51d2141cae9b28320cdd2e52a34360901a7a4) - TV 客户端章节补充车机支持说明 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`73ff669`](https://github.com/songloft-org/songloft/commit/73ff6690e05609c708c00249c71abe6f44a0eb90) - 第三方客户端新增流云音乐（Cloudflow Music） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c69ae1b`](https://github.com/songloft-org/songloft/commit/c69ae1b8de420dfc9c5ca365b50d9665ff8d7e4e) - **landing**: 优化第三方客户端响应式布局 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`ce116e1`](https://github.com/songloft-org/songloft/commit/ce116e17a2f8deab9969a0a3c161ed16aca866e1) - 更新 miot 插件 (设置页双栏独立滚动 + 默认选中歌单) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b024a84`](https://github.com/songloft-org/songloft/commit/b024a84cec42b89d70f4e3189503147b1e66d6a1) - bump songloft-plugin-miot (修复输入框/下拉框焦点边框 & 自动填充) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`5e8ec9f`](https://github.com/songloft-org/songloft/commit/5e8ec9f9a58053cac0b67ee43ded645cfaa4769f) - release version 2.11.5 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.11.4] - 2026-08-12
 ### :sparkles: New Features
 - [`e35df74`](https://github.com/songloft-org/songloft/commit/e35df74dda59bf63b7b5bcc64c8b119d102ccc90) - **docker**: 支持 PUID/PGID 非 root 运行 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -2120,3 +2149,4 @@
 [v2.11.1]: https://github.com/songloft-org/songloft/compare/v2.11.0...v2.11.1
 [v2.11.3]: https://github.com/songloft-org/songloft/compare/v2.11.2...v2.11.3
 [v2.11.4]: https://github.com/songloft-org/songloft/compare/v2.11.3...v2.11.4
+[v2.11.5]: https://github.com/songloft-org/songloft/compare/v2.11.4...v2.11.5
