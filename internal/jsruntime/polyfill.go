@@ -77,6 +77,74 @@ globalThis.console = {
 // 对象，bridge 返回原始字符串等。
 var __asyncCallbacks = new Map();
 
+// __decorateHeaders 给 fetch 响应头对象补上标准 Headers 的读取方法
+// （get / has / getSetCookie / forEach）。
+//
+// 两条硬约束：
+//  1. 方法一律 enumerable:false。老插件普遍直接属性取值或 Object.keys/JSON.stringify
+//     枚举响应头，方法若可枚举就会污染这些结果。
+//  2. 取值以 list（Go 侧 headersList，无损多值）为准。headers 折叠串里的
+//     Set-Cookie 无法可靠切分（cookie 的 Expires 属性自带 ", "），
+//     故多值场景一律走 list。
+//
+// name 匹配大小写不敏感：Go 侧 key 是 canonical 形式（Set-Cookie），
+// 而插件常按小写写（set-cookie）。
+function __decorateHeaders(headers, list) {
+    if (!headers || typeof headers !== 'object') return headers;
+    if (!list || typeof list !== 'object') list = null;
+
+    function rawValues(name) {
+        var key = String(name);
+        if (list) {
+            if (Object.prototype.hasOwnProperty.call(list, key)) return list[key];
+            var lower = key.toLowerCase();
+            var keys = Object.keys(list);
+            for (var i = 0; i < keys.length; i++) {
+                if (keys[i].toLowerCase() === lower) return list[keys[i]];
+            }
+            return null;
+        }
+        // 兜底：没有 list 时退化为折叠串的单元素数组。
+        if (Object.prototype.hasOwnProperty.call(headers, key)) return [headers[key]];
+        var lo = key.toLowerCase();
+        var hk = Object.keys(headers);
+        for (var j = 0; j < hk.length; j++) {
+            if (hk[j].toLowerCase() === lo) return [headers[hk[j]]];
+        }
+        return null;
+    }
+
+    function define(name, fn) {
+        Object.defineProperty(headers, name, {
+            value: fn, enumerable: false, writable: true, configurable: true
+        });
+    }
+
+    define('get', function(name) {
+        var vals = rawValues(name);
+        return vals && vals.length ? vals.join(', ') : null;
+    });
+    define('has', function(name) {
+        var vals = rawValues(name);
+        return !!(vals && vals.length);
+    });
+    // 按 spec 恒返回数组（无 Set-Cookie 时为空数组，而非 null）。
+    define('getSetCookie', function() {
+        var vals = rawValues('set-cookie');
+        return vals ? vals.slice() : [];
+    });
+    // 按 spec 回调签名为 (value, name, headers)，多值合并为 ", " 串。
+    define('forEach', function(cb, thisArg) {
+        var src = list || headers;
+        var keys = Object.keys(src);
+        for (var i = 0; i < keys.length; i++) {
+            var v = src[keys[i]];
+            cb.call(thisArg, Array.isArray(v) ? v.join(', ') : v, keys[i], headers);
+        }
+    });
+    return headers;
+}
+
 globalThis.__resolveAsync = function(id, ok, payload, type) {
     // WebSocket 推送事件（ws_msg / ws_close / ws_err）不走 __asyncCallbacks，
     // 直接分发给 __wsRegistry 中对应的 WebSocket 实例。
@@ -138,7 +206,7 @@ globalThis.__resolveAsync = function(id, ok, payload, type) {
             ok: r.status >= 200 && r.status < 300,
             status: r.status,
             statusText: r.statusText || '',
-            headers: r.headers || {},
+            headers: __decorateHeaders(r.headers || {}, r.headersList),
             text: function() { return Promise.resolve(r.body || ''); },
             arrayBuffer: function() {
                 var h = r.bodyHex || __go_buffer_from(r.body || '', 'utf8');

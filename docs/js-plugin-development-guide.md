@@ -447,9 +447,32 @@ const text = await postResp.text();
 - `ok` — `status >= 200 && status < 300`
 - `status` — HTTP 状态码
 - `statusText` — 状态文本
-- `headers` — 响应头对象
+- `headers` — 响应头对象，见下
 - `json()` — 返回 `Promise<unknown>`，解析 JSON
 - `text()` — 返回 `Promise<string>`，原始文本
+
+**`headers` 的读取方式**
+
+`headers` 既可以按属性名直接取值，也可以用标准 `Headers` 的读取方法：
+
+```javascript
+resp.headers['Content-Type']          // 属性式：key 是 Go canonical 形式（Set-Cookie / Content-Type）
+resp.headers.get('content-type')      // 方法式：大小写不敏感，多值合并为 ", " 串，缺失返回 null
+resp.headers.has('set-cookie')        // 是否存在该头
+resp.headers.getSetCookie()           // 所有 Set-Cookie 的原始数组（无 Set-Cookie 时为空数组）
+resp.headers.forEach(function(value, name) { /* ... */ });
+```
+
+> **多条 Cookie 必须用 `getSetCookie()`，不要用 `get('set-cookie')` 再自己按 `", "` 切。**
+> 多值合并是不可逆的：cookie 的 `Expires=Wed, 21 Oct 2026 07:28:00 GMT` 属性本身就含 `", "`，
+> 切分结果无法与条目分隔符区分。`getSetCookie()` 直接返回逐条完整的原始数组。
+
+这些方法**不可枚举**，因此 `Object.keys(resp.headers)`、`for...in`、`JSON.stringify(resp.headers)`
+的结果只含响应头本身，不会出现方法名。
+
+> **TypeScript 下优先用 `.get()` 而非属性式取值。** SDK 把 `fetch` 声明为返回标准 DOM `Response`，
+> 其 `headers` 类型是 `Headers`，没有索引签名——`resp.headers['Content-Type']` 虽然运行时可用，
+> 但类型检查不过，只能靠 `as unknown as Record<string, string>` 绕过。`.get()` 两边都合法。
 
 `onHTTPRequest`、`onWebSocket` 和事件回调都可以是 `async function`，框架会等待 Promise settle。
 

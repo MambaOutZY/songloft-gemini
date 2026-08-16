@@ -2058,11 +2058,19 @@ func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
 		return marshalFetchError(fmt.Sprintf("response body exceeds limit of %d MiB", maxFetchBodyBytes>>20))
 	}
 
-	// 收集响应头
-	respHeaders := make(map[string]string)
+	// 收集响应头。回两份：
+	//   headers     —— 多值折叠为 ", " 分隔的单串，保留是为了兼容既有插件的属性式取值；
+	//   headersList —— 原始多值切片，无损。
+	// 折叠形式对 Set-Cookie 是不可逆的信息损毁：cookie 属性里的
+	// `Expires=Wed, 21 Oct 2026 07:28:00 GMT` 本身含 ", "，多条拼一起后无法可靠切回，
+	// 插件侧只能靠启发式猜边界（songloft-org/songloft#401）。故新增 headersList，
+	// JS 侧的 headers.getSetCookie()/get() 一律以它为准。
+	respHeaders := make(map[string]string, len(resp.Header))
+	respHeadersList := make(map[string][]string, len(resp.Header))
 	for k, vals := range resp.Header {
 		if len(vals) > 0 {
 			respHeaders[k] = strings.Join(vals, ", ")
+			respHeadersList[k] = vals
 		}
 	}
 
@@ -2073,9 +2081,10 @@ func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
 	}
 
 	result := map[string]any{
-		"status":     resp.StatusCode,
-		"statusText": resp.Status,
-		"headers":    respHeaders,
+		"status":      resp.StatusCode,
+		"statusText":  resp.Status,
+		"headers":     respHeaders,
+		"headersList": respHeadersList,
 	}
 	// 文本（有效 UTF-8）响应：仅回 body 字符串。JS 侧 text()/json() 直接用 body，
 	// arrayBuffer() 通过 __go_buffer_from(body,'utf8') 回退无损还原字节，无需 bodyHex。

@@ -447,9 +447,34 @@ The request headers may use two runtime-internal control headers: `X-Fetch-No-Re
 - `ok` — `status >= 200 && status < 300`
 - `status` — HTTP status code
 - `statusText` — status text
-- `headers` — response headers object
+- `headers` — response headers object, see below
 - `json()` — returns `Promise<unknown>`, parses JSON
 - `text()` — returns `Promise<string>`, raw text
+
+**Reading `headers`**
+
+`headers` supports both direct property access and the standard `Headers` accessor methods:
+
+```javascript
+resp.headers['Content-Type']          // property style: keys are Go canonical form (Set-Cookie / Content-Type)
+resp.headers.get('content-type')      // method style: case-insensitive, multi-values joined with ", ", null when absent
+resp.headers.has('set-cookie')        // whether the header is present
+resp.headers.getSetCookie()           // raw array of every Set-Cookie (empty array when there is none)
+resp.headers.forEach(function(value, name) { /* ... */ });
+```
+
+> **For multiple cookies you must use `getSetCookie()` — do not call `get('set-cookie')` and split on `", "` yourself.**
+> Joining multiple values is irreversible: a cookie's own `Expires=Wed, 21 Oct 2026 07:28:00 GMT` attribute
+> contains `", "`, so the split result cannot be told apart from the entry separator.
+> `getSetCookie()` returns each entry intact.
+
+These methods are **non-enumerable**, so `Object.keys(resp.headers)`, `for...in`, and
+`JSON.stringify(resp.headers)` yield only the response headers themselves, never the method names.
+
+> **In TypeScript, prefer `.get()` over property access.** The SDK declares `fetch` as returning the
+> standard DOM `Response`, whose `headers` is typed as `Headers` — which has no index signature.
+> So `resp.headers['Content-Type']` works at runtime but fails type checking, and can only be worked
+> around with `as unknown as Record<string, string>`. `.get()` is valid on both sides.
 
 `onHTTPRequest`, `onWebSocket`, and event callbacks can all be `async function`; the framework waits for the Promise to settle.
 
