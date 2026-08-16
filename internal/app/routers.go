@@ -145,6 +145,7 @@ func (a *App) setupAPIV1Router() {
 			r.Get("/songs/stats", songHandler.GetLibraryStats)
 			r.Get("/songs/{id}", songHandler.GetSong)
 			r.Get("/songs/{id}/audio-tracks", songHandler.GetSongAudioTracks)
+			r.Get("/songs/{id}/tracks", songHandler.GetSongTracks)
 			r.Put("/songs/{id}", songHandler.UpdateSong)
 			r.Delete("/songs/{id}", songHandler.DeleteSong)
 			r.Put("/songs/{id}/lyrics", songHandler.UpdateSongLyrics)

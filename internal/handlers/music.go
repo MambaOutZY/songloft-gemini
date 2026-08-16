@@ -758,6 +758,67 @@ func (h *SongHandler) GetSongAudioTracks(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, audioTracksResponse{Tracks: tracks})
 }
 
+// trackItem 是 GET /songs/{id}/tracks 返回数组中的单个元素。
+type trackItem struct {
+	Index    int    `json:"index"`
+	Codec    string `json:"codec"`
+	Language string `json:"language"`
+	Title    string `json:"title"`
+}
+
+// GetSongTracks 枚举歌曲文件中的音频轨道
+// @Summary 枚举歌曲音频轨道
+// @Description 用 ffprobe 探测该歌曲文件的所有音频流，返回每条流的 index、codec、language、title。如果 ffprobe 不可用或执行失败，返回空数组而不报错。
+// @Tags 歌曲管理
+// @Produce json
+// @Param id path int true "歌曲 ID"
+// @Success 200 {array} trackItem "音频轨道列表"
+// @Failure 400 {object} map[string]string "无效的歌曲 ID"
+// @Failure 404 {object} map[string]string "歌曲不存在"
+// @Security BearerAuth
+// @Router /songs/{id}/tracks [get]
+func (h *SongHandler) GetSongTracks(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "无效的歌曲 ID", err)
+		return
+	}
+	song, err := h.songService.GetByID(ctx, id)
+	if err != nil || song == nil {
+		respondError(w, http.StatusNotFound, "歌曲不存在", err)
+		return
+	}
+
+	filePath := h.audioTrackProbePath(song)
+	if filePath == "" {
+		respondJSON(w, http.StatusOK, []trackItem{})
+		return
+	}
+
+	tracks, err := h.cacheService.ListAudioTracks(ctx, filePath)
+	if err != nil {
+		slog.Warn("probe tracks failed", "songId", id, "path", filePath, "error", err)
+		respondJSON(w, http.StatusOK, []trackItem{})
+		return
+	}
+
+	result := make([]trackItem, 0, len(tracks))
+	for _, t := range tracks {
+		result = append(result, trackItem{
+			Index:    t.Index,
+			Codec:    t.Codec,
+			Language: t.Language,
+			Title:    t.Title,
+		})
+	}
+	if len(result) == 0 {
+		result = []trackItem{}
+	}
+	respondJSON(w, http.StatusOK, result)
+}
+
 // audioTrackProbePath 返回可供 ffprobe 探测音频流的本地文件路径。
 // 本地歌曲 → FilePath；网络歌曲 → 已落地缓存（cache_path 或旧格式缓存）；均不可用时返回空串。
 func (h *SongHandler) audioTrackProbePath(song *models.Song) string {
