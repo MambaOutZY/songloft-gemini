@@ -103,6 +103,17 @@ get_build_time() {
     fi
 }
 
+# 输出二进制文件的完整版本信息（-version 原始输出，方便排查底包与实际运行的二进制差异）
+print_version_info() {
+    label="$1"
+    binary_path="$2"
+    if [ -f "$binary_path" ]; then
+        echo "--- $label ---"
+        "$binary_path" -version 2>&1
+        echo "------------------"
+    fi
+}
+
 # 判断版本号是否为可比较的语义化版本（可选前导 v，随后为数字段，如 v2.11.0 / 2.11 / 2）
 # compare_versions 只能对这种形式的版本号排序；诸如自建镜像的自定义 tag
 # （fix-v4、test 等）无法解析，若强行送入比较会被当成 0 而误判为「旧」。
@@ -153,6 +164,7 @@ compare_build_times() {
 # 检查目标二进制文件是否存在
 if [ ! -f "$BINARY_TARGET" ]; then
     echo "初始化：复制二进制文件到数据目录..."
+    print_version_info "Docker 镜像底包" "$BINARY_SOURCE"
     cp "$BINARY_SOURCE" "$BINARY_TARGET"
     chmod +x "$BINARY_TARGET"
     echo "✓ 二进制文件已复制到 $BINARY_TARGET"
@@ -175,6 +187,10 @@ else
 
     echo "Docker 镜像版本：$SOURCE_VERSION ($SOURCE_BUILD_TYPE, $SOURCE_CHANNEL, $SOURCE_BUILD_TIME)"
     echo "数据目录版本：$TARGET_VERSION ($TARGET_BUILD_TYPE, $TARGET_CHANNEL, $TARGET_BUILD_TIME)"
+
+    # 输出完整版本信息（含 git commit、构建时间等），方便排查底包与实际运行的二进制差异
+    print_version_info "Docker 镜像底包" "$BINARY_SOURCE"
+    print_version_info "数据目录二进制" "$BINARY_TARGET"
 
     # 判断是否需要更新
     # 原则：底包代表用户意图。
