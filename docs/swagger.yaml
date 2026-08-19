@@ -455,6 +455,17 @@ definitions:
       show_playlists:
         type: boolean
     type: object
+  handlers.trackItem:
+    properties:
+      codec:
+        type: string
+      index:
+        type: integer
+      language:
+        type: string
+      title:
+        type: string
+    type: object
   handlers.userPreferencesSetting:
     properties:
       audio_quality:
@@ -6092,6 +6103,42 @@ paths:
       security:
       - BearerAuth: []
       summary: 写入歌曲标签
+      tags:
+      - 歌曲管理
+  /songs/{id}/tracks:
+    get:
+      description: 用 ffprobe 探测该歌曲文件的所有音频流，返回每条流的 index、codec、language、title。如果 ffprobe
+        不可用或执行失败，返回空数组而不报错。
+      parameters:
+      - description: 歌曲 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 音频轨道列表
+          schema:
+            items:
+              $ref: '#/definitions/handlers.trackItem'
+            type: array
+        "400":
+          description: 无效的歌曲 ID
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 歌曲不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 枚举歌曲音频轨道
       tags:
       - 歌曲管理
   /songs/{id}/video-hls/{path}:

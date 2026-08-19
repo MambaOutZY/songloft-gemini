@@ -65,6 +65,7 @@ type SongHandler struct {
 	urlResolver       *services.InternalURLResolver // 把插件相对路径解析为本机绝对 URL + access_token（封面代理用）
 	radioClient       *http.Client
 	downloadActivity  *services.DownloadActivity // 下载活动闸门，导入探测据此让路（issue #265）
+	thumbCache        *services.CoverThumbCache  // 缩略图磁盘缓存（可选，nil 安全）
 }
 
 // NewSongHandler 创建歌曲处理器
@@ -132,6 +133,11 @@ func (h *SongHandler) SetConfigService(cs *services.ConfigService) {
 // SetURLResolver 注入内部 URL 解析器，用于将插件相对路径（如封面 URL）解析为本机可访问的绝对 URL。
 func (h *SongHandler) SetURLResolver(r *services.InternalURLResolver) {
 	h.urlResolver = r
+}
+
+// SetThumbCache 注入缩略图磁盘缓存。
+func (h *SongHandler) SetThumbCache(tc *services.CoverThumbCache) {
+	h.thumbCache = tc
 }
 
 const remoteTitleSourceConfigKey = "remote_title_source"
@@ -1025,7 +1031,7 @@ func (h *SongHandler) AddRemoteSongs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
-		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
+		respondError(w, http.StatusBadRequest, "无效的��求数据", err)
 		return
 	}
 
@@ -1276,7 +1282,7 @@ func (h *SongHandler) GetSongCover(w http.ResponseWriter, r *http.Request) {
 
 // serveLocalCover 返回本地封面文件（支持 ?w= 服务端缩略，见 serveCoverFile）。
 func (h *SongHandler) serveLocalCover(w http.ResponseWriter, r *http.Request, song *models.Song) {
-	serveCoverFile(w, r, song.CoverPath)
+	serveCoverFile(w, r, song.CoverPath, h.thumbCache)
 }
 
 // CleanInvalidSongs 清理无效的本地歌曲

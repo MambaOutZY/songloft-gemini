@@ -3,9 +3,11 @@ package handlers
 import (
 	"bytes"
 	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"image"
 	"image/jpeg"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -19,6 +21,7 @@ import (
 	_ "image/png"
 
 	"golang.org/x/image/draw"
+	"songloft/internal/services"
 )
 
 // coverThumbMaxWidth 是 ?w= 允许的最大目标宽度（物理像素）。
@@ -54,10 +57,10 @@ func coverThumbWorkers() int {
 // 上传 GPU 纹理、memCacheWidth 在该路径不生效，故改由服务端把封面缩到显示尺寸，
 // 既拿回浏览器缓存的稳健重显示，又保住移动端小纹理（不再顶爆 WebGL 显存变黑）。
 //
-// 缓存：命中 If-None-Match 直接 304（不解码，最省）；否则按需解码+缩放+编码。
-// max-age=1 年，浏览器侧每张缩略图基本只请求一次。诊断信息（是否缩放、原始/目标尺寸、
-// 回退原因、耗时）全部打进 slog，便于排查（songloft-org/songloft#309）。
-func serveCoverFile(w http.ResponseWriter, r *http.Request, path string) {
+// 缓存：命中 If-None-Match 直接 304（不解码，最省）；磁盘缓存命中直接返回文件（不解码）；
+// 否则按需解码+缩放+编码并写入磁盘缓存。max-age=1 年，浏览器侧每张缩略图基本只请求一次。
+// 诊断信息（是否缩放、原始/目标尺寸、回退原因、耗时）全部打进 slog，便于排查。
+func serveCoverFile(w http.ResponseWriter, r *http.Request, path string, thumbCache *services.CoverThumbCache) {
 	widthStr := strings.TrimSpace(r.URL.Query().Get("w"))
 	if widthStr == "" {
 		// 无缩略请求：老路径，直接服务原图。
@@ -88,6 +91,7 @@ func serveCoverFile(w http.ResponseWriter, r *http.Request, path string) {
 	// ETag 只依赖 路径+修改时间+大小+目标宽度，不需解码即可算——命中 If-None-Match 时
 	// 直接 304，跳过解码/缩放/编码这条最贵的路径。
 	etag := coverThumbETag(path, info, width)
+	hashHex := coverThumbHashHex(path, info, width)
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "public, max-age=31536000")
 	if match := r.Header.Get("If-None-Match"); match != "" && etagMatches(match, etag) {
@@ -96,11 +100,27 @@ func serveCoverFile(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 
+	// 磁盘缓存：命中则直接返回缓存文件，跳过解码+缩放（最大收益点）。
+	if thumbCache != nil {
+		if cached, ok := thumbCache.Get(hashHex); ok {
+			serveCachedThumb(w, cached, etag)
+			return
+		}
+	}
+
 	select {
 	case coverThumbSem <- struct{}{}:
 		defer func() { <-coverThumbSem }()
 	case <-r.Context().Done():
 		return
+	}
+
+	// 二次检查：并发请求可能在等信号量期间已由另一请求写入缓存。
+	if thumbCache != nil {
+		if cached, ok := thumbCache.Get(hashHex); ok {
+			serveCachedThumb(w, cached, etag)
+			return
+		}
 	}
 
 	start := time.Now()
@@ -113,6 +133,13 @@ func serveCoverFile(w http.ResponseWriter, r *http.Request, path string) {
 		w.Header().Del("ETag")
 		http.ServeFile(w, r, path)
 		return
+	}
+
+	// 写入磁盘缓存（异步淘汰，不阻塞响应）。
+	if thumbCache != nil {
+		if _, err := thumbCache.Put(hashHex, data); err != nil {
+			slog.Debug("缩略图缓存写入失败", "path", path, "error", err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "image/jpeg")
@@ -130,6 +157,31 @@ func serveCoverFile(w http.ResponseWriter, r *http.Request, path string) {
 	if _, err := w.Write(data); err != nil {
 		slog.Debug("封面缩略写出失败（客户端可能已断开）", "path", path, "error", err)
 	}
+}
+
+// serveCachedThumb 从磁盘缓存文件直接返回缩略图。
+func serveCachedThumb(w http.ResponseWriter, cachedPath, etag string) {
+	f, err := os.Open(cachedPath)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "public, max-age=31536000")
+	io.Copy(w, f)
+}
+
+// coverThumbHashHex 返回缩略图缓存键的十六进制字符串（与 ETag 同源，去掉引号格式）。
+func coverThumbHashHex(path string, info os.FileInfo, width int) string {
+	h := sha1.Sum(fmt.Appendf(nil, "%s|%d|%d|w%d|q%d",
+		path, info.ModTime().UnixNano(), info.Size(), width, coverThumbJPEGQuality))
+	return hex.EncodeToString(h[:])
 }
 
 // decodeAndResizeCover 解码 path 处的封面并等比缩放到宽度 targetW（绝不放大），

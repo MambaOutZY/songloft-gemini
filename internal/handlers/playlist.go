@@ -22,6 +22,7 @@ import (
 type PlaylistHandler struct {
 	playlistService *services.PlaylistService
 	songService     *services.SongService
+	thumbCache      *services.CoverThumbCache // 缩略图磁盘缓存（可选，nil 安全）
 }
 
 // NewPlaylistHandler 创建歌单处理器
@@ -30,6 +31,11 @@ func NewPlaylistHandler(playlistService *services.PlaylistService, songService *
 		playlistService: playlistService,
 		songService:     songService,
 	}
+}
+
+// SetThumbCache 注入缩略图磁盘缓存。
+func (h *PlaylistHandler) SetThumbCache(tc *services.CoverThumbCache) {
+	h.thumbCache = tc
 }
 
 // ListPlaylists 获取歌单列表
@@ -949,7 +955,7 @@ func (h *PlaylistHandler) GetPlaylistCover(w http.ResponseWriter, r *http.Reques
 
 // serveLocalCover 返回本地封面文件（支持 ?w= 服务端缩略，见 serveCoverFile）。
 func (h *PlaylistHandler) serveLocalCover(w http.ResponseWriter, r *http.Request, playlist *models.Playlist) {
-	serveCoverFile(w, r, playlist.CoverPath)
+	serveCoverFile(w, r, playlist.CoverPath, h.thumbCache)
 }
 
 // coverFileExists 判断封面文件是否存在（非目录），供读路径在封面丢失时回退。

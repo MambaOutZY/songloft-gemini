@@ -8024,6 +8024,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/songs/{id}/tracks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "用 ffprobe 探测该歌曲文件的所有音频流，返回每条流的 index、codec、language、title。如果 ffprobe 不可用或执行失败，返回空数组而不报错。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "枚举歌曲音频轨道",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌曲 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "音频轨道列表",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handlers.trackItem"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "无效的歌曲 ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "歌曲不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/songs/{id}/video-hls/playlist.m3u8": {
             "get": {
                 "security": [
@@ -9457,6 +9512,23 @@ const docTemplate = `{
                 },
                 "show_playlists": {
                     "type": "boolean"
+                }
+            }
+        },
+        "handlers.trackItem": {
+            "type": "object",
+            "properties": {
+                "codec": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "integer"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
                 }
             }
         },

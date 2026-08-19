@@ -91,7 +91,7 @@ func TestServeCoverFile_NoWidthServesOriginal(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/songs/1/cover", nil)
 	rec := httptest.NewRecorder()
-	serveCoverFile(rec, req, path)
+	serveCoverFile(rec, req, path, nil)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("状态码应为 200，实际 %d", rec.Code)
@@ -107,7 +107,7 @@ func TestServeCoverFile_WidthReturnsJPEG(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/songs/1/cover?w=120", nil)
 	rec := httptest.NewRecorder()
-	serveCoverFile(rec, req, path)
+	serveCoverFile(rec, req, path, nil)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("状态码应为 200，实际 %d", rec.Code)
@@ -133,7 +133,7 @@ func TestServeCoverFile_ETag304(t *testing.T) {
 	// 首次请求拿 ETag。
 	req1 := httptest.NewRequest(http.MethodGet, "/api/v1/songs/1/cover?w=120", nil)
 	rec1 := httptest.NewRecorder()
-	serveCoverFile(rec1, req1, path)
+	serveCoverFile(rec1, req1, path, nil)
 	etag := rec1.Header().Get("ETag")
 	if etag == "" {
 		t.Fatal("首次请求应返回 ETag")
@@ -143,7 +143,7 @@ func TestServeCoverFile_ETag304(t *testing.T) {
 	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/songs/1/cover?w=120", nil)
 	req2.Header.Set("If-None-Match", etag)
 	rec2 := httptest.NewRecorder()
-	serveCoverFile(rec2, req2, path)
+	serveCoverFile(rec2, req2, path, nil)
 
 	if rec2.Code != http.StatusNotModified {
 		t.Fatalf("ETag 命中应 304，实际 %d", rec2.Code)
@@ -162,7 +162,7 @@ func TestServeCoverFile_UnsupportedFormatFallsBack(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/songs/1/cover?w=120", nil)
 	rec := httptest.NewRecorder()
-	serveCoverFile(rec, req, path)
+	serveCoverFile(rec, req, path, nil)
 
 	// 解码失败应优雅回退为原图直出（ServeFile），而非 500。
 	if rec.Code != http.StatusOK {
