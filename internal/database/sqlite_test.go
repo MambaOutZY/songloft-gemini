@@ -418,7 +418,7 @@ func TestAutoCreatePlaylistsAvoidsManualNameConflict(t *testing.T) {
 		t.Fatalf("BatchCreateSongs error = %v", err)
 	}
 
-	resp, err := db.PlaylistRepository().AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp, err := db.PlaylistRepository().AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("AutoCreatePlaylists error = %v", err)
 	}
@@ -436,7 +436,7 @@ func TestAutoCreatePlaylistsAvoidsManualNameConflict(t *testing.T) {
 
 	// 再跑一次:相同目录结构下应复用同一歌单(名字与 ID 都稳定),
 	// 不应递增到 (自动 2),也不应因 DELETE+重建产生新 ID。
-	resp2, err := db.PlaylistRepository().AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp2, err := db.PlaylistRepository().AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("second AutoCreatePlaylists error = %v", err)
 	}
@@ -493,7 +493,7 @@ func TestAutoCreatePreservesPlaylistIDs(t *testing.T) {
 		t.Fatalf("BatchCreate error = %v", err)
 	}
 
-	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("AutoCreate #1 error = %v", err)
 	}
@@ -503,7 +503,7 @@ func TestAutoCreatePreservesPlaylistIDs(t *testing.T) {
 	}
 
 	// 第二次扫描：目录结构不变，ID 应完全一致
-	resp2, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp2, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("AutoCreate #2 error = %v", err)
 	}
@@ -520,7 +520,7 @@ func TestAutoCreatePreservesPlaylistIDs(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("BatchCreate Pop error = %v", err)
 	}
-	resp3, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp3, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("AutoCreate #3 error = %v", err)
 	}
@@ -561,7 +561,7 @@ func TestAutoCreateDeletesStalePlaylist(t *testing.T) {
 		t.Fatalf("BatchCreate jazz error = %v", err)
 	}
 
-	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("AutoCreate #1 error = %v", err)
 	}
@@ -576,7 +576,7 @@ func TestAutoCreateDeletesStalePlaylist(t *testing.T) {
 	if _, err := db.SongRepository().BatchDelete(ctx, []int64{jazzSongs[0].ID}); err != nil {
 		t.Fatalf("BatchDelete jazz error = %v", err)
 	}
-	resp2, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp2, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("AutoCreate #2 error = %v", err)
 	}
@@ -612,7 +612,7 @@ func TestAutoCreatePreservesCover(t *testing.T) {
 		t.Fatalf("BatchCreate error = %v", err)
 	}
 
-	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("AutoCreate #1 error = %v", err)
 	}
@@ -630,7 +630,7 @@ func TestAutoCreatePreservesCover(t *testing.T) {
 
 	// 多次重扫，封面必须始终一致。
 	for i := 0; i < 5; i++ {
-		if _, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil); err != nil {
+		if _, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, ""); err != nil {
 			t.Fatalf("AutoCreate re-scan #%d error = %v", i, err)
 		}
 		again, err := repo.GetByID(ctx, rockID)
@@ -659,7 +659,7 @@ func TestAutoCreatePreservesManualCover(t *testing.T) {
 		t.Fatalf("BatchCreate error = %v", err)
 	}
 
-	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp1, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("AutoCreate #1 error = %v", err)
 	}
@@ -680,7 +680,7 @@ func TestAutoCreatePreservesManualCover(t *testing.T) {
 	}
 
 	// 再次扫描，手动封面必须保留。
-	if _, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil); err != nil {
+	if _, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, ""); err != nil {
 		t.Fatalf("AutoCreate #2 error = %v", err)
 	}
 	after, err := repo.GetByID(ctx, rockID)
@@ -716,7 +716,7 @@ func TestAutoCreateExcludesCueSourceFromDir(t *testing.T) {
 		t.Fatalf("BatchCreate error = %v", err)
 	}
 
-	resp, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("AutoCreate error = %v", err)
 	}
@@ -745,7 +745,7 @@ func TestAutoCreateExcludesCueSourceFromDir(t *testing.T) {
 	if _, err := songRepo.BatchDelete(ctx, []int64{songs[0].ID}); err != nil {
 		t.Fatalf("delete mp3: %v", err)
 	}
-	resp2, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp2, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("AutoCreate #2 error = %v", err)
 	}
@@ -779,7 +779,7 @@ func TestAutoCreateDeduplicatesByFilePath(t *testing.T) {
 		t.Fatalf("BatchCreate error = %v", err)
 	}
 
-	resp, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil)
+	resp, err := repo.AutoCreate(ctx, models.PlaylistModeDirectory, nil, "")
 	if err != nil {
 		t.Fatalf("AutoCreate error = %v", err)
 	}

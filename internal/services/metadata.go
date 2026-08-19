@@ -205,6 +205,11 @@ func (m *MetadataExtractor) SetHTTPClient(client *http.Client) {
 	m.config.HTTPClient = client
 }
 
+// CoverStoragePath 返回封面存储根目录路径。
+func (m *MetadataExtractor) CoverStoragePath() string {
+	return m.config.CoverStoragePath
+}
+
 // Extract 提取音频文件的元数据
 // 优先使用 tag 库提取所有信息（标签、时长、封面等），仅在 tag 库无法获取时长时回退到 ffprobe。
 func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Metadata, error) {

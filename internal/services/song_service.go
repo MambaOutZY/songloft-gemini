@@ -70,7 +70,7 @@ type Transactor interface {
 
 // PlaylistAutoCreator 由扫描完成后调用，重建 auto_created 歌单。
 type PlaylistAutoCreator interface {
-	AutoCreate(ctx context.Context, playlistMode string, excludeDirs []string) (*models.AutoCreatePlaylistsResponse, error)
+	AutoCreate(ctx context.Context, playlistMode string, excludeDirs []string, coverStoragePath string) (*models.AutoCreatePlaylistsResponse, error)
 }
 
 // SongService 歌曲服务
@@ -584,6 +584,23 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 						metadata.CoverPath = coverPath
 					}
 					metadata.CoverData = nil
+				} else {
+					// 无内嵌封面时，尝试查找外部封面图片文件
+					dirPath := filepath.Dir(item.filePath)
+					if extPath, err := fileutil.FindExternalCover(dirPath); err == nil && extPath != "" {
+						data, readErr := os.ReadFile(extPath)
+						if readErr != nil {
+							slog.Warn("worker读取外部封面失败", "filePath", item.filePath, "coverFile", extPath, "error", readErr)
+						} else {
+							ext := strings.TrimPrefix(filepath.Ext(extPath), ".")
+							coverPath, saveErr := s.metadataExtractor.SaveCoverData(data, ext)
+							if saveErr != nil {
+								slog.Warn("worker保存外部封面失败", "filePath", item.filePath, "coverFile", extPath, "error", saveErr)
+							} else if coverPath != "" {
+								metadata.CoverPath = coverPath
+							}
+						}
+					}
 				}
 
 				var fileSize int64
@@ -776,7 +793,11 @@ func (s *SongService) runAutoCreatePlaylists(ctx context.Context) {
 		autoCreateExcludeDirs = cfg.AutoCreateExcludeDirs
 	}
 
-	if _, err := s.playlistAutoCreator.AutoCreate(ctx, playlistMode, autoCreateExcludeDirs); err != nil {
+	coverStoragePath := ""
+	if s.metadataExtractor != nil {
+		coverStoragePath = s.metadataExtractor.CoverStoragePath()
+	}
+	if _, err := s.playlistAutoCreator.AutoCreate(ctx, playlistMode, autoCreateExcludeDirs, coverStoragePath); err != nil {
 		slog.Warn("自动创建歌单失败", "playlist_mode", playlistMode, "error", err)
 	}
 }

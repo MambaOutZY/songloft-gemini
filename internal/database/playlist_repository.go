@@ -15,6 +15,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 
 	"songloft/internal/database/sqlc"
+	"songloft/internal/fileutil"
 	"songloft/internal/models"
 )
 
@@ -296,7 +297,7 @@ func (r *PlaylistRepository) BatchUpdatePositions(ctx context.Context, playlistI
 // 写操作集中在单一事务里：清理旧的 auto_created 歌单 → 插入新歌单 → 批量插入 playlist_songs。
 // playlistMode: "directory"（按文件夹）、"top_level"（按顶层文件夹合并）、"bubble_up"（向上冒泡）。
 // excludeDirs 指定在自动创建歌单时要排除的目录名称（按名称匹配，路径中任何层级包含该名称都会被排除）。
-func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string, excludeDirs []string) (*models.AutoCreatePlaylistsResponse, error) {
+func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string, excludeDirs []string, coverStoragePath string) (*models.AutoCreatePlaylistsResponse, error) {
 	songRepo := NewSongRepository(r.db)
 	songs, err := songRepo.List(ctx, &SongFilter{
 		Type:  models.TypeLocal,
@@ -578,7 +579,7 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 			sort.SliceStable(songIDs, func(i, j int) bool {
 				return lessSongByNumberThenTitle(songIDToSong[songIDs[i]], songIDToSong[songIDs[j]])
 			})
-			coverPath, coverURL := pickSongCover(songIDs, songIDToSong)
+			coverPath, coverURL := pickDirCover(dir, songIDs, songIDToSong, coverStoragePath)
 			if err := upsertPlaylist(nameMap[dir], descMap[dir], coverPath, coverURL, songIDs); err != nil {
 				return err
 			}
@@ -892,6 +893,18 @@ func resolveAutoCreatedName(candidate string, existing map[string]struct{}) stri
 			return cand
 		}
 	}
+}
+
+// pickDirCover 优先使用目录下的外部封面图片，找不到再回退到 pickSongCover。
+func pickDirCover(dir string, songIDs []int64, songIDToSong map[int64]*models.Song, coverStoragePath string) (string, string) {
+	if coverStoragePath != "" {
+		if extPath, err := fileutil.FindExternalCover(dir); err == nil && extPath != "" {
+			if savedPath, err := fileutil.SaveExternalCover(extPath, coverStoragePath); err == nil && savedPath != "" {
+				return savedPath, ""
+			}
+		}
+	}
+	return pickSongCover(songIDs, songIDToSong)
 }
 
 // pickSongCover 从歌曲 ID 列表中确定性地选第一首有封面的，
