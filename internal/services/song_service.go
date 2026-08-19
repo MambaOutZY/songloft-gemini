@@ -16,6 +16,7 @@ import (
 	"github.com/hanxi/tag"
 
 	"songloft/internal/database"
+	"songloft/internal/fileutil"
 	"songloft/internal/httputil"
 	"songloft/internal/models"
 )
@@ -1516,7 +1517,7 @@ func (s *SongService) organizeOne(ctx context.Context, musicPath string, item Or
 		return OrganizeResult{ID: item.ID, Status: "ok", FilePath: plan.newPath}
 	}
 
-	// 拒绝覆盖已存在的目标文件（moveFile 底层 os.Rename 会静默覆盖）。
+	// 拒绝覆盖已存在的目标文件（fileutil.MoveFile 底层 os.Rename 会静默覆盖）。
 	if fileExists(plan.absTarget) {
 		return OrganizeResult{ID: item.ID, Status: "error", Error: "target already exists"}
 	}
@@ -1525,13 +1526,13 @@ func (s *SongService) organizeOne(ctx context.Context, musicPath string, item Or
 		return OrganizeResult{ID: item.ID, Status: "error", Error: fmt.Sprintf("create directory: %v", err)}
 	}
 
-	if err := moveFile(plan.absSource, plan.absTarget); err != nil {
+	if err := fileutil.MoveFile(plan.absSource, plan.absTarget); err != nil {
 		return OrganizeResult{ID: item.ID, Status: "error", Error: fmt.Sprintf("move file: %v", err)}
 	}
 
 	plan.song.FilePath = plan.newPath
 	if err := s.songs.Update(ctx, plan.song); err != nil {
-		_ = moveFile(plan.absTarget, plan.absSource)
+		_ = fileutil.MoveFile(plan.absTarget, plan.absSource)
 		return OrganizeResult{ID: item.ID, Status: "error", Error: fmt.Sprintf("update database: %v", err)}
 	}
 
@@ -1578,7 +1579,7 @@ func (s *SongService) RenameLocalSongFile(ctx context.Context, song *models.Song
 		return false, nil
 	}
 
-	// 拒绝覆盖已存在的目标文件（moveFile 底层 os.Rename 会静默覆盖）。
+	// 拒绝覆盖已存在的目标文件（fileutil.MoveFile 底层 os.Rename 会静默覆盖）。
 	// 例外：大小写不敏感文件系统（macOS/Windows）上仅改标题大小写时，newPath 会命中原文件本身
 	// （os.Stat 解析到同一 inode），此时并非冲突，应放行让 os.Rename 完成大小写改名。
 	if oldInfo, statErr := os.Stat(oldPath); statErr == nil {
@@ -1590,14 +1591,14 @@ func (s *SongService) RenameLocalSongFile(ctx context.Context, song *models.Song
 		return false, fmt.Errorf("目标文件已存在: %s", filepath.Base(newPath))
 	}
 
-	if err := moveFile(oldPath, newPath); err != nil {
+	if err := fileutil.MoveFile(oldPath, newPath); err != nil {
 		return false, fmt.Errorf("移动文件失败: %w", err)
 	}
 
 	song.FilePath = newPath
 	if err := s.songs.Update(ctx, song); err != nil {
 		// 回滚文件移动，保持磁盘与 DB 一致。
-		_ = moveFile(newPath, oldPath)
+		_ = fileutil.MoveFile(newPath, oldPath)
 		song.FilePath = oldPath
 		return false, fmt.Errorf("更新数据库失败: %w", err)
 	}

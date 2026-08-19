@@ -1,14 +1,12 @@
-package services
+package fileutil
 
 import (
-	"errors"
 	"io"
 	"os"
-	"syscall"
 )
 
-// moveFile 尝试 os.Rename，若因跨设备失败则回退到 copy + remove。
-func moveFile(src, dst string) error {
+// MoveFile 尝试 os.Rename，若因跨设备失败则回退到 copy + remove。
+func MoveFile(src, dst string) error {
 	err := os.Rename(src, dst)
 	if err == nil {
 		return nil
@@ -21,14 +19,6 @@ func moveFile(src, dst string) error {
 	}
 	_ = os.Remove(src)
 	return nil
-}
-
-func isCrossDeviceError(err error) bool {
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		return errno == syscall.EXDEV
-	}
-	return false
 }
 
 func copyFileRaw(src, dst string) error {

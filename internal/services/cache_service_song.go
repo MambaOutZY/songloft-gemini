@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"songloft/internal/fileutil"
 	"songloft/internal/httputil"
 	"songloft/internal/models"
 	"songloft/internal/services/source"
@@ -336,7 +337,7 @@ func (c *CacheService) moveToCache(song *models.Song, tmpPath, ext string) (stri
 	if _, err := os.Stat(finalPath); err == nil {
 		_ = os.Remove(finalPath)
 	}
-	if err := moveFile(tmpPath, finalPath); err != nil {
+	if err := fileutil.MoveFile(tmpPath, finalPath); err != nil {
 		return "", fmt.Errorf("move to cache: %w", err)
 	}
 	return finalPath, nil

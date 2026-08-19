@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"songloft/internal/fileutil"
 	"strings"
 )
 
@@ -393,7 +394,7 @@ func (h *BridgeHandler) fsRename(data string) (string, error) {
 		return "", fmt.Errorf("fs.rename: mkdir: %w", err)
 	}
 
-	if err := os.Rename(absOld, absNew); err != nil {
+	if err := fileutil.MoveFile(absOld, absNew); err != nil {
 		return "", fmt.Errorf("fs.rename: %w", err)
 	}
 	return "", nil
