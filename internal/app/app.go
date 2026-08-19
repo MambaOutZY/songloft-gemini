@@ -401,21 +401,22 @@ func (a *App) Init() error {
 		songRepo.ListSongsNeedingMetadata,
 		songRepo.UpdateMetadata,
 		songRepo.UpdateTagFields,
-		func(ctx context.Context, song *models.Song) (string, error) {
+		func(ctx context.Context, song *models.Song) (string, map[string]string, error) {
 			if song.IsPluginSourced() {
 				resolved, err := a.cacheService.ResolveURL(ctx, song)
 				if err != nil {
-					return "", err
+					return "", nil, err
 				}
-				return resolved.URL, nil
+				return resolved.URL, resolved.Headers, nil
 			}
-			return song.URL, nil
+			return song.URL, nil, nil
 		},
 		a.metadataExtractor,
 	)
 	a.metadataRefresher.SetRemoteTitleSource(func() string {
 		return a.configService.GetString("remote_title_source", "filename")
 	})
+	a.jsPluginManager.SetMetadataRefresher(a.metadataRefresher)
 	a.cacheService.SetCacheCompleteCallback(
 		func(ctx context.Context, song *models.Song, filePath string) {
 			if services.NeedsMetadata(song) {

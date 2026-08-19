@@ -26,11 +26,17 @@ type HTTPReadSeeker struct {
 	tailOff int64 // tail 缓冲区在文件中的起始偏移
 }
 
-// NewHTTPReadSeeker 创建 HTTPReadSeeker。
+// NewHTTPReadSeeker 创建 HTTPReadSeeker（无自定义请求头）。
+func NewHTTPReadSeeker(client *http.Client, url string) (*HTTPReadSeeker, error) {
+	return NewHTTPReadSeekerWithHeaders(client, url, nil)
+}
+
+// NewHTTPReadSeekerWithHeaders 创建带自定义请求头的 HTTPReadSeeker。
 // 发起 HEAD 请求获取文件大小，再通过 Range GET 预取首尾数据。
 // 若服务端不支持 Range 请求，返回错误（调用方应 fallback）。
-func NewHTTPReadSeeker(client *http.Client, url string) (*HTTPReadSeeker, error) {
-	size, err := fetchContentLength(client, url)
+// headers 中含 CR/LF 的条目会被静默跳过。
+func NewHTTPReadSeekerWithHeaders(client *http.Client, url string, headers map[string]string) (*HTTPReadSeeker, error) {
+	size, err := fetchContentLength(client, url, headers)
 	if err != nil {
 		return nil, fmt.Errorf("http read seeker: %w", err)
 	}
@@ -41,18 +47,16 @@ func NewHTTPReadSeeker(client *http.Client, url string) (*HTTPReadSeeker, error)
 	rs := &HTTPReadSeeker{size: size}
 
 	if size <= int64(defaultHeadSize) {
-		// 文件很小，一次性全部获取
-		data, err := fetchRange(client, url, 0, size-1)
+		data, err := fetchRange(client, url, 0, size-1, headers)
 		if err != nil {
 			return nil, fmt.Errorf("http read seeker: fetch small file: %w", err)
 		}
 		rs.head = data
-		rs.tailOff = size // 无独立 tail
+		rs.tailOff = size
 		return rs, nil
 	}
 
-	// 并行获取首尾（串行实现，简单可靠）
-	head, err := fetchRange(client, url, 0, int64(defaultHeadSize)-1)
+	head, err := fetchRange(client, url, 0, int64(defaultHeadSize)-1, headers)
 	if err != nil {
 		return nil, fmt.Errorf("http read seeker: fetch head: %w", err)
 	}
@@ -62,7 +66,7 @@ func NewHTTPReadSeeker(client *http.Client, url string) (*HTTPReadSeeker, error)
 	if tailStart < int64(defaultHeadSize) {
 		tailStart = int64(defaultHeadSize)
 	}
-	tail, err := fetchRange(client, url, tailStart, size-1)
+	tail, err := fetchRange(client, url, tailStart, size-1, headers)
 	if err != nil {
 		return nil, fmt.Errorf("http read seeker: fetch tail: %w", err)
 	}
@@ -137,8 +141,28 @@ func (r *HTTPReadSeeker) Size() int64 {
 	return r.size
 }
 
-func fetchContentLength(client *http.Client, url string) (int64, error) {
-	resp, err := client.Head(url)
+// isSafeHeaderValue 检查 header key/value 是否含 CR/LF（防注入）。
+func isSafeHeaderValue(s string) bool {
+	return !strings.ContainsAny(s, "\r\n")
+}
+
+// setHeaders 将自定义 headers 注入请求（跳过含 CR/LF 的条目）。
+func setHeaders(req *http.Request, headers map[string]string) {
+	for k, v := range headers {
+		if isSafeHeaderValue(k) && isSafeHeaderValue(v) {
+			req.Header.Set(k, v)
+		}
+	}
+}
+
+func fetchContentLength(client *http.Client, url string, headers map[string]string) (int64, error) {
+	req, err := http.NewRequest(http.MethodHead, url, nil)
+	if err != nil {
+		return 0, fmt.Errorf("HEAD request failed: %w", err)
+	}
+	setHeaders(req, headers)
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("HEAD request failed: %w", err)
 	}
@@ -160,11 +184,12 @@ func fetchContentLength(client *http.Client, url string) (int64, error) {
 	return size, nil
 }
 
-func fetchRange(client *http.Client, url string, start, end int64) ([]byte, error) {
+func fetchRange(client *http.Client, url string, start, end int64, headers map[string]string) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
+	setHeaders(req, headers)
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 
 	resp, err := client.Do(req)
@@ -174,11 +199,9 @@ func fetchRange(client *http.Client, url string, start, end int64) ([]byte, erro
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
-		// 服务端忽略了 Range，返回了完整内容
 		if resp.ContentLength > 0 && resp.ContentLength == end-start+1 {
 			return io.ReadAll(resp.Body)
 		}
-		// 检查是否真的不支持 Range
 		if !strings.Contains(resp.Header.Get("Accept-Ranges"), "bytes") &&
 			resp.Header.Get("Content-Range") == "" {
 			return nil, fmt.Errorf("server does not support range requests")
@@ -191,4 +214,23 @@ func fetchRange(client *http.Client, url string, start, end int64) ([]byte, erro
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+// FormatFFmpegHeaders 将 headers map 格式化为 ffprobe/ffmpeg -headers 参数值。
+// 格式：每个 header 以 "\r\n" 结尾，多个拼接成一个字符串。
+// 含 CR/LF 的 key/value 会被跳过。headers 为 nil 或空时返回 ""。
+func FormatFFmpegHeaders(headers map[string]string) string {
+	if len(headers) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for k, v := range headers {
+		if isSafeHeaderValue(k) && isSafeHeaderValue(v) {
+			b.WriteString(k)
+			b.WriteString(": ")
+			b.WriteString(v)
+			b.WriteString("\r\n")
+		}
+	}
+	return b.String()
 }

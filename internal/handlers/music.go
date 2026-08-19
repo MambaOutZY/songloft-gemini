@@ -1122,7 +1122,7 @@ func (h *SongHandler) probeRemoteSongsMetadata(songs []*models.Song) {
 				defer func() { <-sem }()
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
-				h.metadataRefresher.RefreshSong(ctx, s, "")
+				h.metadataRefresher.RefreshSong(ctx, s, "", nil)
 			}(song)
 		}
 		wg.Wait()
@@ -2194,7 +2194,7 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			h.metadataRefresher.RefreshSong(ctx, &refreshCopy, playURL)
+			h.metadataRefresher.RefreshSong(ctx, &refreshCopy, playURL, nil)
 		}()
 	}
 

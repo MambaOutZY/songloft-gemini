@@ -56,7 +56,7 @@ type MetadataRefresher struct {
 	listSongs         func(ctx context.Context) ([]sqlc.ListSongsNeedingMetadataRow, error)
 	updateMeta        func(ctx context.Context, params sqlc.UpdateSongMetadataParams) error
 	updateTags        func(ctx context.Context, params sqlc.UpdateSongTagFieldsParams) error
-	resolveURL        func(ctx context.Context, song *models.Song) (string, error)
+	resolveURL        func(ctx context.Context, song *models.Song) (string, map[string]string, error)
 	extractor         *MetadataExtractor
 	remoteTitleSource func() string // "tag": 用标签覆盖 title; "filename"(默认): 不覆盖
 
@@ -67,7 +67,7 @@ func NewMetadataRefresher(
 	listSongs func(ctx context.Context) ([]sqlc.ListSongsNeedingMetadataRow, error),
 	updateMeta func(ctx context.Context, params sqlc.UpdateSongMetadataParams) error,
 	updateTags func(ctx context.Context, params sqlc.UpdateSongTagFieldsParams) error,
-	resolveURL func(ctx context.Context, song *models.Song) (string, error),
+	resolveURL func(ctx context.Context, song *models.Song) (string, map[string]string, error),
 	extractor *MetadataExtractor,
 ) *MetadataRefresher {
 	return &MetadataRefresher{
@@ -253,9 +253,9 @@ func (d *MetadataRefresher) incFailed() {
 var ErrMetadataRefreshRunning = fmt.Errorf("metadata refresh is already running")
 
 // RefreshSong 对单首歌曲提取远程元数据并更新数据库。
-// resolvedURL 非空时直接使用，否则内部解析。
+// resolvedURL 非空时直接使用，否则内部解析。headers 为请求头（可为 nil）。
 // 内置 inflight 去重，同一 songID 不会并发执行。
-func (d *MetadataRefresher) RefreshSong(ctx context.Context, song *models.Song, resolvedURL string) {
+func (d *MetadataRefresher) RefreshSong(ctx context.Context, song *models.Song, resolvedURL string, headers map[string]string) {
 	if _, loaded := d.refreshInflight.LoadOrStore(song.ID, struct{}{}); loaded {
 		return
 	}
@@ -264,14 +264,14 @@ func (d *MetadataRefresher) RefreshSong(ctx context.Context, song *models.Song, 
 	url := resolvedURL
 	if url == "" {
 		var err error
-		url, err = d.resolveURL(ctx, song)
+		url, headers, err = d.resolveURL(ctx, song)
 		if err != nil {
 			slog.Warn("auto refresh: resolve url failed", "songID", song.ID, "error", err)
 			return
 		}
 	}
 
-	probe, err := d.extractor.ProbeMetadataFromURL(ctx, url)
+	probe, err := d.extractor.ProbeMetadataFromURL(ctx, url, headers)
 	if err != nil {
 		slog.Warn("auto refresh: probe failed", "songID", song.ID, "error", err)
 		return
@@ -279,7 +279,7 @@ func (d *MetadataRefresher) RefreshSong(ctx context.Context, song *models.Song, 
 
 	coverPath := probe.CoverPath
 	if coverPath == "" && song.CoverPath == "" && song.CoverURL == "" {
-		if cp, err := d.extractor.ExtractCoverFromURL(ctx, url); err == nil {
+		if cp, err := d.extractor.ExtractCoverFromURL(ctx, url, headers); err == nil {
 			coverPath = cp
 		}
 	}

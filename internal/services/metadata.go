@@ -543,12 +543,13 @@ func (m *MetadataExtractor) ExtractDuration(ctx context.Context, filePath string
 
 // ProbeMetadataFromURL 探测远程 URL 的音频元数据。
 // 优先通过 HTTP Range + tag 库提取（更准确、含封面），tag 库失败或关键字段缺失时 fallback 到 ffprobe。
-func (m *MetadataExtractor) ProbeMetadataFromURL(ctx context.Context, rawURL string) (*RemoteProbeResult, error) {
+// headers 为自定义请求头（如 Authorization），nil 表示无额外头。
+func (m *MetadataExtractor) ProbeMetadataFromURL(ctx context.Context, rawURL string, headers map[string]string) (*RemoteProbeResult, error) {
 	result := &RemoteProbeResult{}
 
 	// 阶段 1：tag 库优先
 	if m.config.HTTPClient != nil {
-		if err := m.probeWithTagLib(ctx, rawURL, result); err != nil {
+		if err := m.probeWithTagLib(ctx, rawURL, headers, result); err != nil {
 			slog.Debug("tag lib probe failed, will fallback to ffprobe", "url", rawURL, "error", err)
 		}
 	}
@@ -556,7 +557,7 @@ func (m *MetadataExtractor) ProbeMetadataFromURL(ctx context.Context, rawURL str
 	// 阶段 2：ffprobe 兜底（tag 库整体失败或关键字段缺失）
 	needProbe := result.Duration == 0 || result.BitRate == 0 || result.SampleRate == 0
 	if needProbe {
-		if err := m.probeWithFFProbe(ctx, rawURL, result); err != nil {
+		if err := m.probeWithFFProbe(ctx, rawURL, headers, result); err != nil {
 			if result.Title == "" && result.Duration == 0 {
 				return nil, fmt.Errorf("both tag lib and ffprobe failed: %w", err)
 			}
@@ -568,8 +569,8 @@ func (m *MetadataExtractor) ProbeMetadataFromURL(ctx context.Context, rawURL str
 }
 
 // probeWithTagLib 通过 HTTP Range + tag 库提取元数据。
-func (m *MetadataExtractor) probeWithTagLib(ctx context.Context, rawURL string, result *RemoteProbeResult) error {
-	reader, err := httputil.NewHTTPReadSeeker(m.config.HTTPClient, rawURL)
+func (m *MetadataExtractor) probeWithTagLib(ctx context.Context, rawURL string, headers map[string]string, result *RemoteProbeResult) error {
+	reader, err := httputil.NewHTTPReadSeekerWithHeaders(m.config.HTTPClient, rawURL, headers)
 	if err != nil {
 		return fmt.Errorf("create http reader: %w", err)
 	}
@@ -605,20 +606,16 @@ func (m *MetadataExtractor) probeWithTagLib(ctx context.Context, rawURL string, 
 }
 
 // probeWithFFProbe 通过 ffprobe 补充缺失的元数据字段。
-func (m *MetadataExtractor) probeWithFFProbe(ctx context.Context, rawURL string, result *RemoteProbeResult) error {
+func (m *MetadataExtractor) probeWithFFProbe(ctx context.Context, rawURL string, headers map[string]string, result *RemoteProbeResult) error {
 	if m.config.FFProbePath == "" {
 		return fmt.Errorf("ffprobe not configured")
 	}
-	cmd := exec.CommandContext(
-		ctx,
-		m.config.FFProbePath,
-		"-v", "quiet",
-		"-print_format", "json",
-		"-show_format",
-		"-show_streams",
-		"-analyzeduration", "10000000",
-		rawURL,
-	)
+	args := []string{"-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-analyzeduration", "10000000"}
+	if h := httputil.FormatFFmpegHeaders(headers); h != "" {
+		args = append(args, "-headers", h)
+	}
+	args = append(args, rawURL)
+	cmd := exec.CommandContext(ctx, m.config.FFProbePath, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("ffprobe url: %w", err)
@@ -672,7 +669,8 @@ func (m *MetadataExtractor) probeWithFFProbe(ctx context.Context, rawURL string,
 
 // ExtractCoverFromURL 通过 ffmpeg 从远程 URL 提取嵌入封面（best-effort）。
 // 仅在 FFMpegPath 已配置时可用，失败不应阻塞主流程。
-func (m *MetadataExtractor) ExtractCoverFromURL(ctx context.Context, url string) (string, error) {
+// headers 为自定义请求头，nil 表示无额外头。
+func (m *MetadataExtractor) ExtractCoverFromURL(ctx context.Context, url string, headers map[string]string) (string, error) {
 	if m.config.FFMpegPath == "" {
 		return "", fmt.Errorf("ffmpeg not configured")
 	}
@@ -680,15 +678,12 @@ func (m *MetadataExtractor) ExtractCoverFromURL(ctx context.Context, url string)
 	coverCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(
-		coverCtx,
-		m.config.FFMpegPath,
-		"-i", url,
-		"-an",
-		"-vcodec", "copy",
-		"-f", "image2pipe",
-		"pipe:1",
-	)
+	args := make([]string, 0, 12)
+	if h := httputil.FormatFFmpegHeaders(headers); h != "" {
+		args = append(args, "-headers", h)
+	}
+	args = append(args, "-i", url, "-an", "-vcodec", "copy", "-f", "image2pipe", "pipe:1")
+	cmd := exec.CommandContext(coverCtx, m.config.FFMpegPath, args...)
 
 	var buf bytes.Buffer
 	cmd.Stdout = &limitedWriter{w: &buf, limit: maxCoverSize}

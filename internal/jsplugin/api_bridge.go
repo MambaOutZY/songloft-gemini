@@ -268,6 +268,10 @@ songloft.songs = {
     organize: async function(items) {
         var s = await __callBridge('songs.organize', JSON.stringify({items: items || []}));
         return s ? JSON.parse(s) : [];
+    },
+    refreshMetadata: async function(songIds) {
+        var s = await __callBridge('songs.refreshMetadata', JSON.stringify({songIds: songIds || []}));
+        return s ? JSON.parse(s) : {accepted: 0, skipped: 0};
     }
 };
 
@@ -592,39 +596,41 @@ func GetBootstrapCode() string {
 type BridgeHandler struct {
 	service                   *JSService
 	permissions               []string
-	dataDir                   string                    // data/jsplugins_data/
-	db                        database.DB               // 数据库访问（用于 songs/playlists 查询）
-	songDownloader            *services.SongDownloader  // 歌曲下载服务（songs.download bridge 调用）
-	songService               *services.SongService     // 歌曲服务（songs.create/update/delete）
-	playlistService           *services.PlaylistService // 歌单服务（playlists 写操作）
-	pluginToken               string                    // 插件专用的永久 JWT Token
-	port                      string                    // 服务器监听端口（用于构造宿主 URL）
-	processes                 sync.Map                  // map[name]*managedProcess — 后台进程跟踪
-	udpSockets                sync.Map                  // map[socketID]*managedUDPSocket — UDP socket 跟踪
-	tcpSockets                sync.Map                  // map[socketID]*managedTCPSocket — 出站 TCP 连接跟踪
-	socketIDSeq               atomic.Uint64             // UDP/TCP socket ID 共享的递增序号
-	inboundWebSockets         sync.Map                  // map[connID]*managedInboundWebSocket — 入站 WebSocket 连接
-	inboundWebSocketIDSeq     atomic.Uint64             // 入站 WebSocket 连接 ID 递增序号
-	onPlayEventRegister       func(entryPath string)    // 播放事件订阅回调
-	onPlayEventUnregister     func(entryPath string)    // 播放事件取消订阅回调
-	onLyricProviderRegister   func(entryPath string)    // 歌词提供者注册回调
-	onLyricProviderUnregister func(entryPath string)    // 歌词提供者取消注册回调
-	onCoverProviderRegister   func(entryPath string)    // 封面提供者注册回调
-	onCoverProviderUnregister func(entryPath string)    // 封面提供者取消注册回调
+	dataDir                   string                      // data/jsplugins_data/
+	db                        database.DB                 // 数据库访问（用于 songs/playlists 查询）
+	songDownloader            *services.SongDownloader    // 歌曲下载服务（songs.download bridge 调用）
+	songService               *services.SongService       // 歌曲服务（songs.create/update/delete）
+	playlistService           *services.PlaylistService   // 歌单服务（playlists 写操作）
+	metadataRefresher         *services.MetadataRefresher // 元数据刷新服务（songs.refreshMetadata bridge 调用）
+	pluginToken               string                      // 插件专用的永久 JWT Token
+	port                      string                      // 服务器监听端口（用于构造宿主 URL）
+	processes                 sync.Map                    // map[name]*managedProcess — 后台进程跟踪
+	udpSockets                sync.Map                    // map[socketID]*managedUDPSocket — UDP socket 跟踪
+	tcpSockets                sync.Map                    // map[socketID]*managedTCPSocket — 出站 TCP 连接跟踪
+	socketIDSeq               atomic.Uint64               // UDP/TCP socket ID 共享的递增序号
+	inboundWebSockets         sync.Map                    // map[connID]*managedInboundWebSocket — 入站 WebSocket 连接
+	inboundWebSocketIDSeq     atomic.Uint64               // 入站 WebSocket 连接 ID 递增序号
+	onPlayEventRegister       func(entryPath string)      // 播放事件订阅回调
+	onPlayEventUnregister     func(entryPath string)      // 播放事件取消订阅回调
+	onLyricProviderRegister   func(entryPath string)      // 歌词提供者注册回调
+	onLyricProviderUnregister func(entryPath string)      // 歌词提供者取消注册回调
+	onCoverProviderRegister   func(entryPath string)      // 封面提供者注册回调
+	onCoverProviderUnregister func(entryPath string)      // 封面提供者取消注册回调
 }
 
 // NewBridgeHandler 创建桥接处理器
-func NewBridgeHandler(service *JSService, dataDir string, db database.DB, songDownloader *services.SongDownloader, songService *services.SongService, playlistService *services.PlaylistService, pluginToken string, port string) *BridgeHandler {
+func NewBridgeHandler(service *JSService, dataDir string, db database.DB, songDownloader *services.SongDownloader, songService *services.SongService, playlistService *services.PlaylistService, metadataRefresher *services.MetadataRefresher, pluginToken string, port string) *BridgeHandler {
 	return &BridgeHandler{
-		service:         service,
-		permissions:     service.plugin.Permissions,
-		dataDir:         dataDir,
-		db:              db,
-		songDownloader:  songDownloader,
-		songService:     songService,
-		playlistService: playlistService,
-		pluginToken:     pluginToken,
-		port:            port,
+		service:           service,
+		permissions:       service.plugin.Permissions,
+		dataDir:           dataDir,
+		db:                db,
+		songDownloader:    songDownloader,
+		songService:       songService,
+		playlistService:   playlistService,
+		metadataRefresher: metadataRefresher,
+		pluginToken:       pluginToken,
+		port:              port,
 	}
 }
 
@@ -695,7 +701,7 @@ func extractPermFromAction(action string) string {
 	switch action {
 	case "songs.list", "songs.getById", "songs.search", "songs.organizePreview":
 		return PermSongsRead
-	case "songs.create", "songs.update", "songs.delete", "songs.download", "songs.setAutoDownload", "songs.organize":
+	case "songs.create", "songs.update", "songs.delete", "songs.download", "songs.setAutoDownload", "songs.organize", "songs.refreshMetadata":
 		return PermSongsWrite
 	}
 
@@ -1032,6 +1038,45 @@ func (h *BridgeHandler) handleSongs(action, data string) (string, error) {
 		}
 		h.songDownloader.SetAutoDownloadConfig(&config)
 		return "", nil
+
+	case "songs.refreshMetadata":
+		if h.metadataRefresher == nil {
+			return "", fmt.Errorf("handleSongs: metadata refresher not configured")
+		}
+		var req struct {
+			SongIDs []int64 `json:"songIds"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handleSongs: parse refreshMetadata: %w", err)
+		}
+		const maxRefreshBatch = 200
+		if len(req.SongIDs) > maxRefreshBatch {
+			slog.Warn("songs.refreshMetadata: truncating to max batch size",
+				"requested", len(req.SongIDs), "max", maxRefreshBatch,
+				"plugin", h.service.plugin.EntryPath)
+			req.SongIDs = req.SongIDs[:maxRefreshBatch]
+		}
+		songs, err := h.db.SongRepository().ListByIDs(ctx, req.SongIDs)
+		if err != nil {
+			return "", fmt.Errorf("handleSongs: refreshMetadata listByIDs: %w", err)
+		}
+		entryPath := h.service.plugin.EntryPath
+		accepted := make([]*models.Song, 0, len(songs))
+		for _, song := range songs {
+			if song.PluginEntryPath == entryPath {
+				accepted = append(accepted, song)
+			}
+		}
+		skipped := len(req.SongIDs) - len(accepted)
+		go func() {
+			for _, song := range accepted {
+				refreshCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				h.metadataRefresher.RefreshSong(refreshCtx, song, "", nil)
+				cancel()
+			}
+		}()
+		result, _ := json.Marshal(map[string]int{"accepted": len(accepted), "skipped": skipped})
+		return string(result), nil
 
 	case "songs.organizePreview":
 		if h.songService == nil {
