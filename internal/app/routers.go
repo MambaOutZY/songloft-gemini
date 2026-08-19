@@ -417,6 +417,9 @@ func (a *App) setupBaseRouter() {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+
+	a.router.Use(corpMiddleware())
+
 	// 注册前端静态文件服务
 	a.registerWebStatic()
 
@@ -428,4 +431,34 @@ func (a *App) setupBaseRouter() {
 
 	// 注册 Swagger 路由（根据构建标签条件编译）
 	a.registerSwagger()
+}
+
+// corpMiddleware 给所有响应加上 Cross-Origin-Resource-Policy: cross-origin，
+// 让浏览器允许在开了 COEP: require-corp 的页面里嵌入本服务的资源。
+//
+// 为什么必须有：Lynx Web 端的宿主页必须开 COOP/COEP —— @lynx-js/web-core 依赖
+// SharedArrayBuffer + Atomics 且没有降级检测，不开就整页白屏。而 COEP: require-corp
+// 要求每个跨源子资源显式声明「我可以被嵌入」，否则浏览器直接阻断，报
+// ERR_BLOCKED_BY_RESPONSE.NotSameOriginAfterDefaultedToSameOriginByCoep。
+//
+// 失败模式是静默的，这是它值得一条长注释的原因：fetch 走 CORS 不受影响（歌单、歌曲
+// 列表、设置全都正常），但 <img>/<audio>/<video> 是 no-cors 模式，于是 standalone
+// 部署下（前端 :3000 与后端 :58091 不同源）封面、插件图标、音频流全部失败，而
+// DevTools 里状态码显示的是 200 (OK) —— 对用户的表现只是「封面永远是占位图」。
+//
+// 为什么全局加而不是逐端点：CORP 不像 CORS 支持按来源白名单，只有 same-origin /
+// same-site / cross-origin 三档，且必须落在每一个被嵌入的响应上。逐端点加必然漏 ——
+// 封面（songs/playlists）、插件静态资源、音频流、通用代理分散在四个 handler 里，且
+// 以后任何新的可嵌入端点一旦忘记，又是一次静默失败。
+//
+// 安全上这不是新开的洞：这些端点的访问控制靠 token（Authorization 头或 access_token
+// 查询参数），没有 token 一律 401，嵌进别的页面也取不到内容。cross-origin 只是恢复
+// CORP 这个头出现之前浏览器本来就允许的嵌入行为。
+func corpMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin")
+			next.ServeHTTP(w, r)
+		})
+	}
 }
