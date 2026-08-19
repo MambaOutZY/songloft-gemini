@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pressly/goose/v3"
@@ -39,9 +40,30 @@ func Open(dataSourceName string) (*SQLiteDB, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(30 * time.Minute)
+	// 内存库必须限制为单连接，这是语义要求而非调优。
+	//
+	// modernc.org/sqlite 的 :memory: 没有 shared cache：每个连接都是一张彼此独立的
+	// 空库，而 runMigrations 只在它拿到的那一个连接上建表。于是池一旦扩容到第二个
+	// 连接，那个连接看到的就是个没有任何表的库，查询直接报 "no such table: xxx"。
+	// （已实测：持有连接 1 时再取连接 2，同一句 SELECT 一个成功、一个报表不存在。）
+	//
+	// 影响面是全部测试——它们都走 :memory:，所以任何并发到 2 个连接的用例都会随机
+	// 失败，且报的是 "no such table" 而不是锁/超时，极易被误判成迁移或业务 bug。
+	// internal/jsplugin 的 TestLoadPluginAndEnsureLoadedConcurrently（7 个 goroutine
+	// 并发）就是这样挂的。
+	//
+	// ConnMaxLifetime 对内存库同样必须取消：连接一旦被回收，那张库连同数据一起消失。
+	//
+	// 代价只是内存库上的查询串行化，而 SQLite 的写本来就是串行的。
+	// 文件库不受影响——多个连接指向同一个文件，仍按原配置并发。
+	if isMemoryDSN(dataSourceName) {
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
+	} else {
+		db.SetMaxOpenConns(10)
+		db.SetMaxIdleConns(5)
+		db.SetConnMaxLifetime(30 * time.Minute)
+	}
 
 	if err := runMigrations(db); err != nil {
 		db.Close()
@@ -52,6 +74,16 @@ func Open(dataSourceName string) (*SQLiteDB, error) {
 		db:      db,
 		queries: sqlc.New(db),
 	}, nil
+}
+
+// isMemoryDSN 判断 DSN 指向的是内存库。
+//
+// 覆盖三种写法：裸 ":memory:"、URI 形式 "file::memory:"，以及显式的 "mode=memory"
+// 查询参数。判定必须在拼接 _pragma 之前对原始入参做，拼接后的 DSN 也仍然含这些子串，
+// 所以用 Contains 而不是相等比较。
+func isMemoryDSN(dataSourceName string) bool {
+	return strings.Contains(dataSourceName, ":memory:") ||
+		strings.Contains(dataSourceName, "mode=memory")
 }
 
 // runMigrations 使用 goose 执行 embed 的 SQL 迁移。
