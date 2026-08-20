@@ -592,7 +592,7 @@ Songloft 内置 JS 插件引擎，插件运行在 QuickJS 沙箱中，支持权�
 - **GitHub**: [songloft-org/songloft](https://github.com/songloft-org/songloft)
 - **Issues**: [问题与反馈](https://github.com/songloft-org/songloft/issues)
 - 💬 加入微信群交流：[微信群二维码](https://github.com/songloft-org/songloft/issues/2)
-- 🐧 QQ群: 979995241 (满了可以搜新群)
+- 🐧 QQ群: 785621592 (满了可以搜新群)
 
 ## 📝 更新日志
 
