@@ -324,18 +324,19 @@ func (p *Playlist) MarshalJSON() ([]byte, error) {
 
 // Playlist 歌单结构体
 type Playlist struct {
-	ID          int64     `json:"id" example:"1"`                                       // 歌单 ID
-	Type        string    `json:"type" example:"normal" enums:"normal,radio"`           // 歌单类型：normal/radio
-	Name        string    `json:"name" example:"我的最爱"`                                  // 歌单名称
-	Description string    `json:"description" example:"收藏的经典歌曲"`                        // 歌单描述
-	CoverPath   string    `json:"-"`                                                    // 封面图片本地路径(内部使用,不暴露给客户端)
-	CoverURL    string    `json:"cover_url" example:"https://example.com/playlist.jpg"` // 封面图片 URL
-	Labels      []string  `json:"labels" example:"[\"built_in\"]"`                      // 歌单标签，如 ["built_in"]
-	SortBy      string    `json:"sort_by" example:"position"`                           // 视图排序字段：position/added_at/file_modified_at/title/artist/duration
-	SortOrder   string    `json:"sort_order" example:"asc"`                             // 视图排序方向：asc/desc
-	SongCount   int       `json:"song_count" example:"10"`                              // 歌曲数量
-	CreatedAt   time.Time `json:"created_at" example:"2024-01-01T12:00:00Z"`            // 创建时间
-	UpdatedAt   time.Time `json:"updated_at" example:"2024-01-01T12:00:00Z"`            // 最后更新时间
+	ID          int64      `json:"id" example:"1"`                                       // 歌单 ID
+	Type        string     `json:"type" example:"normal" enums:"normal,radio"`           // 歌单类型：normal/radio
+	Name        string     `json:"name" example:"我的最爱"`                                  // 歌单名称
+	Description string     `json:"description" example:"收藏的经典歌曲"`                        // 歌单描述
+	CoverPath   string     `json:"-"`                                                    // 封面图片本地路径(内部使用,不暴露给客户端)
+	CoverURL    string     `json:"cover_url" example:"https://example.com/playlist.jpg"` // 封面图片 URL
+	Labels      []string   `json:"labels" example:"[\"built_in\"]"`                      // 歌单标签，如 ["built_in"]
+	SortBy      string     `json:"sort_by" example:"position"`                           // 视图排序字段：position/added_at/file_modified_at/title/artist/duration
+	SortOrder   string     `json:"sort_order" example:"asc"`                             // 视图排序方向：asc/desc
+	SongCount   int        `json:"song_count" example:"10"`                              // 歌曲数量
+	PinnedAt    *time.Time `json:"pinned_at,omitempty" example:"2024-01-01T12:00:00Z"`   // 置顶时间，nil 表示未置顶；多个置顶歌单按此字段倒序排列
+	CreatedAt   time.Time  `json:"created_at" example:"2024-01-01T12:00:00Z"`            // 创建时间
+	UpdatedAt   time.Time  `json:"updated_at" example:"2024-01-01T12:00:00Z"`            // 最后更新时间
 }
 
 // PlayContextPlaylist 是「歌单」这个播放上下文的类型标识。
@@ -384,6 +385,11 @@ func (p *Playlist) ValidateForUpdate() error {
 // IsBuiltIn 判断是否为内置歌单
 func (p *Playlist) IsBuiltIn() bool {
 	return p.HasLabel(PlaylistLabelBuiltIn)
+}
+
+// IsPinned 判断歌单是否已置顶
+func (p *Playlist) IsPinned() bool {
+	return p.PinnedAt != nil
 }
 
 // HasLabel 判断歌单是否包含指定标签
@@ -645,6 +651,11 @@ type UpdatePlaylistRequest struct {
 // SetPlaylistVisibilityRequest 设置歌单可见性请求
 type SetPlaylistVisibilityRequest struct {
 	Hidden bool `json:"hidden" example:"true"` // 是否隐藏歌单
+}
+
+// SetPlaylistPinnedRequest 设置歌单置顶状态请求
+type SetPlaylistPinnedRequest struct {
+	Pinned bool `json:"pinned" example:"true"` // 是否置顶歌单
 }
 
 // JSPluginStatus JS 插件状态枚举

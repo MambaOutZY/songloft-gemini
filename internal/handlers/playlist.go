@@ -1035,3 +1035,43 @@ func (h *PlaylistHandler) SetPlaylistVisibility(w http.ResponseWriter, r *http.R
 
 	respondJSON(w, http.StatusOK, updated)
 }
+
+// SetPlaylistPinned 设置歌单置顶状态
+// @Summary 设置歌单置顶状态
+// @Description 置顶/取消置顶歌单。置顶歌单在歌单列表中始终排在最前，多个置顶歌单按置顶时间倒序（最近置顶的排最前）。内置歌单（收藏、电台收藏）同样允许置顶，不做特殊限制。
+// @Tags 歌单管理
+// @Accept json
+// @Produce json
+// @Param id path int true "歌单ID"
+// @Param request body models.SetPlaylistPinnedRequest true "置顶设置"
+// @Success 200 {object} models.Playlist "更新后的歌单"
+// @Failure 400 {object} map[string]string "无效的歌单ID或请求数据"
+// @Failure 404 {object} map[string]string "歌单不存在"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Security BearerAuth
+// @Router /playlists/{id}/pin [put]
+func (h *PlaylistHandler) SetPlaylistPinned(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "无效的歌单ID", err)
+		return
+	}
+
+	var req models.SetPlaylistPinnedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
+		return
+	}
+
+	playlist, err := h.playlistService.SetPinned(r.Context(), id, req.Pinned)
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			respondError(w, http.StatusNotFound, "歌单不存在", err)
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "更新歌单置顶状态失败", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, playlist)
+}

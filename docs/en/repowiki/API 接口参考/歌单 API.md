@@ -114,6 +114,16 @@ Reorders the playlist list according to the order of the IDs passed in.
 - **200**: `{"message": "歌单已重新排序"}`
 - **400**: Empty ID list | **500**: Reordering failed
 
+### PUT /api/v1/playlists/{id}/pin
+
+Pins or unpins a playlist. Pinned playlists always sort first in the `GET /playlists` listing; when multiple playlists are pinned, they sort by pin time descending (most recently pinned first). Built-in playlists (Favorites, Radio Favorites) can be pinned too, with no special restriction.
+
+- **Authentication**: Bearer Token
+- **Path parameter**: `id` (int, playlist ID)
+- **Request body**: `{"pinned": true}` (bool, required)
+- **200**: Returns the updated `Playlist` object (the `pinned_at` field reflects the pin state)
+- **400**: Invalid playlist ID or request data | **404**: Playlist does not exist | **500**: Server error
+
 ---
 
 ## 3. Songs in a Playlist

@@ -1,6 +1,6 @@
 -- name: GetPlaylistByID :one
 SELECT p.id, p.type, p.name, p.description, p.cover_path, p.cover_url, p.labels,
-    p.position, p.sort_by, p.sort_order, p.created_at, p.updated_at,
+    p.position, p.sort_by, p.sort_order, p.pinned_at, p.created_at, p.updated_at,
     COALESCE(cnt.song_count, 0) as song_count
 FROM playlists p
 LEFT JOIN (SELECT playlist_id, COUNT(*) as song_count FROM playlist_songs WHERE playlist_id = ? GROUP BY playlist_id) cnt
@@ -36,6 +36,9 @@ DELETE FROM playlists WHERE id = ?;
 
 -- name: UpdatePlaylistPosition :execrows
 UPDATE playlists SET position = ? WHERE id = ?;
+
+-- name: SetPlaylistPinned :execrows
+UPDATE playlists SET pinned_at = ? WHERE id = ?;
 
 -- name: ListAllPlaylistNames :many
 SELECT name FROM playlists;

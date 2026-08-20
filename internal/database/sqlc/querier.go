@@ -83,6 +83,7 @@ type Querier interface {
 	ResetFailedFingerprintAttempts(ctx context.Context) error
 	RevokeToken(ctx context.Context, arg RevokeTokenParams) (int64, error)
 	SetConfig(ctx context.Context, arg SetConfigParams) error
+	SetPlaylistPinned(ctx context.Context, arg SetPlaylistPinnedParams) (int64, error)
 	SetPluginStorage(ctx context.Context, arg SetPluginStorageParams) error
 	TouchPlaylist(ctx context.Context, arg TouchPlaylistParams) (int64, error)
 	TrimPlayHistory(ctx context.Context, arg TrimPlayHistoryParams) error

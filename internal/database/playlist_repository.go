@@ -189,6 +189,9 @@ func (r *PlaylistRepository) List(ctx context.Context, filter *PlaylistFilter) (
 	}
 	sb := playlistSelectBuilder()
 	sb = applyPlaylistFilter(sb, filter, "p.")
+	// 置顶优先级：置顶歌单永远排最前，同为置顶时按置顶时间倒序（最近置顶在前）；
+	// squirrel 的 OrderBy 是累加而非覆盖，故这里先加置顶排序，再叠加下面的原有排序作为 tiebreaker。
+	sb = sb.OrderBy("p.pinned_at IS NULL ASC", "p.pinned_at DESC")
 	sb = applyOrder(sb, filter.OrderBy, filter.Order, "p.position ASC, p.updated_at DESC", playlistOrderWhitelist, "p.")
 	sb = applyPagination(sb, filter.Limit, filter.Offset)
 
@@ -270,6 +273,22 @@ func (r *PlaylistRepository) DeleteAutoCreated(ctx context.Context) error {
 		WHERE EXISTS (SELECT 1 FROM json_each(labels) WHERE value = ?)`
 	if _, err := r.db.ExecContext(ctx, query, models.PlaylistLabelAutoCreated); err != nil {
 		return fmt.Errorf("delete auto-created playlists: %w", err)
+	}
+	return nil
+}
+
+// SetPinned 设置歌单的置顶时间，pinnedAt 为 nil 表示取消置顶，找不到返回 ErrNotFound。
+func (r *PlaylistRepository) SetPinned(ctx context.Context, id int64, pinnedAt *time.Time) error {
+	var v sql.NullTime
+	if pinnedAt != nil {
+		v = sql.NullTime{Time: *pinnedAt, Valid: true}
+	}
+	rows, err := r.queries.SetPlaylistPinned(ctx, sqlc.SetPlaylistPinnedParams{PinnedAt: v, ID: id})
+	if err != nil {
+		return fmt.Errorf("set playlist pinned %d: %w", id, err)
+	}
+	if rows == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -668,7 +687,7 @@ func playlistSelectBuilder() sq.SelectBuilder {
 	return sq.Select(
 		"p.id", "p.type", "p.name", "p.description",
 		"p.cover_path", "p.cover_url", "p.labels",
-		"p.sort_by", "p.sort_order",
+		"p.sort_by", "p.sort_order", "p.pinned_at",
 		"p.created_at", "p.updated_at",
 		"COALESCE(cnt.song_count, 0) AS song_count",
 	).From("playlists p").
@@ -700,22 +719,26 @@ func scanPlaylistRow(scanner interface {
 }) (*models.Playlist, error) {
 	p := &models.Playlist{}
 	var labelsJSON sql.NullString
+	var pinnedAt sql.NullTime
 	var songCount int64
 	if err := scanner.Scan(
 		&p.ID, &p.Type, &p.Name, &p.Description,
 		&p.CoverPath, &p.CoverURL, &labelsJSON,
-		&p.SortBy, &p.SortOrder,
+		&p.SortBy, &p.SortOrder, &pinnedAt,
 		&p.CreatedAt, &p.UpdatedAt, &songCount,
 	); err != nil {
 		return nil, fmt.Errorf("scan playlist: %w", err)
 	}
 	p.Labels = parseLabelsJSON(labelsJSON)
 	p.SongCount = int(songCount)
+	if pinnedAt.Valid {
+		p.PinnedAt = &pinnedAt.Time
+	}
 	return p, nil
 }
 
 func playlistRowToModel(row sqlc.GetPlaylistByIDRow) *models.Playlist {
-	return &models.Playlist{
+	p := &models.Playlist{
 		ID:          row.ID,
 		Type:        row.Type,
 		Name:        row.Name,
@@ -729,6 +752,10 @@ func playlistRowToModel(row sqlc.GetPlaylistByIDRow) *models.Playlist {
 		UpdatedAt:   row.UpdatedAt,
 		SongCount:   int(row.SongCount),
 	}
+	if row.PinnedAt.Valid {
+		p.PinnedAt = &row.PinnedAt.Time
+	}
+	return p
 }
 
 func parseLabelsJSON(s sql.NullString) []string {

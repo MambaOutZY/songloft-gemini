@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"time"
 
 	"songloft/internal/database"
 	"songloft/internal/models"
@@ -27,6 +28,7 @@ type PlaylistRepository interface {
 	Count(ctx context.Context, filter *database.PlaylistFilter) (int64, error)
 	BatchDelete(ctx context.Context, ids []int64) (int, error)
 	BatchUpdatePositions(ctx context.Context, playlistIDs []int64) error
+	SetPinned(ctx context.Context, id int64, pinnedAt *time.Time) error
 }
 
 // PlaylistSongRepository 是 PlaylistService 依赖的歌单-歌曲关联仓储接口。
@@ -148,6 +150,19 @@ func (s *PlaylistService) Update(ctx context.Context, playlist *models.Playlist)
 		return fmt.Errorf("failed to update playlist: %w", err)
 	}
 	return nil
+}
+
+// SetPinned 设置歌单置顶状态。与 Update 不同，不做内置歌单保护——置顶对内置歌单同样生效。
+func (s *PlaylistService) SetPinned(ctx context.Context, id int64, pinned bool) (*models.Playlist, error) {
+	var pinnedAt *time.Time
+	if pinned {
+		now := time.Now()
+		pinnedAt = &now
+	}
+	if err := s.playlists.SetPinned(ctx, id, pinnedAt); err != nil {
+		return nil, fmt.Errorf("failed to set playlist pinned: %w", err)
+	}
+	return s.GetByID(ctx, id)
 }
 
 // Touch 更新歌单的最后播放时间（updated_at）

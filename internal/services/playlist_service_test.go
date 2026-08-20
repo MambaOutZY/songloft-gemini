@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"songloft/internal/database"
 	"songloft/internal/database/testutil"
@@ -774,6 +775,79 @@ func TestDeletePlaylistOrphanCleanup(t *testing.T) {
 	if _, err := os.Stat(localFile); !os.IsNotExist(err) {
 		t.Errorf("local orphan file should be deleted, stat err = %v", err)
 	}
+}
+
+// TestPlaylistServiceSetPinned 验证置顶/取消置顶，以及置顶歌单在 List 里始终排最前、
+// 多个置顶歌单按置顶时间倒序（最近置顶在前）；内置歌单同样允许置顶（issue #40）。
+func TestPlaylistServiceSetPinned(t *testing.T) {
+	env := newPlaylistTestEnv(t)
+	service := env.newService()
+	ctx := context.Background()
+
+	pA := &models.Playlist{Type: models.PlaylistTypeNormal, Name: "A"}
+	pB := &models.Playlist{Type: models.PlaylistTypeNormal, Name: "B"}
+	builtIn := &models.Playlist{Type: models.PlaylistTypeNormal, Name: "内置歌单", Labels: []string{models.PlaylistLabelBuiltIn}}
+	for _, p := range []*models.Playlist{pA, pB, builtIn} {
+		if err := service.Create(ctx, p); err != nil {
+			t.Fatalf("Create(%s) error = %v", p.Name, err)
+		}
+	}
+
+	// 置顶 A，随后置顶内置歌单：内置歌单允许置顶，不受 Update 的内置保护逻辑限制。
+	updatedA, err := service.SetPinned(ctx, pA.ID, true)
+	if err != nil {
+		t.Fatalf("SetPinned(A, true) error = %v", err)
+	}
+	if !updatedA.IsPinned() {
+		t.Error("A should be pinned after SetPinned(true)")
+	}
+
+	time.Sleep(10 * time.Millisecond) // 确保置顶时间戳有先后差
+	updatedBuiltIn, err := service.SetPinned(ctx, builtIn.ID, true)
+	if err != nil {
+		t.Fatalf("SetPinned(builtIn, true) error = %v", err)
+	}
+	if !updatedBuiltIn.IsPinned() {
+		t.Error("built-in playlist should be pinnable and pinned")
+	}
+
+	list, err := service.List(ctx, &database.PlaylistFilter{Limit: 0})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(list) < 2 || list[0].ID != builtIn.ID || list[1].ID != pA.ID {
+		t.Fatalf("expected pinned playlists first, most-recently-pinned first: got %+v", firstTwoNames(list))
+	}
+	if list[0].PinnedAt == nil || list[1].PinnedAt == nil {
+		t.Error("pinned playlists should have non-nil PinnedAt")
+	}
+
+	// 取消置顶 A 后，A 不再排在最前，PinnedAt 变回 nil（不是零值时间戳）。
+	unpinnedA, err := service.SetPinned(ctx, pA.ID, false)
+	if err != nil {
+		t.Fatalf("SetPinned(A, false) error = %v", err)
+	}
+	if unpinnedA.IsPinned() || unpinnedA.PinnedAt != nil {
+		t.Error("A should not be pinned and PinnedAt should be nil after SetPinned(false)")
+	}
+	list, err = service.List(ctx, &database.PlaylistFilter{Limit: 0})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if list[0].ID != builtIn.ID {
+		t.Fatalf("expected builtIn still pinned-first after unpinning A: got %+v", firstTwoNames(list))
+	}
+}
+
+func firstTwoNames(list []*models.Playlist) []string {
+	names := make([]string, 0, 2)
+	for i, p := range list {
+		if i >= 2 {
+			break
+		}
+		names = append(names, p.Name)
+	}
+	return names
 }
 
 // TestDeletePlaylistNoOrphanCleanupByDefault 验证不传 deleteSongs（candidateIDs 不收集）时，

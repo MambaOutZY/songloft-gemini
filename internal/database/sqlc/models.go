@@ -77,6 +77,7 @@ type Playlist struct {
 	UpdatedAt   time.Time
 	SortBy      string
 	SortOrder   string
+	PinnedAt    sql.NullTime
 }
 
 type PlaylistSong struct {

@@ -2997,6 +2997,79 @@ const docTemplate = `{
                 }
             }
         },
+        "/playlists/{id}/pin": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "置顶/取消置顶歌单。置顶歌单在歌单列表中始终排在最前，多个置顶歌单按置顶时间倒序（最近置顶的排最前）。内置歌单（收藏、电台收藏）同样允许置顶，不做特殊限制。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌单管理"
+                ],
+                "summary": "设置歌单置顶状态",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌单ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "置顶设置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.SetPlaylistPinnedRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的歌单",
+                        "schema": {
+                            "$ref": "#/definitions/models.Playlist"
+                        }
+                    },
+                    "400": {
+                        "description": "无效的歌单ID或请求数据",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "歌单不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/playlists/{id}/song-ids": {
             "get": {
                 "security": [
@@ -9969,6 +10042,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "我的最爱"
                 },
+                "pinned_at": {
+                    "description": "置顶时间，nil 表示未置顶；多个置顶歌单按此字段倒序排列",
+                    "type": "string",
+                    "example": "2024-01-01T12:00:00Z"
+                },
                 "song_count": {
                     "description": "歌曲数量",
                     "type": "integer",
@@ -10020,6 +10098,16 @@ const docTemplate = `{
                     "description": "撤销原因",
                     "type": "string",
                     "example": "用户主动登出"
+                }
+            }
+        },
+        "models.SetPlaylistPinnedRequest": {
+            "type": "object",
+            "properties": {
+                "pinned": {
+                    "description": "是否置顶歌单",
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
