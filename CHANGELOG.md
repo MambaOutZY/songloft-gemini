@@ -1,3 +1,36 @@
+## [v2.11.6] - 2026-08-21
+### :sparkles: New Features
+- [`31a4d18`](https://github.com/songloft-org/songloft/commit/31a4d18e506bbae43c5eda27f3b8628700dc8623) - **jsplugin**: fetch 响应头支持多值无损与标准 Headers 读取方法 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`85d4330`](https://github.com/songloft-org/songloft/commit/85d4330fa2d0b7da2ff55e4242ac1a21af39e34e) - GET /api/v1/songs/{id}/tracks 音轨枚举端点 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`825f70f`](https://github.com/songloft-org/songloft/commit/825f70f603a773fc8c0ded555a0cbe753d2a0d52) - **scan**: 外部封面图片查找 + 歌单封面优先外部图片 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a954521`](https://github.com/songloft-org/songloft/commit/a9545218040f7b42c99ed14b607d714c7c96931a) - **jsplugin**: 新增 songs.refreshMetadata 桥接，支持带 Headers 的远程元数据提取 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`caecb48`](https://github.com/songloft-org/songloft/commit/caecb489b33e055b132ebd5261d1f689c8ff72e5) - **playlist**: 新增歌单置顶接口 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`5deae33`](https://github.com/songloft-org/songloft/commit/5deae33c3fbc7613ee5ebb36888fe22cb64957f2) - **services**: MoveFile 跨盘检测兼容 Windows ERROR_NOT_SAME_DEVICE *(commit by [@hanxi](https://github.com/hanxi))*
+- [`25786f9`](https://github.com/songloft-org/songloft/commit/25786f9b2156b37fc45881fb0aea7d6179c2a107) - **app**: 加 CORP 头，修 Web 端跨源封面/音频被 COEP 静默阻断 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`6c905f7`](https://github.com/songloft-org/songloft/commit/6c905f722c66822320e7a5b4f746696b458d9627) - **database**: :memory: 限制为单连接，修并发用例随机报 no such table *(commit by [@hanxi](https://github.com/hanxi))*
+- [`27ded61`](https://github.com/songloft-org/songloft/commit/27ded61efdf865e7e9f56876b4241e1899bfc0ca) - **fileutil**: 修复 Windows 编译错误，syscall.ERROR_NOT_SAME_DEVICE 未定义 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`f474555`](https://github.com/songloft-org/songloft/commit/f47455597910ec524032d353f673f1023c39a9c9) - **ci**: 修复发版时 tag run 被 dev run 阻塞导致正式版延迟发布 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :zap: Performance Improvements
+- [`3ef2073`](https://github.com/songloft-org/songloft/commit/3ef20730fd2900e88a1ce2cce692709b5b9a6555) - **cover**: 缩略图磁盘缓存，避免重复解码+缩放 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`0620d3e`](https://github.com/songloft-org/songloft/commit/0620d3ef8813c29a759f90283bd37cfc48b1f7fe) - update CHANGELOG for v2.11.5 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`e01f2df`](https://github.com/songloft-org/songloft/commit/e01f2df79c892ad0c7c2f4fc9093cf64ee4724e6) - 更新宿主桥接文档，补充 favorite namespace 说明 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`cb8f5ef`](https://github.com/songloft-org/songloft/commit/cb8f5efe310bb2c970a0d9c2e828acfc0a4a5e8c) - 更新 songloft-player 子模块指针 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`15a62a1`](https://github.com/songloft-org/songloft/commit/15a62a125608f291a4f464b7c8bd520362d94f54) - **docker**: entrypoint 启动时输出完整版本信息 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`14fe330`](https://github.com/songloft-org/songloft/commit/14fe330aec43d72170ffcc26b618edbb9c873304) - 更新 songloft-player 子模块（播放速度按钮样式优化） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c9d31d4`](https://github.com/songloft-org/songloft/commit/c9d31d447b72a59fd614f3a2a1112df3ac9dbc30) - bump plugin-toolchain 子模块（songs.refreshMetadata 类型） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`8146f43`](https://github.com/songloft-org/songloft/commit/8146f43ba50d62c8138ada88444051a682a6933d) - **player**: 更新 songloft-player 子模块指针 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`8316d53`](https://github.com/songloft-org/songloft/commit/8316d5369d8233dbc8d103fc1aba8ab8c5798eb1) - **jsplugin**: 更新 songloft-plugin-miot 子模块指针 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`52f098d`](https://github.com/songloft-org/songloft/commit/52f098dd8e88a9eaa36ba3344df3fa04660e5e6f) - **miot**: 更新 songloft-plugin-miot 子模块指针 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c5df438`](https://github.com/songloft-org/songloft/commit/c5df4387313f635d8350a08565e31bbbe8e9bde3) - release version 2.11.6 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.11.5] - 2026-08-16
 ### :sparkles: New Features
 - [`888fb48`](https://github.com/songloft-org/songloft/commit/888fb48cbc1375a91adb1697ec7a228cd9eae183) - add PUT /playlists/{id}/songs/move endpoint for single-song reposition *(commit by [@hanxi](https://github.com/hanxi))*
@@ -2150,3 +2183,4 @@
 [v2.11.3]: https://github.com/songloft-org/songloft/compare/v2.11.2...v2.11.3
 [v2.11.4]: https://github.com/songloft-org/songloft/compare/v2.11.3...v2.11.4
 [v2.11.5]: https://github.com/songloft-org/songloft/compare/v2.11.4...v2.11.5
+[v2.11.6]: https://github.com/songloft-org/songloft/compare/v2.11.5...v2.11.6
