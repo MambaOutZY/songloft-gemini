@@ -1609,9 +1609,18 @@ func getNetworkAddresses(port string) (string, error) {
 		}
 	}
 
-	result := append(preferred, others...)
-	data, _ := json.Marshal(result)
-	return string(data), nil
+	return encodeNetworkAddresses(append(preferred, others...)), nil
+}
+
+// encodeNetworkAddresses keeps the bridge contract stable when the runtime
+// has no non-Docker interface. A nil slice would otherwise become JSON null,
+// while plugins expect an address list and may call array methods on it.
+func encodeNetworkAddresses(addresses []string) string {
+	if addresses == nil {
+		addresses = []string{}
+	}
+	data, _ := json.Marshal(addresses)
+	return string(data)
 }
 
 // handleComm 处理插件间通信的桥接调用
