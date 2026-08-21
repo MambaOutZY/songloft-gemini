@@ -16,10 +16,17 @@ on:
       - 'home-assistant-addon'
   workflow_dispatch: # 手动触发同样走 dev 路径
 
-# main push、tag push 和手动发布共用 Docker Hub/GHCR，必须串行，避免共享出口 IP
-# 在短时间内并发查询大量 manifest 而触发 Docker Hub abuse rate limit。
+# 按通道分锁：tag（正式版）与 dev（main push / 手动触发）各自串行，互不阻塞。
+# 同通道内仍串行，避免共享出口 IP 在短时间内并发查询大量 manifest 而触发
+# Docker Hub abuse rate limit。
+#
+# 刻意**不**共用一把锁：发版 commit 与 tag 指向同一 commit，一次 push 同时触发
+# 两个 run，共锁会让 tag run 排到 dev run 之后（v2.11.5 实测排队 25 小时），
+# 且 GitHub 的 concurrency 队列只保留 1 个 pending run —— 发版后连续 push 两次
+# main 就会把等待中的 tag run 直接顶成 cancelled，正式版彻底不发。
+# 正常发版时 dev 通道会被下方 should_run 整轮跳过，两把锁不会真的并发。
 concurrency:
-  group: songloft-release
+  group: songloft-release-${{ github.ref_type == 'tag' && 'tag' || 'dev' }}
   cancel-in-progress: false
 
 env:
@@ -49,14 +56,38 @@ jobs:
       previous_tag: ${{ steps.prev-tag.outputs.previous_tag }}
       build_time: ${{ steps.parse.outputs.build_time }}
       git_commit: ${{ steps.parse.outputs.git_commit }}
+      should_run: ${{ steps.gate.outputs.should_run }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # 获取完整历史以查找上一个 tag
 
+      # 发版时 `chore: release version X.Y.Z` commit 与 vX.Y.Z tag 指向同一 commit，
+      # 一次 push 同时触发 main（dev 包）与 tag（正式版）两轮 release。此时 dev 包
+      # 毫无意义 —— 同一份代码马上就以正式版发出来了 —— 而两轮并发要多花一整轮
+      # CI 额度并把 Docker Hub 请求翻倍。所以 main 路径遇到「HEAD 上挂着 v* tag」
+      # 直接整轮跳过，把发布交给 tag 那一轮。
+      #
+      # 只拦 push 到分支：workflow_dispatch 是人明确要求构建，哪怕 HEAD 正好有 tag
+      # 也必须跑，否则手动重建 dev 包会诡异地静默跳过。
+      - name: Decide whether this run should proceed
+        id: gate
+        run: |
+          SHOULD_RUN="true"
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "branch" ]]; then
+            TAGS_AT_HEAD=$(git tag --points-at HEAD | grep '^v' | tr '\n' ' ' || true)
+            if [[ -n "$TAGS_AT_HEAD" ]]; then
+              SHOULD_RUN="false"
+              echo "::notice::HEAD 已被 tag ${TAGS_AT_HEAD}指向，跳过本轮 dev 构建，正式版由 tag 触发的 run 发布。"
+            fi
+          fi
+          echo "should_run=${SHOULD_RUN}" >> $GITHUB_OUTPUT
+          echo "Should run: ${SHOULD_RUN}"
+
       - name: Parse version info
         id: parse
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             # tag 触发：v1.2.4 → 正式发布
@@ -78,13 +109,7 @@ jobs:
           # RELEASE_TAG 只用于 GitHub release 的 tag 名与 Docker 镜像 tag 后缀。
           # 刻意与 VERSION / VERSION_TAG 分开：VERSION=dev 会驱动 Makefile 的
           # -tags dev，VERSION_TAG 是客户端的 FRONTEND_VERSION，两者语义不能动。
-          # WebF 实验分支（songloft-org/songloft#341）发到独立 tag，避免覆盖共享
-          # dev 预发布 —— 那是 dev 渠道客户端热更新检查的目标。
-          # 本分支合并回 main 前必须删掉这段。
           RELEASE_TAG="${VERSION}"
-          if [[ "${GITHUB_REF}" != refs/tags/v* && "${GITHUB_REF#refs/heads/}" == worktree-webf-plugin-render ]]; then
-            RELEASE_TAG="dev-webf"
-          fi
 
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "version_tag=${VERSION_TAG}" >> $GITHUB_OUTPUT
@@ -103,6 +128,7 @@ jobs:
 
       - name: Get previous tag
         id: prev-tag
+        if: steps.gate.outputs.should_run == 'true'
         run: |
           CURRENT_TAG="${{ steps.parse.outputs.version }}"
           HEAD_SHA=$(git rev-parse HEAD)
@@ -138,6 +164,10 @@ jobs:
   # ============================================================
   mirror-docker-bases:
     name: Mirror Docker base images
+    # needs prepare 只为拿 should_run（prepare 是纯 shell，秒级完成）。
+    # docker-build-push 本来就同时 needs 这两个 job，不影响关键路径。
+    needs: [prepare]
+    if: needs.prepare.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -198,6 +228,7 @@ jobs:
   build-frontend:
     name: Build Frontend
     needs: [prepare]
+    if: needs.prepare.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -244,6 +275,7 @@ jobs:
   build-binaries:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}${{ matrix.goarm && format('/v{0}', matrix.goarm) || '' }}
     needs: [prepare, build-frontend]
+    if: needs.prepare.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -361,6 +393,7 @@ jobs:
   docker-build-push:
     name: Docker Build & Push
     needs: [prepare, build-frontend, mirror-docker-bases]
+    if: needs.prepare.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -647,6 +680,7 @@ jobs:
   build-bundled-android:
     name: Bundled Android
     needs: [prepare]
+    if: needs.prepare.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -851,6 +885,7 @@ jobs:
   build-bundled-linux:
     name: Bundled Linux
     needs: [prepare]
+    if: needs.prepare.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -918,6 +953,7 @@ jobs:
   build-bundled-apple:
     name: Bundled macOS + iOS
     needs: [prepare]
+    if: needs.prepare.outputs.should_run == 'true'
     runs-on: macos-latest
     steps:
       - name: Checkout code
@@ -1033,6 +1069,7 @@ jobs:
   build-bundled-windows:
     name: Bundled Windows
     needs: [prepare]
+    if: needs.prepare.outputs.should_run == 'true'
     runs-on: windows-latest
     steps:
       - name: Checkout code
@@ -1103,9 +1140,12 @@ jobs:
   create-release:
     name: Create Release
     needs: [prepare, build-binaries, docker-build-push, build-bundled-android, build-bundled-linux, build-bundled-apple, build-bundled-windows]
-    # 即使 bundled 构建失败，只要核心 job 成功就发布 release
+    # 即使 bundled 构建失败，只要核心 job 成功就发布 release。
+    # always() 会让本 job 在上游 skipped 时也进入判定，故必须显式检查 should_run，
+    # 否则发版那轮被跳过的 main run 会走到这里，用空的 prepare outputs 去建 release。
     if: |
       always() &&
+      needs.prepare.outputs.should_run == 'true' &&
       needs.prepare.result == 'success' &&
       needs.build-binaries.result == 'success' &&
       needs.docker-build-push.result == 'success'
