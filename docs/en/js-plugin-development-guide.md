@@ -1047,6 +1047,29 @@ if (isClient()) {
 
 Build-free vanilla static pages need no install — just use the injected `window.SongloftPlugin.player` directly (only losing type hints).
 
+### Favorite State Sync — Notify the Host After Changing Favorites
+
+When a plugin changes favorites itself (e.g. POSTing `/playlists/1/songs` directly), the server data is correct, but the heart icons in the Flutter library read `FavoriteNotifier`'s **in-memory cache** and will not follow along. Call `favorite.refresh` once afterwards:
+
+```js
+const res = await SongloftPlugin.apiPost('/playlists/1/songs', { song_id: id });
+await SongloftPlugin.favorite.refresh(id, res.is_favorited);
+```
+
+**Pass the arguments whenever you can**: with `(songId, isFavorited)` the host performs an incremental update touching only that one song; without arguments it does a full reload, which is a complete round trip when the library holds thousands of songs.
+
+### Generic Host Calls via `invokeHost`
+
+The `player` / `host` / `favorite` / `getCookies` namespaces above are all typed wrappers over `invokeHost(ns, method, params?)`. The host's dispatch table lives on the **client** side and may be newer than the server's copy of `common.js`, so `invokeHost` is exposed as well, letting plugins reach namespaces no wrapper covers yet:
+
+```js
+await SongloftPlugin.invokeHost('favorite', 'refresh', { songId: 42, isFavorited: true });
+```
+
+> ⚠️ It lacks the type safety of a wrapper — a misspelled `ns` / `method` only rejects at runtime. **Prefer the wrapper whenever one exists.**
+>
+> ⚠️ Do not use `window.__SongloftInternal.invokeHost` — that is an internal handle shared with `webf-shims.js`, not a public API.
+
 ### Cookie Reading Bridge — Retrieve Third-Party Site Sessions (Native Only)
 
 If a plugin needs session cookies from a third-party site (e.g., FN Connect gateway's `os-access-code`, self-hosted NAS login tokens, etc.), it can use the `getCookies` bridge — the host's native layer reads from the WebView Cookie Store, bypassing browser same-origin policy and HttpOnly restrictions.

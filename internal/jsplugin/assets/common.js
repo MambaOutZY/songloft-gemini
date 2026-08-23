@@ -720,6 +720,30 @@
         return invokeHost('cookies', 'get', { origin: origin });
     }
 
+    var favorite = {
+        /**
+         * 通知宿主刷新收藏状态缓存。
+         *
+         * 插件改完收藏（如自己 POST `/playlists/1/songs`）后必须调一次，否则
+         * Flutter 侧曲库的红心读的是 `FavoriteNotifier` 的旧缓存、不会跟着变
+         * （songloft-org/songloft-plugin-miot#86）。
+         *
+         * 两种用法刻意都保留：带参是增量更新（宿主只改这一首的归属，不重拉全表），
+         * 不带参是全量重载。**能带参就带参** —— 曲库上千首时全量重载是一次
+         * 完整的 `/playlists/1/songs` 往返。
+         *
+         * @param {number} [songId] 歌曲 ID
+         * @param {boolean} [isFavorited] 操作后的收藏态
+         * @returns {Promise<void>}
+         */
+        refresh: function(songId, isFavorited) {
+            if (songId === undefined || songId === null || isFavorited === undefined || isFavorited === null) {
+                return invokeHost('favorite', 'refresh');
+            }
+            return invokeHost('favorite', 'refresh', { songId: songId, isFavorited: isFavorited });
+        }
+    };
+
     window.SongloftPlugin = {
         getAuthToken: getAuthToken,
         apiGet: apiGet,
@@ -749,7 +773,15 @@
         applyShims: function() {},
         host: host,
         player: player,
-        getCookies: getCookies
+        favorite: favorite,
+        getCookies: getCookies,
+        // 通用宿主调用出口。上面那些命名空间都是它的 typed wrapper；这里公开它
+        // 是为了让插件能触达尚未被 wrapper 覆盖的 namespace（宿主分发表在
+        // 客户端侧，可能比服务端这份 common.js 更新）。
+        //
+        // ⚠️ 没有 wrapper 的那层类型约束：ns / method 拼错只会在运行时 reject。
+        // 有对应 wrapper 时优先用 wrapper。
+        invokeHost: invokeHost
     };
 
     // 供 webf-shims.js 复用的内部句柄（**非公开 API**，插件请勿依赖）。

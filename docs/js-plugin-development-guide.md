@@ -1044,6 +1044,29 @@ if (isClient()) {
 
 免构建的 vanilla 静态页面无需安装，直接用注入的 `window.SongloftPlugin.player` 即可（仅少了类型提示）。
 
+### 收藏状态同步 —— 改完收藏必须通知宿主
+
+插件自己改收藏（如直接 POST `/playlists/1/songs`）时，服务端数据是对的，但 Flutter 侧曲库的红心读的是 `FavoriteNotifier` 的**内存缓存**，不会自动跟着变。改完必须调一次 `favorite.refresh`：
+
+```js
+const res = await SongloftPlugin.apiPost('/playlists/1/songs', { song_id: id });
+await SongloftPlugin.favorite.refresh(id, res.is_favorited);
+```
+
+**能带参就带参**：带 `(songId, isFavorited)` 是增量更新，宿主只改这一首的归属；不带参是全量重载，曲库上千首时是一次完整的往返。
+
+### 通用宿主调用 `invokeHost`
+
+上面的 `player` / `host` / `favorite` / `getCookies` 都是 `invokeHost(ns, method, params?)` 的 typed wrapper。宿主的分发表在**客户端**侧，可能比服务端这份 `common.js` 更新，所以 `invokeHost` 也公开出来，让插件能触达尚未被 wrapper 覆盖的 namespace：
+
+```js
+await SongloftPlugin.invokeHost('favorite', 'refresh', { songId: 42, isFavorited: true });
+```
+
+> ⚠️ 它没有 wrapper 那层类型约束，`ns` / `method` 拼错只会在运行时 reject。**有对应 wrapper 时优先用 wrapper。**
+>
+> ⚠️ 不要用 `window.__SongloftInternal.invokeHost`——那是给 `webf-shims.js` 复用的内部句柄，不是公开 API。
+
 ### Cookie 读取桥 —— 获取第三方站点登录态（native 专用）
 
 插件若需要第三方站点的会话 Cookie（如 FN Connect 网关的 `os-access-code`、自建 NAS 的登录态等），可使用 `getCookies` 桥接——由宿主原生层从 WebView Cookie Store 读取，不受浏览器同源策略和 HttpOnly 限制。
