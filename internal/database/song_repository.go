@@ -984,42 +984,44 @@ const duplicateDurationTolerance = 30.0
 // 同一指纹内还会按全片时长（fingerprint_duration）以 duplicateDurationTolerance
 // 容差聚簇，只有簇内 ≥2 首才算重复组。
 func (r *SongRepository) ListDuplicateGroups(ctx context.Context) ([]DuplicateGroup, error) {
-	fps, err := r.queries.ListDuplicateFingerprints(ctx)
+	rows, err := r.queries.ListAllDuplicateSongs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list duplicate fingerprints: %w", err)
+		return nil, fmt.Errorf("list all duplicate songs: %w", err)
 	}
-	if len(fps) == 0 {
+	if len(rows) == 0 {
 		return nil, nil
 	}
 
-	groups := make([]DuplicateGroup, 0, len(fps))
-	for _, fp := range fps {
-		rows, err := r.queries.ListSongsByFingerprint(ctx, fp.Fingerprint)
-		if err != nil {
-			return nil, fmt.Errorf("list songs by fingerprint: %w", err)
+	// 按 fingerprint 分组（SQL 已按 fingerprint, fingerprint_duration 排序）
+	grouped := make(map[string][]*models.Song)
+	var order []string
+	for _, row := range rows {
+		if _, exists := grouped[row.Fingerprint]; !exists {
+			order = append(order, row.Fingerprint)
 		}
-		songs := make([]*models.Song, len(rows))
-		for i, row := range rows {
-			songs[i] = &models.Song{
-				ID:                  row.ID,
-				Type:                row.Type,
-				Title:               row.Title,
-				Artist:              row.Artist,
-				Album:               row.Album,
-				Duration:            row.Duration,
-				FilePath:            row.FilePath,
-				Format:              row.Format,
-				BitRate:             int(row.BitRate),
-				SampleRate:          int(row.SampleRate),
-				FileSize:            row.FileSize,
-				FingerprintDuration: row.FingerprintDuration,
-				CoverPath:           row.CoverPath,
-				CoverURL:            row.CoverUrl,
-				AddedAt:             row.AddedAt,
-			}
-		}
-		for _, cluster := range clusterByFingerprintDuration(songs) {
-			groups = append(groups, DuplicateGroup{Fingerprint: fp.Fingerprint, Songs: cluster})
+		grouped[row.Fingerprint] = append(grouped[row.Fingerprint], &models.Song{
+			ID:                  row.ID,
+			Type:                row.Type,
+			Title:               row.Title,
+			Artist:              row.Artist,
+			Album:               row.Album,
+			Duration:            row.Duration,
+			FilePath:            row.FilePath,
+			Format:              row.Format,
+			BitRate:             int(row.BitRate),
+			SampleRate:          int(row.SampleRate),
+			FileSize:            row.FileSize,
+			FingerprintDuration: row.FingerprintDuration,
+			CoverPath:           row.CoverPath,
+			CoverURL:            row.CoverUrl,
+			AddedAt:             row.AddedAt,
+		})
+	}
+
+	var groups []DuplicateGroup
+	for _, fp := range order {
+		for _, cluster := range clusterByFingerprintDuration(grouped[fp]) {
+			groups = append(groups, DuplicateGroup{Fingerprint: fp, Songs: cluster})
 		}
 	}
 	return groups, nil

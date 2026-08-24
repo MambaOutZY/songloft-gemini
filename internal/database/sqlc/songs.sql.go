@@ -319,6 +319,79 @@ func (q *Queries) GetSongTimestamps(ctx context.Context, id int64) (GetSongTimes
 	return i, err
 }
 
+const listAllDuplicateSongs = `-- name: ListAllDuplicateSongs :many
+SELECT id, type, title, artist, album, duration, file_path,
+    format, bit_rate, sample_rate, file_size, fingerprint_duration,
+    cover_path, cover_url, added_at, fingerprint
+FROM songs
+WHERE type = 'local' AND fingerprint IN (
+    SELECT fingerprint FROM songs
+    WHERE fingerprint != '' AND type = 'local'
+    GROUP BY fingerprint
+    HAVING COUNT(*) > 1
+)
+ORDER BY fingerprint, fingerprint_duration
+`
+
+type ListAllDuplicateSongsRow struct {
+	ID                  int64
+	Type                string
+	Title               string
+	Artist              string
+	Album               string
+	Duration            float64
+	FilePath            string
+	Format              string
+	BitRate             int64
+	SampleRate          int64
+	FileSize            int64
+	FingerprintDuration float64
+	CoverPath           string
+	CoverUrl            string
+	AddedAt             time.Time
+	Fingerprint         string
+}
+
+func (q *Queries) ListAllDuplicateSongs(ctx context.Context) ([]ListAllDuplicateSongsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllDuplicateSongs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAllDuplicateSongsRow{}
+	for rows.Next() {
+		var i ListAllDuplicateSongsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.Artist,
+			&i.Album,
+			&i.Duration,
+			&i.FilePath,
+			&i.Format,
+			&i.BitRate,
+			&i.SampleRate,
+			&i.FileSize,
+			&i.FingerprintDuration,
+			&i.CoverPath,
+			&i.CoverUrl,
+			&i.AddedAt,
+			&i.Fingerprint,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCueAudioPaths = `-- name: ListCueAudioPaths :many
 SELECT DISTINCT cue_audio_path
 FROM songs WHERE cue_source_path = ? AND cue_audio_path != ''

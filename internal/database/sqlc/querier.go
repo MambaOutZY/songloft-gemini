@@ -59,6 +59,7 @@ type Querier interface {
 	GetTokenByID(ctx context.Context, tokenID string) (GetTokenByIDRow, error)
 	InsertAutoCreatedPlaylist(ctx context.Context, arg InsertAutoCreatedPlaylistParams) (int64, error)
 	IsTokenRevoked(ctx context.Context, arg IsTokenRevokedParams) (bool, error)
+	ListAllDuplicateSongs(ctx context.Context) ([]ListAllDuplicateSongsRow, error)
 	ListAllPlaylistNames(ctx context.Context) ([]string, error)
 	ListAutoCreatedPlaylists(ctx context.Context) ([]ListAutoCreatedPlaylistsRow, error)
 	ListCueAudioPaths(ctx context.Context, cueSourcePath string) ([]string, error)

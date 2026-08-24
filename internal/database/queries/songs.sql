@@ -131,6 +131,19 @@ SELECT id, type, title, artist, album, duration, file_path,
 FROM songs
 WHERE fingerprint = ?;
 
+-- name: ListAllDuplicateSongs :many
+SELECT id, type, title, artist, album, duration, file_path,
+    format, bit_rate, sample_rate, file_size, fingerprint_duration,
+    cover_path, cover_url, added_at, fingerprint
+FROM songs
+WHERE type = 'local' AND fingerprint IN (
+    SELECT fingerprint FROM songs
+    WHERE fingerprint != '' AND type = 'local'
+    GROUP BY fingerprint
+    HAVING COUNT(*) > 1
+)
+ORDER BY fingerprint, fingerprint_duration;
+
 -- name: UpdateCachePath :exec
 UPDATE songs SET cache_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 
