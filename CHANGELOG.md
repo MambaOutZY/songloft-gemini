@@ -316,7 +316,7 @@
   **WebF 下不要做多页跳转**）。**插件侧无需改动**，单参与带 `target` 的双参两种调用形态都已实测
   转发到宿主；但它打开的是**外部浏览器而非页内新窗口**，所以「弹窗回填数据到父页」
   （`window.opener` / 跨窗口 `postMessage`）这类流程走不通，需改成回调或轮询。
-  官方插件 miot 的小米账号二次验证据此可用。见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
+  官方插件 miot 的账号二次验证据此可用。见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
   *(songloft-org/songloft#341)*
 - **jsplugin**: WebF 渲染面下检测到 `<table>` 时打一条 `console.warn` 并给元素标上
   `data-sl-table-unsupported`。WebF 的元素注册表里 `table` / `thead` / `tbody` / `tr` / `th` / `td`

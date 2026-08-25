@@ -1650,7 +1650,7 @@ func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 		return fmt.Errorf("register __go_crypto_sha256: %w", err)
 	}
 
-	// __go_crypto_sha1(str) — SHA1 hex（输入按 UTF-8 字节）。仅为兼容小米等旧 API
+	// __go_crypto_sha1(str) — SHA1 hex（输入按 UTF-8 字节）。仅为兼容设备平台旧 API
 	// 的签名（clientSign = base64(sha1("nonce=...&ssecurity"))）；SHA1 已不安全，
 	// 不要用于新的安全场景。
 	if err := vm.RegisterFunc("__go_crypto_sha1", func(str string) string {
@@ -1676,7 +1676,7 @@ func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 	}
 
 	// __go_crypto_rc4(keyHex, dataHex) — RC4 流加密（hex 入，hex 出）。
-	// QuickJS 无 WebCrypto，插件（如 miot 的小米 API）以往在纯 JS 里实现 RC4
+	// QuickJS 无 WebCrypto，插件（如 miot 的平台 API）以往在纯 JS 里实现 RC4
 	// （S 盒 256 轮 + 逐字节异或），在解释执行下极慢（~1.28ms/次）。原生仅 ~µs。
 	if err := vm.RegisterFunc("__go_crypto_rc4", func(keyHex, dataHex string) string {
 		key, err := hex.DecodeString(keyHex)

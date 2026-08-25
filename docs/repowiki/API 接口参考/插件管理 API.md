@@ -452,7 +452,7 @@ JS 插件系统是 Songloft 的扩展机制，基于 QuickJS 沙盒运行。插�
       "name": "MiOT 音源",
       "entry_path": "songloft-plugin-miot",
       "version": "1.2.0",
-      "description": "小米 IoT 设备音源",
+      "description": "IoT 智能音箱音源",
       "author": "Songloft",
       "homepage": "https://github.com/...",
       "icon": "icon.png",

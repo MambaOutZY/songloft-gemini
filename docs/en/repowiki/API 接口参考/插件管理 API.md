@@ -452,7 +452,7 @@ Management endpoints are registered by `JSPluginHandler.RegisterRoutes`, and run
       "name": "MiOT 音源",
       "entry_path": "songloft-plugin-miot",
       "version": "1.2.0",
-      "description": "小米 IoT 设备音源",
+      "description": "IoT 智能音箱音源",
       "author": "Songloft",
       "homepage": "https://github.com/...",
       "icon": "icon.png",

@@ -932,7 +932,7 @@ fileInput.addEventListener('change', function (e) {
 
 本文档不重新设计这两项（预研 §3.3 / §3.4 已经给了完整方案），只标出**状态与优先级**：
 
-- **`window.open`**（仅 miot 一处，`js/auth.js:95`，小米账号二次验证）：
+- **`window.open`**（仅 miot 一处，`js/auth.js:95`，账号二次验证）：
   miot **是** `renderEngine: "webf"`（✅ `plugin.json:13`）→ **这一项是真实暴露的，
   紧迫性高于 `input[type=file]`**。
   预研 §3.3 给了「十分钟决定性实验」（grep `flutter.log` 里那句

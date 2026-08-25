@@ -1020,7 +1020,7 @@ CSS 求值」这一层，注入的是人为非零值）、转屏 / 键盘触发�
 | `<table>` 元素**根本不存在**（退化成嵌套 `display:block`；且 `display:table/table-row/table-cell` 也救不了 —— `css/display.dart` 的 `CSSDisplay` 枚举**没有任何 table 值**，`resolveDisplay` 的 `default` 返回 `CSSDisplay.inline`，比 block **更糟**） | **实际只有** downloader（`webf`）；radio 虽有表格但未声明 = `webview`，**进不到 WebF** | **Step 4 实施中**。原定的「垫片改写成 `<webf-table>`」**已证伪**，改走 CSS Grid，方案见 `docs/webf/step4-design.md` |
 | `input[type=range]` **整行不绘制**（源码层面是落到 `TextField`，但实测一个像素都不画，连同行兄弟文字一起消失 —— 见 §3.2 第 6 条） | **仅** miot（2 处） | ✅ Step 3 已提供 `<songloft-slider>` + `common.js` 的 `rangeSliderShim` **自动**替换（隐藏原 input 并双向同步，插件 JS 零改动）。**插件侧仍需两件事**：竖向滑块在原 input 上写 `data-sl-orientation="vertical"`（垫片不猜朝向），以及补几行几何 CSS（新标签匹配不到 `input[type=range]` 选择器，垫片只拷 inline style 不拷 class）。miot 已适配 |
 | `env(safe-area-inset-*)` 不求值（`css/keywords.dart` 里那 6 个 `SAFE_AREA_INSET*` / `ENV` 常量是**全库无引用的死常量**，连解析入口都没有；upstream #907 open） | 声明 `webf` 的插件里**只有** miot（3 处）。dav / subsonic / cloudflared / hostc / ytdlp 虽有 `env()` 但都未声明 = `webview`，**不暴露** | ✅ **Step 5 已完成**：宿主注入 `--sl-safe-*` 四个 CSS 变量，插件统一写 `var(--sl-safe-bottom)`。原定的「垫片把 `env()` 改写成 `var()`」**已证伪**（见 §2.5） |
-| `window.open` 是 no-op（`window.cc:157-168` 两个重载都 `return this`，不抛错） | **仅** miot `js/auth.js:95`（小米账号二次验证） | **Step 6 待做** |
+| `window.open` 是 no-op（`window.cc:157-168` 两个重载都 `return this`，不抛错） | **仅** miot `js/auth.js:95`（账号二次验证） | **Step 6 待做** |
 | `input[type=file]` 静默变文本框 | ytdlp、radio、lxmusic 各 1 | **Step 6 待做** |
 | `URL.createObjectURL` 不存在（`Blob` 有，无入口产 `blob:`） | **仅** miot `js/playback.js:422`、`js/fullscreen-player.js:201` | **Step 6 待做** |
 | `<details>`/`<summary>` | lxmusic | ✅ Step 1 已垫 |
@@ -1097,7 +1097,7 @@ Step 3 小节；对插件作者的说明已写进插件开发指南（中英双�
 
 **优先级**（预研与设计文档已定，按这个顺序）：
 
-1. **`window.open`** —— miot 小米账号二次验证登录，**功能性阻塞**。WebF 的 `window.open` 是
+1. **`window.open`** —— miot 账号二次验证登录，**功能性阻塞**。WebF 的 `window.open` 是
    no-op（`window.cc` 两个重载都 `return this`，**不抛错**）。预研 §3.3 查明产品这边也不是
    no-op，而是**没设 `WebFNavigationDelegate` 落到无条件 cancel**，约 8 行可解（骨架在预研里）
 2. **`URL.createObjectURL`** —— miot 带鉴权头拉封面 ×2。WebF 有 `Blob` 但没有产 `blob:` 的入口。
