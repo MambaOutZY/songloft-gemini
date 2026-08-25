@@ -1012,14 +1012,29 @@ func TestValidatePermissions(t *testing.T) {
 		t.Errorf("expected empty permissions to be valid, got: %v", err)
 	}
 
-	// Invalid permission
-	if err := ValidatePermissions([]string{"storage", "invalid-perm"}); err == nil {
-		t.Error("expected error for invalid permission")
+	// 未知权限不再硬失败（songloft-org/songloft#401：拒绝会让声明新权限的插件
+	// 在旧宿主上装不上）。契约改为「接受声明但不授予能力」。
+	if err := ValidatePermissions([]string{"storage", "invalid-perm"}); err != nil {
+		t.Errorf("未知权限应被宽容接受，got: %v", err)
+	}
+	// 宽容 ≠ 授权：未知声明不得溢出成任何一个【真】权限。
+	// （CheckPermission 是字面相等匹配，"invalid-perm" 只会匹配它自己，
+	//  而宿主的能力校验只拿 Perm* 常量去问，所以拿不到任何东西。）
+	for _, real := range AllPermissions {
+		if CheckPermission([]string{"invalid-perm"}, real) {
+			t.Errorf("未知权限 invalid-perm 不得授予 %q", real)
+		}
 	}
 
-	// 后端不再认后缀式、非细粒度的歌单权限
-	if err := ValidatePermissions([]string{"playlists.getSongs"}); err == nil {
-		t.Error("expected action-level permission string to be rejected by declaration validator")
+	// 后端仍不认后缀式、非细粒度的歌单权限：宽容只到"不报错"，不得据此放行写操作。
+	if err := ValidatePermissions([]string{"playlists.getSongs"}); err != nil {
+		t.Errorf("未知权限应被宽容接受，got: %v", err)
+	}
+	if CheckPermission([]string{"playlists.getSongs"}, PermPlaylistsRead) {
+		t.Error("action 级权限串不得授予 playlists.read")
+	}
+	if CheckPermission([]string{"playlists.getSongs"}, PermPlaylistsWrite) {
+		t.Error("action 级权限串不得授予 playlists.write")
 	}
 }
 

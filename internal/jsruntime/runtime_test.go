@@ -264,7 +264,7 @@ func TestDoHTTPRequest_InternalFetchHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result := doHTTPRequest(server.URL, http.MethodGet, `{"X-Fetch-Timeout-Ms":"1000","X-Fetch-No-Redirect":"1","X-Custom":"kept"}`, "")
+	result := doHTTPRequest(server.URL, http.MethodGet, `{"X-Fetch-Timeout-Ms":"1000","X-Fetch-No-Redirect":"1","X-Custom":"kept"}`, "", false)
 	if strings.Contains(result, `"error"`) {
 		t.Fatalf("doHTTPRequest returned error: %s", result)
 	}
@@ -285,7 +285,7 @@ func TestDoHTTPRequest_InternalFetchHeaders(t *testing.T) {
 	defer slowServer.Close()
 
 	start := time.Now()
-	result = doHTTPRequest(slowServer.URL, http.MethodGet, `{"X-Fetch-Timeout-Ms":"100"}`, "")
+	result = doHTTPRequest(slowServer.URL, http.MethodGet, `{"X-Fetch-Timeout-Ms":"100"}`, "", false)
 	if !strings.Contains(result, `"error"`) {
 		t.Fatalf("expected timeout error, got: %s", result)
 	}

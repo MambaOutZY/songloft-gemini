@@ -441,7 +441,15 @@ const postResp = await fetch("https://example.com/api", {
 const text = await postResp.text();
 ```
 
-The request headers may use two runtime-internal control headers: `X-Fetch-No-Redirect` disables automatic redirect following, and `X-Fetch-Timeout-Ms` sets the per-request timeout (100-30000ms). These two headers only affect runtime behavior and are not forwarded to the target server.
+The request headers may use three runtime-internal control headers. They only affect runtime behavior and none of them are forwarded to the target server:
+
+| Control header | Effect |
+|--------|------|
+| `X-Fetch-No-Redirect` | Disables automatic redirect following so the JS side handles the redirect chain manually (required to collect `Set-Cookie` from intermediate hops — Go's net/http swallows them) |
+| `X-Fetch-Timeout-Ms` | Sets the per-request timeout (100-30000ms) |
+| `X-Fetch-Insecure` | Skips TLS certificate verification. **Requires the `net:insecure-tls` permission**; without it the header is silently ignored and full verification is kept (the host logs a warning) |
+
+> `X-Fetch-Insecure` exists for self-hosted NAS-class devices: fnOS (port 5667), Synology and friends ship self-signed certificates by default, and plugins typically reach them by **bare IP** — even if the device installs a properly CA-signed certificate, the subject is a hostname, so connecting by IP always yields a hostname mismatch. There is no "just install a real certificate" escape hatch for these targets. Do not use it anywhere else: skipping verification means giving up MITM protection.
 
 **`Response` object fields:**
 - `ok` — `status >= 200 && status < 300`
@@ -856,6 +864,7 @@ Consistent with `AllPermissions` in the backend's `internal/jsplugin/permissions
 | `websocket` | Use `new WebSocket(...)` to actively connect to external services, or handle inbound `onWebSocket` upgrades |
 | `persistent-storage` | Read/write persistent storage that remains after the plugin is uninstalled |
 | `net` | Use raw network sockets (UDP / outbound TCP) |
+| `net:insecure-tls` | Allow `fetch` to skip TLS certificate verification via `X-Fetch-Insecure` (self-signed / bare-IP access to self-hosted devices). **Not covered by `net`; must be declared separately** |
 
 > Note: capabilities such as network requests (`fetch`), timers (`setTimeout/setInterval`), and logging **require no permission declaration**; they are default host capabilities.
 

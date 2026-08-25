@@ -275,6 +275,18 @@ func (s *JSService) Load(pluginsDir, dataDir string) error {
 		}
 	}
 
+	// [9.4] 把 net:insecure-tls 权限投影到运行时层：jsruntime 不认识权限，
+	// fetch 的 X-Fetch-Insecure 是否生效全靠这个开关（默认关）。
+	// 与 SetBridgeCallback 同样紧跟建环境之后、onInit() 之前——插件的网络请求都在
+	// onInit 及之后发起。
+	allowInsecureTLS := CheckPermission(s.plugin.Permissions, PermNetInsecureTLS)
+	if err := s.jsManager.SetAllowInsecureTLS(s.envID, allowInsecureTLS); err != nil {
+		return fmt.Errorf("set insecure TLS policy for env %s: %w", s.envID, err)
+	}
+	if allowInsecureTLS {
+		slog.Warn("插件已获授权跳过 TLS 证书校验（net:insecure-tls）", "plugin", s.plugin.EntryPath)
+	}
+
 	// [9.5] 注册桥接回调（__go_bridge 的处理函数）
 	// 必须在 onInit() 调用之前完成，以便插件代码可以通过 songloft.storage/songs/playlists 访问 Go 服务
 	if s.bridgeHandler != nil {

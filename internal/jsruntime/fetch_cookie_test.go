@@ -305,7 +305,7 @@ func TestFetch_Headers_ForEach(t *testing.T) {
 func TestDoHTTPRequest_HeadersList(t *testing.T) {
 	srv := newSetCookieServer(t)
 
-	raw := doHTTPRequest(srv.URL, http.MethodGet, "{}", "")
+	raw := doHTTPRequest(srv.URL, http.MethodGet, "{}", "", false)
 	if strings.Contains(raw, `"error"`) {
 		t.Fatalf("doHTTPRequest returned error: %s", raw)
 	}

@@ -441,7 +441,15 @@ const postResp = await fetch("https://example.com/api", {
 const text = await postResp.text();
 ```
 
-请求头里可以使用两个运行时内部控制头：`X-Fetch-No-Redirect` 禁止自动跟随重定向，`X-Fetch-Timeout-Ms` 设置单次请求超时（100-30000ms）。这两个头只影响运行时行为，不会转发给目标服务器。
+请求头里可以使用三个运行时内部控制头，它们只影响运行时行为，都不会转发给目标服务器：
+
+| 控制头 | 作用 |
+|--------|------|
+| `X-Fetch-No-Redirect` | 禁止自动跟随重定向，由 JS 侧手动处理重定向链（收集中间跳的 `Set-Cookie` 必需——Go 的 net/http 会吞掉它们） |
+| `X-Fetch-Timeout-Ms` | 设置单次请求超时（100-30000ms） |
+| `X-Fetch-Insecure` | 跳过 TLS 证书校验。**需要 `net:insecure-tls` 权限**，未声明时该头被静默忽略并保持完整校验（宿主会打一条 warn 日志） |
+
+> `X-Fetch-Insecure` 的用途是自建 NAS 类设备：飞牛 fnOS（5667 端口）、群晖等默认自签证书，且插件通常按**裸 IP** 访问它们——即便设备装了 CA 签发的正式证书，证书主体也是域名，按 IP 连必然 hostname mismatch，没有「让用户换个正规证书」的出路。除此之外不要用它，跳过校验意味着放弃 MITM 防护。
 
 **`Response` 对象字段：**
 - `ok` — `status >= 200 && status < 300`
@@ -854,6 +862,7 @@ globalThis.onHTTPRequest = (req: HTTPRequest) => router.handle(req);
 | `websocket` | 使用 `new WebSocket(...)` 主动连接外部服务，或处理入站 `onWebSocket` upgrade |
 | `persistent-storage` | 读写卸载插件后仍保留的持久化存储 |
 | `net` | 使用原始网络 socket（UDP / 出站 TCP） |
+| `net:insecure-tls` | 允许 `fetch` 带 `X-Fetch-Insecure` 跳过 TLS 证书校验（自签 / 裸 IP 访问的自建设备）。**不被 `net` 覆盖，必须单独声明** |
 
 > 注意：网络请求 (`fetch`)、定时器 (`setTimeout/setInterval`)、日志等能力**无需权限声明**，是默认宿主能力。
 

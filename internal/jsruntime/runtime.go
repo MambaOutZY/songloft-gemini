@@ -13,6 +13,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/tls"
 
 	"crypto/x509"
 	"encoding/base64"
@@ -58,6 +59,38 @@ var sharedHTTPClient = &http.Client{
 var noRedirectHTTPClient = &http.Client{
 	Timeout:   30 * time.Second,
 	Transport: sharedTransport,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
+// insecureTransport 跳过 TLS 证书校验的 Transport，仅供声明了
+// jsplugin 权限 net:insecure-tls 的插件在请求头带 X-Fetch-Insecure 时使用。
+//
+// 为什么需要这个口子：自建 NAS 类设备（飞牛 fnOS 的 5667、群晖等）默认自签证书，
+// 且插件通常是按【裸 IP】访问它们的——即便设备装了 CA 签发的正式证书，证书主体也是
+// 域名，按 IP 连必然 hostname mismatch。这类目标没有"让用户装个正规证书"的出路
+// （songloft-org/songloft#401）。
+//
+// 必须是独立的 Transport：连接池按 Transport 隔离，复用 sharedTransport 并在单次请求上
+// 改 TLSClientConfig 会污染所有插件的连接复用。
+var insecureTransport = &http.Transport{
+	MaxIdleConns:        100,
+	MaxIdleConnsPerHost: 10,
+	IdleConnTimeout:     90 * time.Second,
+	TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, // #nosec G402 — 见上方注释，仅权限门控下启用
+}
+
+// insecureHTTPClient / insecureNoRedirectHTTPClient 与上面两个 client 一一对应，
+// 只差 Transport 换成跳过证书校验的那个。
+var insecureHTTPClient = &http.Client{
+	Timeout:   30 * time.Second,
+	Transport: insecureTransport,
+}
+
+var insecureNoRedirectHTTPClient = &http.Client{
+	Timeout:   30 * time.Second,
+	Transport: insecureTransport,
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	},
@@ -171,6 +204,11 @@ type JSEnv struct {
 	// hostEvents 保存宿主主动投递的事件。独立于 asyncResults，避免 UDP/WebSocket
 	// 高频事件挤占 fetch/bridge 的 Promise 回包通道。
 	hostEvents chan hostEvent
+	// allowInsecureTLS 决定该环境的 fetch 是否允许 X-Fetch-Insecure 生效。
+	// 由 jsplugin 层在建环境后按 manifest 权限 net:insecure-tls 设置（默认 false）。
+	// 用 atomic 是因为 fetch 在后台 goroutine 里读它，而 SetAllowInsecureTLS 在
+	// 加载流程的 goroutine 里写。
+	allowInsecureTLS atomic.Bool
 	// wsConns 管理该 env 下的所有 WebSocket 连接（connId → *wsConn）
 	wsConns sync.Map
 	// wsConnSeq WebSocket 连接 ID 递增序号
@@ -1002,6 +1040,20 @@ func (m *JSEnvManager) SetBridgeCallback(envID string, cb BridgeCallback) error 
 	return nil
 }
 
+// SetAllowInsecureTLS 设置该环境的 fetch 是否允许 X-Fetch-Insecure 请求头生效。
+//
+// 由 jsplugin 层在 CreateEnv 之后、插件 onInit 之前调用，依据是 manifest 里是否
+// 声明了 net:insecure-tls 权限。默认 false——jsruntime 本身不认识权限，所以这个
+// 开关就是权限在运行时层的唯一投影。
+func (m *JSEnvManager) SetAllowInsecureTLS(envID string, allow bool) error {
+	env, err := m.getEnv(envID)
+	if err != nil {
+		return err
+	}
+	env.allowInsecureTLS.Store(allow)
+	return nil
+}
+
 // PostHostEvent 将宿主侧事件非阻塞投递到指定 JS 环境。
 // 事件会在 ExecuteJS 的 await 循环或后台 ProcessTimers tick 中分发给 JS。
 func (m *JSEnvManager) PostHostEvent(envID, eventType, id, data string) error {
@@ -1505,7 +1557,7 @@ func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 		env.asyncInflight.Add(1)
 		go func() {
 			defer env.asyncInflight.Add(-1)
-			payload := doHTTPRequest(url, method, headersJSON, bodyHex)
+			payload := doHTTPRequest(url, method, headersJSON, bodyHex, env.allowInsecureTLS.Load())
 			result := asyncResult{
 				ID:   id,
 				Type: "fetch",
@@ -1942,6 +1994,11 @@ func registerBridgeFunctions(vm *quickjs.VM, env *JSEnv) error {
 // 支持 X-Fetch-No-Redirect 请求头：存在时不自动跟随重定向，让 JS 侧处理
 // 重定向链（如 xiaomi 登录流程的 Cookie 收集）。
 // 支持 X-Fetch-Timeout-Ms 请求头：设置单次请求超时（100-30000ms），该内部头不会转发。
+// 支持 X-Fetch-Insecure 请求头：跳过 TLS 证书校验，但【仅当 allowInsecure 为 true】
+// 时生效——该参数由 jsplugin 层按 manifest 权限 net:insecure-tls 决定（见
+// JSEnvManager.SetAllowInsecureTLS）。未声明权限的插件带上该头只会被静默忽略，
+// 保持完整证书校验。三个 X-Fetch-* 内部控制头一律不转发给上游。
+//
 // redactHeadersForLog 返回用于 debug 日志的脱敏头副本：Authorization/Cookie 及含
 // token/auth/session 的头值替换为 ***。插件对外请求头常含第三方账号凭证，日志可能被
 // 导出提交 issue，故落日志前先脱敏（导出端点还会再过一遍 logging.Redact 作纵深防御）。
@@ -1962,12 +2019,13 @@ func redactHeadersForLog(h map[string]string) map[string]string {
 	return out
 }
 
-func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
+func doHTTPRequest(url, method, headersJSON, bodyHex string, allowInsecure bool) string {
 	slog.Debug("doHTTPRequest", "url", url, "method", method, "headers", logging.Redact(headersJSON))
 
 	// 解析并设置请求头
 	var headers map[string]string
 	noRedirect := false
+	insecure := false
 	timeout := 30 * time.Second
 	if headersJSON != "" && headersJSON != "{}" {
 		if jsonErr := json.Unmarshal([]byte(headersJSON), &headers); jsonErr == nil {
@@ -1975,6 +2033,11 @@ func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
 				if strings.EqualFold(k, "X-Fetch-No-Redirect") {
 					noRedirect = true
 					continue // 不传递此内部控制头
+				}
+				if strings.EqualFold(k, "X-Fetch-Insecure") {
+					// 意图声明；是否真的生效取决于 allowInsecure（manifest 权限）。
+					insecure = true
+					continue
 				}
 				if strings.EqualFold(k, "X-Fetch-Timeout-Ms") {
 					if ms, parseErr := strconv.Atoi(strings.TrimSpace(v)); parseErr == nil && ms > 0 {
@@ -1989,6 +2052,14 @@ func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
 				}
 			}
 		}
+	}
+	// 未声明 net:insecure-tls 权限的插件带该头 → 静默降级为完整校验。
+	// 打一条 Warn 而非静默丢弃：插件作者常误以为"宿主不识别就零副作用"（#401 的
+	// 实际情形），一条日志能让排查少走一大圈。
+	if insecure && !allowInsecure {
+		slog.Warn("X-Fetch-Insecure ignored: plugin lacks net:insecure-tls permission",
+			"url", url)
+		insecure = false
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -2010,7 +2081,8 @@ func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
 
 	if headers != nil {
 		for k, v := range headers {
-			if strings.EqualFold(k, "X-Fetch-No-Redirect") || strings.EqualFold(k, "X-Fetch-Timeout-Ms") {
+			if strings.EqualFold(k, "X-Fetch-No-Redirect") || strings.EqualFold(k, "X-Fetch-Timeout-Ms") ||
+				strings.EqualFold(k, "X-Fetch-Insecure") {
 				continue
 			}
 			req.Header.Set(k, v)
@@ -2034,13 +2106,19 @@ func doHTTPRequest(url, method, headersJSON, bodyHex string) string {
 				actualHeaders[k] = vals[0]
 			}
 		}
-		slog.Debug("doHTTPRequest actual request headers", "url", url, "noRedirect", noRedirect, "timeout", timeout, "headers", redactHeadersForLog(actualHeaders))
+		slog.Debug("doHTTPRequest actual request headers", "url", url, "noRedirect", noRedirect, "insecure", insecure, "timeout", timeout, "headers", redactHeadersForLog(actualHeaders))
 	}
 
-	// 根据是否需要跟随重定向选择客户端
+	// 按「是否跟随重定向」×「是否跳过证书校验」选择客户端。
+	// insecure 到这里已经过权限门控（无权限时上面已置回 false）。
 	client := sharedHTTPClient
-	if noRedirect {
+	switch {
+	case noRedirect && insecure:
+		client = insecureNoRedirectHTTPClient
+	case noRedirect:
 		client = noRedirectHTTPClient
+	case insecure:
+		client = insecureHTTPClient
 	}
 
 	resp, err := client.Do(req)

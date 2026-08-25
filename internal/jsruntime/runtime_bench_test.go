@@ -338,7 +338,7 @@ func benchFetch(b *testing.B, contentType string, bodySize int) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		out := doHTTPRequest(srv.URL, "GET", "{}", "")
+		out := doHTTPRequest(srv.URL, "GET", "{}", "", false)
 		if strings.Contains(out, `"error"`) {
 			b.Fatalf("fetch error: %s", out)
 		}

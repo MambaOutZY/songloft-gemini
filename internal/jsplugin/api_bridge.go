@@ -1750,6 +1750,11 @@ func (h *BridgeHandler) handleJSEnv(action, data string) (string, error) {
 		if err := mgr.CreateEnv(fullID, req.InitCode, pluginID); err != nil {
 			return marshalJSONOrErr(map[string]string{"error": err.Error()})
 		}
+		// 子环境继承父插件的 TLS 策略：它跑的是同一个插件的代码，同一份 manifest 权限。
+		// 不继承会让「插件在子 worker 里发请求」莫名其妙地校验失败。
+		if err := mgr.SetAllowInsecureTLS(fullID, CheckPermission(h.permissions, PermNetInsecureTLS)); err != nil {
+			slog.Warn("set insecure TLS policy for child env failed", "env", fullID, "error", err)
+		}
 		return marshalJSONOrErr(map[string]string{"envName": req.Name})
 
 	case "jsenv.execute":
