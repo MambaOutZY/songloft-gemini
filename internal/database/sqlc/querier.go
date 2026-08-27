@@ -25,9 +25,11 @@ type Querier interface {
 	CountPlaylistsContainingSong(ctx context.Context, songID int64) (int64, error)
 	CountSongsByCoverPath(ctx context.Context, coverPath string) (int64, error)
 	CountSongsByFilePath(ctx context.Context, filePath string) (int64, error)
+	CountSongsByTag(ctx context.Context, tagID int64) (int64, error)
 	CreateJSPlugin(ctx context.Context, arg CreateJSPluginParams) (int64, error)
 	CreatePlaylist(ctx context.Context, arg CreatePlaylistParams) (int64, error)
 	CreateSong(ctx context.Context, arg CreateSongParams) (int64, error)
+	CreateSongTag(ctx context.Context, arg CreateSongTagParams) (int64, error)
 	CreateThemePack(ctx context.Context, arg CreateThemePackParams) error
 	CreateToken(ctx context.Context, arg CreateTokenParams) (int64, error)
 	DeleteAllPluginStorage(ctx context.Context, pluginEntryPath string) error
@@ -39,6 +41,7 @@ type Querier interface {
 	DeletePlaylistSongsByPlaylistID(ctx context.Context, playlistID int64) error
 	DeletePluginStorage(ctx context.Context, arg DeletePluginStorageParams) (int64, error)
 	DeleteSong(ctx context.Context, id int64) (int64, error)
+	DeleteSongTag(ctx context.Context, id int64) error
 	DeleteThemePack(ctx context.Context, themeID string) (int64, error)
 	FindPlaylistByName(ctx context.Context, name string) (int64, error)
 	FindPlaylistByNameExcludeID(ctx context.Context, arg FindPlaylistByNameExcludeIDParams) (int64, error)
@@ -54,11 +57,15 @@ type Querier interface {
 	GetPluginStorage(ctx context.Context, arg GetPluginStorageParams) (string, error)
 	GetPluginStorageTotalSize(ctx context.Context, pluginEntryPath string) (int64, error)
 	GetSongByID(ctx context.Context, id int64) (Song, error)
+	GetSongTagByID(ctx context.Context, id int64) (SongTag, error)
+	GetSongTagByName(ctx context.Context, name string) (SongTag, error)
 	GetSongTimestamps(ctx context.Context, id int64) (GetSongTimestampsRow, error)
+	GetTagsBySongID(ctx context.Context, songID int64) ([]SongTag, error)
 	GetThemePackByThemeID(ctx context.Context, themeID string) (ThemePack, error)
 	GetTokenByID(ctx context.Context, tokenID string) (GetTokenByIDRow, error)
 	InsertAutoCreatedPlaylist(ctx context.Context, arg InsertAutoCreatedPlaylistParams) (int64, error)
 	IsTokenRevoked(ctx context.Context, arg IsTokenRevokedParams) (bool, error)
+	LinkSongTag(ctx context.Context, arg LinkSongTagParams) error
 	ListAllDuplicateSongs(ctx context.Context) ([]ListAllDuplicateSongsRow, error)
 	ListAllPlaylistNames(ctx context.Context) ([]string, error)
 	ListAutoCreatedPlaylists(ctx context.Context) ([]ListAutoCreatedPlaylistsRow, error)
@@ -88,6 +95,8 @@ type Querier interface {
 	SetPluginStorage(ctx context.Context, arg SetPluginStorageParams) error
 	TouchPlaylist(ctx context.Context, arg TouchPlaylistParams) (int64, error)
 	TrimPlayHistory(ctx context.Context, arg TrimPlayHistoryParams) error
+	UnlinkAllBySong(ctx context.Context, songID int64) error
+	UnlinkSongTag(ctx context.Context, arg UnlinkSongTagParams) error
 	UpdateAutoCreatedPlaylistMeta(ctx context.Context, arg UpdateAutoCreatedPlaylistMetaParams) (int64, error)
 	UpdateCachePath(ctx context.Context, arg UpdateCachePathParams) error
 	UpdateJSPlugin(ctx context.Context, arg UpdateJSPluginParams) error
@@ -106,6 +115,7 @@ type Querier interface {
 	UpdateSongMetadata(ctx context.Context, arg UpdateSongMetadataParams) error
 	UpdateSongPositionInPlaylist(ctx context.Context, arg UpdateSongPositionInPlaylistParams) (int64, error)
 	UpdateSongSource(ctx context.Context, arg UpdateSongSourceParams) error
+	UpdateSongTag(ctx context.Context, arg UpdateSongTagParams) error
 	UpdateSongTagFields(ctx context.Context, arg UpdateSongTagFieldsParams) error
 	UpdateThemePack(ctx context.Context, arg UpdateThemePackParams) error
 }

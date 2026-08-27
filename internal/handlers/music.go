@@ -561,6 +561,10 @@ func applySongTagFilters(filter *database.SongFilter, q url.Values) {
 	if d, err := strconv.Atoi(q.Get("decade")); err == nil && d > 0 {
 		filter.DecadeStart = d
 	}
+	if tagID, err := strconv.ParseInt(q.Get("tag_id"), 10, 64); err == nil && tagID > 0 {
+		filter.TagID = tagID
+	}
+	filter.TagName = q.Get("tag")
 }
 
 // songFacetFields 是 /songs/facets 支持的维度白名单。

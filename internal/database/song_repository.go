@@ -649,6 +649,7 @@ func applySongFilter(sb sq.SelectBuilder, filter *SongFilter) sq.SelectBuilder {
 			sq.Like{"title": kw},
 			sq.Like{"artist": kw},
 			sq.Like{"album": kw},
+			sq.Expr("id IN (SELECT l.song_id FROM song_tag_links l JOIN song_tags t ON l.tag_id = t.id WHERE t.name LIKE ?)", kw),
 		})
 	}
 	if filter.PathPrefix != "" {
@@ -678,6 +679,14 @@ func applySongFilter(sb sq.SelectBuilder, filter *SongFilter) sq.SelectBuilder {
 			sq.GtOrEq{"year": filter.DecadeStart},
 			sq.Lt{"year": filter.DecadeStart + 10},
 		})
+	}
+	// 按自定义标签 ID 过滤
+	if filter.TagID > 0 {
+		sb = sb.Where("id IN (SELECT song_id FROM song_tag_links WHERE tag_id = ?)", filter.TagID)
+	}
+	// 按自定义标签名模糊匹配
+	if filter.TagName != "" {
+		sb = sb.Where(`id IN (SELECT l.song_id FROM song_tag_links l JOIN song_tags t ON l.tag_id = t.id WHERE t.name LIKE ?)`, "%"+filter.TagName+"%")
 	}
 	// 排除属于「带指定 label 的歌单」的歌曲：只要歌在任一匹配歌单里就被过滤掉。
 	for _, label := range filter.ExcludePlaylistLabels {

@@ -29,6 +29,10 @@ type SongFilter struct {
 	Year     int // 精确年份，0 表示不过滤
 	// DecadeStart 年代起始年（如 1990 表示 1990-1999）；0 表示不过滤。
 	DecadeStart int
+	// TagID 按自定义标签 ID 过滤（0 表示不过滤）。
+	TagID int64
+	// TagName 按自定义标签名模糊匹配过滤歌曲（空表示不过滤）。
+	TagName string
 	// ExcludePlaylistLabels 排除属于「带这些 label 的歌单」的歌曲。
 	// 典型用途：排除隐藏歌单（label=hidden）里的歌，让主歌曲列表不显示它们。
 	ExcludePlaylistLabels []string

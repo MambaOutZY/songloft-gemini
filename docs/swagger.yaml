@@ -973,6 +973,21 @@ definitions:
         example: 2005
         type: integer
     type: object
+  models.SongTag:
+    properties:
+      color:
+        type: string
+      cover_url:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      song_count:
+        type: integer
+    type: object
   models.SuccessResponse:
     properties:
       message:
@@ -5317,6 +5332,389 @@ paths:
       summary: 更新音量均衡配置
       tags:
       - 设置
+  /song-tags:
+    get:
+      description: 返回标签列表，含每个标签下的歌曲数量和代表封面。支持关键词搜索、排序和分页。
+      parameters:
+      - description: 搜索关键词（模糊匹配标签名）
+        in: query
+        name: keyword
+        type: string
+      - default: song_count
+        description: 排序字段
+        enum:
+        - song_count
+        - name
+        - created_at
+        in: query
+        name: sort
+        type: string
+      - default: desc
+        description: 排序方向
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 60
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: 偏移量
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功返回标签列表 {tags, total, limit, offset}
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出所有标签
+      tags:
+      - 标签管理
+    post:
+      consumes:
+      - application/json
+      description: 创建一个新的自定义标签。标签名不能为空、不能包含逗号、不能超过50个字符。标签名大小写不敏感去重。
+      parameters:
+      - description: '创建参数 {name: string, color?: string}'
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 创建成功
+          schema:
+            $ref: '#/definitions/models.SongTag'
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建标签
+      tags:
+      - 标签管理
+  /song-tags/{id}:
+    delete:
+      description: 删除标签，自动解除所有歌曲关联（CASCADE）。歌曲本身不会被删除。
+      parameters:
+      - description: 标签 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: 删除成功
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除标签
+      tags:
+      - 标签管理
+    get:
+      description: 返回单个标签的详细信息，包含歌曲数量。
+      parameters:
+      - description: 标签 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            $ref: '#/definitions/models.SongTag'
+        "404":
+          description: 标签不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取标签详情
+      tags:
+      - 标签管理
+    put:
+      consumes:
+      - application/json
+      description: 更新标签名称或颜色。
+      parameters:
+      - description: 标签 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: '更新参数 {name?: string, color?: string}'
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: 更新成功
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 标签不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新标签
+      tags:
+      - 标签管理
+  /song-tags/{id}/bind:
+    post:
+      consumes:
+      - application/json
+      description: 将多首歌曲关联到指定标签。已存在的关联会被忽略。
+      parameters:
+      - description: 标签 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: '歌曲 ID 列表 {song_ids: [1,2,3]}'
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '绑定结果 {bound: N}'
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 批量绑定歌曲到标签
+      tags:
+      - 标签管理
+  /song-tags/{id}/song-ids:
+    get:
+      description: 返回某个标签关联的所有歌曲 ID 列表，不分页，用于播放全部场景。
+      parameters:
+      - description: 标签 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 歌曲 ID 列表
+          schema:
+            items:
+              type: integer
+            type: array
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取标签下所有歌曲 ID
+      tags:
+      - 标签管理
+  /song-tags/{id}/songs:
+    get:
+      description: 返回某个标签关联的歌曲列表，支持分页。
+      parameters:
+      - description: 标签 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - default: 100
+        description: 每页数量
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: 偏移量
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功返回 {songs, total, limit, offset}
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取标签下的歌曲列表
+      tags:
+      - 标签管理
+  /song-tags/{id}/unbind:
+    post:
+      consumes:
+      - application/json
+      description: 将多首歌曲从指定标签中移除关联。
+      parameters:
+      - description: 标签 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: '歌曲 ID 列表 {song_ids: [1,2,3]}'
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '解绑结果 {unbound: N}'
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 批量解绑歌曲
+      tags:
+      - 标签管理
+  /song-tags/from-playlist/{playlistId}:
+    post:
+      description: 将歌单内的所有歌曲关联到同名标签。标签不存在时自动创建。
+      parameters:
+      - description: 歌单 ID
+        in: path
+        name: playlistId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 转换结果 {tag, bound}
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 歌单不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 歌单转标签
+      tags:
+      - 标签管理
   /songs:
     get:
       consumes:
@@ -6115,6 +6513,79 @@ paths:
       summary: 通知歌曲播放事件
       tags:
       - 歌曲管理
+  /songs/{id}/song-tags:
+    get:
+      description: 返回某首歌曲关联的所有自定义标签列表。
+      parameters:
+      - description: 歌曲 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 标签列表
+          schema:
+            items:
+              $ref: '#/definitions/models.SongTag'
+            type: array
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取歌曲的自定义标签
+      tags:
+      - 标签管理
+    put:
+      consumes:
+      - application/json
+      description: 全量替换歌曲的自定义标签关联。传入 tag_ids 数组，替换当前所有关联。
+      parameters:
+      - description: 歌曲 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: '标签 ID 列表 {tag_ids: [1,2,3]}'
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: 设置成功
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 设置歌曲的标签
+      tags:
+      - 标签管理
   /songs/{id}/tags:
     put:
       consumes:

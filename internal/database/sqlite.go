@@ -178,3 +178,8 @@ func (s *SQLiteDB) PluginStorageRepository() *PluginStorageRepository {
 func (s *SQLiteDB) ThemePackRepository() *ThemePackRepository {
 	return NewThemePackRepository(s.db)
 }
+
+// SongTagRepository 返回自定义标签仓储
+func (s *SQLiteDB) SongTagRepository() *SongTagRepository {
+	return NewSongTagRepository(s.db)
+}

@@ -192,6 +192,21 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/playlists/{id}/cover", playlistHandler.UploadPlaylistCover)
 			r.Get("/playlists/{id}/cover", playlistHandler.GetPlaylistCover)
 
+			// 自定义标签管理
+			tagHandler := handlers.NewSongTagHandler(a.songTagService, a.playlistService)
+			r.Get("/song-tags", tagHandler.List)
+			r.Post("/song-tags", tagHandler.Create)
+			r.Get("/song-tags/{id}", tagHandler.Get)
+			r.Put("/song-tags/{id}", tagHandler.Update)
+			r.Delete("/song-tags/{id}", tagHandler.Delete)
+			r.Get("/song-tags/{id}/songs", tagHandler.ListSongs)
+			r.Get("/song-tags/{id}/song-ids", tagHandler.ListSongIDs)
+			r.Post("/song-tags/{id}/bind", tagHandler.BatchBind)
+			r.Post("/song-tags/{id}/unbind", tagHandler.BatchUnbind)
+			r.Post("/song-tags/from-playlist/{playlistId}", tagHandler.FromPlaylist)
+			r.Get("/songs/{id}/song-tags", tagHandler.GetSongTags)
+			r.Put("/songs/{id}/song-tags", tagHandler.SetSongTags)
+
 			// 播放历史（按播放上下文：歌单 / 歌手 / 专辑 / 其余分面维度）
 			r.Get("/play-history", playHistoryHandler.GetPlayHistory)
 			r.Delete("/play-history", playHistoryHandler.ClearPlayHistory)

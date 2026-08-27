@@ -140,6 +140,19 @@ type Song struct {
 	FingerprintAttemptedAt int64
 }
 
+type SongTag struct {
+	ID        int64
+	Name      string
+	Color     string
+	CreatedAt sql.NullTime
+}
+
+type SongTagLink struct {
+	SongID    int64
+	TagID     int64
+	CreatedAt sql.NullTime
+}
+
 type ThemePack struct {
 	ID            int64
 	ThemeID       string

@@ -21,6 +21,7 @@ type DB interface {
 	PlayHistoryRepository() *PlayHistoryRepository
 	PluginStorageRepository() *PluginStorageRepository
 	ThemePackRepository() *ThemePackRepository
+	SongTagRepository() *SongTagRepository
 }
 
 // NewSQLiteDB 兼容旧调用方的构造函数，内部委托给 Open。
