@@ -9,7 +9,7 @@ require (
 	github.com/go-chi/cors v1.2.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
-	github.com/hanxi/tag v0.0.0-20240417053706-3d75831295e8
+	github.com/hanxi/tag v0.0.0-20260827075244-2ddf27d1e3b6
 	github.com/hanxi/tracely/sdk/go/tracely v1.1.3
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/swaggo/http-swagger v1.3.4
