@@ -84,6 +84,7 @@ type SongService struct {
 	playlistAutoCreator PlaylistAutoCreator
 	cacheService        *CacheService       // 可选;由 app.go 通过 SetCacheService 注入,Delete 时清理 cache 残留
 	fingerprintService  *FingerprintService // 可选;扫描完成后自动计算指纹
+	songTagService      *SongTagService     // 可选;扫描时从文件 SONGLOFT_TAGS 自动导入标签
 }
 
 // NewSongService 创建歌曲服务
@@ -120,6 +121,43 @@ func (s *SongService) SetCacheService(cs *CacheService) {
 // SetFingerprintService 注入指纹服务，扫描完成后自动计算缺失指纹。
 func (s *SongService) SetFingerprintService(fs *FingerprintService) {
 	s.fingerprintService = fs
+}
+
+// SetSongTagService 注入标签服务，扫描时从 SONGLOFT_TAGS 字段自动导入标签。
+func (s *SongService) SetSongTagService(ts *SongTagService) {
+	s.songTagService = ts
+}
+
+type scanTagImport struct {
+	songID int64
+	tags   string
+}
+
+// importSongloftTags 扫描后从文件 SONGLOFT_TAGS 字段批量创建/关联标签。
+func (s *SongService) importSongloftTags(ctx context.Context, items []scanTagImport) {
+	if s.songTagService == nil || len(items) == 0 {
+		return
+	}
+	for _, item := range items {
+		tagNames := splitTagNames(item.tags)
+		if len(tagNames) == 0 {
+			continue
+		}
+		if err := s.songTagService.BindByNames(ctx, item.songID, tagNames); err != nil {
+			slog.Warn("导入文件标签失败", "songID", item.songID, "tags", item.tags, "error", err)
+		}
+	}
+}
+
+func splitTagNames(s string) []string {
+	var names []string
+	for _, part := range strings.Split(s, ",") {
+		t := strings.TrimSpace(part)
+		if t != "" {
+			names = append(names, t)
+		}
+	}
+	return names
 }
 
 // GetScanProgress 获取扫描进度
@@ -881,8 +919,11 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 	}
 	// 每个 item 的进度结果，事务提交成功后才写入 progress manager
 	itemResults := make([]ProgressUpdateType, len(batch))
+	// 扫描到 SONGLOFT_TAGS 的歌曲，事务成功后批量导入标签
+	var tagImports []scanTagImport
 
 	txFn := func(ctx context.Context, uow *database.UnitOfWork) error {
+		tagImports = tagImports[:0]
 		txRepo := uow.Songs
 		for i, r := range batch {
 			if r.item.existingSongID > 0 {
@@ -937,6 +978,9 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 					itemResults[i] = ProgressUpdateFailed
 					continue
 				}
+				if r.metadata.SongloftTags != "" {
+					tagImports = append(tagImports, scanTagImport{songID: song.ID, tags: r.metadata.SongloftTags})
+				}
 				itemResults[i] = ProgressUpdateImported
 			} else {
 				song := &models.Song{
@@ -975,6 +1019,9 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 					itemResults[i] = ProgressUpdateFailed
 					continue
 				}
+				if r.metadata.SongloftTags != "" {
+					tagImports = append(tagImports, scanTagImport{songID: song.ID, tags: r.metadata.SongloftTags})
+				}
 				itemResults[i] = ProgressUpdateImported
 			}
 		}
@@ -990,6 +1037,7 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 			for i, r := range batch {
 				s.scanProgressManager.UpdateProgress(r.item.filePath, itemResults[i])
 			}
+			s.importSongloftTags(ctx, tagImports)
 			return
 		}
 		slog.Warn("批次事务执行失败，准备重试", "attempt", attempt+1, "error", err)
@@ -1164,7 +1212,7 @@ type CleanResult struct {
 	Total         int `json:"total"`           // 总清理数
 }
 
-// CleanInvalidSongs 清理无效的本地歌曲
+// CleanInvalidSongs 清理无效的��地歌曲
 // 清理条件：文件不存在 或 文件路径在排除目录/路径中
 func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, error) {
 	filter := &database.SongFilter{

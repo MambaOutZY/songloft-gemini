@@ -71,6 +71,7 @@ type Metadata struct {
 	Language    string  // 语种
 	Style       string  // 风格
 	IsVideo     bool    // 是否含真实视频轨（ffprobe 探测，排除封面 attached_pic）
+	SongloftTags string // SONGLOFT_TAGS 自定义标签字段（逗号分隔）
 }
 
 // FFProbeOutput ffprobe 输出结构
@@ -259,6 +260,7 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 			metadata.Genre = tagMeta.Genre()
 			metadata.Language = tagMeta.Language()
 			metadata.Style = tagMeta.Style()
+			metadata.SongloftTags = extractRawString(tagMeta.Raw(), "SONGLOFT_TAGS")
 
 			// 从 tag 库提取时长
 			if duration := tagMeta.Duration(); duration > 0 {
@@ -954,6 +956,21 @@ func extractISRC(raw map[string]interface{}) string {
 	for _, key := range []string{"TSRC", "TRC", "isrc"} {
 		if v, ok := raw[key]; ok {
 			if s, ok := v.(string); ok && s != "" {
+				return strings.TrimSpace(s)
+			}
+		}
+	}
+	return ""
+}
+
+// extractRawString 从 Raw() 中按 key（大小写不敏感）提取字符串值。
+// TXXX 描述在 Raw() 中以原始 description 为 key（如 "SONGLOFT_TAGS"）；
+// Vorbis Comment 的 key 统一小写（如 "songloft_tags"）。
+func extractRawString(raw map[string]interface{}, key string) string {
+	lower := strings.ToLower(key)
+	for k, v := range raw {
+		if strings.ToLower(k) == lower {
+			if s, ok := v.(string); ok {
 				return strings.TrimSpace(s)
 			}
 		}

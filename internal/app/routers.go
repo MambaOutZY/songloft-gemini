@@ -193,7 +193,7 @@ func (a *App) setupAPIV1Router() {
 			r.Get("/playlists/{id}/cover", playlistHandler.GetPlaylistCover)
 
 			// 自定义标签管理
-			tagHandler := handlers.NewSongTagHandler(a.songTagService, a.playlistService)
+			tagHandler := handlers.NewSongTagHandler(a.songTagService, a.playlistService, a.songService, a.configService)
 			r.Get("/song-tags", tagHandler.List)
 			r.Post("/song-tags", tagHandler.Create)
 			r.Get("/song-tags/{id}", tagHandler.Get)
@@ -206,6 +206,8 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/song-tags/from-playlist/{playlistId}", tagHandler.FromPlaylist)
 			r.Get("/songs/{id}/song-tags", tagHandler.GetSongTags)
 			r.Put("/songs/{id}/song-tags", tagHandler.SetSongTags)
+			r.Get("/settings/tag-sync-to-file", tagHandler.GetTagSyncToFile)
+			r.Put("/settings/tag-sync-to-file", tagHandler.UpdateTagSyncToFile)
 
 			// 播放历史（按播放上下文：歌单 / 歌手 / 专辑 / 其余分面维度）
 			r.Get("/play-history", playHistoryHandler.GetPlayHistory)

@@ -268,6 +268,7 @@ func (a *App) Init() error {
 	a.backupService = services.NewBackupService(db)
 	a.playHistoryService = services.NewPlayHistoryService(db)
 	a.songTagService = services.NewSongTagService(db.SongTagRepository())
+	a.songService.SetSongTagService(a.songTagService)
 	a.themePackService = services.NewThemePackService(db.ThemePackRepository(), a.configService)
 	// play_history 的 context_key 是 TEXT，无法对 playlists 建外键做级联，删歌单时需显式清理
 	a.playlistService.SetPlayHistoryCleaner(db.PlayHistoryRepository())

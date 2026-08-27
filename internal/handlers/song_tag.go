@@ -1,26 +1,43 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"songloft/internal/database"
 	"songloft/internal/services"
+
+	"github.com/hanxi/tag"
 )
 
 // SongTagHandler 自定义标签处理器
 type SongTagHandler struct {
 	tagService      *services.SongTagService
 	playlistService *services.PlaylistService
+	songService     *services.SongService
+	configService   *services.ConfigService
 }
 
 // NewSongTagHandler 创建标签处理器
-func NewSongTagHandler(tagService *services.SongTagService, playlistService *services.PlaylistService) *SongTagHandler {
-	return &SongTagHandler{tagService: tagService, playlistService: playlistService}
+func NewSongTagHandler(
+	tagService *services.SongTagService,
+	playlistService *services.PlaylistService,
+	songService *services.SongService,
+	configService *services.ConfigService,
+) *SongTagHandler {
+	return &SongTagHandler{
+		tagService:      tagService,
+		playlistService: playlistService,
+		songService:     songService,
+		configService:   configService,
+	}
 }
 
 // List 列出所有标签
@@ -310,7 +327,47 @@ func (h *SongTagHandler) SetSongTags(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "设置歌曲标签失败", err)
 		return
 	}
+	go h.syncTagsToFile(songID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// syncTagsToFile 将歌曲的自定义标签同步写入音频文件的 SONGLOFT_TAGS 字段。
+// 仅当配置 tag_sync_to_file 开启时执行。
+func (h *SongTagHandler) syncTagsToFile(songID int64) {
+	if !h.configService.GetBool("tag_sync_to_file", false) {
+		return
+	}
+	ctx := context.Background()
+	song, err := h.songService.GetByID(ctx, songID)
+	if err != nil || song.FilePath == "" {
+		return
+	}
+	tags, err := h.tagService.GetSongTags(ctx, songID)
+	if err != nil {
+		return
+	}
+	var names []string
+	for _, t := range tags {
+		names = append(names, t.Name)
+	}
+	tagsValue := strings.Join(names, ",")
+
+	opts := tag.WriteOptions{
+		Title:      song.Title,
+		Artist:     song.Artist,
+		Album:      song.Album,
+		Genre:      song.Genre,
+		Language:   song.Language,
+		Style:      song.Style,
+		Track:      song.Track,
+		CustomTags: map[string]string{"SONGLOFT_TAGS": tagsValue},
+	}
+	if song.Year > 0 {
+		opts.Year = song.Year
+	}
+	if err := tag.WriteTag(song.FilePath, opts); err != nil {
+		slog.Debug("sync tags to file failed", "songID", songID, "error", err)
+	}
 }
 
 // BatchBind 批量绑定歌曲到标签
@@ -423,4 +480,30 @@ func (h *SongTagHandler) FromPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]any{"tag": tag, "bound": bound})
+}
+
+const tagSyncToFileConfigKey = "tag_sync_to_file"
+
+func (h *SongTagHandler) GetTagSyncToFile(w http.ResponseWriter, r *http.Request) {
+	enabled := h.configService.GetBool(tagSyncToFileConfigKey, false)
+	respondJSON(w, http.StatusOK, map[string]bool{"enabled": enabled})
+}
+
+func (h *SongTagHandler) UpdateTagSyncToFile(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	val := "false"
+	if req.Enabled {
+		val = "true"
+	}
+	if err := h.configService.Set(tagSyncToFileConfigKey, val); err != nil {
+		respondError(w, http.StatusInternalServerError, "保存配置失败", err)
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]bool{"enabled": req.Enabled})
 }

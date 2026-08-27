@@ -90,6 +90,29 @@ func (s *SongTagService) SetSongTags(ctx context.Context, songID int64, tagIDs [
 	return s.tags.SetSongTags(ctx, songID, tagIDs)
 }
 
+// BindByNames 按标签名列表为歌曲关联标签（不存在则自动创建）。
+// 用于扫描时从文件 SONGLOFT_TAGS 字段导入。不会删除已有绑定。
+func (s *SongTagService) BindByNames(ctx context.Context, songID int64, tagNames []string) error {
+	for _, name := range tagNames {
+		name = strings.TrimSpace(name)
+		if name == "" || len(name) > 50 {
+			continue
+		}
+		existing, err := s.tags.GetByName(ctx, name)
+		var tagID int64
+		if err != nil {
+			tagID, err = s.tags.Create(ctx, name, "")
+			if err != nil {
+				return fmt.Errorf("song_tag_service: create tag %q: %w", name, err)
+			}
+		} else {
+			tagID = existing.ID
+		}
+		_ = s.tags.LinkSongTag(ctx, songID, tagID)
+	}
+	return nil
+}
+
 func (s *SongTagService) BatchBind(ctx context.Context, tagID int64, songIDs []int64) (int, error) {
 	bound := 0
 	for _, songID := range songIDs {
