@@ -40,3 +40,6 @@
 [submodule "home-assistant-addon"]
 	path = home-assistant-addon
 	url = https://github.com/songloft-org/home-assistant-addon.git
+[submodule "jsplugins-src/songloft-plugin-tagger"]
+	path = jsplugins-src/songloft-plugin-tagger
+	url = https://github.com/songloft-org/songloft-plugin-tagger.git
