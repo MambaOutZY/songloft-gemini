@@ -16,6 +16,8 @@ const (
 	PermSongsWrite        = "songs.write"        // 修改歌曲
 	PermPlaylistsRead     = "playlists.read"     // 读取歌单
 	PermPlaylistsWrite    = "playlists.write"    // 修改歌单
+	PermTagsRead          = "tags.read"          // 读取标签
+	PermTagsWrite         = "tags.write"         // 修改标签
 	PermInterPlugin       = "inter-plugin"       // 插件间通信
 	PermCommand           = "command"            // 执行命令
 	PermJSEnv             = "jsenv"              // 创建/执行子 JS 环境（songloft.jsenv.*）
@@ -41,12 +43,14 @@ var AllPermissions = []string{
 	PermStorage,
 	PermSongsRead, PermSongsWrite,
 	PermPlaylistsRead, PermPlaylistsWrite,
+	PermTagsRead, PermTagsWrite,
 	PermInterPlugin, PermCommand,
 	PermJSEnv, PermFS, PermFSMusic, PermFSExternal,
 	PermWebSocket, PermPersistentStorage, PermNet, PermNetInsecureTLS,
 	// 通配符糖
 	"songs.*",
 	"playlists.*",
+	"tags.*",
 	"fs.*",
 }
 

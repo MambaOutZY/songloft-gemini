@@ -317,6 +317,41 @@ songloft.playlists = {
     }
 };
 
+// === songloft.tags（async）===
+songloft.tags = {
+    list: async function(options) {
+        var s = await __callBridge('tags.list', JSON.stringify(options || {}));
+        return s ? JSON.parse(s) : [];
+    },
+    getById: async function(id) {
+        var s = await __callBridge('tags.getById', JSON.stringify({id: id}));
+        return s ? JSON.parse(s) : null;
+    },
+    create: async function(opts) {
+        var s = await __callBridge('tags.create', JSON.stringify(opts || {}));
+        return s ? JSON.parse(s) : null;
+    },
+    update: async function(id, fields) {
+        var data = JSON.stringify(Object.assign({id: id}, fields || {}));
+        await __callBridge('tags.update', data);
+    },
+    delete: async function(id) {
+        await __callBridge('tags.delete', JSON.stringify({id: id}));
+    },
+    getSongTags: async function(songId) {
+        var s = await __callBridge('tags.getSongTags', JSON.stringify({songId: songId}));
+        return s ? JSON.parse(s) : [];
+    },
+    bindSongs: async function(tagId, songIds) {
+        var s = await __callBridge('tags.bindSongs', JSON.stringify({tagId: tagId, songIds: songIds || []}));
+        return s ? JSON.parse(s) : {bound: 0};
+    },
+    unbindSongs: async function(tagId, songIds) {
+        var s = await __callBridge('tags.unbindSongs', JSON.stringify({tagId: tagId, songIds: songIds || []}));
+        return s ? JSON.parse(s) : {unbound: 0};
+    }
+};
+
 // === songloft.plugin（async）===
 // 即使 getToken/getHostUrl 内部是 O(1) 的内存读取，也统一返回 Promise，
 // 保证 songloft.* API 表面一致；插件代码用 const t = await songloft.plugin.getToken()。
@@ -601,6 +636,7 @@ type BridgeHandler struct {
 	songDownloader            *services.SongDownloader    // 歌曲下载服务（songs.download bridge 调用）
 	songService               *services.SongService       // 歌曲服务（songs.create/update/delete）
 	playlistService           *services.PlaylistService   // 歌单服务（playlists 写操作）
+	songTagService            *services.SongTagService    // 标签服务（tags.* bridge 调用）
 	metadataRefresher         *services.MetadataRefresher // 元数据刷新服务（songs.refreshMetadata bridge 调用）
 	pluginToken               string                      // 插件专用的永久 JWT Token
 	port                      string                      // 服务器监听端口（用于构造宿主 URL）
@@ -619,7 +655,7 @@ type BridgeHandler struct {
 }
 
 // NewBridgeHandler 创建桥接处理器
-func NewBridgeHandler(service *JSService, dataDir string, db database.DB, songDownloader *services.SongDownloader, songService *services.SongService, playlistService *services.PlaylistService, metadataRefresher *services.MetadataRefresher, pluginToken string, port string) *BridgeHandler {
+func NewBridgeHandler(service *JSService, dataDir string, db database.DB, songDownloader *services.SongDownloader, songService *services.SongService, playlistService *services.PlaylistService, songTagService *services.SongTagService, metadataRefresher *services.MetadataRefresher, pluginToken string, port string) *BridgeHandler {
 	return &BridgeHandler{
 		service:           service,
 		permissions:       service.plugin.Permissions,
@@ -628,6 +664,7 @@ func NewBridgeHandler(service *JSService, dataDir string, db database.DB, songDo
 		songDownloader:    songDownloader,
 		songService:       songService,
 		playlistService:   playlistService,
+		songTagService:    songTagService,
 		metadataRefresher: metadataRefresher,
 		pluginToken:       pluginToken,
 		port:              port,
@@ -672,6 +709,8 @@ func (h *BridgeHandler) HandleBridgeCall(action, data string) (string, error) {
 		return h.handleSongs(action, data)
 	case strings.HasPrefix(action, "playlists."):
 		return h.handlePlaylists(action, data)
+	case strings.HasPrefix(action, "tags."):
+		return h.handleTags(action, data)
 	case strings.HasPrefix(action, "comm."):
 		return h.handleComm(action, data)
 	case strings.HasPrefix(action, "jsenv."):
@@ -712,6 +751,14 @@ func extractPermFromAction(action string) string {
 	case "playlists.create", "playlists.update", "playlists.delete",
 		"playlists.addSongs", "playlists.removeSongs", "playlists.reorder":
 		return PermPlaylistsWrite
+	}
+
+	// 标签相关 action 按读写细粒度映射
+	switch action {
+	case "tags.list", "tags.getById", "tags.getSongTags":
+		return PermTagsRead
+	case "tags.create", "tags.update", "tags.delete", "tags.bindSongs", "tags.unbindSongs":
+		return PermTagsWrite
 	}
 
 	// 存储权限
@@ -1488,6 +1535,158 @@ func (h *BridgeHandler) handlePlaylists(action, data string) (string, error) {
 
 	default:
 		return "", fmt.Errorf("handlePlaylists: unknown action: %s", action)
+	}
+}
+
+// handleTags 处理标签相关的桥接调用
+func (h *BridgeHandler) handleTags(action, data string) (string, error) {
+	ctx := context.Background()
+
+	if h.songTagService == nil {
+		return "", fmt.Errorf("handleTags: songTagService not configured")
+	}
+
+	switch action {
+	case "tags.list":
+		var req struct {
+			Keyword string `json:"keyword"`
+			OrderBy string `json:"orderBy"`
+			Order   string `json:"order"`
+			Limit   int    `json:"limit"`
+			Offset  int    `json:"offset"`
+		}
+		if data != "" {
+			_ = json.Unmarshal([]byte(data), &req)
+		}
+		if req.Limit <= 0 {
+			req.Limit = 100
+		}
+		tags, err := h.songTagService.List(ctx, req.Keyword, req.OrderBy, req.Order, req.Limit, req.Offset)
+		if err != nil {
+			return "", fmt.Errorf("handleTags: list: %w", err)
+		}
+		result, err := json.Marshal(tags)
+		if err != nil {
+			return "", fmt.Errorf("handleTags: marshal list: %w", err)
+		}
+		return string(result), nil
+
+	case "tags.getById":
+		var req struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handleTags: parse getById: %w", err)
+		}
+		tag, err := h.songTagService.GetByID(ctx, req.ID)
+		if err != nil {
+			return "", fmt.Errorf("handleTags: getById: %w", err)
+		}
+		result, err := json.Marshal(tag)
+		if err != nil {
+			return "", fmt.Errorf("handleTags: marshal getById: %w", err)
+		}
+		return string(result), nil
+
+	case "tags.create":
+		var req struct {
+			Name  string `json:"name"`
+			Color string `json:"color"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handleTags: parse create: %w", err)
+		}
+		tag, err := h.songTagService.Create(ctx, req.Name, req.Color)
+		if err != nil {
+			return "", fmt.Errorf("handleTags: create: %w", err)
+		}
+		result, err := json.Marshal(tag)
+		if err != nil {
+			return "", fmt.Errorf("handleTags: marshal create: %w", err)
+		}
+		return string(result), nil
+
+	case "tags.update":
+		var req struct {
+			ID    int64  `json:"id"`
+			Name  string `json:"name"`
+			Color string `json:"color"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handleTags: parse update: %w", err)
+		}
+		if err := h.songTagService.Update(ctx, req.ID, req.Name, req.Color); err != nil {
+			return "", fmt.Errorf("handleTags: update: %w", err)
+		}
+		return "", nil
+
+	case "tags.delete":
+		var req struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handleTags: parse delete: %w", err)
+		}
+		if err := h.songTagService.Delete(ctx, req.ID); err != nil {
+			return "", fmt.Errorf("handleTags: delete: %w", err)
+		}
+		return "", nil
+
+	case "tags.getSongTags":
+		var req struct {
+			SongID int64 `json:"songId"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handleTags: parse getSongTags: %w", err)
+		}
+		tags, err := h.songTagService.GetSongTags(ctx, req.SongID)
+		if err != nil {
+			return "", fmt.Errorf("handleTags: getSongTags: %w", err)
+		}
+		result, err := json.Marshal(tags)
+		if err != nil {
+			return "", fmt.Errorf("handleTags: marshal getSongTags: %w", err)
+		}
+		return string(result), nil
+
+	case "tags.bindSongs":
+		var req struct {
+			TagID   int64   `json:"tagId"`
+			SongIDs []int64 `json:"songIds"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handleTags: parse bindSongs: %w", err)
+		}
+		bound, err := h.songTagService.BatchBind(ctx, req.TagID, req.SongIDs)
+		if err != nil {
+			return "", fmt.Errorf("handleTags: bindSongs: %w", err)
+		}
+		result, err := json.Marshal(map[string]int{"bound": bound})
+		if err != nil {
+			return "", fmt.Errorf("handleTags: marshal bindSongs: %w", err)
+		}
+		return string(result), nil
+
+	case "tags.unbindSongs":
+		var req struct {
+			TagID   int64   `json:"tagId"`
+			SongIDs []int64 `json:"songIds"`
+		}
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return "", fmt.Errorf("handleTags: parse unbindSongs: %w", err)
+		}
+		unbound, err := h.songTagService.BatchUnbind(ctx, req.TagID, req.SongIDs)
+		if err != nil {
+			return "", fmt.Errorf("handleTags: unbindSongs: %w", err)
+		}
+		result, err := json.Marshal(map[string]int{"unbound": unbound})
+		if err != nil {
+			return "", fmt.Errorf("handleTags: marshal unbindSongs: %w", err)
+		}
+		return string(result), nil
+
+	default:
+		return "", fmt.Errorf("handleTags: unknown action: %s", action)
 	}
 }
 

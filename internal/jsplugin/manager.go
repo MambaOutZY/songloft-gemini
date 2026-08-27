@@ -52,6 +52,7 @@ type Manager struct {
 	songDownloader    *services.SongDownloader    // 歌曲下载服务（bridge songs.download 用）
 	songService       *services.SongService       // 歌曲服务（bridge songs.create/update/delete 用）
 	playlistService   *services.PlaylistService   // 歌单服务（bridge playlists.* 写操作用）
+	songTagService    *services.SongTagService    // 标签服务（bridge tags.* 用）
 	metadataRefresher *services.MetadataRefresher // 元数据刷新服务（bridge songs.refreshMetadata 用）
 	configService     *services.ConfigService     // 配置服务（keep-alive 白名单等）
 	cacheService      *services.CacheService      // 缓存服务（serveFile seek 流）
@@ -161,10 +162,11 @@ func (m *Manager) SetSongDownloader(d *services.SongDownloader) {
 	m.songDownloader = d
 }
 
-// SetServices 注入歌曲和歌单服务（bridge songs/playlists 写操作调用）。
-func (m *Manager) SetServices(songService *services.SongService, playlistService *services.PlaylistService) {
+// SetServices 注入歌曲、歌单和标签服务（bridge songs/playlists/tags 调用）。
+func (m *Manager) SetServices(songService *services.SongService, playlistService *services.PlaylistService, songTagService *services.SongTagService) {
 	m.songService = songService
 	m.playlistService = playlistService
+	m.songTagService = songTagService
 }
 
 // SetConfigService 注入配置服务（keep-alive 白名单等）。
@@ -313,7 +315,7 @@ func (m *Manager) LoadPlugin(ctx context.Context, plugin *JSPlugin) error {
 	service := NewJSService(plugin, m.scheduler, m.jsManager)
 
 	// 2. 创建并关联 BridgeHandler
-	bridgeHandler := NewBridgeHandler(service, dataDir, m.db, m.songDownloader, m.songService, m.playlistService, m.metadataRefresher, m.pluginToken, m.getPort())
+	bridgeHandler := NewBridgeHandler(service, dataDir, m.db, m.songDownloader, m.songService, m.playlistService, m.songTagService, m.metadataRefresher, m.pluginToken, m.getPort())
 	bridgeHandler.onPlayEventRegister = m.RegisterPlayEvent
 	bridgeHandler.onPlayEventUnregister = m.UnregisterPlayEvent
 	bridgeHandler.onLyricProviderRegister = m.RegisterLyricProvider

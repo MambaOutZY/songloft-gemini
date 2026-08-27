@@ -353,7 +353,7 @@ func (a *App) Init() error {
 	a.downloadActivity = &services.DownloadActivity{}
 	songDownloader := services.NewSongDownloader(a.songService, a.cacheService, a.configService, a.scanner.GetMusicPath, a.lyricFetcher, a.downloadActivity)
 	a.jsPluginManager.SetSongDownloader(songDownloader)
-	a.jsPluginManager.SetServices(a.songService, a.playlistService)
+	a.jsPluginManager.SetServices(a.songService, a.playlistService, a.songTagService)
 	a.jsPluginManager.SetConfigService(a.configService)
 	a.jsPluginManager.SetCacheService(a.cacheService)
 
