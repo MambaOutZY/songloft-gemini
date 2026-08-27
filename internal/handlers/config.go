@@ -15,13 +15,15 @@ import (
 // ConfigHandler 配置处理器
 type ConfigHandler struct {
 	configService   *services.ConfigService
-	onConfigChanged func(key string) // 配置变更回调（可选）
+	pluginRepo      tabConfigPluginSource // 插件安装状态（tab-config 的孤儿清理与限额统计用）
+	onConfigChanged func(key string)      // 配置变更回调（可选）
 }
 
 // NewConfigHandler 创建配置处理器
-func NewConfigHandler(configService *services.ConfigService) *ConfigHandler {
+func NewConfigHandler(configService *services.ConfigService, pluginRepo tabConfigPluginSource) *ConfigHandler {
 	return &ConfigHandler{
 		configService: configService,
+		pluginRepo:    pluginRepo,
 	}
 }
 

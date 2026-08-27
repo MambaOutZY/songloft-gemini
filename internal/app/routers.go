@@ -62,7 +62,7 @@ func (a *App) setupAPIV1Router() {
 	playlistHandler.SetThumbCache(thumbCache)
 	playHistoryHandler := handlers.NewPlayHistoryHandler(a.playHistoryService)
 	themePackHandler := handlers.NewThemePackHandler(a.themePackService, a.configService)
-	configHandler := handlers.NewConfigHandler(a.configService)
+	configHandler := handlers.NewConfigHandler(a.configService, a.db.JSPluginRepository())
 	scanHandler := handlers.NewScanHandler(a.songService, a.scanner, a.configService)
 	fingerprintService := services.NewFingerprintService(a.db.SongRepository())
 	scanHandler.SetFingerprintService(fingerprintService)

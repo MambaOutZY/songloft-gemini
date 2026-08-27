@@ -51,27 +51,27 @@ type RemoteProbeResult struct {
 
 // Metadata 音频元数据
 type Metadata struct {
-	Title       string  // 标题
-	Artist      string  // 艺术家
-	Album       string  // 专辑
-	Duration    float64 // 时长（秒）
-	Format      string  // 格式
-	BitRate     int     // 比特率（kbps）
-	SampleRate  int     // 采样率（Hz）
-	HasCover    bool    // 是否有封面
-	Lyric       string  // 歌词内容
-	LyricSource string  // 歌词来源：file/embedded
-	CoverPath   string  // 封面文件存储路径（分层目录）
-	CoverData   []byte  // 封面图片数据（用于保存）
-	CoverExt    string  // 封面图片扩展名
-	ISRC        string  // ISRC（国际标准录音编码）
-	Track       string  // 音轨号（"3" 或 "3/12"）
-	Year        int     // 发行年份
-	Genre       string  // 流派
-	Language    string  // 语种
-	Style       string  // 风格
-	IsVideo     bool    // 是否含真实视频轨（ffprobe 探测，排除封面 attached_pic）
-	SongloftTags string // SONGLOFT_TAGS 自定义标签字段（逗号分隔）
+	Title        string  // 标题
+	Artist       string  // 艺术家
+	Album        string  // 专辑
+	Duration     float64 // 时长（秒）
+	Format       string  // 格式
+	BitRate      int     // 比特率（kbps）
+	SampleRate   int     // 采样率（Hz）
+	HasCover     bool    // 是否有封面
+	Lyric        string  // 歌词内容
+	LyricSource  string  // 歌词来源：file/embedded
+	CoverPath    string  // 封面文件存储路径（分层目录）
+	CoverData    []byte  // 封面图片数据（用于保存）
+	CoverExt     string  // 封面图片扩展名
+	ISRC         string  // ISRC（国际标准录音编码）
+	Track        string  // 音轨号（"3" 或 "3/12"）
+	Year         int     // 发行年份
+	Genre        string  // 流派
+	Language     string  // 语种
+	Style        string  // 风格
+	IsVideo      bool    // 是否含真实视频轨（ffprobe 探测，排除封面 attached_pic）
+	SongloftTags string  // SONGLOFT_TAGS 自定义标签字段（逗号分隔）
 }
 
 // FFProbeOutput ffprobe 输出结构

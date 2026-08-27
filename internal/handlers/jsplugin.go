@@ -389,9 +389,38 @@ func (h *JSPluginHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		h.manager.RefreshPublicPaths()
 	}
 
+	// 清理底部导航 Tab 配置中该插件的条目，防止孤儿条目永久占名额（#416）
+	h.removeTabConfigEntry(plugin.EntryPath)
+
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "插件已删除",
 	})
+}
+
+// removeTabConfigEntry 从底部导航 Tab 配置中移除指定插件的条目（best-effort，失败仅 warn）。
+// 插件卸载后其 Tab 条目成为孤儿：首页不渲染却永久占用可选名额，
+// 导致计数与可见 Tab 数不符（songloft-org/songloft#416）。
+func (h *JSPluginHandler) removeTabConfigEntry(entryPath string) {
+	var cfg tabConfigSetting
+	if err := h.configService.GetJSON(tabConfigKey, &cfg); err != nil {
+		return // 配置不存在或无效，无需清理
+	}
+	cleaned := make([]pluginTabEntry, 0, len(cfg.PluginTabs))
+	changed := false
+	for _, pt := range cfg.PluginTabs {
+		if pt.EntryPath == entryPath {
+			changed = true
+			continue
+		}
+		cleaned = append(cleaned, pt)
+	}
+	if !changed {
+		return
+	}
+	cfg.PluginTabs = cleaned
+	if err := h.configService.SetJSON(tabConfigKey, cfg); err != nil {
+		slog.Warn("卸载插件：清理 tab_config 条目失败", "entryPath", entryPath, "error", err)
+	}
 }
 
 // handleEnable 启用插件
