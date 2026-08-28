@@ -433,6 +433,20 @@ func (m *Manager) tryServeStaticFile(w http.ResponseWriter, r *http.Request, sta
 		content = injectHTMLHead(content, entryPath, m.basePath)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
+		// COEP: require-corp 页面（Lynx Web 宿主页必须开——web-core 的
+		// SharedArrayBuffer 依赖）里嵌跨源 iframe 时，iframe 文档响应自身也
+		// 必须携带 COEP 头，否则 Chrome/Firefox 报 ERR_BLOCKED_BY_RESPONSE
+		// 拒绝加载。corpMiddleware 的 CORP 头只覆盖子资源（img/audio），盖
+		// 不住 iframe 文档这一层，所以插件 HTML 要单独补。
+		//
+		// credentialless 而非 require-corp：插件页引用的第三方跨源资源
+		// （如 fonts.googleapis.com）没有 CORP 头，require-corp 会把它们也拦
+		// 掉；插件认证走 URL token / localStorage，不依赖 cookie，
+		// credentialless 的「跨源请求不带凭证」对它无副作用。Firefox 119+
+		// 认这个响应头；Chromium 客户端另有 iframe 的 credentialless 属性兜
+		// 底（web/webview-host.js）；Safari 两者都不支持，standalone 部署在
+		// Safari 下跨源嵌入仍受限（embedded 部署同源，无此问题）。
+		w.Header().Set("Cross-Origin-Embedder-Policy", "credentialless")
 		_, _ = w.Write(content)
 		return true
 	}

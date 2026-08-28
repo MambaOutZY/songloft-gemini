@@ -215,15 +215,24 @@ html[data-theme="dark"] {
 /* Firefox / 标准属性兜底 */
 * { scrollbar-color: var(--md-outline-variant) transparent; }
 
-/* ── 嵌入态：始终保留纵向滚动条，杜绝滚动条增删引起的重排抖动 ──
+/* ── 嵌入态：常驻滚动能力但不占布局宽度，杜绝滚动条增删引起的重排抖动 ──
  * 插件页内容高度恰好卡在视口高度附近时，文档级纵向滚动条会「按需出现→内容变窄→
  * 重排→高度变化→滚动条消失→…」形成无限抖动回路（songloft-org/songloft#278）。
  * `scrollbar-gutter: stable` 无效（只对 overflow:auto/scroll 容器生效），必须
  * `overflow-y: scroll` 让视口滚动条常驻、宽度恒定，回路才被打断。
  * **只在嵌入态（`html.embed`）强制常驻**：那个回路只在「视口被外层固定住」时发生
  * （App 内嵌 iframe / WebF 原生渲染面，均带 `?embed`）。普通浏览器直接打开插件页
- * 窗口可自由伸缩、无此回路，强制常驻只会平白多一条置灰滚动条（#341），故交回默认。 */
-html.embed { overflow-y: scroll; }
+ * 窗口可自由伸缩、无此回路，强制常驻只会平白多一条置灰滚动条（#341），故交回默认。
+ *
+ * ── 且必须「不占宽度」（scrollbar-width: none / display:none）──
+ * 经典滚动条占布局宽度（本文件定制后为 8px）：内容视口比 iframe 窄 8px，插件里
+ * 用 100vw 定宽的元素会横向溢出、列表右缘出现裁切。原生 App 的 WebView 滚动条
+ * 本就是 overlay 式（不占宽度）、WebF 无真实滚动条——插件是按「滚动条不占宽」
+ * 设计的，桌面浏览器 iframe（Lynx Web / Flutter Web 宿主）是唯一让经典滚动条
+ * 露出宽度副作用的环境。隐藏后 `overflow-y: scroll` 的防抖机制不受影响（滚动
+ * 能力仍常驻、宽度恒定为 0），且与原生环境的视觉一致。滚轮/触摸滚动照常可用。 */
+html.embed { overflow-y: scroll; scrollbar-width: none; }
+html.embed::-webkit-scrollbar { display: none; }
 
 /* ── Body ──
  * 背景用 `--md-surface`（= Flutter Scaffold 底色），卡片用 `--md-surface-container`
