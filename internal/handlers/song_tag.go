@@ -19,24 +19,21 @@ import (
 
 // SongTagHandler 自定义标签处理器
 type SongTagHandler struct {
-	tagService      *services.SongTagService
-	playlistService *services.PlaylistService
-	songService     *services.SongService
-	configService   *services.ConfigService
+	tagService    *services.SongTagService
+	songService   *services.SongService
+	configService *services.ConfigService
 }
 
 // NewSongTagHandler 创建标签处理器
 func NewSongTagHandler(
 	tagService *services.SongTagService,
-	playlistService *services.PlaylistService,
 	songService *services.SongService,
 	configService *services.ConfigService,
 ) *SongTagHandler {
 	return &SongTagHandler{
-		tagService:      tagService,
-		playlistService: playlistService,
-		songService:     songService,
-		configService:   configService,
+		tagService:    tagService,
+		songService:   songService,
+		configService: configService,
 	}
 }
 
@@ -438,49 +435,7 @@ func (h *SongTagHandler) BatchUnbind(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]int{"unbound": unbound})
 }
 
-// FromPlaylist 歌单转标签
-// @Summary 歌单转标签
-// @Description 将歌单内的所有歌曲关联到同名标签。标签不存在时自动创建。
-// @Tags 标签管理
-// @Produce json
-// @Param playlistId path int true "歌单 ID"
-// @Success 200 {object} map[string]any "转换结果 {tag, bound}"
-// @Failure 400 {object} map[string]string "参数错误"
-// @Failure 404 {object} map[string]string "歌单不存在"
-// @Failure 500 {object} map[string]string "服务器错误"
-// @Security BearerAuth
-// @Router /song-tags/from-playlist/{playlistId} [post]
-func (h *SongTagHandler) FromPlaylist(w http.ResponseWriter, r *http.Request) {
-	playlistID, err := strconv.ParseInt(chi.URLParam(r, "playlistId"), 10, 64)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "无效的歌单 ID", err)
-		return
-	}
 
-	ctx := r.Context()
-	playlist, err := h.playlistService.GetByID(ctx, playlistID)
-	if err != nil {
-		if errors.Is(err, database.ErrNotFound) {
-			respondError(w, http.StatusNotFound, "歌单不存在", nil)
-			return
-		}
-		respondError(w, http.StatusInternalServerError, "获取歌单失败", err)
-		return
-	}
-
-	songIDs, err := h.playlistService.SongIDsInPlaylist(ctx, playlistID)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "获取歌单歌曲失败", err)
-		return
-	}
-
-	tag, bound, err := h.tagService.FromPlaylist(ctx, playlist.Name, songIDs)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "歌单转标签失败", err)
-		return
-	}
-	respondJSON(w, http.StatusOK, map[string]any{"tag": tag, "bound": bound})
-}
 
 const tagSyncToFileConfigKey = "tag_sync_to_file"
 

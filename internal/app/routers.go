@@ -193,7 +193,7 @@ func (a *App) setupAPIV1Router() {
 			r.Get("/playlists/{id}/cover", playlistHandler.GetPlaylistCover)
 
 			// 自定义标签管理
-			tagHandler := handlers.NewSongTagHandler(a.songTagService, a.playlistService, a.songService, a.configService)
+			tagHandler := handlers.NewSongTagHandler(a.songTagService, a.songService, a.configService)
 			r.Get("/song-tags", tagHandler.List)
 			r.Post("/song-tags", tagHandler.Create)
 			r.Get("/song-tags/{id}", tagHandler.Get)
@@ -203,7 +203,7 @@ func (a *App) setupAPIV1Router() {
 			r.Get("/song-tags/{id}/song-ids", tagHandler.ListSongIDs)
 			r.Post("/song-tags/{id}/bind", tagHandler.BatchBind)
 			r.Post("/song-tags/{id}/unbind", tagHandler.BatchUnbind)
-			r.Post("/song-tags/from-playlist/{playlistId}", tagHandler.FromPlaylist)
+
 			r.Get("/songs/{id}/song-tags", tagHandler.GetSongTags)
 			r.Put("/songs/{id}/song-tags", tagHandler.SetSongTags)
 			r.Get("/settings/tag-sync-to-file", tagHandler.GetTagSyncToFile)

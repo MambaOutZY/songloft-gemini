@@ -2,11 +2,9 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
-	"songloft/internal/database"
 	"songloft/internal/models"
 )
 
@@ -143,37 +141,7 @@ func (s *SongTagService) CountSongs(ctx context.Context, tagID int64) (int64, er
 	return s.tags.CountSongs(ctx, tagID)
 }
 
-// FromPlaylist 将歌单内所有歌曲关联到同名标签（标签不存在则创建）。
-func (s *SongTagService) FromPlaylist(ctx context.Context, playlistName string, songIDs []int64) (*models.SongTag, int, error) {
-	name := strings.TrimSpace(playlistName)
-	if err := validateTagName(name); err != nil {
-		return nil, 0, err
-	}
 
-	tag, err := s.tags.GetByName(ctx, name)
-	if err != nil {
-		if !errors.Is(err, database.ErrNotFound) {
-			return nil, 0, err
-		}
-		id, createErr := s.tags.Create(ctx, name, "")
-		if createErr != nil {
-			return nil, 0, fmt.Errorf("song_tag_service: from_playlist create: %w", createErr)
-		}
-		tag, err = s.tags.GetByID(ctx, id)
-		if err != nil {
-			return nil, 0, err
-		}
-	}
-
-	bound := 0
-	for _, songID := range songIDs {
-		if err := s.tags.LinkSongTag(ctx, songID, tag.ID); err != nil {
-			return tag, bound, err
-		}
-		bound++
-	}
-	return tag, bound, nil
-}
 
 func validateTagName(name string) error {
 	if name == "" {

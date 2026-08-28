@@ -5676,46 +5676,6 @@ paths:
       summary: 批量解绑歌曲
       tags:
       - 标签管理
-  /song-tags/from-playlist/{playlistId}:
-    post:
-      description: 将歌单内的所有歌曲关联到同名标签。标签不存在时自动创建。
-      parameters:
-      - description: 歌单 ID
-        in: path
-        name: playlistId
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 转换结果 {tag, bound}
-          schema:
-            additionalProperties: true
-            type: object
-        "400":
-          description: 参数错误
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: 歌单不存在
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: 服务器错误
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 歌单转标签
-      tags:
-      - 标签管理
   /songs:
     get:
       consumes:

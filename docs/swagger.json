@@ -6045,68 +6045,6 @@
                 }
             }
         },
-        "/song-tags/from-playlist/{playlistId}": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "将歌单内的所有歌曲关联到同名标签。标签不存在时自动创建。",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "标签管理"
-                ],
-                "summary": "歌单转标签",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "歌单 ID",
-                        "name": "playlistId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "转换结果 {tag, bound}",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "参数错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "歌单不存在",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "服务器错误",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/song-tags/{id}": {
             "get": {
                 "security": [
