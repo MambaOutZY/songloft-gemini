@@ -827,7 +827,7 @@ SongloftPlugin.applyShims   导出，供插件动态插入 HTML 后手动重跑�
 
 **现在的机制（契约，不要自己改名）**：
 
-- `plugin.json` 字段 **`renderEngine`**，可选，取值 `"webview"` / `"webf"`；**缺失或空串 = `webview`**（宿主默认）
+- `plugin.json` 字段 **`renderEngine`**，可选，取值 `"webview"` / `"webf"` / `"lynx"`；**缺失或空串 = `webview`**（宿主默认）
 - 插件列表 API 返回 snake_case 的 **`render_engine`**
 - 非法取值在后端 **`ValidateManifest`** 阶段报错 → **插件装不上**，不静默回退
 - 客户端设置页里原有的全局引擎开关（`plugin_render_engine` pref + `SegmentedButton`）**已删除**

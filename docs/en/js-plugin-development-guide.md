@@ -60,7 +60,7 @@ The scaffolder interactively guides you through the following configuration:
 
 1. **Basic info** — directory name, plugin display name, entryPath, description, author
 2. **Permission selection** (multi-select) — `storage`, `persistent-storage`, `songs.read`, `songs.write`, `playlists.read`, `playlists.write`, `inter-plugin`, `command`, `jsenv`, `fs`, `fs:music`, `fs:external`, `websocket`, `net`
-3. **Add-on feature templates** (multi-select, skippable) — static pages (`static/`), executable management (`bin/`)
+3. **Add-on feature templates** (multi-select, skippable) — static pages (`static/`), executable management (`bin/`), Lynx native rendering (`renderEngine: "lynx"`, ReactLynx + cross-platform native UI)
 4. **Package manager** — npm / pnpm / yarn
 
 Generated project structure (when all add-on features are selected):
@@ -254,7 +254,7 @@ static/              # Static assets directory (optional)
 | `main` | string | Yes | Entry file path (must end in `.js`) |
 | `minHostVersion` | string | No | Minimum host version requirement |
 | `permissions` | string[] | Yes | Permission list (may be an empty array `[]`) |
-| `renderEngine` | string | No | Engine the client uses to render the plugin page: `webview` / `webf`; missing or empty string means `webview`. See [renderEngine — Declaring the Rendering Engine](#renderengine--declaring-the-rendering-engine) |
+| `renderEngine` | string | No | Engine the client uses to render the plugin UI: `webview` / `webf` / `lynx`; missing or empty string means `webview`. See [renderEngine — Declaring the Rendering Engine](#renderengine--declaring-the-rendering-engine) |
 | `updateUrl` | string | No | Remote update check URL |
 | `download_url` | string | No | Plugin download URL |
 | `entryHash` | string | Yes | `sha256(main.js)` as 64-character lowercase hex, generated automatically by `@songloft/plugin-builder`; do not edit manually |
@@ -271,7 +271,7 @@ static/              # Static assets directory (optional)
 
 ### renderEngine — Declaring the Rendering Engine
 
-Native clients have two paths for rendering a plugin page: the system WebView, and [WebF](https://openwebf.com/) (a W3C runtime rendered entirely by Flutter). Which one is used **is declared by the plugin itself in `plugin.json`** — the host has **no** global engine switch, and plugins do not affect each other.
+Native clients have three paths for rendering a plugin UI: the system WebView, [WebF](https://openwebf.com/) (a W3C runtime rendered entirely by Flutter), and [Lynx](https://lynxjs.org/) (cross-platform native UI driven by ReactLynx). Which one is used **is declared by the plugin itself in `plugin.json`** — the host has **no** global engine switch, and plugins do not affect each other.
 
 ```json
 {
@@ -284,11 +284,12 @@ Native clients have two paths for rendering a plugin page: the system WebView, a
 |-------|---------|
 | field missing / `""` | Same as `webview`, i.e. the host default |
 | `"webview"` | Rendered by the system WebView (default) |
-| `"webf"` | Rendered by WebF |
+| `"webf"` | Rendered by WebF (Flutter native rendering of HTML/CSS) |
+| `"lynx"` | Lynx native rendering (ReactLynx compiled to `.lynx.bundle`, loaded by the host via `<frame>`; an `index.html` + `.web.bundle` is auto-generated for clients that don't support Lynx to fall back to WebView) |
 
 - **Any other value is invalid**: the backend fails it during `ValidateManifest`, so the plugin **cannot be installed** (it does *not* silently fall back to `webview`)
 - The plugin list API returns the value in the snake_case field `render_engine`
-- The field can change between versions: to stop using WebF, publish a new version that sets it back to `webview` (or drops it)
+- The field can change between versions: to stop using WebF/Lynx, publish a new version that sets it back to `webview` (or drops it)
 
 #### When to declare `webf`
 
@@ -305,6 +306,29 @@ What you take on by declaring it:
 - **The web build (Songloft Web in a browser) is completely unaffected by this field**: WebF does not support Flutter Web, so the web build **always** uses the iframe path. Declaring `webf` changes nothing there
 - **Linux coverage is narrow**: WebF on Linux requires x86-64 with glibc ≥ 2.38 and has **no arm64** build — NAS boxes, Debian 12 and Raspberry Pi are all outside that range and never get the WebF rendering surface
 - Therefore **the plugin page must remain usable in the system WebView / a regular browser**: `webf` means "use a better rendering surface on the platforms that support it", not "a license to write the page for WebF only"
+
+#### When to declare `lynx`
+
+**Only declare it for plugins built with ReactLynx that have been tested end-to-end.** Lynx is a completely different rendering path from WebView/WebF — the plugin UI is authored in ReactLynx, compiled to a `.lynx.bundle`, and loaded natively by the host via the Lynx `<frame>` element.
+
+Prerequisites for declaring `lynx`:
+
+- Use `pnpm create @songloft/songloft-plugin` and select the **"Lynx Native Rendering"** template (or manually set up an rspeedy + ReactLynx environment)
+- Install `@songloft/lynx-plugin-sdk` as the host communication SDK (replaces `@songloft/client-sdk` used in WebView)
+- Set `"staticHash": false` in `plugin.json` (prevents bundle files from being renamed)
+
+Build output structure:
+
+```
+static/
+├── main.lynx.bundle   # Lynx native bundle (loaded by Lynx-capable clients)
+├── main.web.bundle    # Web fallback bundle (loaded by non-Lynx clients)
+└── index.html         # Auto-generated WebView fallback page (bootstraps web-core to load .web.bundle)
+```
+
+**Host communication**: Lynx plugins do NOT use `window.SongloftPlugin` / `@songloft/client-sdk` (those are WebView-only). Instead, use `@songloft/lynx-plugin-sdk`'s `invokeHost` / `onPlayerState` / `onThemeChange` APIs, which communicate via the `NativeModules.SongloftPluginBridge` native bridge.
+
+**Fallback mechanism**: Clients that don't support Lynx (e.g. Flutter-based builds) open `index.html`, which bootstraps web-core to load `.web.bundle` in a WebView — functionally equivalent, just without native performance benefits.
 
 ---
 

@@ -85,6 +85,7 @@ func (m *Manager) RegisterStaticRoutes(r chi.Router) {
 	r.Get("/api/v1/jsplugin/{entryPath}/", m.handlePluginStatic)
 	r.Get("/api/v1/jsplugin/{entryPath}/static", m.handlePluginStaticSubdir)
 	r.Get("/api/v1/jsplugin/{entryPath}/static/*", m.handlePluginStaticSubdirFiles)
+	r.Get("/api/v1/jsplugin-assets/web-core/*", handleWebCoreAssets)
 	r.Get("/api/v1/jsplugin-assets/*", handlePluginAssets)
 
 	// publicPaths：为声明了 publicPaths 的插件注册无需 JWT 的路由
@@ -134,6 +135,73 @@ func handlePluginAssets(w http.ResponseWriter, r *http.Request) {
 		seeker = bytes.NewReader(data)
 	}
 	http.ServeContent(w, r, info.Name(), info.ModTime(), seeker)
+}
+
+// webCoreDir 缓存 web-core 静态资源目录路径（Lynx 插件 Flutter 兼容用）。
+// 首次请求时自动探测：优先 data/web-core/，其次可执行文件同目录的 web-core/。
+var webCoreDir string
+
+func resolveWebCoreDir() string {
+	if webCoreDir != "" {
+		return webCoreDir
+	}
+	// 优先数据目录
+	candidates := []string{
+		"data/web-core",
+		"web-core",
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "web-core"))
+	}
+	for _, dir := range candidates {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			webCoreDir = dir
+			return dir
+		}
+	}
+	return ""
+}
+
+// handleWebCoreAssets 服务 @lynx-js/web-core 的静态资源（Lynx 插件在 Flutter
+// WebView 中渲染时需要）。资源从磁盘目录读取（不嵌入二进制，约 620KB）。
+//
+// @Summary     Web-core 静态资源
+// @Description 服务 Lynx 渲染引擎的 Web 端运行时（CSS/JS/WASM），供声明 renderEngine=lynx 的插件在系统 WebView 中使用。
+// @Tags        JS 插件
+// @Produce     octet-stream
+// @Param       * path string true "资源路径（如 static/js/client.js）"
+// @Success     200 "资源文件"
+// @Failure     404 {object} map[string]string "资源不存在或 web-core 目录未配置"
+// @Router      /jsplugin-assets/web-core/{path} [get]
+func handleWebCoreAssets(w http.ResponseWriter, r *http.Request) {
+	dir := resolveWebCoreDir()
+	if dir == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	subPath := chi.URLParam(r, "*")
+	if subPath == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// 安全：防止路径遍历
+	clean := filepath.Clean(subPath)
+	if strings.Contains(clean, "..") {
+		http.NotFound(w, r)
+		return
+	}
+
+	filePath := filepath.Join(dir, clean)
+	info, err := os.Stat(filePath)
+	if err != nil || info.IsDir() {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	http.ServeFile(w, r, filePath)
 }
 
 // RegisterAPIRoutes 注册 JS 插件 API 转发路由（需要认证，由调用方添加 AuthMiddleware）

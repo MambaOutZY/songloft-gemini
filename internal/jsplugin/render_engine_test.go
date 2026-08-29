@@ -11,7 +11,7 @@ import (
 // TestIsValidRenderEngine 覆盖 renderEngine 的合法与非法取值。
 // 空串必须合法：语义是「跟随宿主默认」，绝大多数插件不写这个字段。
 func TestIsValidRenderEngine(t *testing.T) {
-	valid := []string{"", RenderEngineWebView, RenderEngineWebF}
+	valid := []string{"", RenderEngineWebView, RenderEngineWebF, RenderEngineLynx}
 	for _, v := range valid {
 		if !IsValidRenderEngine(v) {
 			t.Errorf("IsValidRenderEngine(%q) = false, want true", v)
@@ -30,7 +30,7 @@ func TestIsValidRenderEngine(t *testing.T) {
 // 且非法取值的错误信息里必须带上实际收到的值（否则排查插件打包问题只能猜）。
 func TestValidateManifest_RenderEngine(t *testing.T) {
 	// 合法取值（含缺省）
-	for _, v := range []string{"", RenderEngineWebView, RenderEngineWebF} {
+	for _, v := range []string{"", RenderEngineWebView, RenderEngineWebF, RenderEngineLynx} {
 		m := testManifest("demo")
 		m.RenderEngine = v
 		// entryHash / zipHash 是必填项，这里只关心 renderEngine，故补上占位合法 hash。

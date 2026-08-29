@@ -60,7 +60,7 @@ npm install   # 或 pnpm install / yarn install
 
 1. **基本信息** — 目录名、插件显示名称、entryPath、简介、作者
 2. **权限选择**（多选） — `storage`、`persistent-storage`、`songs.read`、`songs.write`、`playlists.read`、`playlists.write`、`inter-plugin`、`command`、`jsenv`、`fs`、`fs:music`、`fs:external`、`websocket`、`net`
-3. **附加功能模板**（多选，可跳过） — 静态页面 (`static/`)、可执行文件管理 (`bin/`)
+3. **附加功能模板**（多选，可跳过） — 静态页面 (`static/`)、可执行文件管理 (`bin/`)、Lynx 原生渲染 (`renderEngine: "lynx"`，ReactLynx + 跨平台原生 UI)
 4. **包管理器** — npm / pnpm / yarn
 
 生成的项目结构（选择全部附加功能时）：
@@ -254,7 +254,7 @@ static/              # 静态资源目录（可选）
 | `main` | string | 是 | 入口文件路径（必须以 `.js` 结尾） |
 | `minHostVersion` | string | 否 | 最低宿主版本要求 |
 | `permissions` | string[] | 是 | 权限列表（可为空数组 `[]`） |
-| `renderEngine` | string | 否 | 客户端渲染插件页用的引擎，`webview` / `webf`，缺失或空串等同 `webview`。详见 [renderEngine 渲染引擎声明](#renderengine-渲染引擎声明) |
+| `renderEngine` | string | 否 | 客户端渲染插件 UI 所用的引擎，`webview` / `webf` / `lynx`，缺失或空串等同 `webview`。详见 [renderEngine 渲染引擎声明](#renderengine-渲染引擎声明) |
 | `updateUrl` | string | 否 | 远程更新检查 URL |
 | `download_url` | string | 否 | 插件下载 URL |
 | `entryHash` | string | 是 | `sha256(main.js)` 64 位小写 hex，由 `@songloft/plugin-builder` 自动生成，请勿手动编辑 |
@@ -271,7 +271,7 @@ static/              # 静态资源目录（可选）
 
 ### renderEngine 渲染引擎声明
 
-原生客户端渲染插件页有两条路径：系统 WebView，和 [WebF](https://openwebf.com/)（纯 Flutter 渲染的 W3C 运行时）。用哪条**由插件自己在 `plugin.json` 里声明**——宿主侧**没有**全局引擎开关，插件之间互不影响。
+原生客户端渲染插件 UI 有三条路径：系统 WebView、[WebF](https://openwebf.com/)（纯 Flutter 渲染的 W3C 运行时）、以及 [Lynx](https://lynxjs.org/)（跨平台原生 UI，由 ReactLynx 编译产物驱动）。用哪条**由插件自己在 `plugin.json` 里声明**——宿主侧**没有**全局引擎开关，插件之间互不影响。
 
 ```json
 {
@@ -284,11 +284,12 @@ static/              # 静态资源目录（可选）
 |------|------|
 | 字段缺失 / `""` | 等同 `webview`，即宿主默认 |
 | `"webview"` | 系统 WebView 渲染（默认） |
-| `"webf"` | WebF 渲染 |
+| `"webf"` | WebF 渲染（Flutter 原生渲染 HTML/CSS） |
+| `"lynx"` | Lynx 原生渲染（ReactLynx 编译为 `.lynx.bundle`，宿主通过 `<frame>` 加载；同时自动生成 `index.html` + `.web.bundle` 供不支持 Lynx 的客户端回退到 WebView） |
 
 - **其它取值一律非法**：后端 `ValidateManifest` 阶段直接报错，插件**装不上**（不会静默回退到 `webview`）
 - 插件列表 API 以 snake_case 的 `render_engine` 字段返回该值
-- 该字段可随版本改：不想再用 WebF 就发一个把它改回 `webview`（或删掉）的新版本
+- 该字段可随版本改：不想再用 WebF/Lynx 就发一个把它改回 `webview`（或删掉）的新版本
 
 #### 什么时候该声明 `webf`
 
@@ -305,6 +306,29 @@ static/              # 静态资源目录（可选）
 - **Web 端（浏览器里的 Songloft Web）完全不受该字段影响**：WebF 不支持 Flutter Web，Web 端**永远**走 iframe 路径。声明 `webf` 不会改变 Web 端的任何行为
 - **Linux 端覆盖面很窄**：WebF Linux 仅支持 x86-64 且 glibc ≥ 2.38，**没有 arm64**——NAS、Debian 12、树莓派等常见环境都在覆盖之外，拿不到 WebF 渲染面
 - 因此**插件页必须在系统 WebView / 普通浏览器里同样可用**：`webf` 是「在支持的平台上换一个更好的渲染面」，不是「只为 WebF 写页面」的许可
+
+#### 什么时候该声明 `lynx`
+
+**只有使用 ReactLynx 开发并经过实测的插件才声明。** Lynx 是完全不同于 WebView/WebF 的渲染路径——插件 UI 使用 ReactLynx 编写，编译产物为 `.lynx.bundle`，宿主通过 Lynx `<frame>` 元素原生加载。
+
+声明 `lynx` 的前提：
+
+- 使用 `pnpm create @songloft/songloft-plugin` 时选择 **"Lynx 原生渲染"** 模板（或手动搭建 rspeedy + ReactLynx 环境）
+- 安装 `@songloft/lynx-plugin-sdk` 作为宿主通信 SDK（替代 WebView 下的 `@songloft/client-sdk`）
+- `plugin.json` 中设置 `"staticHash": false`（防止 bundle 文件被重命名）
+
+构建产物结构：
+
+```
+static/
+├── main.lynx.bundle   # Lynx 原生 bundle（Lynx 客户端加载此文件）
+├── main.web.bundle    # Web 回退 bundle（非 Lynx 客户端加载此文件）
+└── index.html         # 自动生成的 WebView 回退页（引导 web-core 加载 .web.bundle）
+```
+
+**与宿主通信**：Lynx 插件不使用 `window.SongloftPlugin` / `@songloft/client-sdk`（那些是 WebView 专用），而是通过 `@songloft/lynx-plugin-sdk` 提供的 `invokeHost` / `onPlayerState` / `onThemeChange` 等 API，底层走 `NativeModules.SongloftPluginBridge` 原生桥。
+
+**回退机制**：不支持 Lynx 的客户端（如 Flutter 版本）会打开 `index.html`，由 web-core 加载 `.web.bundle` 在 WebView 中渲染——功能等价，只是失去原生性能优势。
 
 ---
 
@@ -1051,7 +1075,7 @@ if (isClient()) {
 }
 ```
 
-免构建的 vanilla 静态页面无需安装，直接用注入的 `window.SongloftPlugin.player` 即可（仅少了类型提示）。
+免构建的 vanilla 静态页面无需安装，直接用注���的 `window.SongloftPlugin.player` 即可（仅少了类型提示）。
 
 ### 收藏状态同步 —— 改完收藏必须通知宿主
 
@@ -1081,7 +1105,7 @@ await SongloftPlugin.invokeHost('favorite', 'refresh', { songId: 42, isFavorited
 插件若需要第三方站点的会话 Cookie（如 FN Connect 网关的 `os-access-code`、自建 NAS 的登录态等），可使用 `getCookies` 桥接——由宿主原生层从 WebView Cookie Store 读取，不受浏览器同源策略和 HttpOnly 限制。
 
 ```javascript
-// 前提：用户已在应用内 WebView 中打开目标站点并完成登录
+// 前提：用户已在���用内 WebView 中打开目标站点并完成登录
 const cookies = await SongloftPlugin.getCookies('https://pcyear.5ddd.com');
 // cookies: { 'os-access-code': 'xxx', 'music-token': 'yyy', ... }
 ```
@@ -1668,7 +1692,7 @@ data URL **不需要**（也没有）`revokeObjectURL`：它不是句柄，就�
 
 **插件侧一行都不用改**，但要知道它现在的语义。
 
-WebF 的 `window.open` 曾经是**彻底静默**的：不抛错、也什么都不发生（归因是没装导航代理时，WebF 的默认导航策略把外链无条件 cancel 掉了）。所以「点『去网页登录』什么反应都没有」这种 bug 在 WebF 下既没有报错也没有日志。
+WebF 的 `window.open` 曾经是**彻底静默**的：不抛错、也什么都不发生（归因是没装导航代理时，WebF 的默认��航策略把外链无条件 cancel 掉了）。所以「点『去网页登录』什么反应都没有」这种 bug 在 WebF 下既没有报错也没有日志。
 
 新版客户端在 WebF 渲染面上装了导航代理，行为变成三档：
 
@@ -1690,7 +1714,7 @@ window.open('https://example.com/help', '_blank');
 - **同源整页跳转被刻意拦掉**：WebF 里那条路是「把整个插件页 `load()` 成新地址」，会把宿主注入的上下文、loading 状态、返回键行为全部弄错。**WebF 下不要做多页跳转**，单页 + 页内切换视图，返回键用 [`onHostBack`](#页面内导航与返回键) 对接（**别用 `history.pushState`**，理由见那一节）。
 - 其余 scheme（相对路径、`javascript:`、自定义 scheme）一律不放行。若插件依赖自定义 scheme 唤起第三方 App，请当它在 WebF 下不可用并另做降级。
 
-#### `<table>` 在 WebF 下**不存在**：改用 CSS Grid
+#### `<table>` 在 WebF 下**不��在**：改用 CSS Grid
 
 > **先读下一节。** 如果这张「表」本质上是**一个可滚动的列表**（每行结构相同、行数可能很多），
 > 优先用 [`<webf-list-view>` + flex 行](#webf-ui-原生组件flutter-cupertino--webf-list-view)，
