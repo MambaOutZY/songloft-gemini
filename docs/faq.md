@@ -8,7 +8,7 @@ A: **不收费，也不接受任何赞助或捐款。** Songloft 是纯粹出于
 
 - ✅ 没有任何收费功能、内购或会员，也没有任何广告或商业推广
 - ✅ 官方不设任何收款渠道，不接受赞助 / 捐款
-- ⚠️ **谨防诈骗**：官方渠道仅有 [GitHub 仓库](https://github.com/songloft-org/songloft)、[文档站](https://songloft.hanxi.cc) 与 [官方微信群](https://github.com/songloft-org/songloft/issues/2)。任何以 Songloft 名义收费、售卖付费版本、代部署收费或索要赞助的行为，都与本项目无关；即便在群内，我们也从不向任何人收取任何费用，请勿上当受骗。
+- ⚠️ **谨防诈骗**：官方渠道仅有 [GitHub 仓库](https://github.com/songloft-org/songloft)、[文档站](https://songloft.hanxi.cc)、[官方微信群](https://github.com/songloft-org/songloft/issues/2)、[Telegram 群](https://t.me/songloft_dev) 与 [Telegram 频道](https://t.me/songloft)。任何以 Songloft 名义收费、售卖付费版本、代部署收费或索要赞助的行为，都与本项目无关；即便在群内，我们也从不向任何人收取任何费用，请勿上当受骗。
 
 ## 安装与部署
 

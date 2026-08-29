@@ -27,6 +27,8 @@
   <a href="https://songloft.hanxi.cc">📖 文档</a> •
   <a href="https://github.com/songloft-org/songloft/issues">💬 问题反馈</a> •
   <a href="https://github.com/songloft-org/songloft/issues/2">👥 微信群</a> •
+  <a href="https://t.me/songloft_dev">💬 Telegram 群</a> •
+  <a href="https://t.me/songloft">📣 Telegram 频道</a> •
   <a href="#screenshots">📸 截图</a>
 </p>
 
@@ -37,7 +39,7 @@
 > - ✅ **永久免费** —— 没有任何收费功能、内购或会员
 > - ✅ **无广告** —— 不含任何广告或商业推广
 > - ✅ **不接受赞助 / 捐款** —— 官方不设任何收款渠道
-> - ⚠️ **谨防诈骗** —— 官方渠道仅有 [GitHub 仓库](https://github.com/songloft-org/songloft)、[文档站](https://songloft.hanxi.cc) 与 [官方微信群](https://github.com/songloft-org/songloft/issues/2)。任何以 Songloft 名义收费、售卖付费版本、代部署收费或索要赞助的行为都与本项目无关；即便在群内，我们也从不向任何人收取任何费用，请勿上当受骗。
+> - ⚠️ **谨防诈骗** —— 官方渠道仅有 [GitHub 仓库](https://github.com/songloft-org/songloft)、[文档站](https://songloft.hanxi.cc)、[官方微信群](https://github.com/songloft-org/songloft/issues/2)、[Telegram 群](https://t.me/songloft_dev) 与 [Telegram 频道](https://t.me/songloft)。任何以 Songloft 名义收费、售卖付费版本、代部署收费或索要赞助的行为都与本项目无关；即便在群内，我们也从不向任何人收取任何费用，请勿上当受骗。
 
 
 ## ✨ 核心功能
@@ -592,6 +594,8 @@ Songloft 内置 JS 插件引擎，插件运行在 QuickJS 沙箱中，支持权�
 - **GitHub**: [songloft-org/songloft](https://github.com/songloft-org/songloft)
 - **Issues**: [问题与反馈](https://github.com/songloft-org/songloft/issues)
 - 💬 加入微信群交流：[微信群二维码](https://github.com/songloft-org/songloft/issues/2)
+- 💬 加入 Telegram 群交流：[songloft_dev](https://t.me/songloft_dev)
+- 📣 订阅 Telegram 频道：[Songloft](https://t.me/songloft)
 - 🐧 QQ群: 220515636 (满了可以搜新群)
 
 ## 📝 更新日志

@@ -75,10 +75,12 @@ const zh: Dict = {
   'notice.i2': '✅ 无广告：不含任何广告或商业推广',
   'notice.i3': '✅ 不接受赞助 / 捐款：官方不设任何收款渠道',
   'notice.i4': '⚠️ 谨防诈骗：任何以 Songloft 名义收费、售卖、代部署收费或索要赞助的行为，都与本项目无关',
-  'notice.channel': '官方渠道仅有 GitHub 仓库、文档站与官方微信群；即便在群内，我们也从不向任何人收取任何费用。请勿上当受骗。',
+  'notice.channel': '官方渠道仅有 GitHub 仓库、文档站、官方微信群、Telegram 群与 Telegram 频道；即便在群内，我们也从不向任何人收取任何费用。请勿上当受骗。',
   'notice.github': 'GitHub 仓库',
   'notice.docs': '文档站',
   'notice.wechat': '官方微信群',
+  'notice.telegramGroup': 'Telegram 群',
+  'notice.telegramChannel': 'Telegram 频道',
 
   // Final CTA
   'cta.title': '准备好拥有自己的音乐服务器了吗？',
@@ -150,10 +152,12 @@ const en: Dict = {
   'notice.i2': '✅ No ads: no advertising or commercial promotion of any kind',
   'notice.i3': '✅ No sponsorship / donations: there is no payment channel at all',
   'notice.i4': '⚠️ Beware of scams: anyone charging fees, selling copies, offering paid deployment, or soliciting donations in Songloft’s name is unrelated to this project',
-  'notice.channel': 'The only official channels are the GitHub repository, the docs site, and the official WeChat group; we never charge anyone, not even inside the group. Please stay alert to scams.',
+  'notice.channel': 'The only official channels are the GitHub repository, the docs site, the official WeChat group, the Telegram group, and the Telegram channel; we never charge anyone, not even inside the group. Please stay alert to scams.',
   'notice.github': 'GitHub repo',
   'notice.docs': 'Docs site',
   'notice.wechat': 'WeChat group',
+  'notice.telegramGroup': 'Telegram group',
+  'notice.telegramChannel': 'Telegram channel',
 
   'cta.title': 'Ready to own your music server?',
   'cta.subtitle': 'Up and running in minutes — your data stays with you.',

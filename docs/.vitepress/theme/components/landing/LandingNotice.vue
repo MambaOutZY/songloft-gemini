@@ -26,6 +26,10 @@ const items = ['notice.i1', 'notice.i2', 'notice.i3', 'notice.i4']
           <a href="https://songloft.hanxi.cc" target="_blank" rel="noopener">{{ t('notice.docs') }}</a>
           ·
           <a href="https://github.com/songloft-org/songloft/issues/2" target="_blank" rel="noopener">{{ t('notice.wechat') }}</a>
+          ·
+          <a href="https://t.me/songloft_dev" target="_blank" rel="noopener">{{ t('notice.telegramGroup') }}</a>
+          ·
+          <a href="https://t.me/songloft" target="_blank" rel="noopener">{{ t('notice.telegramChannel') }}</a>
         </p>
       </div>
     </div>

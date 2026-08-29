@@ -27,6 +27,8 @@
   <a href="https://songloft.hanxi.cc">📖 Docs</a> •
   <a href="https://github.com/songloft-org/songloft/issues">💬 Issues</a> •
   <a href="https://github.com/songloft-org/songloft/issues/2">👥 WeChat Group</a> •
+  <a href="https://t.me/songloft_dev">💬 Telegram Group</a> •
+  <a href="https://t.me/songloft">📣 Telegram Channel</a> •
   <a href="https://github.com/songloft-org/songloft/issues/6">📸 Screenshots</a>
 </p>
 
@@ -37,7 +39,7 @@
 > - ✅ **Free forever** —— no paid features, in-app purchases, or subscriptions
 > - ✅ **No ads** —— no advertising or commercial promotion of any kind
 > - ✅ **No sponsorship / donations** —— there is no payment channel at all
-> - ⚠️ **Beware of scams** —— the only official channels are the [GitHub repository](https://github.com/songloft-org/songloft), the [docs site](https://songloft.hanxi.cc), and the [official WeChat group](https://github.com/songloft-org/songloft/issues/2). Anyone charging fees, selling "paid versions", offering paid deployment, or soliciting donations in Songloft's name is unrelated to this project; we never charge anyone, not even inside the group. Please stay alert to scams.
+> - ⚠️ **Beware of scams** —— the only official channels are the [GitHub repository](https://github.com/songloft-org/songloft), the [docs site](https://songloft.hanxi.cc), the [official WeChat group](https://github.com/songloft-org/songloft/issues/2), the [Telegram group](https://t.me/songloft_dev), and the [Telegram channel](https://t.me/songloft). Anyone charging fees, selling "paid versions", offering paid deployment, or soliciting donations in Songloft's name is unrelated to this project; we never charge anyone, not even inside the group. Please stay alert to scams.
 
 
 ## ✨ Core Features
@@ -592,6 +594,8 @@ Running into problems? See [Frequently Asked Questions and Solutions](https://so
 - **GitHub**: [songloft-org/songloft](https://github.com/songloft-org/songloft)
 - **Issues**: [Issues and feedback](https://github.com/songloft-org/songloft/issues)
 - 💬 Join the WeChat group: [WeChat group QR code](https://github.com/songloft-org/songloft/issues/2)
+- 💬 Join the Telegram group: [songloft_dev](https://t.me/songloft_dev)
+- 📣 Subscribe to the Telegram channel: [Songloft](https://t.me/songloft)
 - 🐧 QQ group: 979995241 (if full, search for a new group)
 
 ## 📝 Changelog
