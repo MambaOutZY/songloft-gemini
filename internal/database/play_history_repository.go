@@ -135,3 +135,13 @@ func (r *PlayHistoryRepository) ClearByPlaylist(ctx context.Context, playlistID 
 	}
 	return int(rows), nil
 }
+
+// ClearByTag 清理某自定义标签的播放历史。
+// 与歌单同理：context_key 是 TEXT，无法对 song_tags 建外键做级联，删标签时必须显式调用。
+func (r *PlayHistoryRepository) ClearByTag(ctx context.Context, tagID int64) (int, error) {
+	rows, err := r.queries.ClearPlayHistoryByTag(ctx, strconv.FormatInt(tagID, 10))
+	if err != nil {
+		return 0, fmt.Errorf("clear play history by tag: %w", err)
+	}
+	return int(rows), nil
+}

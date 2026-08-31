@@ -39,6 +39,18 @@ func (q *Queries) ClearPlayHistoryByPlaylist(ctx context.Context, contextKey str
 	return result.RowsAffected()
 }
 
+const clearPlayHistoryByTag = `-- name: ClearPlayHistoryByTag :execrows
+DELETE FROM play_history WHERE context_type = 'tag' AND context_key = ?
+`
+
+func (q *Queries) ClearPlayHistoryByTag(ctx context.Context, contextKey string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, clearPlayHistoryByTag, contextKey)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countPlayHistory = `-- name: CountPlayHistory :one
 SELECT COUNT(*) FROM play_history WHERE context_type = ? AND context_key = ?
 `

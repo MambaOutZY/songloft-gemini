@@ -33,3 +33,6 @@ DELETE FROM play_history WHERE context_type = ? AND context_key = ? AND song_id 
 
 -- name: ClearPlayHistoryByPlaylist :execrows
 DELETE FROM play_history WHERE context_type = 'playlist' AND context_key = ?;
+
+-- name: ClearPlayHistoryByTag :execrows
+DELETE FROM play_history WHERE context_type = 'tag' AND context_key = ?;

@@ -122,9 +122,9 @@ func TestPlayHistoryServiceRejectsInvalidContext(t *testing.T) {
 	}
 }
 
-// TestIsValidPlayContextType 合法上下文类型 = playlist + 全部分面维度。
+// TestIsValidPlayContextType 合法上下文类型 = playlist + tag + 全部分面维度。
 func TestIsValidPlayContextType(t *testing.T) {
-	valid := []string{"playlist", "artist", "album", "genre", "year", "decade", "language", "style"}
+	valid := []string{"playlist", "tag", "artist", "album", "genre", "year", "decade", "language", "style"}
 	for _, ct := range valid {
 		if !IsValidPlayContextType(ct) {
 			t.Errorf("expected %q to be a valid play context type", ct)
@@ -195,6 +195,55 @@ func TestPlaylistDeleteClearsPlayHistory(t *testing.T) {
 	}
 	if got := historyCount(builtInID); got != 1 {
 		t.Errorf("built-in playlist %d was not deleted, its history must survive; got %d rows", builtInID, got)
+	}
+}
+
+// TestSongTagDeleteClearsPlayHistory 删除标签时清理其播放历史（与删歌单同理：
+// play_history 无外键级联到 song_tags，只能显式清理），且不波及其他标签的历史。
+func TestSongTagDeleteClearsPlayHistory(t *testing.T) {
+	mdb := testutil.OpenMemoryDB(t)
+	ctx := context.Background()
+
+	histSvc := NewPlayHistoryService(mdb)
+	tagSvc := NewSongTagService(mdb.SongTagRepository())
+	tagSvc.SetPlayHistoryCleaner(mdb.PlayHistoryRepository())
+
+	songs := seedPlayHistorySongs(t, histSvc, 1)
+	songID := songs[0].ID
+
+	makeTag := func(name string) int64 {
+		id, err := mdb.SongTagRepository().Create(ctx, name, "")
+		if err != nil {
+			t.Fatalf("create tag %s: %v", name, err)
+		}
+		return id
+	}
+	soloID := makeTag("单删测试")
+	otherID := makeTag("保留测试")
+
+	for _, key := range []string{fmt.Sprint(soloID), fmt.Sprint(otherID)} {
+		if err := histSvc.Record(ctx, models.PlayContextTag, key, songID, time.Now()); err != nil {
+			t.Fatalf("Record for tag %s: %v", key, err)
+		}
+	}
+
+	historyCount := func(tagID int64) int {
+		t.Helper()
+		n, err := mdb.PlayHistoryRepository().Count(ctx, models.PlayContextTag, fmt.Sprint(tagID))
+		if err != nil {
+			t.Fatalf("Count for tag %d: %v", tagID, err)
+		}
+		return n
+	}
+
+	if err := tagSvc.Delete(ctx, soloID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if got := historyCount(soloID); got != 0 {
+		t.Errorf("deleted tag %d: expected history cleared, got %d rows", soloID, got)
+	}
+	if got := historyCount(otherID); got != 1 {
+		t.Errorf("unrelated tag %d must keep its history; got %d rows", otherID, got)
 	}
 }
 

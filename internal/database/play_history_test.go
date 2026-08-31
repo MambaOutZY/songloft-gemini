@@ -322,6 +322,40 @@ func TestPlayHistoryClearByPlaylist(t *testing.T) {
 	}
 }
 
+// TestPlayHistoryClearByTag 只清理指定标签，且不波及同 key 的其他上下文类型。
+func TestPlayHistoryClearByTag(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ids := seedHistorySongs(t, db, 2)
+	repo := db.PlayHistoryRepository()
+	ctx := context.Background()
+
+	mustRecord(t, repo, "tag", "9", ids[0], time.Now())
+	mustRecord(t, repo, "tag", "10", ids[1], time.Now())
+	mustRecord(t, repo, "playlist", "9", ids[0], time.Now()) // 同 key 不同 type，必须保留
+
+	deleted, err := repo.ClearByTag(ctx, 9)
+	if err != nil {
+		t.Fatalf("ClearByTag: %v", err)
+	}
+	if deleted != 1 {
+		t.Errorf("expected 1 row deleted, got %d", deleted)
+	}
+
+	for _, tc := range []struct{ ctxType, ctxKey string }{
+		{"tag", "10"},
+		{"playlist", "9"},
+	} {
+		count, err := repo.Count(ctx, tc.ctxType, tc.ctxKey)
+		if err != nil {
+			t.Fatalf("Count(%s,%s): %v", tc.ctxType, tc.ctxKey, err)
+		}
+		if count != 1 {
+			t.Errorf("Count(%s,%s): expected 1 row preserved, got %d", tc.ctxType, tc.ctxKey, count)
+		}
+	}
+}
+
 // TestListPlaylistSongIDsOrdered 有序 ID 列表与歌单内 position 顺序一致。
 func TestListPlaylistSongIDsOrdered(t *testing.T) {
 	db := setupTestDB(t)

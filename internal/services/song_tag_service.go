@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"songloft/internal/models"
@@ -27,11 +28,35 @@ type SongTagRepository interface {
 
 // SongTagService 自定义标签服务
 type SongTagService struct {
-	tags SongTagRepository
+	tags        SongTagRepository
+	playHistory tagHistoryCleaner // 可选，nil 安全
+}
+
+// tagHistoryCleaner 在删除标签时清理其播放历史。
+// play_history.context_key 是 TEXT，无法对 song_tags 建外键做级联，故必须显式清理。
+// 可选依赖，nil 安全（未注入时只是残留少量垃圾行，标签 ID 不会被 AUTOINCREMENT 复用，无正确性影响）。
+type tagHistoryCleaner interface {
+	ClearByTag(ctx context.Context, tagID int64) (int, error)
 }
 
 func NewSongTagService(tags SongTagRepository) *SongTagService {
 	return &SongTagService{tags: tags}
+}
+
+// SetPlayHistoryCleaner 注入播放历史清理器，删除标签时顺带清理其播放历史。
+func (s *SongTagService) SetPlayHistoryCleaner(c tagHistoryCleaner) {
+	s.playHistory = c
+}
+
+// clearPlayHistory 清理标签的播放历史，失败只记日志：
+// 残留行不影响任何正确性（标签 ID 由 AUTOINCREMENT 保证不复用），不值得让删除操作失败。
+func (s *SongTagService) clearPlayHistory(ctx context.Context, tagID int64) {
+	if s.playHistory == nil {
+		return
+	}
+	if _, err := s.playHistory.ClearByTag(ctx, tagID); err != nil {
+		slog.Warn("清理标签播放历史失败", "tag_id", tagID, "error", err)
+	}
 }
 
 func (s *SongTagService) Create(ctx context.Context, name, color string) (*models.SongTag, error) {
@@ -69,7 +94,11 @@ func (s *SongTagService) Update(ctx context.Context, id int64, name, color strin
 }
 
 func (s *SongTagService) Delete(ctx context.Context, id int64) error {
-	return s.tags.Delete(ctx, id)
+	if err := s.tags.Delete(ctx, id); err != nil {
+		return err
+	}
+	s.clearPlayHistory(ctx, id)
+	return nil
 }
 
 func (s *SongTagService) List(ctx context.Context, keyword, orderBy, order string, limit, offset int) ([]models.SongTag, error) {

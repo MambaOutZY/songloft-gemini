@@ -18,6 +18,7 @@ type Querier interface {
 	ClearCachePath(ctx context.Context, id int64) error
 	ClearPlayHistory(ctx context.Context, arg ClearPlayHistoryParams) (int64, error)
 	ClearPlayHistoryByPlaylist(ctx context.Context, contextKey string) (int64, error)
+	ClearPlayHistoryByTag(ctx context.Context, contextKey string) (int64, error)
 	CountLocalFingerprints(ctx context.Context) (CountLocalFingerprintsRow, error)
 	CountPlayHistory(ctx context.Context, arg CountPlayHistoryParams) (int64, error)
 	CountPlaylistSongs(ctx context.Context, playlistID int64) (int64, error)
