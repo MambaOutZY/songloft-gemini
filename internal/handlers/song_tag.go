@@ -435,8 +435,6 @@ func (h *SongTagHandler) BatchUnbind(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]int{"unbound": unbound})
 }
 
-
-
 const tagSyncToFileConfigKey = "tag_sync_to_file"
 
 func (h *SongTagHandler) GetTagSyncToFile(w http.ResponseWriter, r *http.Request) {

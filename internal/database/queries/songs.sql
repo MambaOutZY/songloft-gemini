@@ -214,7 +214,9 @@ DELETE FROM songs WHERE cue_source_path = ?;
 
 -- name: ListLocalSongsWithRelativePaths :many
 SELECT id, file_path FROM songs
-WHERE type = 'local' AND file_path != '' AND substr(file_path, 1, 1) != '/';
+WHERE type = 'local' AND file_path != ''
+  AND substr(file_path, 1, 1) != '/'
+  AND substr(file_path, 2, 1) != ':';
 
 -- name: UpdateSongFilePath :execrows
 UPDATE songs SET file_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;

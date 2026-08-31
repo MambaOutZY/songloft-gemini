@@ -435,13 +435,16 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 			dirToSongs[topLevel] = append(dirToSongs[topLevel], song.ID)
 		case models.PlaylistModeBubbleUp:
 			dirToSongs[dir] = append(dirToSongs[dir], song.ID)
-			parent := filepath.Dir(dir)
+			parent := filepath.ToSlash(filepath.Dir(dir))
 			for parent != "." && parent != "/" && parent != dir {
-				parent = filepath.ToSlash(parent)
 				if !shouldExcludeDir(parent) {
 					dirToSongs[parent] = append(dirToSongs[parent], song.ID)
 				}
-				parent = filepath.Dir(parent)
+				next := filepath.ToSlash(filepath.Dir(parent))
+				if next == parent {
+					break
+				}
+				parent = next
 			}
 		default:
 			dirToSongs[dir] = append(dirToSongs[dir], song.ID)

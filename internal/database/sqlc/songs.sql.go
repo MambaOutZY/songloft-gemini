@@ -527,7 +527,9 @@ func (q *Queries) ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsR
 
 const listLocalSongsWithRelativePaths = `-- name: ListLocalSongsWithRelativePaths :many
 SELECT id, file_path FROM songs
-WHERE type = 'local' AND file_path != '' AND substr(file_path, 1, 1) != '/'
+WHERE type = 'local' AND file_path != ''
+  AND substr(file_path, 1, 1) != '/'
+  AND substr(file_path, 2, 1) != ':'
 `
 
 type ListLocalSongsWithRelativePathsRow struct {

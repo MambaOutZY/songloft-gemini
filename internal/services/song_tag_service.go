@@ -141,8 +141,6 @@ func (s *SongTagService) CountSongs(ctx context.Context, tagID int64) (int64, er
 	return s.tags.CountSongs(ctx, tagID)
 }
 
-
-
 func validateTagName(name string) error {
 	if name == "" {
 		return fmt.Errorf("标签名不能为空")

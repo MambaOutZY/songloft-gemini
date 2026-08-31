@@ -783,6 +783,9 @@ func (s *SongService) deduplicateLocalSongPaths(ctx context.Context) {
 	}
 
 	for _, song := range relativeSongs {
+		if filepath.IsAbs(song.FilePath) {
+			continue
+		}
 		absPath := filepath.Join(musicPath, song.FilePath)
 		if _, exists := existingPaths[absPath]; exists {
 			toDelete = append(toDelete, song.ID)
