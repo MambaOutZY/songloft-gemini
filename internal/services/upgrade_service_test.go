@@ -100,6 +100,20 @@ func TestIsNewerVersionRejectsCrossChannel(t *testing.T) {
 	}
 }
 
+func TestIsNewerVersionDevUnknownCommitNeverUpdates(t *testing.T) {
+	withVersionInfo(t, "dev", "unknown", "unknown", "")
+
+	svc := NewUpgradeService()
+	remote := &models.RemoteVersionInfo{
+		Version:   "dev",
+		GitCommit: "dcd774e",
+		BuildTime: "2026-08-31_03:58:49",
+	}
+	if svc.isNewerVersion(versionTypeDev, remote) {
+		t.Fatal("local dev build without ldflags (unknown commit) should never report updates")
+	}
+}
+
 func TestCurrentBuildTypeDefaultsToFull(t *testing.T) {
 	withVersionInfo(t, "2.9.6", "abc123", "2026-07-01_10:00:00", "")
 

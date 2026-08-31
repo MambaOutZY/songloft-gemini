@@ -237,8 +237,11 @@ func (s *UpgradeService) isNewerVersion(versionType string, remoteInfo *models.R
 	}
 
 	if versionType == versionTypeDev {
-		if remoteInfo.GitCommit != "" && version.GitCommit != "" &&
-			version.GitCommit != "unknown" && remoteInfo.GitCommit == version.GitCommit {
+		// 本地开发构建（make run）没有注入 ldflags，无法与 CI 产物比较，不提示更新
+		if version.GitCommit == "" || version.GitCommit == "unknown" {
+			return false
+		}
+		if remoteInfo.GitCommit != "" && remoteInfo.GitCommit == version.GitCommit {
 			return false
 		}
 		return compareBuildTimes(remoteInfo.BuildTime, version.BuildTime) > 0
