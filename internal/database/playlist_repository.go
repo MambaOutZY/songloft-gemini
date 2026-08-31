@@ -391,6 +391,22 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 	}
 	songs = dedupSongs
 
+	// TopLevel 模式需要公共路径前缀来提取相对首层目录；
+	// 绝对路径直接 SplitN("/",2) 在 Linux 上得 ""、Windows 上得 "C:"，全部歌归到一个歌单。
+	var musicRoot string
+	if playlistMode == models.PlaylistModeTopLevel {
+		var songDirs []string
+		for _, song := range songs {
+			if song.FilePath != "" && song.CueSourcePath == "" {
+				d := filepath.ToSlash(filepath.Dir(song.FilePath))
+				if !shouldExcludeDir(d) {
+					songDirs = append(songDirs, d)
+				}
+			}
+		}
+		musicRoot = findCommonPathPrefix(songDirs)
+	}
+
 	dirToSongs := make(map[string][]int64)
 	for _, song := range songs {
 		if song.FilePath == "" {
@@ -427,12 +443,14 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 
 		switch playlistMode {
 		case models.PlaylistModeTopLevel:
-			parts := strings.SplitN(dir, "/", 2)
-			topLevel := parts[0]
-			if topLevel == "." {
-				topLevel = dir
+			rel := strings.TrimPrefix(dir, musicRoot)
+			rel = strings.TrimPrefix(rel, "/")
+			if rel == "" {
+				dirToSongs[dir] = append(dirToSongs[dir], song.ID)
+			} else {
+				topDir := musicRoot + "/" + strings.SplitN(rel, "/", 2)[0]
+				dirToSongs[topDir] = append(dirToSongs[topDir], song.ID)
 			}
-			dirToSongs[topLevel] = append(dirToSongs[topLevel], song.ID)
 		case models.PlaylistModeBubbleUp:
 			dirToSongs[dir] = append(dirToSongs[dir], song.ID)
 			parent := filepath.ToSlash(filepath.Dir(dir))

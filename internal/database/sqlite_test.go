@@ -538,6 +538,71 @@ func TestAutoCreatePreservesPlaylistIDs(t *testing.T) {
 	}
 }
 
+// TestAutoCreateTopLevelGroupsByFirstLevelDir 验证 top_level（按一级子目录合并）模式
+// 对绝对路径能按音乐库下的一级子目录正确分组：不同深度的子目录归入所属一级目录的歌单，
+// 而不是像旧实现那样对绝对路径取首段（Linux 得空串、Windows 得盘符）导致全部归入同一歌单。
+func TestAutoCreateTopLevelGroupsByFirstLevelDir(t *testing.T) {
+	cases := []struct {
+		name  string
+		paths []string // 每首歌的 file_path
+		want  map[string]int
+	}{
+		{
+			name: "unix absolute paths",
+			paths: []string{
+				"/music/Rock/A/1.mp3",
+				"/music/Rock/B/2.mp3",
+				"/music/Jazz/1.mp3",
+				"/music/Pop/1.mp3",
+			},
+			want: map[string]int{"Rock": 2, "Jazz": 1, "Pop": 1},
+		},
+		{
+			name: "windows drive paths",
+			paths: []string{
+				"C:/Music/Rock/A/1.mp3",
+				"C:/Music/Rock/B/2.mp3",
+				"C:/Music/Jazz/1.mp3",
+			},
+			want: map[string]int{"Rock": 2, "Jazz": 1},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupTestDB(t)
+			defer db.Close()
+			ctx := context.Background()
+
+			songs := make([]*models.Song, 0, len(tc.paths))
+			for i, p := range tc.paths {
+				songs = append(songs, &models.Song{Type: models.TypeLocal, Title: "s" + string(rune('0'+i)), FilePath: p})
+			}
+			if err := db.SongRepository().BatchCreate(ctx, songs); err != nil {
+				t.Fatalf("BatchCreate error = %v", err)
+			}
+
+			resp, err := db.PlaylistRepository().AutoCreate(ctx, models.PlaylistModeTopLevel, nil, "")
+			if err != nil {
+				t.Fatalf("AutoCreate top_level error = %v", err)
+			}
+
+			got := make(map[string]int, len(resp.Playlists))
+			for _, p := range resp.Playlists {
+				got[p.Name] = p.SongCount
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("expected %d top-level playlists, got %d: %v", len(tc.want), len(got), got)
+			}
+			for name, count := range tc.want {
+				if got[name] != count {
+					t.Errorf("playlist %q: expected %d songs, got %d (all=%v)", name, count, got[name], got)
+				}
+			}
+		})
+	}
+}
+
 // TestAutoCreateDeletesStalePlaylist 验证某目录的歌曲全部消失后，
 // 对应的旧 auto_created 歌单被删除，其它歌单 ID 不受影响。
 func TestAutoCreateDeletesStalePlaylist(t *testing.T) {
