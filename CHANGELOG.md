@@ -1,3 +1,46 @@
+## [v2.12.0] - 2026-08-31
+### :sparkles: New Features
+- [`747468c`](https://github.com/songloft-org/songloft/commit/747468c17dcf7f1d70032056ce28036a1c45b820) - **jsplugin**: 新增 net:insecure-tls 权限，支持 fetch 跳过 TLS 证书校验 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ba43f5b`](https://github.com/songloft-org/songloft/commit/ba43f5b88977bad949ef4155be34a16b862f8f43) - 自定义歌曲标签功能 (Phase 1) *(PR [#414](https://github.com/songloft-org/songloft/pull/414) by [@hanxi](https://github.com/hanxi))*
+- [`636c35f`](https://github.com/songloft-org/songloft/commit/636c35fd36c396fa5297378de8c32b7c25ba20b1) - **tags**: 标签同步写入音频文件 SONGLOFT_TAGS *(PR [#414](https://github.com/songloft-org/songloft/pull/414) by [@hanxi](https://github.com/hanxi))*
+- [`644353e`](https://github.com/songloft-org/songloft/commit/644353ed5f584e01695bf1719fa4370e0c9ce242) - **tags**: 开放 JS 插件 tags Bridge API *(PR [#414](https://github.com/songloft-org/songloft/pull/414) by [@hanxi](https://github.com/hanxi))*
+- [`5afffc6`](https://github.com/songloft-org/songloft/commit/5afffc63ee9944c425403e473aad824ad244e286) - Lynx native rendering — docs, backend validation, and submodule bump *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`253ac00`](https://github.com/songloft-org/songloft/commit/253ac00667f29cae661d211a0ef3192c6fce40db) - **jsplugin**: 修复 Docker 环境 MIoT 初始化失败 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`8bc0030`](https://github.com/songloft-org/songloft/commit/8bc00301d8ae107d0b816286b4af443b2eb2d542) - **jsplugin**: common.js 公开 favorite 与 invokeHost 出口 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1275d2e`](https://github.com/songloft-org/songloft/commit/1275d2e07b85d8cc0018d735c97f1fbd9db9cb2a) - **fingerprint**: 修复大曲库重复检测超时 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`393f151`](https://github.com/songloft-org/songloft/commit/393f15105420bcbfaa5e8172188125b2d51deb62) - update github.com/hanxi/tag to include CustomTags field *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ab149e3`](https://github.com/songloft-org/songloft/commit/ab149e341b29e07e4346952227428b93c0425c06) - **nav**: 修正底部 Tab 配置限额口径，清理孤儿条目 *(PR [#416](https://github.com/songloft-org/songloft/pull/416) by [@hanxi](https://github.com/hanxi))*
+- [`ef61d7a`](https://github.com/songloft-org/songloft/commit/ef61d7aa03a151b455f7d178039b254d727f3a0f) - **jsplugin**: 插件页适配 COEP 宿主与嵌入态滚动条不占宽 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a75a9ff`](https://github.com/songloft-org/songloft/commit/a75a9ff4e55ae3068c55f11481a6026b1d8bab97) - restore corrupted Chinese characters (U+FFFD mojibake) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3827bb0`](https://github.com/songloft-org/songloft/commit/3827bb0453f4d5ac4c7921853f2bc17f814b892f) - strip v prefix from version API to prevent "vv2.11.6" display *(commit by [@hanxi](https://github.com/hanxi))*
+- [`dcd774e`](https://github.com/songloft-org/songloft/commit/dcd774ed4ef3455b13ecbbb8ce7d2eb5ce9fef9c) - prevent double v prefix in version display (vv2.11.6) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e9b53af`](https://github.com/songloft-org/songloft/commit/e9b53af670b54dc0ba2a3e402dd53eb8f7c94357) - **upgrade**: 本地开发构建不再误报有可用更新 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :recycle: Refactors
+- [`8d52804`](https://github.com/songloft-org/songloft/commit/8d52804c98e90c1f9078b843212e3b3a4b073636) - **tags**: 移除歌单转标签接口，迁移至 tagger 插件 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`c0a36c8`](https://github.com/songloft-org/songloft/commit/c0a36c814e2cd03f0b71c033b091870deb55d9b3) - update CHANGELOG for v2.11.6 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`4853a5e`](https://github.com/songloft-org/songloft/commit/4853a5e010a9118e15c91dd2b2ce8ed9dac31e53) - **community**: 补充 Telegram 群组和频道 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`4f5c804`](https://github.com/songloft-org/songloft/commit/4f5c804da74cdcab25a26c0131fc5ec3b1b8537e) - **jsplugin**: 更新 MIoT 子模块指针 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`faf9811`](https://github.com/songloft-org/songloft/commit/faf98113b97fda40447c11f2784c67216c3cb7f0) - 更新 miot 与 player 子模块指针 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`2de3e9a`](https://github.com/songloft-org/songloft/commit/2de3e9a52985a036ca67e35e4a57a69e1e353d03) - 更新 miot 子模块指针（修复发版 job 的推送竞态与 tag 指向） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`9a09f15`](https://github.com/songloft-org/songloft/commit/9a09f156e3e28a853bcb7a3b8cfcc3589e4fba2e) - 更新 miot 与 player 子模块指针（恢复歌单下拉搜索） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ebbd1a2`](https://github.com/songloft-org/songloft/commit/ebbd1a217c164f36571028118c4e8582a1642ae7) - 更新 songloft-player 子模块 (fix [#409](https://github.com/songloft-org/songloft/pull/409)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`5e7dd52`](https://github.com/songloft-org/songloft/commit/5e7dd520d15fbb6799a1db222c85350a48f40808) - bump songloft-plugin-miot 子模块指针 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`638936d`](https://github.com/songloft-org/songloft/commit/638936d0298fec06cdbda1df39352df181e22eb2) - 更新 songloft-player 子模块指针（修复歌单搜索框首次输入乱跳 [#361](https://github.com/songloft-org/songloft/pull/361)） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`eaca864`](https://github.com/songloft-org/songloft/commit/eaca8645047cdfa7a742e7e536cb761da3c577be) - 更新 songloft-player 子模块指针（播放速度按钮改回图标 + Flutter 界面取证 runner） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1f25011`](https://github.com/songloft-org/songloft/commit/1f250119e38e781d8dd6b706a7818bedd28a8c8f) - 去除品牌名称引用 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`8be28e9`](https://github.com/songloft-org/songloft/commit/8be28e9cba5f0033090ef8f5491b65f1612ba6fa) - 更新 songloft-player 子模块指针（首页底部改为曲库统计面板） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`8348d1f`](https://github.com/songloft-org/songloft/commit/8348d1f2f5876af5fc3c6a4e0ba79a4faa9782f2) - 更新子模块指针（歌单转标签迁移） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`8bc6240`](https://github.com/songloft-org/songloft/commit/8bc62408f08ba20bedc15c2885aaaace5c992cfa) - bump songloft-player (fix Korean tofu on web, [#425](https://github.com/songloft-org/songloft/pull/425)) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`95217c1`](https://github.com/songloft-org/songloft/commit/95217c1073782b5a5207270975f6057e7f753cc5) - release version 2.12.0 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.11.6] - 2026-08-21
 ### :sparkles: New Features
 - [`31a4d18`](https://github.com/songloft-org/songloft/commit/31a4d18e506bbae43c5eda27f3b8628700dc8623) - **jsplugin**: fetch 响应头支持多值无损与标准 Headers 读取方法 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -2184,3 +2227,4 @@
 [v2.11.4]: https://github.com/songloft-org/songloft/compare/v2.11.3...v2.11.4
 [v2.11.5]: https://github.com/songloft-org/songloft/compare/v2.11.4...v2.11.5
 [v2.11.6]: https://github.com/songloft-org/songloft/compare/v2.11.5...v2.11.6
+[v2.12.0]: https://github.com/songloft-org/songloft/compare/v2.11.6...v2.12.0
