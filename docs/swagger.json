@@ -12,7 +12,7 @@
             "name": "Apache 2.0",
             "url": "https://www.apache.org/licenses/LICENSE-2.0"
         },
-        "version": "2.11.6"
+        "version": "2.12.0"
     },
     "host": "localhost:58091",
     "basePath": "/api/v1",
@@ -851,6 +851,41 @@
                 "responses": {
                     "200": {
                         "description": "成功返回健康状态",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/jsplugin-assets/web-core/{path}": {
+            "get": {
+                "description": "服务 Lynx 渲染引擎的 Web 端运行时（CSS/JS/WASM），供声明 renderEngine=lynx 的插件在系统 WebView 中使用。",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "JS 插件"
+                ],
+                "summary": "Web-core 静态资源",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源路径（如 static/js/client.js）",
+                        "name": "*",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "资源文件"
+                    },
+                    "404": {
+                        "description": "资源不存在或 web-core 目录未配置",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

@@ -867,6 +867,41 @@ const docTemplate = `{
                 }
             }
         },
+        "/jsplugin-assets/web-core/{path}": {
+            "get": {
+                "description": "服务 Lynx 渲染引擎的 Web 端运行时（CSS/JS/WASM），供声明 renderEngine=lynx 的插件在系统 WebView 中使用。",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "JS 插件"
+                ],
+                "summary": "Web-core 静态资源",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "资源路径（如 static/js/client.js）",
+                        "name": "*",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "资源文件"
+                    },
+                    "404": {
+                        "description": "资源不存在或 web-core 目录未配置",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/jsplugin-assets/{path}": {
             "get": {
                 "description": "服务由主程序嵌入的插件公共资源（theme.css / components.css / common.js / webf-shims.css / webf-shims.js 及字体），自动注入到所有插件 HTML 页面。",
@@ -11667,7 +11702,7 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "2.11.6",
+	Version:          "2.12.0",
 	Host:             "localhost:58091",
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
