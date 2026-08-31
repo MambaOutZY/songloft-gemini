@@ -1075,7 +1075,7 @@ if (isClient()) {
 }
 ```
 
-免构建的 vanilla 静态页面无需安装，直接用注���的 `window.SongloftPlugin.player` 即可（仅少了类型提示）。
+免构建的 vanilla 静态页面无需安装，直接用注入的 `window.SongloftPlugin.player` 即可（仅少了类型提示）。
 
 ### 收藏状态同步 —— 改完收藏必须通知宿主
 
@@ -1105,7 +1105,7 @@ await SongloftPlugin.invokeHost('favorite', 'refresh', { songId: 42, isFavorited
 插件若需要第三方站点的会话 Cookie（如 FN Connect 网关的 `os-access-code`、自建 NAS 的登录态等），可使用 `getCookies` 桥接——由宿主原生层从 WebView Cookie Store 读取，不受浏览器同源策略和 HttpOnly 限制。
 
 ```javascript
-// 前提：用户已在���用内 WebView 中打开目标站点并完成登录
+// 前提：用户已在应用内 WebView 中打开目标站点并完成登录
 const cookies = await SongloftPlugin.getCookies('https://pcyear.5ddd.com');
 // cookies: { 'os-access-code': 'xxx', 'music-token': 'yyy', ... }
 ```
@@ -1692,7 +1692,7 @@ data URL **不需要**（也没有）`revokeObjectURL`：它不是句柄，就�
 
 **插件侧一行都不用改**，但要知道它现在的语义。
 
-WebF 的 `window.open` 曾经是**彻底静默**的：不抛错、也什么都不发生（归因是没装导航代理时，WebF 的默认��航策略把外链无条件 cancel 掉了）。所以「点『去网页登录』什么反应都没有」这种 bug 在 WebF 下既没有报错也没有日志。
+WebF 的 `window.open` 曾经是**彻底静默**的：不抛错、也什么都不发生（归因是没装导航代理时，WebF 的默认导航策略把外链无条件 cancel 掉了）。所以「点『去网页登录』什么反应都没有」这种 bug 在 WebF 下既没有报错也没有日志。
 
 新版客户端在 WebF 渲染面上装了导航代理，行为变成三档：
 
@@ -1714,7 +1714,7 @@ window.open('https://example.com/help', '_blank');
 - **同源整页跳转被刻意拦掉**：WebF 里那条路是「把整个插件页 `load()` 成新地址」，会把宿主注入的上下文、loading 状态、返回键行为全部弄错。**WebF 下不要做多页跳转**，单页 + 页内切换视图，返回键用 [`onHostBack`](#页面内导航与返回键) 对接（**别用 `history.pushState`**，理由见那一节）。
 - 其余 scheme（相对路径、`javascript:`、自定义 scheme）一律不放行。若插件依赖自定义 scheme 唤起第三方 App，请当它在 WebF 下不可用并另做降级。
 
-#### `<table>` 在 WebF 下**不��在**：改用 CSS Grid
+#### `<table>` 在 WebF 下**不存在**：改用 CSS Grid
 
 > **先读下一节。** 如果这张「表」本质上是**一个可滚动的列表**（每行结构相同、行数可能很多），
 > 优先用 [`<webf-list-view>` + flex 行](#webf-ui-原生组件flutter-cupertino--webf-list-view)，

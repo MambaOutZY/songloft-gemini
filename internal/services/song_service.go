@@ -1212,7 +1212,7 @@ type CleanResult struct {
 	Total         int `json:"total"`           // 总清理数
 }
 
-// CleanInvalidSongs 清理无效的��地歌曲
+// CleanInvalidSongs 清理无效的本地歌曲
 // 清理条件：文件不存在 或 文件路径在排除目录/路径中
 func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, error) {
 	filter := &database.SongFilter{

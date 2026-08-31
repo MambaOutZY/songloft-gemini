@@ -453,7 +453,7 @@ manager/scheduler 的内存 map 键，以及 `plugin_storage.plugin_entry_path` 
 
 ### tag 写入（pkg/tag）
 
-- `tag.WriteTag(filePath, opts)` 按扩展名 dispatch，所有格式均使用��时文件 + `os.Rename` 原子写入
+- `tag.WriteTag(filePath, opts)` 按扩展名 dispatch，所有格式均使用临时文件 + `os.Rename` 原子写入
 - 支持矩阵：
 
 | 格式 | 文本字段 | 歌词 | 封面 |

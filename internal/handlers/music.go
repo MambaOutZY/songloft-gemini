@@ -1035,7 +1035,7 @@ func (h *SongHandler) AddRemoteSongs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
-		respondError(w, http.StatusBadRequest, "无效的��求数据", err)
+		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
 		return
 	}
 
