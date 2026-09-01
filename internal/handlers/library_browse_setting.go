@@ -29,7 +29,7 @@ type libraryBrowseSetting struct {
 //
 // 前端渲染时按组固定顺序展示并在组间加分割线，组内顺序沿用用户配置。
 var libraryViewKeys = []string{
-	"all", "local", "remote", "radio",
+	"all", "local", "remote", "radio", "folder",
 	"artist", "album", "genre", "year", "decade", "language", "style",
 	"playlist", "playlist_normal", "playlist_radio",
 }

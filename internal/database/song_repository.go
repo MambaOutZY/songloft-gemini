@@ -1343,3 +1343,92 @@ func (r *SongRepository) GetLibraryStats(ctx context.Context) (*LibraryStats, er
 
 	return stats, nil
 }
+
+// FolderInfo 文件夹浏览条目。
+type FolderInfo struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	SongCount int    `json:"song_count"`
+}
+
+// ListFolders 按绝对路径前缀聚合下一级子文件夹，返回文件夹名与递归歌曲计数。
+// absPrefix 必须以 "/" 结尾（如 "/volume1/music/" 或 "/volume1/music/评书/"）。
+func (r *SongRepository) ListFolders(ctx context.Context, absPrefix, keyword string) ([]FolderInfo, error) {
+	escaped := escapeLikeLiteral(absPrefix)
+	query := `
+SELECT
+    SUBSTR(file_path, LENGTH(?) + 1,
+           INSTR(SUBSTR(file_path, LENGTH(?) + 1), '/') - 1) AS folder_name,
+    COUNT(*) AS song_count
+FROM songs
+WHERE type = 'local'
+  AND file_path LIKE ? ESCAPE '\'
+  AND INSTR(SUBSTR(file_path, LENGTH(?) + 1), '/') > 0
+GROUP BY folder_name
+HAVING folder_name != ''`
+
+	args := []any{absPrefix, absPrefix, escaped + "%", absPrefix}
+
+	if keyword != "" {
+		query += ` AND folder_name LIKE ?`
+		args = append(args, "%"+keyword+"%")
+	}
+
+	query += `
+ORDER BY folder_name`
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list folders: %w", err)
+	}
+	defer rows.Close()
+
+	var out []FolderInfo
+	for rows.Next() {
+		var name string
+		var count int
+		if err := rows.Scan(&name, &count); err != nil {
+			return nil, fmt.Errorf("scan folder: %w", err)
+		}
+		out = append(out, FolderInfo{Name: name, SongCount: count})
+	}
+	return out, rows.Err()
+}
+
+// ListDirectSongs 返回绝对路径前缀下直属的歌曲（不含子目录内的歌曲）。
+func (r *SongRepository) ListDirectSongs(ctx context.Context, absPrefix, keyword string) ([]*models.Song, error) {
+	escaped := escapeLikeLiteral(absPrefix)
+	sb := songSelectBuilder().
+		Where(sq.Eq{"type": "local"}).
+		Where(sq.Expr(`file_path LIKE ? ESCAPE '\'`, escaped+"%")).
+		Where(sq.Expr(`INSTR(SUBSTR(file_path, LENGTH(?) + 1), '/') = 0`, absPrefix)).
+		OrderBy("file_path")
+
+	if keyword != "" {
+		kw := "%" + keyword + "%"
+		sb = sb.Where(sq.Or{
+			sq.Like{"title": kw},
+			sq.Like{"artist": kw},
+		})
+	}
+
+	query, args, err := sb.ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build direct songs sql: %w", err)
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list direct songs: %w", err)
+	}
+	defer rows.Close()
+
+	var songs []*models.Song
+	for rows.Next() {
+		song, err := scanSongRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan direct song: %w", err)
+		}
+		songs = append(songs, song)
+	}
+	return songs, rows.Err()
+}

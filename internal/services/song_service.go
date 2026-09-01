@@ -61,6 +61,8 @@ type SongRepository interface {
 	CountFacet(ctx context.Context, field, keyword string) (int64, error)
 	ListDistinctNames(ctx context.Context, field string) ([]string, error)
 	GetLibraryStats(ctx context.Context) (*database.LibraryStats, error)
+	ListFolders(ctx context.Context, absPrefix, keyword string) ([]database.FolderInfo, error)
+	ListDirectSongs(ctx context.Context, absPrefix, keyword string) ([]*models.Song, error)
 }
 
 // Transactor 提供 UnitOfWork 事务执行入口，
@@ -1686,4 +1688,14 @@ func (s *SongService) RenameLocalSongFile(ctx context.Context, song *models.Song
 	}
 
 	return true, nil
+}
+
+// ListFolders 按路径前缀聚合子文件夹。
+func (s *SongService) ListFolders(ctx context.Context, absPrefix, keyword string) ([]database.FolderInfo, error) {
+	return s.songs.ListFolders(ctx, absPrefix, keyword)
+}
+
+// ListDirectSongs 返回路径前缀下直属歌曲。
+func (s *SongService) ListDirectSongs(ctx context.Context, absPrefix, keyword string) ([]*models.Song, error) {
+	return s.songs.ListDirectSongs(ctx, absPrefix, keyword)
 }

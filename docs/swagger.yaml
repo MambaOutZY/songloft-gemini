@@ -6909,6 +6909,44 @@ paths:
       summary: 曲库标签分类聚合
       tags:
       - 歌曲管理
+  /songs/folders:
+    get:
+      description: 按目录层级浏览本地歌曲。path 为相对于 music_path 的路径（空 = 根目录），返回下一级子文件夹及其递归歌曲数和当前目录的直属歌曲。
+      parameters:
+      - description: 相对路径，空 = 音乐根目录
+        in: query
+        name: path
+        type: string
+      - description: 搜索过滤（文件夹名 / 歌曲标题）
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功 {path, parent_path, music_path, folders:[{name,path,song_count}],
+            total_folders, songs:[...], total_songs}
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 未设置音乐目录 / 非法路径
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 文件夹浏览
+      tags:
+      - 歌曲管理
   /songs/ids:
     get:
       consumes:

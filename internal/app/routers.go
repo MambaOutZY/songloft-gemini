@@ -144,6 +144,7 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/songs/batch-delete", songHandler.BatchDeleteSongs)
 			r.Get("/songs/duplicates", songHandler.GetDuplicates)
 			r.Get("/songs/facets", songHandler.ListSongFacets)
+			r.Get("/songs/folders", songHandler.ListFolders)
 			r.Get("/songs/names", songHandler.ListSongNames)
 			r.Get("/songs/stats", songHandler.GetLibraryStats)
 			r.Get("/songs/{id}", songHandler.GetSong)

@@ -6890,6 +6890,64 @@
                 }
             }
         },
+        "/songs/folders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按目录层级浏览本地歌曲。path 为相对于 music_path 的路径（空 = 根目录），返回下一级子文件夹及其递归歌曲数和当前目录的直属歌曲。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "文件夹浏览",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "相对路径，空 = 音乐根目录",
+                        "name": "path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "搜索过滤（文件夹名 / 歌曲标题）",
+                        "name": "keyword",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功 {path, parent_path, music_path, folders:[{name,path,song_count}], total_folders, songs:[...], total_songs}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "未设置音乐目录 / 非法路径",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/songs/ids": {
             "get": {
                 "security": [
