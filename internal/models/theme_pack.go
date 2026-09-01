@@ -55,6 +55,13 @@ type ThemePackColors struct {
 	SeedColor       string `json:"seedColor"`
 	BackgroundColor string `json:"backgroundColor,omitempty"`
 	SurfaceColor    string `json:"surfaceColor,omitempty"`
+	// GlassColor independently drives the Liquid Glass decorative tint
+	// (--glass-glow / --glass-glow-faint / --glass-sheen in the Lynx client),
+	// separate from SeedColor which drives the button/accent channel. Optional:
+	// when absent the client falls back to its star-blue glass baseline, so
+	// glass stays a different colour from buttons (true dual-channel). Existing
+	// packs without this field still validate.
+	GlassColor string `json:"glassColor,omitempty"`
 }
 
 var colorRegex = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
@@ -125,6 +132,9 @@ func (c *ThemePackColors) validate() error {
 	}
 	if c.SurfaceColor != "" && !colorRegex.MatchString(c.SurfaceColor) {
 		return fmt.Errorf("%w: %s", ErrThemePackInvalidColor, c.SurfaceColor)
+	}
+	if c.GlassColor != "" && !colorRegex.MatchString(c.GlassColor) {
+		return fmt.Errorf("%w: %s", ErrThemePackInvalidColor, c.GlassColor)
 	}
 	return nil
 }

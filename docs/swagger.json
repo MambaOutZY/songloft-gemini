@@ -11107,6 +11107,10 @@
                 "backgroundColor": {
                     "type": "string"
                 },
+                "glassColor": {
+                    "description": "GlassColor independently drives the Liquid Glass decorative tint\n(--glass-glow / --glass-glow-faint / --glass-sheen in the Lynx client),\nseparate from SeedColor which drives the button/accent channel. Optional:\nwhen absent the client falls back to its star-blue glass baseline, so\nglass stays a different colour from buttons (true dual-channel). Existing\npacks without this field still validate.",
+                    "type": "string"
+                },
                 "seedColor": {
                     "type": "string"
                 },

@@ -999,6 +999,15 @@ definitions:
     properties:
       backgroundColor:
         type: string
+      glassColor:
+        description: |-
+          GlassColor independently drives the Liquid Glass decorative tint
+          (--glass-glow / --glass-glow-faint / --glass-sheen in the Lynx client),
+          separate from SeedColor which drives the button/accent channel. Optional:
+          when absent the client falls back to its star-blue glass baseline, so
+          glass stays a different colour from buttons (true dual-channel). Existing
+          packs without this field still validate.
+        type: string
       seedColor:
         type: string
       surfaceColor:
