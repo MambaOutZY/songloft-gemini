@@ -92,7 +92,7 @@ var (
 	songOrderWhitelist = map[string]struct{}{
 		"id": {}, "title": {}, "artist": {}, "album": {},
 		"duration": {}, "added_at": {}, "updated_at": {},
-		"file_modified_at": {}, "year": {}, "genre": {},
+		"file_modified_at": {}, "year": {}, "genre": {}, "file_size": {},
 	}
 	playlistOrderWhitelist = map[string]struct{}{
 		"id": {}, "name": {}, "position": {},
@@ -107,7 +107,7 @@ var (
 	playlistSongOrderWhitelist = map[string]struct{}{
 		"position": {}, "added_at": {}, "title": {},
 		"artist": {}, "album": {}, "duration": {}, "updated_at": {},
-		"file_modified_at": {},
+		"file_modified_at": {}, "file_size": {},
 	}
 	playlistSongOrderColumn = map[string]string{
 		"position":         "ps.position",
@@ -118,6 +118,7 @@ var (
 		"duration":         "s.duration",
 		"updated_at":       "s.updated_at",
 		"file_modified_at": "s.file_modified_at",
+		"file_size":        "s.file_size",
 	}
 	// songFacetColumn 把 facet 维度映射到固定的 SQL 列名/表达式。
 	// 仅使用映射值拼接列名（绝不拼用户输入），防 SQL 注入 —— 同 playlistSongOrderColumn 范式。

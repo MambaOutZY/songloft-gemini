@@ -370,8 +370,8 @@ func (s *FingerprintService) doCompute(ctx context.Context, items []database.Son
 						return
 					}
 					slog.Info("fingerprint failed", "id", item.ID, "path", item.FilePath, "err", err)
-					if err := s.songs.MarkFingerprintAttempted(ctx, item.ID, attemptedAt); err != nil {
-						slog.Warn("mark fingerprint attempted failed", "id", item.ID, "err", err)
+					if markErr := s.songs.MarkFingerprintAttempted(ctx, item.ID, attemptedAt, err.Error()); markErr != nil {
+						slog.Warn("mark fingerprint attempted failed", "id", item.ID, "err", markErr)
 					}
 					failed.Add(1)
 				} else {

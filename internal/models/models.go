@@ -344,7 +344,7 @@ type Playlist struct {
 // database.IsSongFacetField 判定 —— 校验入口见 services.IsValidPlayContextType。
 const (
 	PlayContextPlaylist = "playlist" // 歌单（key 为歌单 ID）
-	PlayContextTag       = "tag"     // 自定义标签分类（key 为 song-tag ID）
+	PlayContextTag      = "tag"      // 自定义标签分类（key 为 song-tag ID）
 )
 
 // PlayHistoryEntry 某播放上下文内的一条单曲播放历史。

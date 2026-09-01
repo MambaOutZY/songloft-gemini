@@ -256,7 +256,7 @@ func (h *PlaylistHandler) UpdatePlaylist(w http.ResponseWriter, r *http.Request)
 // @Tags 歌单管理
 // @Produce json
 // @Param id path int true "歌单 ID"
-// @Param sort query string false "排序字段: position(默认)/added_at/title/artist/album/duration/updated_at/file_modified_at"
+// @Param sort query string false "排序字段: position(默认)/added_at/title/artist/album/duration/updated_at/file_modified_at/file_size"
 // @Param order query string false "排序方向: asc(默认)/desc"
 // @Success 200 {object} map[string]any "成功返回 {ids:[1,2,3], total:3}"
 // @Failure 400 {object} map[string]string "无效的歌单 ID"
@@ -488,7 +488,7 @@ func (h *PlaylistHandler) BatchDeletePlaylists(w http.ResponseWriter, r *http.Re
 // @Param id path int true "歌单 ID"
 // @Param limit query int false "每页数量" default(20)
 // @Param offset query int false "偏移量" default(0)
-// @Param sort query string false "排序字段: position(默认)/added_at/title/artist/album/duration/updated_at/file_modified_at"
+// @Param sort query string false "排序字段: position(默认)/added_at/title/artist/album/duration/updated_at/file_modified_at/file_size"
 // @Param order query string false "排序方向: asc(默认)/desc"
 // @Param keyword query string false "搜索关键词（匹配标题/艺术家/专辑）"
 // @Success 200 {object} map[string]interface{} "成功返回歌曲列表"

@@ -9,7 +9,8 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
     file_modified_at, track, language, style, is_video,
-    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at
+    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at,
+    fingerprint_error
 FROM songs WHERE id = ?;
 
 -- name: CreateSong :execlastid
@@ -98,13 +99,19 @@ SELECT added_at, updated_at FROM songs WHERE id = ?;
 UPDATE songs SET fingerprint = ?, fingerprint_duration = ?, fingerprint_attempted_at = ? WHERE id = ?;
 
 -- name: MarkFingerprintAttempted :exec
-UPDATE songs SET fingerprint_attempted_at = ? WHERE id = ?;
+UPDATE songs SET fingerprint_attempted_at = ?, fingerprint_error = ? WHERE id = ?;
 
 -- name: ClearAllFingerprints :exec
-UPDATE songs SET fingerprint = '', fingerprint_duration = 0, fingerprint_attempted_at = 0 WHERE type = 'local';
+UPDATE songs SET fingerprint = '', fingerprint_duration = 0, fingerprint_attempted_at = 0, fingerprint_error = '' WHERE type = 'local';
 
 -- name: ResetFailedFingerprintAttempts :exec
-UPDATE songs SET fingerprint_attempted_at = 0 WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at != 0;
+UPDATE songs SET fingerprint_attempted_at = 0, fingerprint_error = '' WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at != 0;
+
+-- name: ListFailedFingerprints :many
+SELECT id, title, artist, file_path, fingerprint_error, fingerprint_attempted_at
+FROM songs
+WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at != 0
+ORDER BY fingerprint_attempted_at DESC;
 
 -- name: ListLocalWithoutFingerprint :many
 SELECT id, file_path, cue_start_seconds, cue_end_seconds FROM songs
@@ -164,7 +171,8 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
     file_modified_at, track, language, style, is_video,
-    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at
+    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at,
+    fingerprint_error
 FROM songs WHERE cache_path != '';
 
 -- name: ListSongsNeedingMetadata :many

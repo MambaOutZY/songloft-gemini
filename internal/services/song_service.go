@@ -50,12 +50,13 @@ type SongRepository interface {
 	ListCueAudioPaths(ctx context.Context, cueSourcePath string) ([]string, error)
 	DeleteByCueSource(ctx context.Context, cueSourcePath string) (int, error)
 	UpdateFingerprint(ctx context.Context, id int64, fingerprint string, duration float64, attemptedAt int64) error
-	MarkFingerprintAttempted(ctx context.Context, id int64, attemptedAt int64) error
+	MarkFingerprintAttempted(ctx context.Context, id int64, attemptedAt int64, errMsg string) error
 	ClearAllFingerprints(ctx context.Context) error
 	ResetFailedFingerprintAttempts(ctx context.Context) error
 	ListLocalWithoutFingerprint(ctx context.Context) ([]database.SongIDPath, error)
 	CountLocalFingerprints(ctx context.Context) (total, computed, failed int64, err error)
 	ListDuplicateGroups(ctx context.Context) ([]database.DuplicateGroup, error)
+	ListFailedFingerprints(ctx context.Context) ([]database.FailedFingerprintRow, error)
 	ListFacet(ctx context.Context, field string, f *database.FacetFilter) ([]database.Facet, error)
 	CountFacet(ctx context.Context, field, keyword string) (int64, error)
 	ListDistinctNames(ctx context.Context, field string) ([]string, error)
@@ -178,6 +179,11 @@ func (s *SongService) CountLocalFingerprints(ctx context.Context) (total, comput
 // GetDuplicateGroups 查询所有指纹重复的本地歌曲组。
 func (s *SongService) GetDuplicateGroups(ctx context.Context) ([]database.DuplicateGroup, error) {
 	return s.songs.ListDuplicateGroups(ctx)
+}
+
+// ListFailedFingerprints 返回所有指纹计算失败的本地歌曲及其失败原因。
+func (s *SongService) ListFailedFingerprints(ctx context.Context) ([]database.FailedFingerprintRow, error) {
+	return s.songs.ListFailedFingerprints(ctx)
 }
 
 // GetByID 根据 ID 获取歌曲

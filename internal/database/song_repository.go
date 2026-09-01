@@ -914,14 +914,45 @@ func (r *SongRepository) UpdateFingerprint(ctx context.Context, id int64, finger
 	})
 }
 
-// MarkFingerprintAttempted 只记录「已尝试计算指纹」的时间戳（unix 秒），不写指纹本身。
+// MarkFingerprintAttempted 记录「已尝试计算指纹」的时间戳和失败原因。
 // 用于计算失败（超时 / 无音轨 / 文件损坏）的场景：没有这个标记，
 // 每轮扫描都会把同一批注定失败的文件重新捞出来跑 ffmpeg 全解码（songloft-org/songloft#323）。
-func (r *SongRepository) MarkFingerprintAttempted(ctx context.Context, id int64, attemptedAt int64) error {
+func (r *SongRepository) MarkFingerprintAttempted(ctx context.Context, id int64, attemptedAt int64, errMsg string) error {
 	return r.queries.MarkFingerprintAttempted(ctx, sqlc.MarkFingerprintAttemptedParams{
 		FingerprintAttemptedAt: attemptedAt,
+		FingerprintError:       errMsg,
 		ID:                     id,
 	})
+}
+
+// FailedFingerprintRow 指纹计算失败的歌曲信息。
+type FailedFingerprintRow struct {
+	ID                     int64
+	Title                  string
+	Artist                 string
+	FilePath               string
+	FingerprintError       string
+	FingerprintAttemptedAt int64
+}
+
+// ListFailedFingerprints 返回所有指纹计算失败的本地歌曲。
+func (r *SongRepository) ListFailedFingerprints(ctx context.Context) ([]FailedFingerprintRow, error) {
+	rows, err := r.queries.ListFailedFingerprints(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list failed fingerprints: %w", err)
+	}
+	result := make([]FailedFingerprintRow, len(rows))
+	for i, row := range rows {
+		result[i] = FailedFingerprintRow{
+			ID:                     row.ID,
+			Title:                  row.Title,
+			Artist:                 row.Artist,
+			FilePath:               row.FilePath,
+			FingerprintError:       row.FingerprintError,
+			FingerprintAttemptedAt: row.FingerprintAttemptedAt,
+		}
+	}
+	return result, nil
 }
 
 // ClearAllFingerprints 清空所有本地歌曲的指纹数据，并重置「已尝试」标记，

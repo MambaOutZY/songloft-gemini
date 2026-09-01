@@ -282,6 +282,7 @@ func (a *App) setupAPIV1Router() {
 			r.Post("/scan/fingerprints", scanHandler.StartFingerprintCompute)
 			r.Get("/scan/fingerprints/progress", scanHandler.GetFingerprintProgress)
 			r.Post("/scan/fingerprints/cancel", scanHandler.CancelFingerprintCompute)
+			r.Get("/scan/fingerprints/failed", scanHandler.GetFailedFingerprints)
 
 			// 资源代理模块（解决外部 CDN 的 CORS 问题）
 			r.Get("/proxy", proxyHandler.Proxy)

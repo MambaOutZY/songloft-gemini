@@ -721,6 +721,48 @@ func (h *ScanHandler) GetFingerprintProgress(w http.ResponseWriter, r *http.Requ
 	respondJSON(w, http.StatusOK, h.fingerprintService.GetProgress())
 }
 
+// FailedFingerprintItem 指纹计算失败的歌曲信息（API 响应用）。
+type FailedFingerprintItem struct {
+	ID          int64  `json:"id"`
+	Title       string `json:"title"`
+	Artist      string `json:"artist"`
+	FilePath    string `json:"file_path"`
+	Error       string `json:"error"`
+	AttemptedAt int64  `json:"attempted_at"`
+}
+
+// GetFailedFingerprints 获取指纹计算失败的歌曲列表
+// @Summary 获取指纹计算失败的歌曲列表
+// @Description 返回所有指纹计算失败的本地歌曲，包含失败原因。用于在重复检测页面展示失败详情。
+// @Tags 扫描管理
+// @Produce json
+// @Success 200 {object} map[string]any "成功返回 {items: [...], total: N}"
+// @Failure 500 {object} map[string]string "服务器错误"
+// @Security BearerAuth
+// @Router /scan/fingerprints/failed [get]
+func (h *ScanHandler) GetFailedFingerprints(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.songService.ListFailedFingerprints(r.Context())
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "获取失败列表失败", err)
+		return
+	}
+	items := make([]FailedFingerprintItem, len(rows))
+	for i, row := range rows {
+		items[i] = FailedFingerprintItem{
+			ID:          row.ID,
+			Title:       row.Title,
+			Artist:      row.Artist,
+			FilePath:    row.FilePath,
+			Error:       row.FingerprintError,
+			AttemptedAt: row.FingerprintAttemptedAt,
+		}
+	}
+	respondJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"total": len(items),
+	})
+}
+
 // AutoScanSetting /settings/auto-scan 的请求与响应体。
 type AutoScanSetting struct {
 	Enabled         bool `json:"enabled"`

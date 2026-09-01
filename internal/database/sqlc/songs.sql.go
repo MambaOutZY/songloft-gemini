@@ -21,7 +21,7 @@ func (q *Queries) ClearAllCachePaths(ctx context.Context) error {
 }
 
 const clearAllFingerprints = `-- name: ClearAllFingerprints :exec
-UPDATE songs SET fingerprint = '', fingerprint_duration = 0, fingerprint_attempted_at = 0 WHERE type = 'local'
+UPDATE songs SET fingerprint = '', fingerprint_duration = 0, fingerprint_attempted_at = 0, fingerprint_error = '' WHERE type = 'local'
 `
 
 func (q *Queries) ClearAllFingerprints(ctx context.Context) error {
@@ -251,7 +251,8 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
     file_modified_at, track, language, style, is_video,
-    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at
+    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at,
+    fingerprint_error
 FROM songs WHERE id = ?
 `
 
@@ -299,6 +300,7 @@ func (q *Queries) GetSongByID(ctx context.Context, id int64) (Song, error) {
 		&i.CueStartSeconds,
 		&i.CueEndSeconds,
 		&i.FingerprintAttemptedAt,
+		&i.FingerprintError,
 	)
 	return i, err
 }
@@ -471,6 +473,52 @@ func (q *Queries) ListDuplicateFingerprints(ctx context.Context) ([]ListDuplicat
 	for rows.Next() {
 		var i ListDuplicateFingerprintsRow
 		if err := rows.Scan(&i.Fingerprint, &i.Cnt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFailedFingerprints = `-- name: ListFailedFingerprints :many
+SELECT id, title, artist, file_path, fingerprint_error, fingerprint_attempted_at
+FROM songs
+WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at != 0
+ORDER BY fingerprint_attempted_at DESC
+`
+
+type ListFailedFingerprintsRow struct {
+	ID                     int64
+	Title                  string
+	Artist                 string
+	FilePath               string
+	FingerprintError       string
+	FingerprintAttemptedAt int64
+}
+
+func (q *Queries) ListFailedFingerprints(ctx context.Context) ([]ListFailedFingerprintsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listFailedFingerprints)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListFailedFingerprintsRow{}
+	for rows.Next() {
+		var i ListFailedFingerprintsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Artist,
+			&i.FilePath,
+			&i.FingerprintError,
+			&i.FingerprintAttemptedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -743,7 +791,8 @@ SELECT id, type, title, artist, album, duration, file_path, url,
     isrc, cache_path,
     cue_source_path, cue_track_index, cue_audio_path,
     file_modified_at, track, language, style, is_video,
-    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at
+    cue_start_seconds, cue_end_seconds, fingerprint_attempted_at,
+    fingerprint_error
 FROM songs WHERE cache_path != ''
 `
 
@@ -797,6 +846,7 @@ func (q *Queries) ListSongsWithCache(ctx context.Context) ([]Song, error) {
 			&i.CueStartSeconds,
 			&i.CueEndSeconds,
 			&i.FingerprintAttemptedAt,
+			&i.FingerprintError,
 		); err != nil {
 			return nil, err
 		}
@@ -812,21 +862,22 @@ func (q *Queries) ListSongsWithCache(ctx context.Context) ([]Song, error) {
 }
 
 const markFingerprintAttempted = `-- name: MarkFingerprintAttempted :exec
-UPDATE songs SET fingerprint_attempted_at = ? WHERE id = ?
+UPDATE songs SET fingerprint_attempted_at = ?, fingerprint_error = ? WHERE id = ?
 `
 
 type MarkFingerprintAttemptedParams struct {
 	FingerprintAttemptedAt int64
+	FingerprintError       string
 	ID                     int64
 }
 
 func (q *Queries) MarkFingerprintAttempted(ctx context.Context, arg MarkFingerprintAttemptedParams) error {
-	_, err := q.db.ExecContext(ctx, markFingerprintAttempted, arg.FingerprintAttemptedAt, arg.ID)
+	_, err := q.db.ExecContext(ctx, markFingerprintAttempted, arg.FingerprintAttemptedAt, arg.FingerprintError, arg.ID)
 	return err
 }
 
 const resetFailedFingerprintAttempts = `-- name: ResetFailedFingerprintAttempts :exec
-UPDATE songs SET fingerprint_attempted_at = 0 WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at != 0
+UPDATE songs SET fingerprint_attempted_at = 0, fingerprint_error = '' WHERE type = 'local' AND fingerprint = '' AND fingerprint_attempted_at != 0
 `
 
 func (q *Queries) ResetFailedFingerprintAttempts(ctx context.Context) error {

@@ -92,7 +92,8 @@ SELECT s.id, s.type, s.title, s.artist, s.album, s.duration,
     s.isrc, s.cache_path,
     s.cue_source_path, s.cue_track_index, s.cue_audio_path,
     s.file_modified_at, s.track, s.language, s.style, s.is_video,
-    s.cue_start_seconds, s.cue_end_seconds, s.fingerprint_attempted_at
+    s.cue_start_seconds, s.cue_end_seconds, s.fingerprint_attempted_at,
+    s.fingerprint_error
 FROM songs s
 INNER JOIN playlist_songs ps ON s.id = ps.song_id
 WHERE ps.playlist_id = ?
@@ -149,6 +150,7 @@ func (q *Queries) GetPlaylistSongs(ctx context.Context, playlistID int64) ([]Son
 			&i.CueStartSeconds,
 			&i.CueEndSeconds,
 			&i.FingerprintAttemptedAt,
+			&i.FingerprintError,
 		); err != nil {
 			return nil, err
 		}
@@ -175,7 +177,8 @@ SELECT s.id, s.type, s.title, s.artist, s.album, s.duration,
     s.isrc, s.cache_path,
     s.cue_source_path, s.cue_track_index, s.cue_audio_path,
     s.file_modified_at, s.track, s.language, s.style, s.is_video,
-    s.cue_start_seconds, s.cue_end_seconds, s.fingerprint_attempted_at
+    s.cue_start_seconds, s.cue_end_seconds, s.fingerprint_attempted_at,
+    s.fingerprint_error
 FROM songs s
 INNER JOIN playlist_songs ps ON s.id = ps.song_id
 WHERE ps.playlist_id = ?
@@ -239,6 +242,7 @@ func (q *Queries) GetPlaylistSongsPaginated(ctx context.Context, arg GetPlaylist
 			&i.CueStartSeconds,
 			&i.CueEndSeconds,
 			&i.FingerprintAttemptedAt,
+			&i.FingerprintError,
 		); err != nil {
 			return nil, err
 		}

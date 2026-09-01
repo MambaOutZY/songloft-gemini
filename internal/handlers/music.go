@@ -372,7 +372,7 @@ func parseExcludePlaylistLabels(raw string) []string {
 // @Param exclude_playlist_labels query string false "排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部" default(hidden)
 // @Param limit query int false "每页数量" default(20)
 // @Param offset query int false "偏移量" default(0)
-// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at, year, genre)
+// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at, year, genre, file_size)
 // @Param order query string false "排序方向，缺省 desc" Enums(asc, desc)
 // @Success 200 {object} map[string]any "成功返回歌曲列表"
 // @Failure 500 {object} map[string]string "服务器错误"
@@ -516,7 +516,7 @@ func (h *SongHandler) ListRandomSongs(w http.ResponseWriter, r *http.Request) {
 // @Param year query int false "按发行年份精确过滤"
 // @Param decade query int false "按年代过滤（起始年，如 1990 匹配 1990-1999）"
 // @Param exclude_playlist_labels query string false "排除属于这些 label 歌单的歌曲(逗号分隔), 默认 hidden; 传 none 显示全部" default(hidden)
-// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at, year, genre)
+// @Param sort query string false "排序字段，缺省 added_at" Enums(id, title, artist, album, duration, added_at, updated_at, file_modified_at, year, genre, file_size)
 // @Param order query string false "排序方向，缺省 desc" Enums(asc, desc)
 // @Success 200 {object} map[string]any "成功返回 ID 列表"
 // @Failure 500 {object} map[string]string "服务器错误"

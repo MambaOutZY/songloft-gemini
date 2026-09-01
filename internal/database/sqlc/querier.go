@@ -73,6 +73,7 @@ type Querier interface {
 	ListCueAudioPaths(ctx context.Context, cueSourcePath string) ([]string, error)
 	ListCueSources(ctx context.Context) ([]string, error)
 	ListDuplicateFingerprints(ctx context.Context) ([]ListDuplicateFingerprintsRow, error)
+	ListFailedFingerprints(ctx context.Context) ([]ListFailedFingerprintsRow, error)
 	ListJSPlugins(ctx context.Context) ([]JsPlugin, error)
 	ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsRow, error)
 	ListLocalSongsWithRelativePaths(ctx context.Context) ([]ListLocalSongsWithRelativePathsRow, error)

@@ -178,6 +178,7 @@ func (s *PlaylistService) UpdateSort(ctx context.Context, id int64, sortBy, sort
 	validSortFields := map[string]bool{
 		"position": true, "added_at": true, "file_modified_at": true,
 		"title": true, "artist": true, "album": true, "duration": true, "updated_at": true,
+		"file_size": true,
 	}
 	if !validSortFields[sortBy] {
 		sortBy = "position"

@@ -138,6 +138,7 @@ type Song struct {
 	CueStartSeconds        float64
 	CueEndSeconds          float64
 	FingerprintAttemptedAt int64
+	FingerprintError       string
 }
 
 type SongTag struct {

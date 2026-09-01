@@ -46,7 +46,7 @@ func TestMarkFingerprintAttempted_NotRetried(t *testing.T) {
 	}
 
 	// 模拟计算失败：只标记已尝试，不写指纹
-	if err := repo.MarkFingerprintAttempted(ctx, id, time.Now().Unix()); err != nil {
+	if err := repo.MarkFingerprintAttempted(ctx, id, time.Now().Unix(), "test error"); err != nil {
 		t.Fatalf("mark attempted: %v", err)
 	}
 
@@ -79,7 +79,7 @@ func TestClearAllFingerprints_ResetsAttempted(t *testing.T) {
 	failedID := seedFingerprintSong(t, repo, "/music/broken.mp3")
 	okID := seedFingerprintSong(t, repo, "/music/good.mp3")
 
-	if err := repo.MarkFingerprintAttempted(ctx, failedID, time.Now().Unix()); err != nil {
+	if err := repo.MarkFingerprintAttempted(ctx, failedID, time.Now().Unix(), "no audio track"); err != nil {
 		t.Fatalf("mark attempted: %v", err)
 	}
 	if err := repo.UpdateFingerprint(ctx, okID, "AQABc...", 210.5, time.Now().Unix()); err != nil {
@@ -114,7 +114,7 @@ func TestResetFailedFingerprintAttempts_KeepsComputed(t *testing.T) {
 	failedID := seedFingerprintSong(t, repo, "/music/ktv/song.mpg")
 	okID := seedFingerprintSong(t, repo, "/music/good.mp3")
 
-	if err := repo.MarkFingerprintAttempted(ctx, failedID, time.Now().Unix()); err != nil {
+	if err := repo.MarkFingerprintAttempted(ctx, failedID, time.Now().Unix(), "no audio track"); err != nil {
 		t.Fatalf("mark attempted: %v", err)
 	}
 	if err := repo.UpdateFingerprint(ctx, okID, "AQABc...", 210.5, time.Now().Unix()); err != nil {

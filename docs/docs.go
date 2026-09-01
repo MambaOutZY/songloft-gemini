@@ -2191,7 +2191,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回指定播放上下文内最近播放过的歌曲，按最后播放时间倒序，含完整歌曲详情。\n「播放上下文」由 context_type + context_key 二元组标识：歌单为 (playlist, 歌单 ID)，分面维度为 (artist, 歌手名) / (album, 专辑名) 等。\n同一上下文内按歌曲去重（重复播放只刷新时间并累加 play_count），最多保留最近 50 条，因此本端点不分页。\n记录由 POST /songs/{id}/played 在 type=play 时写入。歌曲从库中删除时其历史自动级联清理；歌曲仅被移出歌单时历史仍保留，客户端起播时自行判定失效。",
+                "description": "返回指定播放上下文内最近播放过的歌曲，按最后播放时间倒序，含完整歌曲详情。\n「播放上下文」由 context_type + context_key 二元组标识：歌单为 (playlist, 歌单 ID)，自定义标签为 (tag, 标签 ID)，分面维度为 (artist, 歌手名) / (album, 专辑名) 等。\n同一上下文内按歌曲去重（重复播放只刷新时间并累加 play_count），最多保留最近 50 条，因此本端点不分页。\n记录由 POST /songs/{id}/played 在 type=play 时写入。歌曲从库中删除时其历史自动级联清理；歌曲仅被移出歌单时历史仍保留，客户端起播时自行判定失效。",
                 "produces": [
                     "application/json"
                 ],
@@ -2203,6 +2203,7 @@ const docTemplate = `{
                     {
                         "enum": [
                             "playlist",
+                            "tag",
                             "artist",
                             "album",
                             "genre",
@@ -2270,6 +2271,7 @@ const docTemplate = `{
                     {
                         "enum": [
                             "playlist",
+                            "tag",
                             "artist",
                             "album",
                             "genre",
@@ -2336,6 +2338,7 @@ const docTemplate = `{
                     {
                         "enum": [
                             "playlist",
+                            "tag",
                             "artist",
                             "album",
                             "genre",
@@ -3130,7 +3133,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "排序字段: position(默认)/added_at/title/artist/album/duration/updated_at/file_modified_at",
+                        "description": "排序字段: position(默认)/added_at/title/artist/album/duration/updated_at/file_modified_at/file_size",
                         "name": "sort",
                         "in": "query"
                     },
@@ -3212,7 +3215,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "排序字段: position(默认)/added_at/title/artist/album/duration/updated_at/file_modified_at",
+                        "description": "排序字段: position(默认)/added_at/title/artist/album/duration/updated_at/file_modified_at/file_size",
                         "name": "sort",
                         "in": "query"
                     },
@@ -4289,6 +4292,41 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": {
                                 "type": "boolean"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/scan/fingerprints/failed": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回所有指纹计算失败的本地歌曲，包含失败原因。用于在重复检测页面展示失败详情。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "扫描管理"
+                ],
+                "summary": "获取指纹计算失败的歌曲列表",
+                "responses": {
+                    "200": {
+                        "description": "成功返回 {items: [...], total: N}",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     }
@@ -6598,7 +6636,8 @@ const docTemplate = `{
                             "updated_at",
                             "file_modified_at",
                             "year",
-                            "genre"
+                            "genre",
+                            "file_size"
                         ],
                         "type": "string",
                         "description": "排序字段，缺省 added_at",
@@ -6954,7 +6993,8 @@ const docTemplate = `{
                             "updated_at",
                             "file_modified_at",
                             "year",
-                            "genre"
+                            "genre",
+                            "file_size"
                         ],
                         "type": "string",
                         "description": "排序字段，缺省 added_at",
@@ -8552,6 +8592,7 @@ const docTemplate = `{
                     {
                         "enum": [
                             "playlist",
+                            "tag",
                             "artist",
                             "album",
                             "genre",
@@ -8561,13 +8602,13 @@ const docTemplate = `{
                             "style"
                         ],
                         "type": "string",
-                        "description": "播放上下文类型，仅 type=play 时生效：playlist 或分面维度（artist/album/genre/year/decade/language/style）",
+                        "description": "播放上下文类型，仅 type=play 时生效：playlist、tag 或分面维度（artist/album/genre/year/decade/language/style）",
                         "name": "context_type",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "播放上下文标识，仅 type=play 时生效：playlist 传歌单 ID，分面维度传该维度取值（如歌手名）",
+                        "description": "播放上下文标识，仅 type=play 时生效：playlist 传歌单 ID，tag 传标签 ID，分面维度传该维度取值（如歌手名）",
                         "name": "context_key",
                         "in": "query"
                     }
