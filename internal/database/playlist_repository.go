@@ -316,7 +316,7 @@ func (r *PlaylistRepository) BatchUpdatePositions(ctx context.Context, playlistI
 // 写操作集中在单一事务里：清理旧的 auto_created 歌单 → 插入新歌单 → 批量插入 playlist_songs。
 // playlistMode: "directory"（按文件夹）、"top_level"（按顶层文件夹合并）、"bubble_up"（向上冒泡）。
 // excludeDirs 指定在自动创建歌单时要排除的目录名称（按名称匹配，路径中任何层级包含该名称都会被排除）。
-func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string, excludeDirs []string, coverStoragePath string) (*models.AutoCreatePlaylistsResponse, error) {
+func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string, excludeDirs []string, coverStoragePath string, musicPath string) (*models.AutoCreatePlaylistsResponse, error) {
 	songRepo := NewSongRepository(r.db)
 	songs, err := songRepo.List(ctx, &SongFilter{
 		Type:  models.TypeLocal,
@@ -407,6 +407,12 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 		musicRoot = findCommonPathPrefix(songDirs)
 	}
 
+	// BubbleUp 模式需要 music_path 作为向上冒泡的停止边界（#428）。
+	var bubbleRoot string
+	if musicPath != "" {
+		bubbleRoot = filepath.ToSlash(filepath.Clean(musicPath))
+	}
+
 	dirToSongs := make(map[string][]int64)
 	for _, song := range songs {
 		if song.FilePath == "" {
@@ -455,8 +461,14 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 			dirToSongs[dir] = append(dirToSongs[dir], song.ID)
 			parent := filepath.ToSlash(filepath.Dir(dir))
 			for parent != "." && parent != "/" && parent != dir {
+				if bubbleRoot != "" && len(parent) < len(bubbleRoot) {
+					break
+				}
 				if !shouldExcludeDir(parent) {
 					dirToSongs[parent] = append(dirToSongs[parent], song.ID)
+				}
+				if parent == bubbleRoot {
+					break
 				}
 				next := filepath.ToSlash(filepath.Dir(parent))
 				if next == parent {
