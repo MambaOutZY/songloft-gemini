@@ -1114,16 +1114,19 @@ type Facet struct {
 	CoverURL string `json:"cover_url"`
 }
 
-// ListFacet 按维度聚合曲库标签，返回该维度下的取值 + 计数 + 代表封面（支持搜索/排序/分页）。
-// field 支持：genre / artist / album / language / style / year / decade。
-// 未知 field 返回 ErrNotFound，交由 handler 转 400。
+// buildFacetSelect 构造某维度的 facet 聚合 SelectBuilder（已含过滤/排序/分页）。
+// 列维度走 songs 单列 GROUP BY；tag 维度走 song_tags join（见 buildTagFacetSelect）。
+// 未知维度返回 ErrNotFound，交由调用方（ListFacet/CountFacet）透传。
 //
 // 说明：这是本项目首个用 squirrel 编写的聚合（GROUP BY）查询——因为 facet 需要
 // 可选 keyword（变长 WHERE）+ 动态排序 + 分页，sqlc 固定查询无法表达，按铁律「动态 SQL→squirrel」实现。
-func (r *SongRepository) ListFacet(ctx context.Context, field string, f *FacetFilter) ([]Facet, error) {
+func buildFacetSelect(field string, f *FacetFilter) (sq.SelectBuilder, error) {
+	if field == songFacetTagField {
+		return buildTagFacetSelect(f), nil
+	}
 	col, ok := songFacetColumn[field]
 	if !ok {
-		return nil, ErrNotFound
+		return sq.SelectBuilder{}, ErrNotFound
 	}
 
 	// CAST(... AS TEXT) 让文本/数字维度都统一以字符串取回，year/decade 得到如 "1990"。
@@ -1141,6 +1144,44 @@ func (r *SongRepository) ListFacet(ctx context.Context, field string, f *FacetFi
 	sb = applyFacetOrder(sb, f)
 	if f != nil {
 		sb = applyPagination(sb, f.Limit, f.Offset)
+	}
+	return sb, nil
+}
+
+// buildTagFacetSelect 构造 tag 维度的 facet 聚合：按用户自定义标签聚合歌曲数 + 代表封面。
+// tag 不在 songs 表，需 join song_tags ↔ song_tag_links ↔ songs。
+// value=标签名，count=挂在该标签下的不同歌曲数（COUNT DISTINCT——一首歌挂多标签不会重复计）；
+// 内连接天然排除无关联歌曲的标签，故无需额外「取值非空」过滤（区别于列维度的 facetBaseCond）。
+// 复用 applyFacetOrder（value/count 别名一致）与 cover_url 构造（见 ListFacet 的 scan）。
+func buildTagFacetSelect(f *FacetFilter) sq.SelectBuilder {
+	sb := sq.Select(
+		"t.name AS value",
+		"COUNT(DISTINCT l.song_id) AS count",
+		"MAX(CASE WHEN s.cover_path != '' OR s.cover_url != '' THEN s.id END) AS cover_song_id",
+	).
+		From("song_tags t").
+		Join("song_tag_links l ON t.id = l.tag_id").
+		Join("songs s ON s.id = l.song_id")
+	if f != nil && f.Keyword != "" {
+		// t.name 是固定列（非用户输入），用 sq.Like 防 SQL 注入同列维度范式。
+		sb = sb.Where(sq.Like{"t.name": "%" + f.Keyword + "%"})
+	}
+	sb = sb.GroupBy("t.id", "t.name")
+	sb = applyFacetOrder(sb, f)
+	if f != nil {
+		sb = applyPagination(sb, f.Limit, f.Offset)
+	}
+	return sb
+}
+
+// ListFacet 按维度聚合曲库标签，返回该维度下的取值 + 计数 + 代表封面（支持搜索/排序/分页）。
+// field 支持：genre / artist / album / language / style / year / decade / tag。
+// tag 维度按用户自定义标签聚合（join song_tags ↔ song_tag_links ↔ songs），其余维度走 songs 单列。
+// 未知 field 返回 ErrNotFound，交由 handler 转 400。
+func (r *SongRepository) ListFacet(ctx context.Context, field string, f *FacetFilter) ([]Facet, error) {
+	sb, err := buildFacetSelect(field, f)
+	if err != nil {
+		return nil, err
 	}
 
 	query, args, err := sb.ToSql()
@@ -1162,6 +1203,7 @@ func (r *SongRepository) ListFacet(ctx context.Context, field string, f *FacetFi
 			return nil, fmt.Errorf("scan facet %s: %w", field, err)
 		}
 		facet := Facet{Value: value, Count: count}
+		// cover_song_id 取组内任意一首「有封面」（本地 cover_path 或远程 cover_url 非空）的歌曲。
 		if coverID.Valid && coverID.Int64 > 0 {
 			facet.CoverURL = fmt.Sprintf("/api/v1/songs/%d/cover", coverID.Int64)
 		}
@@ -1175,15 +1217,27 @@ func (r *SongRepository) ListFacet(ctx context.Context, field string, f *FacetFi
 
 // CountFacet 返回某维度去重取值的总数（用于前端分页判断），与 ListFacet 共享 keyword 过滤。
 func (r *SongRepository) CountFacet(ctx context.Context, field, keyword string) (int64, error) {
-	col, ok := songFacetColumn[field]
-	if !ok {
-		return 0, ErrNotFound
+	var inner sq.SelectBuilder
+	if field == songFacetTagField {
+		// tag：去重标签数（仅计至少挂了一首歌的标签）。内连接排除空标签。
+		inner = sq.Select("1").
+			From("song_tags t").
+			Join("song_tag_links l ON t.id = l.tag_id")
+		if keyword != "" {
+			inner = inner.Where(sq.Like{"t.name": "%" + keyword + "%"})
+		}
+		inner = inner.GroupBy("t.id")
+	} else {
+		col, ok := songFacetColumn[field]
+		if !ok {
+			return 0, ErrNotFound
+		}
+		inner = sq.Select("1").From("songs").Where(facetBaseCond(field, col))
+		if keyword != "" {
+			inner = inner.Where(sq.Expr("CAST("+col+" AS TEXT) LIKE ?", "%"+keyword+"%"))
+		}
+		inner = inner.GroupBy(col)
 	}
-	inner := sq.Select("1").From("songs").Where(facetBaseCond(field, col))
-	if keyword != "" {
-		inner = inner.Where(sq.Expr("CAST("+col+" AS TEXT) LIKE ?", "%"+keyword+"%"))
-	}
-	inner = inner.GroupBy(col)
 
 	innerSQL, innerArgs, err := inner.ToSql()
 	if err != nil {

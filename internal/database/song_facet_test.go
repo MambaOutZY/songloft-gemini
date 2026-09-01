@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"songloft/internal/models"
@@ -252,5 +253,126 @@ func TestSongFilterByTag(t *testing.T) {
 	}
 	if cnt != 3 {
 		t.Fatalf("expected count 3, got %d", cnt)
+	}
+}
+
+// seedTagFacetSongs 造 5 首本地歌（A 带封面）并挂上自定义标签，供 tag facet 测试复用。
+// 返回 song 指针以便测试取用回填的 ID。
+func seedTagFacetSongs(t *testing.T, db DB) []*models.Song {
+	t.Helper()
+	ctx := context.Background()
+	songs := []*models.Song{
+		{Type: models.TypeLocal, Title: "A", Artist: "周杰伦", FilePath: "/m/a.mp3", CoverPath: "/c/a.jpg"},
+		{Type: models.TypeLocal, Title: "B", Artist: "周杰伦", FilePath: "/m/b.mp3"},
+		{Type: models.TypeLocal, Title: "C", Artist: "Beyond", FilePath: "/m/c.mp3"},
+		{Type: models.TypeLocal, Title: "D", Artist: "Adele", FilePath: "/m/d.mp3"},
+		{Type: models.TypeLocal, Title: "E", Artist: "无标签", FilePath: "/m/e.mp3"},
+	}
+	if err := db.SongRepository().BatchCreate(ctx, songs); err != nil {
+		t.Fatalf("BatchCreate: %v", err)
+	}
+	tagRepo := db.SongTagRepository()
+	favID, err := tagRepo.Create(ctx, "fav", "#f00")
+	if err != nil {
+		t.Fatalf("create tag fav: %v", err)
+	}
+	cantID, err := tagRepo.Create(ctx, "cantopop", "#0f0")
+	if err != nil {
+		t.Fatalf("create tag cantopop: %v", err)
+	}
+	// 空标签（无关联歌曲）——内连接下不应出现在 facet。
+	if _, err := tagRepo.Create(ctx, "solo", ""); err != nil {
+		t.Fatalf("create tag solo: %v", err)
+	}
+	// fav → A、C；cantopop → C（同一首歌挂两个标签，验证 COUNT DISTINCT 不重复计）。
+	links := []struct {
+		songID int64
+		tagID  int64
+	}{
+		{songs[0].ID, favID},  // A
+		{songs[2].ID, favID},  // C
+		{songs[2].ID, cantID}, // C
+	}
+	for _, l := range links {
+		if err := tagRepo.LinkSongTag(ctx, l.songID, l.tagID); err != nil {
+			t.Fatalf("link song %d tag %d: %v", l.songID, l.tagID, err)
+		}
+	}
+	return songs
+}
+
+func TestListFacetTag(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	songs := seedTagFacetSongs(t, db)
+	repo := db.SongRepository()
+	ctx := context.Background()
+
+	// tag facet：fav=2、cantopop=1；solo 无关联歌曲不出现。
+	// 默认按计数降序 → fav(2) 在前。
+	tags, err := repo.ListFacet(ctx, "tag", nil)
+	if err != nil {
+		t.Fatalf("facet tag: %v", err)
+	}
+	if len(tags) != 2 {
+		t.Fatalf("expected 2 tags, got %d (%+v)", len(tags), tags)
+	}
+	if tags[0].Value != "fav" || tags[0].Count != 2 {
+		t.Fatalf("expected top tag fav=2, got %+v", tags[0])
+	}
+	if tags[1].Value != "cantopop" || tags[1].Count != 1 {
+		t.Fatalf("expected cantopop=1, got %+v", tags[1])
+	}
+
+	// 代表封面：fav 组内 A 带封面、C 无 → cover_url 指向 A。
+	wantCover := fmt.Sprintf("/api/v1/songs/%d/cover", songs[0].ID)
+	if tags[0].CoverURL != wantCover {
+		t.Fatalf("expected fav cover %q, got %q", wantCover, tags[0].CoverURL)
+	}
+	// cantopop 组内只有 C（无封面）→ cover_url 为空。
+	if tags[1].CoverURL != "" {
+		t.Fatalf("expected empty cover for cantopop, got %q", tags[1].CoverURL)
+	}
+
+	// keyword 搜索：cantopop 含 "cant"。
+	got, err := repo.ListFacet(ctx, "tag", &FacetFilter{Keyword: "cant"})
+	if err != nil {
+		t.Fatalf("facet tag keyword: %v", err)
+	}
+	if len(got) != 1 || got[0].Value != "cantopop" || got[0].Count != 1 {
+		t.Fatalf("expected only cantopop=1, got %+v", got)
+	}
+
+	// sort=name asc：cantopop 在 fav 前（ASCII 升序）。
+	byName, err := repo.ListFacet(ctx, "tag", &FacetFilter{OrderBy: "name", Order: "asc"})
+	if err != nil {
+		t.Fatalf("facet tag by name: %v", err)
+	}
+	if len(byName) != 2 || byName[0].Value != "cantopop" || byName[1].Value != "fav" {
+		t.Fatalf("unexpected name-sorted tags: %+v", byName)
+	}
+
+	// 分页：limit=1 → 只 1 条；CountFacet 返回去重标签总数 2。
+	page, err := repo.ListFacet(ctx, "tag", &FacetFilter{Limit: 1, Offset: 0})
+	if err != nil {
+		t.Fatalf("facet tag page: %v", err)
+	}
+	if len(page) != 1 {
+		t.Fatalf("expected 1 paged tag, got %d", len(page))
+	}
+	total, err := repo.CountFacet(ctx, "tag", "")
+	if err != nil {
+		t.Fatalf("count facet tag: %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("expected 2 distinct tags, got %d", total)
+	}
+	// CountFacet 带 keyword
+	total, err = repo.CountFacet(ctx, "tag", "fav")
+	if err != nil {
+		t.Fatalf("count facet tag keyword: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected 1 distinct tag matching fav, got %d", total)
 	}
 }

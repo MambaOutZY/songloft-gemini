@@ -146,9 +146,17 @@ func IsSongNameField(field string) bool {
 	return ok
 }
 
+// songFacetTagField 是 tag 维度的 field 名。它不映射到 songs 的单列，因此不在
+// songFacetColumn 里，而是由 SongRepository.ListFacet/CountFacet 走专门的 join 分支。
+// 用常量集中，避免 handlers / repository / play_history 各处硬编码字符串而漂移。
+const songFacetTagField = "tag"
+
 // IsSongFacetField 判断给定字符串是否为受支持的歌曲分面维度。
 // 对外导出以便 models / handlers 复用同一份维度清单，避免各层各写一份枚举而漂移。
 func IsSongFacetField(field string) bool {
+	if field == songFacetTagField {
+		return true
+	}
 	_, ok := songFacetColumn[field]
 	return ok
 }

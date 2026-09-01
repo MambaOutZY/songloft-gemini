@@ -22,15 +22,15 @@ type libraryBrowseSetting struct {
 	Views []libraryBrowseView `json:"views"`
 }
 
-// libraryViewKeys 是 14 个合法视图 key 的**默认顺序**，按三组连续排列：
+// libraryViewKeys 是 16 个合法视图 key 的**默认顺序**，按三组连续排列：
 //   - 歌曲组：all(全部)/local(本地)/remote(网络)/radio(电台) —— 按 type 过滤的扁平歌曲列表；
-//   - 分类组：artist/album/genre/year/decade/language/style —— facet 分类聚合，下钻歌曲；
+//   - 分类组：folder(文件夹)/artist(歌手)/album(专辑)/genre(流派)/year(年份)/decade(年代)/language(语种)/style(风格)/tag(标签) —— folder 为目录浏览，其余为 facet 分类聚合，下钻歌曲；tag 维度按用户自定义标签聚合（见 ListFacet 的 tag 分支）；
 //   - 歌单组：playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单) —— 歌单卡片列表。
 //
 // 前端渲染时按组固定顺序展示并在组间加分割线，组内顺序沿用用户配置。
 var libraryViewKeys = []string{
 	"all", "local", "remote", "radio", "folder",
-	"artist", "album", "genre", "year", "decade", "language", "style",
+	"artist", "album", "genre", "year", "decade", "language", "style", "tag",
 	"playlist", "playlist_normal", "playlist_radio",
 }
 
@@ -51,7 +51,7 @@ func isValidLibraryViewKey(key string) bool {
 
 // GetLibraryBrowseSetting 获取曲库浏览视图配置
 // @Summary 获取曲库浏览视图配置
-// @Description 获取用户自定义的曲库统一浏览页视图显示与顺序。共 14 个视图，分三组：歌曲组 all(全部)/local(本地)/remote(网络)/radio(电台)；分类组 artist(歌手)/album(专辑)/genre(流派)/year(年份)/decade(年代)/language(语种)/style(风格)；歌单组 playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单)。未配置时返回默认（全部可见、默认顺序）。返回始终包含完整 14 项。
+// @Description 获取用户自定义的曲库统一浏览页视图显示与顺序。共 16 个视图，分三组：歌曲组 all(全部)/local(本地)/remote(网络)/radio(电台)；分类组 folder(文件夹)/artist(歌手)/album(专辑)/genre(流派)/year(年份)/decade(年代)/language(语种)/style(风格)/tag(标签)；歌单组 playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单)。未配置时返回默认（全部可见、默认顺序）。返回始终包含完整 16 项。
 // @Tags 设置
 // @Produce json
 // @Success 200 {object} libraryBrowseSetting "曲库浏览视图配置"
@@ -68,7 +68,7 @@ func (h *ConfigHandler) GetLibraryBrowseSetting(w http.ResponseWriter, r *http.R
 
 // UpdateLibraryBrowseSetting 保存曲库浏览视图配置
 // @Summary 保存曲库浏览视图配置
-// @Description 保存用户自定义的曲库浏览页视图显示与顺序。每个 view 的 key 必须属于合法的 14 个 key 且不能重复；未出现的 key 会按默认顺序补到末尾（visible=true），保证返回完整 14 项。
+// @Description 保存用户自定义的曲库浏览页视图显示与顺序。每个 view 的 key 必须属于合法的 16 个 key 且不能重复；未出现的 key 会按默认顺序补到末尾（visible=true），保证返回完整 16 项。
 // @Tags 设置
 // @Accept json
 // @Produce json
@@ -107,7 +107,7 @@ func (h *ConfigHandler) UpdateLibraryBrowseSetting(w http.ResponseWriter, r *htt
 }
 
 // normalizeLibraryBrowse 去掉非法 key，并把缺失的 key 按默认顺序补到末尾（visible=true），
-// 保证返回始终是完整、无重复的 11 项。
+// 保证返回始终是完整、无重复的 16 项。
 func normalizeLibraryBrowse(cfg libraryBrowseSetting) libraryBrowseSetting {
 	seen := make(map[string]bool, len(cfg.Views))
 	views := make([]libraryBrowseView, 0, len(libraryViewKeys))

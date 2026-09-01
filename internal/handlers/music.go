@@ -568,20 +568,22 @@ func applySongTagFilters(filter *database.SongFilter, q url.Values) {
 }
 
 // songFacetFields 是 /songs/facets 支持的维度白名单。
+// tag 维度不映射到 songs 的单列，而是按用户自定义标签聚合（见 SongRepository.ListFacet 的 tag 分支）。
 var songFacetFields = map[string]struct{}{
 	"genre": {}, "artist": {}, "album": {},
 	"language": {}, "style": {}, "year": {}, "decade": {},
+	"tag": {},
 }
 
 // ListSongFacets 按维度聚合曲库标签，返回该维度下的取值 + 计数 + 代表封面（支持搜索/排序/分页）。
 // @Summary 曲库标签分类聚合
 // @Description 按指定维度聚合曲库，返回该维度下非空取值、各自的歌曲数量及一首代表歌曲的封面 URL，用于「分类浏览」的卡片网格。
-// @Description 支持维度：genre(流派)/artist(歌手)/album(专辑)/language(语种)/style(风格)/year(年份)/decade(年代)。
-// @Description year/decade 的 value 为数字字符串（年代如 "1990" 表示 1990-1999）。取到某取值后可用 /songs?<field>=<value> 拉取该分类下歌曲。
+// @Description 支持维度：genre(流派)/artist(歌手)/album(专辑)/language(语种)/style(风格)/year(年份)/decade(年代)/tag(标签)。
+// @Description year/decade 的 value 为数字字符串（年代如 "1990" 表示 1990-1999）。取到某取值后可用 /songs?<field>=<value> 拉取该分类下歌曲（tag 维度除外——tag 的 value 为标签名，需用 /songs?tag_name=<value> 过滤）。
 // @Description 支持 keyword 模糊搜索取值、limit/offset 分页、sort(count|name)/order 排序；返回 total 为该维度去重取值总数。
 // @Tags 歌曲管理
 // @Produce json
-// @Param field query string true "聚合维度" Enums(genre, artist, album, language, style, year, decade)
+// @Param field query string true "聚合维度" Enums(genre, artist, album, language, style, year, decade, tag)
 // @Param keyword query string false "对取值模糊搜索"
 // @Param limit query int false "分页大小，缺省 20，上限 100000"
 // @Param offset query int false "分页偏移，缺省 0"
@@ -1477,7 +1479,7 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 	// 优先级：?normalize=1 显式开启；?normalize=0 显式关闭；
 	// 无参数时由服务端 volume_normalize 配置决定（默认 false）。
 	//
-	// videoIntent 下必须强制关掉：上面刚为了保住画面清空了 targetFormat，若这里又把它填成 mp3，
+	// videoIntent 下必须强制关掉：上面刚为了保护画面清空了 targetFormat，若这里又把它填成 mp3，
 	// 转码的 `-vn` 会把视频轨切掉，`media=video` 就只剩纯音频——正是那段代码要避免的结果。
 	// 均衡本身也没有「保留画面」的实现路径（`-vn` 是 loudnorm 这条链的固定前提）。
 	normalizeParam := r.URL.Query().Get("normalize")
