@@ -1033,6 +1033,8 @@ definitions:
         type: string
       navigationRadius:
         type: number
+      navigationStyle:
+        type: string
       playerGradient:
         items:
           type: string

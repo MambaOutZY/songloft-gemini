@@ -11155,6 +11155,9 @@ const docTemplate = `{
                 "navigationRadius": {
                     "type": "number"
                 },
+                "navigationStyle": {
+                    "type": "string"
+                },
                 "playerGradient": {
                     "type": "array",
                     "items": {

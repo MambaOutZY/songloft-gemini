@@ -48,6 +48,7 @@ type ThemePackData struct {
 	CardRadius       *float64         `json:"cardRadius,omitempty"`
 	ControlRadius    *float64         `json:"controlRadius,omitempty"`
 	NavigationRadius *float64         `json:"navigationRadius,omitempty"`
+	NavigationStyle  string           `json:"navigationStyle,omitempty"`
 }
 
 // ThemePackColors 亮色或暗色配色方案
@@ -115,6 +116,10 @@ func (d *ThemePackData) Validate() error {
 	}
 	if d.NavigationRadius != nil && (*d.NavigationRadius < 0 || *d.NavigationRadius > 100) {
 		return ErrThemePackInvalidRadius
+	}
+
+	if d.NavigationStyle != "" && d.NavigationStyle != "standard" && d.NavigationStyle != "capsule" {
+		return fmt.Errorf("invalid navigationStyle: %s (expected standard or capsule)", d.NavigationStyle)
 	}
 
 	return nil
