@@ -16,7 +16,7 @@ A: **No, it is free, and it does not accept any sponsorship or donations.** Song
 
 A:
 - **Backend server**: Download the build for your system from [GitHub Releases](https://github.com/songloft-org/songloft/releases). Linux, macOS, and Windows are supported, with both binary and Docker image deployment options.
-- **Flutter client**: Download the prebuilt installers from [Flutter client Releases](https://github.com/songloft-org/songloft-player/releases). Android, iOS, macOS, Windows, Linux, and Web are supported.
+- **Flutter client**: Download the prebuilt installers from [Flutter client Releases](https://github.com/songloft-org/clients/player/releases). Android, iOS, macOS, Windows, Linux, and Web are supported.
 
 ### Q: Which operating systems and architectures are supported?
 
@@ -258,7 +258,7 @@ A: In the **Radio Favorites** playlist in the client, click the add button and e
 
 ### Q: How do I use Songloft on TV?
 
-A: For TV, we recommend the dedicated [songloft-tv](https://github.com/boluofan/songloft-tv) client, designed specifically for Android TV with remote control support.
+A: For TV, we recommend the dedicated [songloft-tv](https://github.com/songloft-org/songloft-tv) client, designed specifically for Android TV with remote control support.
 
 ## Upgrades & Maintenance
 

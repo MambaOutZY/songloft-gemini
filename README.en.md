@@ -190,7 +190,7 @@ Beyond the web interface, Songloft also offers a more powerful cross-platform Fl
 
 ### 📺 TV / Car Client
 
-In addition to the Flutter client, for TV and in-vehicle infotainment (IVI) systems we recommend the dedicated **[songloft-tv](https://github.com/boluofan/songloft-tv)** client, designed for Android TV and car head units with remote control and touchscreen support.
+In addition to the Flutter client, for TV and in-vehicle infotainment (IVI) systems we recommend the dedicated **[songloft-tv](https://github.com/songloft-org/songloft-tv)** client, designed for Android TV and car head units with remote control and touchscreen support.
 
 ### 📺 Kodi Plugin
 

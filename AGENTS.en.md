@@ -5,7 +5,7 @@ This document provides AI coding assistants with the **entry-point information**
 > **Detailed docs**:
 > - Architecture: [Overview](docs/architecture.md) · [Backend](docs/architecture_backend.md) · [Frontend](docs/architecture_frontend.md)
 > - Topics: [Database operations](docs/database_migrations.md) · [Color system](docs/color_system.md) · [API response format](docs/api_response.md) · [Quick start](docs/quick-start.md) · [Frontend gotchas](docs/en/frontend_gotchas.md)
-> - Plugin development: see `plugin-toolchain/README.md` (separate repo)
+> - Plugin development: see `plugins/toolchain/README.md` (separate repo)
 > - Plugin registry authoring: [Plugin registry authoring guide](docs/plugin_registry.md)
 > - API: after starting in dev mode, visit `/swagger/index.html`
 
@@ -19,13 +19,15 @@ Songloft is a self-hosted local music server that supports both **server deploym
 |------|------|------|
 | `/` | Go 1.26 + Chi v5 + SQLite | Backend API service (default port 58091, account admin/admin) |
 | `/mobile` | Go + gomobile | Mobile binding entry point for the Go backend (for gomobile bind; exports Start/Stop/IsRunning/GetPort) |
-| `/songloft-player` ([separate repo](https://github.com/songloft-org/songloft-player)) | Flutter 3.29+ / Dart 3.7+ | Cross-platform frontend (6 platforms), supports Bundle local mode |
-| `/plugin-toolchain` ([separate repo](https://github.com/songloft-org/plugin-toolchain)) | TS + pnpm | JS plugin development toolchain (SDK / Builder / scaffolding) |
-| `/jsplugins-src` | TS | JS plugin source code (a collection of submodules; each plugin distributes releases from its own repo) |
+| `/clients/player` ([separate repo](https://github.com/songloft-org/songloft-player)) | Flutter 3.29+ / Dart 3.7+ | Cross-platform frontend (6 platforms), supports Bundle local mode |
+| `/clients/player-lynx` ([separate repo](https://github.com/songloft-org/songloft-player-lynx)) | TS + Lynx | Lynx client (submodule) |
+| `/clients/tv` ([separate repo](https://github.com/songloft-org/songloft-tv)) | Kotlin | Android TV client (submodule) |
+| `/plugins/toolchain` ([separate repo](https://github.com/songloft-org/plugin-toolchain)) | TS + pnpm | JS plugin development toolchain (SDK / Builder / scaffolding) |
+| `/plugins/src` | TS | JS plugin source code (a collection of submodules; each plugin distributes releases from its own repo) |
 | `/pkg/tag` | Go | Audio metadata **read/write** library (extends the upstream tag library with MP3/FLAC writing) |
-| `/home-assistant-addon` ([separate repo](https://github.com/songloft-org/home-assistant-addon)) | HA add-on | Home Assistant add-on (thin layer reusing the Docker image; submodule). **The `repository.yaml` manifest must sit at that repo's root** — which is exactly why it was split out (#340). Design/pitfalls/version sync: see [home-assistant-addon/README.md](home-assistant-addon/README.md) |
-| `/ffmpeg-builder` ([separate repo](https://github.com/hanxi/ffmpeg-builder)) | Docker | Minimal-image builder for statically compiled ffmpeg/ffprobe (submodule); used for download transcode / audio fingerprinting |
-| `/tracely` ([separate repo](https://github.com/hanxi/tracely)) | Go + Vue | Self-hosted frontend monitoring backend (install/upgrade tracking); the backend reports via its Go SDK. The local dir is gitignored, the SDK dependency comes from go.mod |
+| `/integrations/home-assistant` ([separate repo](https://github.com/songloft-org/home-assistant-addon)) | HA add-on | Home Assistant add-on (thin layer reusing the Docker image; submodule). **The `repository.yaml` manifest must sit at that repo's root** — which is exactly why it was split out (#340). Design/pitfalls/version sync: see [integrations/home-assistant/README.md](integrations/home-assistant/README.md) |
+| `/tools/ffmpeg-builder` ([separate repo](https://github.com/hanxi/ffmpeg-builder)) | Docker | Minimal-image builder for statically compiled ffmpeg/ffprobe (submodule); used for download transcode / audio fingerprinting |
+| `/tools/tracely` ([separate repo](https://github.com/hanxi/tracely)) | Go + Vue | Self-hosted frontend monitoring backend (install/upgrade tracking); the backend reports via its Go SDK. Submodule; the SDK dependency comes from go.mod |
 
 ---
 
@@ -43,7 +45,7 @@ make check          # fmt + vet + test
 make sqlc           # Regenerate sqlc code (must run after editing queries/*.sql)
 make swagger        # Regenerate API docs
 
-# Frontend build (artifacts land in songloft-player-build/, for backend embedding or standalone deployment)
+# Frontend build (artifacts land in clients/player-build/, for backend embedding or standalone deployment)
 make build-frontend-web-embedded   # For embedding in the Go binary (hides the API-address UI)
 make build-frontend-web            # Standalone web deployment
 make build-frontend-{linux,windows,macos,android,ios,all}
@@ -57,8 +59,8 @@ make build-go-desktop-macos        # macOS x86_64
 make build-go-desktop-macos-arm64  # macOS ARM64
 
 # Frontend development
-cd songloft-player && flutter run -d chrome          # standalone
-cd songloft-player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
+cd clients/player && flutter run -d chrome          # standalone
+cd clients/player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
 ```
 
 ---
@@ -68,7 +70,7 @@ cd songloft-player && flutter run -d chrome --dart-define=DEPLOY_MODE=embedded
 After every code change, you **must** format the code before committing:
 
 - **Go**: Run `gofmt -w .` from the project root
-- **Dart**: Run `dart format lib/ test/` from the `songloft-player/` directory
+- **Dart**: Run `dart format lib/ test/` from the `clients/player/` directory
 
 ---
 
@@ -180,7 +182,7 @@ Some business modules come with an "action endpoint + config endpoint" combo (th
 
 ### Client conventions
 
-- `SettingsApi` (`songloft-player/lib/features/settings/data/settings_api.dart`) wraps all `/settings/*` calls; business-feature Providers always go through it
+- `SettingsApi` (`clients/player/lib/features/settings/data/settings_api.dart`) wraps all `/settings/*` calls; business-feature Providers always go through it
 - `ConfigApi` is used only in `config_manager.dart` and admin UIs like "list all configs"
 
 ### Historical decision record
@@ -210,7 +212,7 @@ The Songloft docs site (`docs/`) uses **VitePress + a custom theme** (`docs/.vit
 
 - **Custom landing page (edit data, not markdown)**: the home page `docs/index.md` is a single line `<Landing />`; its content is driven by structured data in `docs/.vitepress/data/*.ts` (install methods `downloads.ts`, features `features.ts`, copy `landing-i18n.ts`) and rendered by `docs/.vitepress/theme/components/landing/*.vue`. To change the landing page → edit `data/*.ts` (bilingual `{zh,en}` fields); align icons with the mapping table inside the component (e.g. `ICONS` in `LandingInstaller.vue`).
 - **Auto-generated pages (do NOT hand-edit)**: `docs/quick-start.md`, `docs/en/quick-start.md`, and `docs/changelog.md` are generated by `scripts/sync-docs.mjs` from the root `README.md` / `README.en.md` / `CHANGELOG.md`, and are ignored via `docs/.gitignore`. To change the body → edit the source `README` / `CHANGELOG`; `docs:dev` / `docs:build` runs `sync` first to regenerate. **Manual edits get overwritten and are never committed.**
-- **Submodule-synced pages (also do NOT hand-edit — but the source lives in another repo)**: `docs/addon/`, `docs/player/`, and `docs/plugin-toolchain/` are synced by `sync-docs.mjs` from the `home-assistant-addon/`, `songloft-player/docs/cn/`, and `plugin-toolchain/` **submodules** respectively, and are likewise ignored via `docs/.gitignore`. To change the body → **edit it in the corresponding submodule repo, then come back and bump the submodule pointer** (`git submodule update --remote <path>` + commit), otherwise the docs site keeps showing stale content. Two things to note: (1) the `to:` target path is **deliberately decoupled** from the source path (e.g. `home-assistant-addon/README.md` → `docs/addon/index.md`), because public URLs like `/addon/` are already in the sitemap and must not follow source-repo renames; (2) when a submodule is not checked out, `sync` only warns instead of failing and the page **silently disappears** — which is why the submodule init list in `static.yml` must include them.
+- **Submodule-synced pages (also do NOT hand-edit — but the source lives in another repo)**: `docs/addon/`, `docs/player/`, and `docs/plugin-toolchain/` are synced by `sync-docs.mjs` from the `integrations/home-assistant/`, `clients/player/docs/cn/`, and `plugins/toolchain/` **submodules** respectively, and are likewise ignored via `docs/.gitignore`. To change the body → **edit it in the corresponding submodule repo, then come back and bump the submodule pointer** (`git submodule update --remote <path>` + commit), otherwise the docs site keeps showing stale content. Two things to note: (1) the `to:` target path is **deliberately decoupled** from the source path (e.g. `integrations/home-assistant/README.md` → `docs/addon/index.md`), because public URLs like `/addon/` are already in the sitemap and must not follow source-repo renames; (2) when a submodule is not checked out, `sync` only warns instead of failing and the page **silently disappears** — which is why the submodule init list in `static.yml` must include them.
 - **repowiki (`docs/repowiki/` — manually maintained)**: the committed markdown is the **single source of truth**; any tool (AI or human) edits it directly and commits. Keep these pages in sync with code changes as needed, verifying against the code just like any other source doc.
 
 ---
@@ -223,7 +225,7 @@ The Songloft docs site (`docs/`) uses **VitePress + a custom theme** (`docs/.vit
 - Commit messages that reference a GitHub issue must include the issue reference
 - Issue reference rules: the short form `#123` always points to an issue in **the repo where the commit lives**; whenever the referenced issue is not in the current repo, you must write the full `owner/repo#123`
   - A commit in the parent repo `songloft-org/songloft` referencing a parent-repo issue: may write `#155`, or `songloft-org/songloft#155`
-  - A commit in a submodule repo (such as `pkg/tag`, `songloft-player`, `plugin-toolchain`, `jsplugins-src/*`) referencing an issue in its own repo: may write `#14`, or the full repo path
+  - A commit in a submodule repo (such as `pkg/tag`, `clients/player`, `plugins/toolchain`, `plugins/src/*`) referencing an issue in its own repo: may write `#14`, or the full repo path
   - A commit in a submodule repo referencing a parent-repo issue: must write the full path, e.g. `songloft-org/songloft#155`, not just `#155` (otherwise GitHub resolves it to an issue in the submodule's own repo)
   - Any cross-repo reference always uses the full path, e.g. `songloft-org/songloft-player#14`
 
@@ -234,7 +236,7 @@ The Songloft docs site (`docs/`) uses **VitePress + a custom theme** (`docs/.vit
 - Build tags: `dev` (includes Swagger + pprof) / `lite` (slim version, no embedded frontend) / no tag (full version, embeds Flutter Web)
 - When `VERSION=dev`, the Makefile automatically enables `-tags dev` (no need to manually pass `EXTRA_TAGS=dev`)
 - Two orthogonal dimensions: **VERSION** (`dev` / `X.Y.Z`) controls whether it's a dev build; **BUILD_TYPE** (`lite` / empty i.e. `full`) controls whether the frontend is embedded. **Do not** use mixed values like `BUILD_TYPE=dev`
-- The embed path is `songloft-player-build/web-embedded` (**not** `songloft-player/build/web-embedded`)
+- The embed path is `clients/player-build/web-embedded` (**not** `clients/player/build/web-embedded`)
 - SPA fallback: handled by `internal/app/embed.go`, returning `index.html` when a file doesn't exist
 - Deployment mode is switched via `--dart-define=DEPLOY_MODE=embedded|standalone`; `AppConfig.isEmbedded` is a compile-time constant, and tree-shaking removes the API-address UI in standalone mode
 - Sub-path deployment: configured at startup via `-base-path /xxx` or `BASE_PATH=/xxx`; the backend strips the prefix at the outermost layer with `http.StripPrefix`, and `embed.go` replaces `<base href="/">` with `<base href="/xxx/">` at runtime; in embedded mode the frontend auto-detects the sub-path from `Uri.base.path`
@@ -249,7 +251,7 @@ Embeds the Go backend into the Flutter client so users can use it without deploy
 - Run mode: `RunMode.local` / `RunMode.remote`, persisted to SharedPreferences and auto-restored at startup
 - Local-mode startup flow: request storage permission → start the embedded backend (`127.0.0.1:<port>`) → health-check polling (up to 10 × 300ms) → auto-login with `admin/admin`
 - `BackendLifecycle` (WidgetsBindingObserver): auto-restarts the backend when the app returns to the foreground, stops it on detached
-- Key entry points: `mobile/mobile.go` (gomobile binding), `songloft-player/lib/core/backend/` (Flutter-side abstraction layer)
+- Key entry points: `mobile/mobile.go` (gomobile binding), `clients/player/lib/core/backend/` (Flutter-side abstraction layer)
 - CI artifact naming: `songloft-bundled-{platform}-{arch}.{ext}`, 4 parallel jobs (Android/Linux/Apple/Windows); failures don't block the main Release
 
 ### Docker Hot-Swap Rules (`scripts/docker-entrypoint.sh`)
@@ -272,7 +274,7 @@ The Docker image contains a base package `/app/songloft`, while the persistent d
 - **Unset by default = keeps running as root**, identical to prior behavior with zero migration risk. Non-root mode only activates when `PUID` or `PGID` is explicitly set (either one is enough; the unset one defaults to `1000`); the entrypoint drops privileges to that uid:gid via Alpine's built-in `su-exec` (lighter than `gosu`, ships in the official repo with no extra download) right before `exec`ing the main program
 - **`/app/data` is recursively `chown`ed on every startup, `/app/music` only has its top-level directory `chown`ed, never recursively**: `/app/data` is small (db, covers, cache, etc.) and must be fixed up to remove ownership left over from a prior root-based run, otherwise the new user can't open the old database; `/app/music` can be a personal library with hundreds of thousands of files / multiple TB, and the IO cost of recursively walking it on every startup is unacceptable. Once the top-level directory is writable, newly downloaded/written files are already created with the correct target uid:gid — no follow-up fix needed
 - **Pre-existing root-owned files left inside `/app/music` from before the upgrade are not auto-fixed** (e.g. old files that had tags written into them) — this is a deliberate performance trade-off, not an oversight. Set `FIX_MUSIC_PERMISSIONS=true` when you need a one-time recursive fixup; this is meant to be run manually once after switching to non-root, not as a default behavior
-- **`home-assistant-addon` is unaffected**: its `run.sh` overrides the image's `ENTRYPOINT` entirely, bypassing `docker-entrypoint.sh`; its permission model is managed separately by the HA supervisor
+- **`integrations/home-assistant` is unaffected**: its `run.sh` overrides the image's `ENTRYPOINT` entirely, bypassing `docker-entrypoint.sh`; its permission model is managed separately by the HA supervisor
 
 ---
 
@@ -347,18 +349,18 @@ changed; after clicking "Stop computing", use `pgrep -x ffmpeg` to confirm the c
 
 ## JS Plugins
 
-- Source at `jsplugins-src/<name>/`; build artifacts are in each plugin repo's GitHub Releases
-- Create a new plugin: `npx create-songloft-plugin@latest` (interactive scaffolding; see `plugin-toolchain/README.md` for details)
+- Source at `plugins/src/<name>/`; build artifacts are in each plugin repo's GitHub Releases
+- Create a new plugin: `npx create-songloft-plugin@latest` (interactive scaffolding; see `plugins/toolchain/README.md` for details)
 - Sandbox: QuickJS, with the `host` bridge provided by `internal/jsruntime` to invoke host capabilities (`http.fetch`, `storage`, `logger`, `songs.*`, `playlists.*`)
 - Routing: `/api/v1/jsplugin/{entry_path}/...`
 - Common assets: `/api/v1/jsplugin-assets/*` serves the `common.css`/`common.js`/fonts embedded in the Go binary, which `injectHTMLHead` automatically injects into all plugin HTML pages
 - Theme sync: `common.js` contains embed detection + theme bridging (URL `?theme=` parameter + real-time `postMessage` updates + `data-theme` attribute + `songloft-theme-change` event), and exposes the `window.SongloftPlugin` global API (`getTheme`/`onThemeChange`/`apiGet`/`apiPost`/`getCookies`, etc.)
-- **Client host bridge** (`@songloft/client-sdk`, built into `common.js`): Plugin frontend pages call Flutter client host capabilities via `window.SongloftPlugin.host` / `player` / `getCookies` / `invokeHost`. Native platforms use `flutter_inappwebview.callHandler('songloftHost', {ns, method, params})`, Web/iframe uses `postMessage` to parent window. Dispatch logic in `songloft-player/lib/features/home/presentation/plugin_host_dispatch.dart` (transport-agnostic, web-safe), native bridge in `plugin_host_bridge.dart` (mixin, registers callHandler + injects platform-specific callbacks). Registered namespaces: `host` (getInfo), `player` (playback control), `cookies` (cookie reading), `favorite` (favorite state sync — `refresh` method, pass `{songId, isFavorited}` for incremental update of Flutter-side FavoriteNotifier cache, or omit params for full reload). **The object literal at the end of `common.js` is the single source of truth for what `window.SongloftPlugin` exposes** — `invokeHost` once existed only on `window.__SongloftInternal` (marked "plugins must not depend on this") and was absent from the public object, yet miot hand-wrote an `invokeHost?` declaration in its own `frontend/env.d.ts`. So `window.SongloftPlugin?.invokeHost?.(...)` type-checked fine and was **silently swallowed** by the optional call at runtime — the entire favorite-sync feature never sent a single byte (the root cause of the second regression in songloft-org/songloft-plugin-miot#86). **Plugins must not hand-write type declarations for host APIs**; use `SongloftPluginGlobal` from `@songloft/client-sdk`, or if you must hand-write them, check that literal in `common.js` first
+- **Client host bridge** (`@songloft/client-sdk`, built into `common.js`): Plugin frontend pages call Flutter client host capabilities via `window.SongloftPlugin.host` / `player` / `getCookies` / `invokeHost`. Native platforms use `flutter_inappwebview.callHandler('songloftHost', {ns, method, params})`, Web/iframe uses `postMessage` to parent window. Dispatch logic in `clients/player/lib/features/home/presentation/plugin_host_dispatch.dart` (transport-agnostic, web-safe), native bridge in `plugin_host_bridge.dart` (mixin, registers callHandler + injects platform-specific callbacks). Registered namespaces: `host` (getInfo), `player` (playback control), `cookies` (cookie reading), `favorite` (favorite state sync — `refresh` method, pass `{songId, isFavorited}` for incremental update of Flutter-side FavoriteNotifier cache, or omit params for full reload). **The object literal at the end of `common.js` is the single source of truth for what `window.SongloftPlugin` exposes** — `invokeHost` once existed only on `window.__SongloftInternal` (marked "plugins must not depend on this") and was absent from the public object, yet miot hand-wrote an `invokeHost?` declaration in its own `frontend/env.d.ts`. So `window.SongloftPlugin?.invokeHost?.(...)` type-checked fine and was **silently swallowed** by the optional call at runtime — the entire favorite-sync feature never sent a single byte (the root cause of the second regression in songloft-org/songloft-plugin-miot#86). **Plugins must not hand-write type declarations for host APIs**; use `SongloftPluginGlobal` from `@songloft/client-sdk`, or if you must hand-write them, check that literal in `common.js` first
 - **Cookie reading bridge** (`window.SongloftPlugin.getCookies(origin)`): Reads cookies for a specified origin from the host WebView Cookie Store (including HttpOnly), returns `{name: value}` map. **Native clients only** (Android/iOS/macOS/Windows/Linux) — Web platform cannot implement this due to browser same-origin policy; calls will reject. Implementation path: `common.js getCookies()` → `invokeHost('cookies', 'get', {origin})` → Flutter `PluginHostDispatcher` → `CookieManager.instance().getCookies(url: WebUri(origin))`. Origin must include protocol+host (e.g. `https://example.com`); invalid formats are rejected by validation. Typical use case: session reuse for third-party gateways like FN Connect (user logs in within the app's WebView, plugin reads cookies for subsequent API calls)
 - `common.css` defines `--md-*` CSS variables (dual light/dark theme); any plugin using these variables automatically follows theme switches
 - Permissions: `permissions: ["net", "storage", "fs:music", ...]` in the manifest, validated at runtime by `internal/jsplugin`
 - **fetch internal control headers**: `X-Fetch-No-Redirect` (don't follow redirects; required to collect `Set-Cookie` from intermediate hops), `X-Fetch-Timeout-Ms` (per-request timeout 100–30000ms), `X-Fetch-Insecure` (skip TLS verification, **requires the `net:insecure-tls` permission**). None of the three are ever forwarded upstream — `X-Fetch-Insecure` used to leak upstream as an ordinary header because it was unimplemented (songloft-org/songloft#401)
-- **A new permission constant must be synced in three places, or plugins can't use it at all**: (1) `AllPermissions` in the host's `internal/jsplugin/permissions.go`; (2) `VALID_PERMISSIONS` in `plugin-toolchain/packages/plugin-builder/src/manifest.ts` — **this one hard-fails at build time** (`unknown permission: xxx`), so missing it means the plugin can't even produce a build artifact; (3) `AVAILABLE_PERMISSIONS` in `plugin-toolchain/packages/create-songloft-plugin/src/index.ts` (the scaffold's checklist). Separately, `ValidatePermissions` (host side) **deliberately only warns on unknown permissions rather than rejecting**: it sits on the mandatory install/update path, and rejecting would make a plugin that declares a new permission uninstallable on **older hosts**, taking down the plugin's otherwise-working features too; leniency is security-neutral (`CheckPermission` only honors strings it knows). **But older hosts with the strict check are already released**, so even after a new permission lands you must wait for host adoption before shipping the plugin — `minHostVersion` is **purely informational and never enforced by the host**, so don't expect it to gate anyone
+- **A new permission constant must be synced in three places, or plugins can't use it at all**: (1) `AllPermissions` in the host's `internal/jsplugin/permissions.go`; (2) `VALID_PERMISSIONS` in `plugins/toolchain/packages/plugin-builder/src/manifest.ts` — **this one hard-fails at build time** (`unknown permission: xxx`), so missing it means the plugin can't even produce a build artifact; (3) `AVAILABLE_PERMISSIONS` in `plugins/toolchain/packages/create-songloft-plugin/src/index.ts` (the scaffold's checklist). Separately, `ValidatePermissions` (host side) **deliberately only warns on unknown permissions rather than rejecting**: it sits on the mandatory install/update path, and rejecting would make a plugin that declares a new permission uninstallable on **older hosts**, taking down the plugin's otherwise-working features too; leniency is security-neutral (`CheckPermission` only honors strings it knows). **But older hosts with the strict check are already released**, so even after a new permission lands you must wait for host adoption before shipping the plugin — `minHostVersion` is **purely informational and never enforced by the host**, so don't expect it to gate anyone
 - **`net:insecure-tls` permission (skip TLS certificate verification)**: the `jsruntime` layer **has no concept of permissions**, and `fetch` itself doesn't require `net`; this permission is projected by `service.go` calling `jsManager.SetAllowInsecureTLS(envID, ...)` after env creation into `JSEnv.allowInsecureTLS` (default false) — that flag is the permission's only runtime-layer manifestation. Key points: (1) **`CheckPermission` does no colon-prefix matching, so `net` does not cover `net:insecure-tls`** — deliberately, otherwise every existing plugin that already declares `net` (miot/bili/dav/pcyear-bridge) would silently gain verification-skipping on upgrade while the user sees no change in the permission list; (2) a dedicated `insecureTransport` — do **not** reuse `sharedTransport` and mutate `TLSClientConfig` per request, since connection pools are per-Transport and that would poison connection reuse for every plugin; (3) child environments (created via `songloft.jsenv`) must inherit the parent plugin's policy, or "plugin issues a request from a child worker" fails verification for no visible reason; (4) when the header is present without the permission, emit `slog.Warn` rather than dropping it silently — plugin authors commonly assume "if the host doesn't recognize it, it's a no-op", and one log line saves a whole debugging round. **Why it exists**: self-hosted NAS devices (fnOS port 5667) ship self-signed certs by default and plugins reach them by **bare IP**; even with a properly CA-signed cert the subject is a hostname, so connecting by IP always mismatches — structurally unsolvable for these targets
 - Health checks + file-fingerprint hot updates both happen automatically
 - **UDP Socket API** (`songloft.net`, requires `net` permission): the Go side hosts the UDP socket + a message-push model. `udpBind` creates a socket and starts a reader goroutine; received UDP packets are pushed asynchronously to the JS callback (`onData`) via the scheduler queue. Supports multicast groups (`udpJoinMulticast/udpLeaveMulticast`), typical use: SSDP device discovery (DLNA/UPnP). Each plugin gets at most 8 sockets; a plugin with active sockets won't be idle-evicted, and sockets are cleaned up automatically on plugin unload. Implemented in `internal/jsplugin/api_bridge_net.go`

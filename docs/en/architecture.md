@@ -110,14 +110,24 @@ songloft/
 │   └── version/                # Version information
 ├── pkg/                        # Public packages
 │   └── tag/                    # Audio metadata read/write library
-├── songloft-player/             # Flutter frontend (standalone subrepo)
-│   └── lib/                    # Dart source code
-│       ├── config/             # API configuration, deployment mode
-│       ├── core/               # Networking, routing, theming, storage, audio
-│       ├── features/           # Feature modules (auth / startup / home / library / player / playlist / settings / jsplugin / dlna)
-│       └── shared/             # Shared layouts, models, components
-├── plugin-toolchain/           # JS plugin development toolchain (SDK + Builder + scaffolding)
-├── jsplugins-src/              # JS plugin source collection (submodules; build artifacts published in each plugin's GitHub Releases)
+├── clients/                    # Client collection
+│   ├── player/                 # Flutter frontend (standalone subrepo)
+│   │   └── lib/                # Dart source code
+│   │       ├── config/         # API configuration, deployment mode
+│   │       ├── core/           # Networking, routing, theming, storage, audio
+│   │       ├── features/       # Feature modules (auth / startup / home / library / player / playlist / settings / jsplugin / dlna)
+│   │       └── shared/         # Shared layouts, models, components
+│   ├── player-lynx/            # Lynx client (submodule)
+│   ├── player-build/           # Flutter Web build artifacts (go:embed)
+│   └── tv/                     # Android TV client (submodule)
+├── plugins/                    # Plugin ecosystem
+│   ├── toolchain/              # JS plugin development toolchain (SDK + Builder + scaffolding)
+│   └── src/                    # JS plugin source collection (submodules; build artifacts published in each plugin's GitHub Releases)
+├── tools/                      # Standalone tools
+│   ├── tracely/                # Observability monitoring tool (submodule, separate Go module)
+│   └── ffmpeg-builder/         # FFmpeg builder (submodule)
+├── integrations/               # Third-party integrations
+│   └── home-assistant/         # Home Assistant add-on (submodule)
 ├── scripts/                    # Build and release scripts
 └── docs/                       # Project documentation
 ```
@@ -168,7 +178,7 @@ make build-frontend-all            # All platforms supported by the current syst
 5. **Audio playback**: just_audio + audio_service, supporting notification-bar controls and background playback
 6. **Lyrics display**: LRC lyrics parsing and synchronized display
 7. **Cover color extraction**: Extracts the dominant color from the cover image for dynamic theming
-8. **TV client**: Recommend [songloft-tv](https://github.com/boluofan/songloft-tv)
+8. **TV client**: Recommend [songloft-tv](https://github.com/songloft-org/songloft-tv)
 
 ## Database Design
 

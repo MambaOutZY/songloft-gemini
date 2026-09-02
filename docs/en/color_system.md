@@ -18,7 +18,7 @@ The Songloft Flutter frontend uses the **Material 3** design system, generating 
 ### Core Configuration
 
 ```dart
-// songloft-player/lib/core/theme/app_theme.dart
+// clients/player/lib/core/theme/app_theme.dart
 class AppTheme {
   static const Color _seedColor = Color(0xFF415F91); // M3 Blue baseline
 
@@ -191,7 +191,7 @@ The theme dynamically adjusts component sizes based on screen type (Mobile / Tab
 Songloft uses the `palette_generator` library to extract dominant colors from song cover images, used for dynamic coloring of the player interface:
 
 ```dart
-// songloft-player/lib/core/utils/color_extraction.dart
+// clients/player/lib/core/utils/color_extraction.dart
 // Extract dominant colors from the cover image, applied to scenarios such as the player background gradient
 ```
 

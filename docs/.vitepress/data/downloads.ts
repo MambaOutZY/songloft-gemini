@@ -286,12 +286,12 @@ export const INSTALL: InstallMethod[] = [
     external: [
       {
         label: { zh: '下载 TV 客户端', en: 'Download TV client' },
-        url: 'https://github.com/boluofan/songloft-tv/releases/latest',
+        url: 'https://github.com/songloft-org/songloft-tv/releases/latest',
         primary: true,
       },
       {
         label: { zh: '源码仓库', en: 'Source repo' },
-        url: 'https://github.com/boluofan/songloft-tv',
+        url: 'https://github.com/songloft-org/songloft-tv',
       },
     ],
   },

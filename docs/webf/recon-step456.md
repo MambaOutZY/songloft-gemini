@@ -103,7 +103,7 @@
 
 ### 1.4 决定性发现：miot 的 3 处写法，改写救不了
 
-**已核实**，`jsplugins-src/songloft-plugin-miot/static/css/style.css` 里全部 3 处
+**已核实**，`plugins/src/songloft-plugin-miot/static/css/style.css` 里全部 3 处
 （也是唯一能在本工作树核实的 3 处，见 §1.6）：
 
 | 位置 | 声明 | 花括号深度（已核实=1，即**不在 `@media` 内**） |
@@ -180,8 +180,8 @@ _controller?.view.evaluateJavaScripts('window.postMessage($messageLiteral,"*")')
 ### 1.6 无法核实的部分（不要当成已知）
 
 - **交接文档 §3.3 的命中面「miot 3、dav 3、subsonic 1、cloudflared 1、hostc 1、ytdlp 1」
-  我只能核实 miot 的 3 处。** 本工作树里 `jsplugins-src/songloft-plugin-{cloudflared,dav,hostc,
-  radio,registry,subsonic}/` **都是空目录**（子模块未 checkout），`ytdlp` 根本不在 `jsplugins-src/` 下。
+  我只能核实 miot 的 3 处。** 本工作树里 `plugins/src/songloft-plugin-{cloudflared,dav,hostc,
+  radio,registry,subsonic}/` **都是空目录**（子模块未 checkout），`ytdlp` 根本不在 `plugins/src/` 下。
   → 做 Step 5 之前**必须**先把这些子模块 clone 出来重新统计一遍，
   特别是**确认它们的 `env()` 是否在 `@media` 内**（在 `@media` 内 = CSSOM 方案对它们直接失效）。
 - **`sheet.cssRules[0]` 的数字下标在 QuickJS 侧是否真的路由到 `getProperty('0')`**：
@@ -215,14 +215,14 @@ _controller?.view.evaluateJavaScripts('window.postMessage($messageLiteral,"*")')
 
 - **代价**：改插件源码。本工作树可核实的只有 miot 3 处；交接文档另称 dav 3、subsonic 1、
   cloudflared 1、hostc 1、ytdlp 1（**未核实，见 §1.6**）。
-- **归属问题（用户提到的顾虑，已核实）**：`jsplugins-src/` 下的 9 个子模块目录
+- **归属问题（用户提到的顾虑，已核实）**：`plugins/src/` 下的 9 个子模块目录
   （cloudflared / dav / downloader / hostc / lyrics / miot / radio / registry / subsonic）
   都在本仓库的 `.gitmodules` 里，即**都是 songloft-org 自己的仓库**（第一方）。
-  `ytdlp` **不在** `jsplugins-src/` 下（交接文档 §6 也说 lxmusic / bili / ytdlp 不是跟踪的子模块）
+  `ytdlp` **不在** `plugins/src/` 下（交接文档 §6 也说 lxmusic / bili / ytdlp 不是跟踪的子模块）
   → 那 1 处**无法由我们直接改**。
 - **关键杠杆：只有声明了 `renderEngine: "webf"` 的插件才会暴露在这个缺口下**（§2.4 契约）。
   目前只有 **miot / downloader / lyrics** 三个标记为 `webf`。
-  **downloader / lyrics 没有 `env()`**（已核实：`grep -rn "env(" jsplugins-src/*/static jsplugins-src/*/src`
+  **downloader / lyrics 没有 `env()`**（已核实：`grep -rn "env(" plugins/src/*/static plugins/src/*/src`
   只命中 miot 3 处）。
   → **实际必须改的就是 miot 的 3 处，而 miot 是第一方。**
   dav / subsonic / cloudflared / hostc / ytdlp **现在都是 `webview`**，它们的 `env()`
@@ -426,9 +426,9 @@ _controller?.view.evaluateJavaScripts('window.postMessage($messageLiteral,"*")')
 - 后果：`colspan` / `rowspan` 属性**被当作未知属性静默丢弃**，
   对应的单元格只占 1 格 → **整行列数与表头不符 → Flutter `Table` 会 assert 失败或错列**。
 - ✅ 好消息：**已核实 downloader 的表格没有用 colspan/rowspan**
-  （`jsplugins-src/songloft-plugin-downloader/static/index.html:107-119` 与
+  （`plugins/src/songloft-plugin-downloader/static/index.html:107-119` 与
   `static/js/app.js:103-119` 的行模板，都是整齐的 6 列）。
-- ⚠️ **radio 无法核实**：`jsplugins-src/songloft-plugin-radio/` 在本工作树是**空目录**
+- ⚠️ **radio 无法核实**：`plugins/src/songloft-plugin-radio/` 在本工作树是**空目录**
   （子模块未 checkout）。做 Step 4 前**必须**先 clone radio 确认它有没有 colspan、
   确认它的表头列数与行列数是否一致。
 
@@ -484,7 +484,7 @@ _controller?.view.evaluateJavaScripts('window.postMessage($messageLiteral,"*")')
   - 把 `id="tbody"` 挪到 `<webf-table>` 上 → `innerHTML` 会**连表头一起抹掉**
     （downloader 每次刷新都整体重写），且写进去的是原始 `<tr>/<td>` → 又得重跑改写
 - → **downloader 只能改源码**（它是第一方仓库，`.gitmodules` 里跟踪的
-  `jsplugins-src/songloft-plugin-downloader`），让它直接产出 `<webf-table-row>` /
+  `plugins/src/songloft-plugin-downloader`），让它直接产出 `<webf-table-row>` /
   `<webf-table-cell>`，并把「行容器」这个概念去掉（直接往 `<webf-table>` 里 append 行）。
 
 **原因 ③：动态插入的行没有自动重跑机制 —— WebF 没有 `MutationObserver`**
@@ -605,7 +605,7 @@ _controller?.view.evaluateJavaScripts('window.postMessage($messageLiteral,"*")')
 
 ### 3.1 `file_picker` 与原生契约哈希：**已核实，零额外代价**（比推断更好）
 
-**先把哈希算法讲清楚**（`songloft-player/scripts/compute_native_contract.sh`，已通读）。
+**先把哈希算法讲清楚**（`clients/player/scripts/compute_native_contract.sh`，已通读）。
 `dart` 哈希 = 下面 4 段文本按固定顺序拼接、`LC_ALL=C` 排序后 `sha256`：
 
 | 段 | 内容 | 脚本行号 |
@@ -626,7 +626,7 @@ _controller?.view.evaluateJavaScripts('window.postMessage($messageLiteral,"*")')
   → 同时命中 `## plugins` 与 `## plugin-versions` 两段 → dart 哈希必变 → 本轮**确实**是整包发版事件。
 - ❌ **「`file_picker` 属于顺便一起破」——推断的前提不成立，但结论比推断更好。**
   **`file_picker` 早就在依赖里了**：
-  - `songloft-player/pubspec.yaml:53`：`file_picker: ^10.3.10`
+  - `clients/player/pubspec.yaml:53`：`file_picker: ^10.3.10`
   - `GeneratedPluginRegistrant.java:29`：`add(new com.mr.flutter.plugin.filepicker.FilePickerPlugin())`
   - `.flutter-plugins-dependencies` android 段：`file_picker | file_picker-10.3.10`
   - `pubspec.lock` 里 `dependency: "direct main"`
@@ -660,7 +660,7 @@ _controller?.view.evaluateJavaScripts('window.postMessage($messageLiteral,"*")')
 
 ### 3.2 `url_launcher`：**已核实，早就在了**
 
-- `songloft-player/pubspec.yaml:59`：`url_launcher: ^6.3.1`
+- `clients/player/pubspec.yaml:59`：`url_launcher: ^6.3.1`
 - `GeneratedPluginRegistrant.java:104`：`add(new io.flutter.plugins.urllauncher.UrlLauncherPlugin())`
 - `.flutter-plugins-dependencies`：`url_launcher_android | url_launcher_android-6.3.32`
 - 现有使用点：`client_download_page.dart`、`upgrade_dialog.dart`、`frontend_upgrade_dialog.dart`、
@@ -720,7 +720,7 @@ scripts/ test/ tool/ windows/`，`include/` 里只有 `webf_bridge.h`）。
 
 ```
 grep -F "Attempting to navigate WebF to an external WebF page" \
-  songloft-player/scripts/webf-verify/out/flutter.log
+  clients/player/scripts/webf-verify/out/flutter.log
 ```
 
 - **有这行** → 情形 A 成立 → 走 delegate 方案（下面的代码骨架）
@@ -773,7 +773,7 @@ miot `js/auth.js:95` 拿返回值做什么**需去读那段代码确认**——�
 
 **两处的实际用途已核实，都是「拉带鉴权头的封面图 → 显示」，不是下载。**
 
-**① `jsplugins-src/songloft-plugin-miot/static/js/playback.js:419-424`**（播放栏封面缩略图）
+**① `plugins/src/songloft-plugin-miot/static/js/playback.js:419-424`**（播放栏封面缩略图）
 ```js
 fetchWithAuth(coverUrl, COVER_FETCH_TIMEOUT_MS).then(blob => {
     if (coverUrl !== currentPlayerBarCoverUrl) return;
@@ -784,7 +784,7 @@ fetchWithAuth(coverUrl, COVER_FETCH_TIMEOUT_MS).then(blob => {
 ```
 → 只塞 `img.src`。前面还有 `URL.revokeObjectURL` 的清理（`:415-417`、`:434-435`）。
 
-**② `jsplugins-src/songloft-plugin-miot/static/js/fullscreen-player.js:199-205`**（全屏播放器封面）
+**② `plugins/src/songloft-plugin-miot/static/js/fullscreen-player.js:199-205`**（全屏播放器封面）
 ```js
 fetchWithAuth(url, COVER_FETCH_TIMEOUT_MS).then(blob => {
     if (url !== coverUrl) return;
@@ -852,8 +852,8 @@ fetchWithAuth(url, COVER_FETCH_TIMEOUT_MS).then(blob => {
   → `type=file` 和 `type=range` 都落到 `default`，**都是文本框**，与交接文档一致。
   （`input.type` 的取值见 `form/base_input.dart:214`：`getAttribute('type') ?? 'text'`。）
 - ❌ **命中面无法核实**：交接文档说「ytdlp、radio、lxmusic 各 1」。
-  本工作树里 `jsplugins-src/songloft-plugin-radio/` 是**空目录**（子模块未 checkout），
-  `ytdlp` / `lxmusic` **根本不在 `jsplugins-src/` 下**（交接文档 §6 也说它们不是跟踪的子模块）。
+  本工作树里 `plugins/src/songloft-plugin-radio/` 是**空目录**（子模块未 checkout），
+  `ytdlp` / `lxmusic` **根本不在 `plugins/src/` 下**（交接文档 §6 也说它们不是跟踪的子模块）。
   → 做这一项前**必须先 clone 出来**，确认：
   ① 文件选完之后插件拿它做什么（读文本内容？上传 multipart？只取文件名？）——
   这决定桥的返回值形状是 `path` / `bytes(base64)` / `text`；

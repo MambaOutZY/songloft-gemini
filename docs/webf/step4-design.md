@@ -20,7 +20,7 @@
 
 | 插件 | 是否拿到源码 | 方式 |
 |---|---|---|
-| **radio**（电台导入） | ✅ 拿到 | 本仓库跟踪的子模块，`git submodule update --init jsplugins-src/songloft-plugin-radio` 拉下，HEAD `fbc7d6fcb08f2b7e2b680f549bec25521cf0d9fd` |
+| **radio**（电台导入） | ✅ 拿到 | 本仓库跟踪的子模块，`git submodule update --init plugins/src/songloft-plugin-radio` 拉下，HEAD `fbc7d6fcb08f2b7e2b680f549bec25521cf0d9fd` |
 | **ytdlp** | ❌ **拿不到** | `git clone https://github.com/songloft-org/songloft-plugin-ytdlp.git` → `ERROR: Repository not found.`（同名 `git ls-remote` 亦然）。仓库名不是 `songloft-org/songloft-plugin-ytdlp`，或为私有 / 尚未公开 |
 | **lxmusic** | ❌ **拿不到** | 同上，`songloft-org/songloft-plugin-lxmusic` 也是 `Repository not found` |
 | **bili** | 未尝试 | 本文档不需要它（表格与 `input[type=file]` 的命中面里都没有 bili） |
@@ -30,15 +30,15 @@
 > 好消息：§2 会说明它们当前对 Step 6 **零紧迫性**，所以拿不到源码不阻塞任何事。
 
 **⚠️ 注意**：这两次 clone 都落在 `/tmp`（`/tmp/sl-ytdlp` / `/tmp/sl-lxmusic`，均已因失败而不存在），
-**没有**写进 `jsplugins-src/`。后续 agent 若拿到正确地址，也请 clone 到 `/tmp`
-——放进 `jsplugins-src/` 会污染工作树、让别人误提交一个未登记的子模块目录。
+**没有**写进 `plugins/src/`。后续 agent 若拿到正确地址，也请 clone 到 `/tmp`
+——放进 `plugins/src/` 会污染工作树、让别人误提交一个未登记的子模块目录。
 
 ### 顺带核实：「构建产物 vs `static/` 源码」这一条对表格**不构成差异**
 
 交接文档 §3.3 强调评估必须基于构建产物。已核实 builder 对 HTML **只做两件事**，
 **都不触碰 `<table>` 结构**：
 
-- `plugin-toolchain/packages/plugin-builder/src/build.ts:99-102`：`cpSync(static/, build/static/)`
+- `plugins/toolchain/packages/plugin-builder/src/build.ts:99-102`：`cpSync(static/, build/static/)`
   —— 整目录**原样拷贝**；
 - `:112-151`：若存在 `static/js/app.js`，用 esbuild 打成 `format: 'iife'` / `target: 'es2020'`
   的 `app.bundle.js`（`:116-123`），删掉其余 `.js`，然后**只**用正则
@@ -69,7 +69,7 @@
 
 ### 1.1 先定紧迫性：`renderEngine` 的实际取值（**这一条改变了 Step 4 的全部范围**）
 
-✅ **已核实**（直接读 `jsplugins-src/*/plugin.json`）：
+✅ **已核实**（直接读 `plugins/src/*/plugin.json`）：
 
 | 插件 | `plugin.json` 的 `renderEngine` | 有没有 `<table>` | 真的暴露在这个缺口下？ |
 |---|---|---|---|
@@ -266,7 +266,7 @@ Grid 方案必须**在 DOM 层面就没有行包裹元素**（见 §1.5）。
 
 ### 1.4 方案 A — 自写 Dart 自定义元素 `<songloft-table>`
 
-**形态**：在 `songloft-player/lib/features/home/presentation/render/elements/` 下新增
+**形态**：在 `clients/player/lib/features/home/presentation/render/elements/` 下新增
 `songloft_table.dart`，注册 4 个标签
 `<songloft-table>` / `<songloft-table-head>` / `<songloft-table-row>` / `<songloft-table-cell>`，
 **不用** WebF 自带的 `<webf-table>`，从而绕开 Flutter `Table` widget 的天花板。
@@ -327,7 +327,7 @@ Grid 方案必须**在 DOM 层面就没有行包裹元素**（见 §1.5）。
 
 1. **本目录只允许 import `flutter` 与 `webf`**
    （`songloft_progress_ring.dart:36-42` 的头注释）：验证探针
-   `songloft-player/scripts/webf-verify/` 是独立 Flutter package，
+   `clients/player/scripts/webf-verify/` 是独立 Flutter package，
    `entrypoint.sh` 会把**本目录原样拷进探针的 `lib/elements/`** 后编译
    （源目录缺失直接 `exit 1`，sha1 写到 `out/elements.sha1`）。
    一旦引入产品依赖（riverpod / `../` 上层文件），探针就编不过。
@@ -752,7 +752,7 @@ D 分两个子方案。
 
 ### 2.2 radio 的实际用法（✅ 已核实，逐行）
 
-`jsplugins-src/songloft-plugin-radio/static/index.html:19`：
+`plugins/src/songloft-plugin-radio/static/index.html:19`：
 ```html
 <input type="file" id="fileInput" accept=".m3u,.m3u8,.json,.txt" hidden>
 ```
@@ -811,7 +811,7 @@ ytdlp 是下载类插件，完全可能要上传 cookies 文件或二进制；lx
   如果会，那是一个额外的视觉 bug：页面上会多出一个空文本框。
   **兜底很便宜**：垫片给 `input[type=file]` 强制 inline `display:none`
   （沿用 `rangeSliderShim` 的 `.sl-range-hidden` + inline `display:none` 双保险做法）。
-- `file_picker: ^10.3.10` **已是现有依赖**（`songloft-player/pubspec.yaml:53` +
+- `file_picker: ^10.3.10` **已是现有依赖**（`clients/player/pubspec.yaml:53` +
   `GeneratedPluginRegistrant.java:29` + `.flutter-plugins-dependencies`）→ **契约哈希代价为零**。
   雷区：**不要 bump 它的版本**（`## plugin-versions` 段把版本号纳入哈希）、
   **不要引新原生插件**、**不要改 Kotlin**（走 WebF 自己的 `javascriptChannel`，不经 Kotlin）。
@@ -962,11 +962,11 @@ fileInput.addEventListener('change', function (e) {
 downloader 已经**带着 `renderEngine: "webf"` 发布了**（`plugin.json:4` 版本 `2026.8.2`，`:13`），
 而它那张表在 WebF 下是坏的（§1.1 末尾）。**这是当前唯一已发版、用户可见的 WebF 回归。**
 
-- 改 `jsplugins-src/songloft-plugin-downloader/plugin.json`：删掉 `"renderEngine": "webf"` 那一行
+- 改 `plugins/src/songloft-plugin-downloader/plugin.json`：删掉 `"renderEngine": "webf"` 那一行
   （或改成 `"webview"`），bump 版本号，发一版。
 - 等 §1 的 Grid 改造做完并**在容器里验证过**之后，再把 `renderEngine` 加回来。
 - ⚠️ 提交规范：子仓库引用父仓库 issue **必须写完整路径** `songloft-org/songloft#341`；
-  **禁止** `Co-Authored-By`；改完子模块后回主仓库 `git add jsplugins-src/songloft-plugin-downloader`
+  **禁止** `Co-Authored-By`；改完子模块后回主仓库 `git add plugins/src/songloft-plugin-downloader`
   bump 指针再提交。
 
 > 若产品上判断「downloader 的用户量小到可以带着 bug 等一版」，这一步可以跳。
@@ -1015,7 +1015,7 @@ downloader 已经**带着 `renderEngine: "webf"` 发布了**（`plugin.json:4` �
 （**主 agent 未执行** —— 与并行 agent 抢 `.dart_tool` / 容器）：
 
 ```bash
-# 1) 在 songloft-player/scripts/webf-verify/probe.html 里加一组检查（注意纵向预算，见交接文档 §5）：
+# 1) 在 clients/player/scripts/webf-verify/probe.html 里加一组检查（注意纵向预算，见交接文档 §5）：
 #    一个 max-height + overflow-y:auto 的容器，内含 display:grid（6 列，含 fr 与固定 px 混排），
 #    首 6 个子项 position:sticky; top:0; background:<醒目色>，后面塞 40 行子项。
 #    判据写在该组自己的注释里：滚动后首行是否仍贴顶、是否与下方列对齐。

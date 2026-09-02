@@ -258,7 +258,7 @@ A: 在客户端 **电台收藏** 歌单中点击添加按钮，输入电台流�
 
 ### Q: TV 端如何使用？
 
-A: TV 端推荐使用专门的 [songloft-tv](https://github.com/boluofan/songloft-tv) 客户端，专为 Android TV 设计，支持遥控器操作。
+A: TV 端推荐使用专门的 [songloft-tv](https://github.com/songloft-org/songloft-tv) 客户端，专为 Android TV 设计，支持遥控器操作。
 
 ## 升级与维护
 

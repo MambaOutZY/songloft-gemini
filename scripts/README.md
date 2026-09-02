@@ -34,7 +34,7 @@ push tag 后，[`release.yml`](../.github/workflows/release.yml) 会自动：
 
 ## 🔁 submodule-update.sh
 
-批量同步所有子模块（`songloft-player` / `plugin-toolchain` / `pkg/tag` / `jsplugins-src/*` / `jsplugins` 等）到各自的 main：
+批量同步所有子模块（`clients/player` / `plugins/toolchain` / `pkg/tag` / `plugins/src/*` / `jsplugins` 等）到各自的 main：
 
 ```bash
 ./scripts/submodule-update.sh
@@ -44,10 +44,10 @@ push tag 后，[`release.yml`](../.github/workflows/release.yml) 会自动：
 
 | 脚本 | 作用 |
 |------|------|
-| `plugin-build.sh <plugin-name>` | 进入 `jsplugins-src/<plugin-name>/`，运行 `pnpm install && pnpm run build`，把产物拷贝到 `jsplugins/` |
+| `plugin-build.sh <plugin-name>` | 进入 `plugins/src/<plugin-name>/`，运行 `pnpm install && pnpm run build`，把产物拷贝到 `jsplugins/` |
 | `plugin-release.sh <plugin-name>` | 把对应的 `.jsplugin.zip` 上传到该插件子模块的 GitHub Release |
 
-详细插件开发流程见 `plugin-toolchain/README.md`。
+详细插件开发流程见 `plugins/toolchain/README.md`。
 
 ## 🧪 test_tag.sh
 

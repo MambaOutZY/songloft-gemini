@@ -13,7 +13,7 @@ on:
       - '.gitignore'
       # HA 加载项子模块（裸路径 = gitlink 本身，带 /** 匹配不上）。
       # 加载项不参与后端构建，bump 它的指针不该触发一整轮 dev release。
-      - 'home-assistant-addon'
+      - 'integrations/home-assistant'
   workflow_dispatch: # 手动触发同样走 dev 路径
 
 # 按通道分锁：tag（正式版）与 dev（main push / 手动触发）各自串行，互不阻塞。
@@ -236,8 +236,8 @@ jobs:
         with:
           submodules: false
 
-      - name: Init songloft-player submodule
-        run: git submodule update --init --recursive -- songloft-player
+      - name: Init clients/player submodule
+        run: git submodule update --init --recursive -- clients/player
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -251,7 +251,7 @@ jobs:
 
       - name: Flutter pub get
         run: |
-          cd songloft-player
+          cd clients/player
           flutter pub get
 
       - name: Build Flutter Web (embedded mode)
@@ -266,7 +266,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-web-embedded
-          path: songloft-player-build/web-embedded
+          path: clients/player-build/web-embedded
           retention-days: 1
 
   # ============================================================
@@ -320,7 +320,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontend-web-embedded
-          path: songloft-player-build/web-embedded
+          path: clients/player-build/web-embedded
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -411,7 +411,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontend-web-embedded
-          path: songloft-player-build/web-embedded
+          path: clients/player-build/web-embedded
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -690,7 +690,7 @@ jobs:
 
       - name: Init submodules
         run: |
-          git submodule update --init --recursive -- songloft-player
+          git submodule update --init --recursive -- clients/player
           git submodule update --init --recursive -- pkg/tag
 
       - name: Setup Go
@@ -727,14 +727,14 @@ jobs:
 
       - name: Flutter pub get
         run: |
-          cd songloft-player
+          cd clients/player
           flutter pub get
 
       # 原生契约哈希:pub get 后(GeneratedPluginRegistrant/.flutter-plugins-dependencies
       # 已生成)、build 前计算并写 asset,同一组值稍后写进 manifest(同源同值)。
       - name: Compute native contract hash (bake asset)
         run: |
-          cd songloft-player
+          cd clients/player
           HASHES=$(./scripts/compute_native_contract.sh \
             --export-surface ../mobile/export_surface.txt \
             --write-asset android/app/src/main/assets/native_contract.json)
@@ -759,7 +759,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          cd songloft-player
+          cd clients/player
           flutter build apk --release --split-per-abi \
             --dart-define=HAS_BACKEND=true \
             --dart-define=FRONTEND_VERSION=${{ needs.prepare.outputs.version_tag }} \
@@ -769,7 +769,7 @@ jobs:
 
       - name: Collect APKs
         run: |
-          cd songloft-player
+          cd clients/player
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "$GITHUB_WORKSPACE/songloft-bundled-android-arm64-v8a.apk"
           cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "$GITHUB_WORKSPACE/songloft-bundled-android-armeabi-v7a.apk"
           cp build/app/outputs/flutter-apk/app-x86_64-release.apk "$GITHUB_WORKSPACE/songloft-bundled-android-x86_64.apk"
@@ -777,7 +777,7 @@ jobs:
       # 无基线热更:每次发版自动产出本渠道最新的前端补丁(libapp.so)+ 后端补丁
       # (libgojni.so),随 release 上传;客户端查本渠道最新即更新。覆盖 arm64-v8a/
       # armeabi-v7a/x86_64(gomobile bind 含 android/amd64 目标,x86_64 供模拟器验证)。
-      # 详见 songloft-player/docs/cn/backend_hotupdate.md。
+      # 详见 clients/player/docs/cn/backend_hotupdate.md。
       - name: Guard mobile export surface (frozen)
         run: |
           go doc ./mobile | grep '^func ' | sort > /tmp/current_surface.txt
@@ -800,7 +800,7 @@ jobs:
           FLUTTER_BINDING: ${{ env.FLUTTER_VERSION }}
         run: |
           set -e
-          cd songloft-player
+          cd clients/player
           # --split-per-abi 时 gradle 会把各 ABI APK 的 versionCode 改写为
           # 「ABI偏移×1000+pubspec基础值」(如 arm64-v8a=2001),flutter_patcher 按
           # versionCode 严格绑定,manifest/补丁必须写 APK 的**真实值**(用 aapt 读),
@@ -895,7 +895,7 @@ jobs:
 
       - name: Init submodules
         run: |
-          git submodule update --init --recursive -- songloft-player
+          git submodule update --init --recursive -- clients/player
           git submodule update --init --recursive -- pkg/tag
 
       - name: Setup Go
@@ -926,12 +926,12 @@ jobs:
 
       - name: Flutter pub get
         run: |
-          cd songloft-player
+          cd clients/player
           flutter pub get
 
       - name: Build Flutter Linux with embedded backend
         run: |
-          cd songloft-player
+          cd clients/player
           flutter build linux --release \
             --dart-define=HAS_BACKEND=true \
             --dart-define=FRONTEND_VERSION=${{ needs.prepare.outputs.version_tag }} \
@@ -940,7 +940,7 @@ jobs:
 
       - name: Package tar.gz
         run: |
-          cd songloft-player/build/linux/x64/release/bundle
+          cd clients/player/build/linux/x64/release/bundle
           tar czf "$GITHUB_WORKSPACE/songloft-bundled-linux-x64.tar.gz" .
 
       - name: Upload artifacts
@@ -963,7 +963,7 @@ jobs:
 
       - name: Init submodules
         run: |
-          git submodule update --init --recursive -- songloft-player
+          git submodule update --init --recursive -- clients/player
           git submodule update --init --recursive -- pkg/tag
 
       - name: Setup Go
@@ -1002,12 +1002,12 @@ jobs:
 
       - name: Flutter pub get
         run: |
-          cd songloft-player
+          cd clients/player
           flutter pub get
 
       - name: Build Flutter macOS with embedded backend
         run: |
-          cd songloft-player
+          cd clients/player
           flutter build macos --release \
             --dart-define=HAS_BACKEND=true \
             --dart-define=FRONTEND_VERSION=${{ needs.prepare.outputs.version_tag }} \
@@ -1016,7 +1016,7 @@ jobs:
 
       - name: Finalize macOS app bundle
         run: |
-          cd songloft-player
+          cd clients/player
           sign_identity="${MACOS_CODESIGN_IDENTITY:--}"
           for app_dir in build/macos/Build/Products/Release/*.app; do
             if [ ! -x "$app_dir/Contents/MacOS/songloft-server" ]; then
@@ -1033,14 +1033,14 @@ jobs:
 
       - name: Package macOS .app as ZIP
         run: |
-          cd songloft-player/build/macos/Build/Products/Release
+          cd clients/player/build/macos/Build/Products/Release
           app_dir=$(find . -maxdepth 1 -name "*.app" -type d -print -quit)
           test -n "$app_dir"
           ditto -c -k --sequesterRsrc --keepParent "${app_dir#./}" "$GITHUB_WORKSPACE/songloft-bundled-macos.zip"
 
       - name: Build Flutter iOS with embedded backend (no codesign)
         run: |
-          cd songloft-player
+          cd clients/player
           flutter build ios --release --no-codesign \
             --dart-define=HAS_BACKEND=true \
             --dart-define=FRONTEND_VERSION=${{ needs.prepare.outputs.version_tag }} \
@@ -1049,7 +1049,7 @@ jobs:
 
       - name: Package iOS as IPA
         run: |
-          cd songloft-player
+          cd clients/player
           test ! -e build/ios/iphoneos/Runner.app/Frameworks/Songloft.framework
           nm build/ios/iphoneos/Runner.app/Runner | grep -q 'MobileStart'
           mkdir -p Payload
@@ -1079,7 +1079,7 @@ jobs:
 
       - name: Init submodules
         run: |
-          git submodule update --init --recursive -- songloft-player
+          git submodule update --init --recursive -- clients/player
           git submodule update --init --recursive -- pkg/tag
 
       - name: Setup Go
@@ -1100,7 +1100,7 @@ jobs:
           BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -v -tags lite \
             -ldflags="-s -w -X songloft/internal/version.Version=${VERSION} -X songloft/internal/version.GitCommit=${GIT_COMMIT} -X songloft/internal/version.BuildTime=${BUILD_TIME} -X songloft/internal/version.BuildType=lite" \
-            -o songloft-player/windows/runner/songloft-server.exe .
+            -o clients/player/windows/runner/songloft-server.exe .
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -1114,18 +1114,18 @@ jobs:
 
       - name: Flutter pub get
         run: |
-          cd songloft-player
+          cd clients/player
           flutter pub get
 
       - name: Build Flutter Windows with embedded backend
         run: |
-          cd songloft-player
+          cd clients/player
           flutter build windows --release --dart-define=HAS_BACKEND=true --dart-define=FRONTEND_VERSION=${{ needs.prepare.outputs.version_tag }} --dart-define=FRONTEND_BUILD_TIME=${{ needs.prepare.outputs.build_time }} --dart-define=FRONTEND_GIT_COMMIT=${{ needs.prepare.outputs.git_commit }}
 
       - name: Package ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path songloft-player\build\windows\x64\runner\Release\* -DestinationPath songloft-bundled-windows-x64.zip
+          Compress-Archive -Path clients/player\build\windows\x64\runner\Release\* -DestinationPath songloft-bundled-windows-x64.zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -1252,16 +1252,16 @@ jobs:
 
           # 注意：本 job 是 checkout main 的，HEAD 不是被构建的那个 commit。
           # 对应源码必须指向真正构建用的 commit（分支构建时 GITHUB_SHA 是分支 HEAD），
-          # 以及那个 commit 下 songloft-player 子模块的指针。
+          # 以及那个 commit 下 clients/player 子模块的指针。
           # 每一步都要校验拿到的确实是 40 位 SHA：失败的 gh api 会把错误 JSON 打到
           # stdout，直接用会把整段 JSON 写进合规文件里。
           is_sha() { printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'; }
-          PLAYER_SHA=$(git rev-parse "${GITHUB_SHA}:songloft-player" 2>/dev/null || true)
+          PLAYER_SHA=$(git rev-parse "${GITHUB_SHA}:clients/player" 2>/dev/null || true)
           if ! is_sha "$PLAYER_SHA"; then
-            PLAYER_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/contents/songloft-player?ref=${GITHUB_SHA}" --jq .sha 2>/dev/null || true)
+            PLAYER_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/contents/clients/player?ref=${GITHUB_SHA}" --jq .sha 2>/dev/null || true)
           fi
           if ! is_sha "$PLAYER_SHA"; then
-            PLAYER_SHA="unknown -- read the songloft-player submodule pointer at the commit above"
+            PLAYER_SHA="unknown -- read the clients/player submodule pointer at the commit above"
           fi
 
           cat > release-files/CORRESPONDING-SOURCE.txt <<EOF
@@ -1283,13 +1283,13 @@ jobs:
               release tag : ${RELEASE_TAG}
               commit      : ${GITHUB_SHA}
 
-            Flutter client (songloft-player submodule at that commit)
+            Flutter client (clients/player submodule at that commit)
               https://github.com/songloft-org/songloft-player
               commit      : ${PLAYER_SHA}
 
             WebF (rendering engine, GPL-3.0-only)
               https://github.com/openwebf/webf
-              constraint  : the "webf:" entry in songloft-player/pubspec.yaml at
+              constraint  : the "webf:" entry in clients/player/pubspec.yaml at
               the client commit above -- that file is committed and readable
               (it is a version CONSTRAINT, e.g. "^0.24.27", NOT the resolved
               version: pubspec.lock is not committed to the client repository.

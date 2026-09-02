@@ -15,9 +15,9 @@ set -e
 # 脚本所在目录 / 仓库根目录 / 插件源目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-PLUGINS_SRC_DIR="${REPO_ROOT}/jsplugins-src"
+PLUGINS_SRC_DIR="${REPO_ROOT}/plugins/src"
 
-# 插件列表：扫描 jsplugins-src/songloft-plugin-* 目录，去掉前缀得到插件名
+# 插件列表：扫描 plugins/src/songloft-plugin-* 目录，去掉前缀得到插件名
 PLUGINS=()
 for dir in "${PLUGINS_SRC_DIR}"/songloft-plugin-*/; do
     [ -d "$dir" ] || continue

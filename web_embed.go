@@ -6,5 +6,5 @@ import (
 	"embed"
 )
 
-//go:embed all:songloft-player-build/web-embedded
+//go:embed all:clients/player-build/web-embedded
 var WebDist embed.FS

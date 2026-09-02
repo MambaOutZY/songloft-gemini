@@ -109,7 +109,7 @@ webf」的铁律（§7），而它需要 import `webf_cupertino_ui`。探针侧�
    本身值得修**，但那会影响所有插件，未动。
 9. **`webf_cupertino_ui` 是 Apache-2.0**（以包内 `LICENSE` 为准）。npm 上同名包的元数据写
    ISC 是错的。**不引入新的 copyleft** —— 客户端整体按 GPL-3.0 分发的原因仍只有 webf 本身。
-   已记进 `songloft-player/NOTICE` 的第 1 项与第 6 项。
+   已记进 `clients/player/NOTICE` 的第 1 项与第 6 项。
 10. **`@songloft/plugin-builder` 的 `frontend/` 构建钩子只有 ≥ 2.13.1 才有。**
     downloader 原先锁在 2.5.0（`package-lock.json`），更早的版本会**静默跳过**整个前端构建、
     产出一个没有前端资源的包。要用 `frontend/` 的插件必须 bump 这个 devDependency。
@@ -695,8 +695,8 @@ cloudflared / hostc / ytdlp 的 `env()`），**现在都不是待办**。
 | 仓库 | 分支 | HEAD（截至 2026-08-02 本节更新时） |
 |---|---|---|
 | 父仓库 `songloft` | `worktree-webf-plugin-render` | `8055506` |
-| `songloft-player` | `feat/webf-plugin-render` | `3035b6a` |
-| `plugin-toolchain` | `feat/webf-transport-doc` | `8f25a43` |
+| `clients/player` | `feat/webf-plugin-render` | `3035b6a` |
+| `plugins/toolchain` | `feat/webf-transport-doc` | `8f25a43` |
 | `songloft-plugin-miot` | **`main`** | `0e0d945`（**尚未发版**，见下） |
 | `songloft-plugin-downloader` | **`main`** | `a99e279`（已发 v2026.8.2） |
 | `songloft-plugin-lyrics` | **`main`** | `84d90fe`（已发 v2026.8.2） |
@@ -713,7 +713,7 @@ release zip 里的 `static/` 还是 v2026.8.2 那份，所以**竖向音量条�
 
 ### ⚠️ 合并前必须撤掉的临时改动
 
-`.github/workflows/release.yml`（父仓库）与 `songloft-player/.github/workflows/build-and-release.yml`
+`.github/workflows/release.yml`（父仓库）与 `clients/player/.github/workflows/build-and-release.yml`
 被改成发布到独立 tag **`dev-webf`**，为的是不覆盖共享的 `dev`（那是所有人在用的滚动 dev 版）。
 相关提交：父 `2f8c804`、player `c775382`，提交信息里已写明"合并前必须撤掉"。
 
@@ -1013,7 +1013,7 @@ CSS 求值」这一层，注入的是人为非零值）、转屏 / 键盘触发�
 ### 3.3 缺口清单与真实命中面（已交叉验证）
 
 评估必须基于**构建产物**（builder 用 esbuild 打成 IIFE / es2020，会把
-`<script type="module">` 改写成普通 `<script>`），不是 `jsplugins-src/*/static/` 源码。
+`<script type="module">` 改写成普通 `<script>`），不是 `plugins/src/*/static/` 源码。
 
 | 缺口 | 命中的插件 | 现状 |
 |---|---|---|
@@ -1117,7 +1117,7 @@ Step 3 小节；对插件作者的说明已写进插件开发指南（中英双�
 
 ### ✅ task #3 — 许可合规（**主体已完成 2026-08-02**）
 
-`songloft-player/NOTICE`、双语 README / docs 的许可章节、GPL-3.0 全文随 release 产物、
+`clients/player/NOTICE`、双语 README / docs 的许可章节、GPL-3.0 全文随 release 产物、
 「完整对应源码」获取方式（`CORRESPONDING-SOURCE.txt`）均已落地。
 
 **三个非显而易见的决策，改这块前先读**：
@@ -1125,7 +1125,7 @@ Step 3 小节；对插件作者的说明已写进插件开发指南（中英双�
 1. **`LICENSES/GPL-3.0.txt` 刻意不叫 `COPYING` / `LICENSE-*`、也刻意不放仓库根**：
    GitHub 的 licensee **只扫仓库根**，双许可仓库在根上放第二份 license 会让它判成
    `NOASSERTION`，README 的 shields 徽章会从 Apache-2.0 变成 "unknown"。
-2. **父仓库与 `songloft-player` 各存一份**（35147 字节，md5 相同）。不是冗余：父仓库的
+2. **父仓库与 `clients/player` 各存一份**（35147 字节，md5 相同）。不是冗余：父仓库的
    `create-release` job checkout 的是 **`ref: main`**、**且不 init 子模块**，拿不到 player 那份。
 3. **workflow 里用 `git show ${GITHUB_SHA}:LICENSES/GPL-3.0.txt` 而不是 `cp`**：同上，
    那个 job 的工作区是 main 而不是被构建的那个 commit。用 `cp` 会在 `dev-webf` 阶段
@@ -1141,10 +1141,10 @@ Step 3 小节；对插件作者的说明已写进插件开发指南（中英双�
 版本号不是回落成占位符，而是**整个 `Create Release` job 失败**。
 player release run `30784825599`：8 个构建 job 全绿，只有 `Create Release` 挂掉，报
 `awk: fatal: cannot open file 'pubspec.lock' for reading: No such file or directory`，
-位置 `songloft-player/.github/workflows/build-and-release.yml` 的
+位置 `clients/player/.github/workflows/build-and-release.yml` 的
 `Attach GPL-3.0 license text + corresponding source notice`。两层缺陷叠加：
 
-1. **`pubspec.lock` 不入库**（`songloft-player/.gitignore:49`），而 `Create Release` 是**独立
+1. **`pubspec.lock` 不入库**（`clients/player/.gitignore:49`），而 `Create Release` 是**独立
    job 的全新 checkout**、**不跑 `flutter pub get`** → 那个文件在 CI 里**必然不存在**。
    本机能跑通纯粹因为本地有 lock。
 2. **兜底那行是死代码**（关键）：紧跟其后的
@@ -1161,7 +1161,7 @@ player release run `30784825599`：8 个构建 job 全绿，只有 `Create Relea
 「版本**约束** `^0.24.27`」—— GPL §6 的对应源码声明里把约束当版本写是不诚实的。
 
 同时修掉父仓库 `.github/workflows/release.yml` 里的**死指针**：原文写
-`version : see songloft-player/pubspec.lock at the commit above`，
+`version : see clients/player/pubspec.lock at the commit above`，
 而该路径在那个 commit 上**根本不存在**（同样被 gitignore），等于让 GPL 接收者去找一个
 不存在的文件。改为指向子模块里**入库的** `pubspec.yaml` 的 `webf:` 约束 + 构建日志 URL，
 并写明那是约束而非解析版本。
@@ -1235,7 +1235,7 @@ PROBE_URL=...    换渲染目标
 SETTLE=<秒>      抓屏前等待
 ```
 
-产出在 `songloft-player/scripts/webf-verify/out/`：`probe.png`（截图）、`build.log`、
+产出在 `clients/player/scripts/webf-verify/out/`：`probe.png`（截图）、`build.log`、
 `flutter.log`、`codepoints.txt`、`env.txt`、`elements.sha1`。
 
 **探针页 `probe.html`** 现在是**两列布局**、13 个检查组 + `13b` 文本断言，每组的通过/失败判据

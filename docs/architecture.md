@@ -14,7 +14,7 @@ Songloft 是一个自托管的本地音乐服务器，采用前后端分离架�
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  Flutter 跨平台前端                                          │
-│  /songloft-player (独立仓库: github.com/songloft-org/songloft-player) │
+│  /clients/player (独立仓库: github.com/songloft-org/songloft-player) │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
 │  │ Android  │ │   iOS    │ │  macOS   │ │ Windows  │       │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
@@ -110,14 +110,24 @@ songloft/
 │   └── version/                # 版本信息
 ├── pkg/                        # 公共包
 │   └── tag/                    # 音频元数据读写库
-├── songloft-player/             # Flutter 前端（独立子仓库）
-│   └── lib/                    # Dart 源码
-│       ├── config/             # API 配置、部署模式
-│       ├── core/               # 网络、路由、主题、存储、音频
-│       ├── features/           # 功能模块（auth / startup / home / library / player / playlist / settings / jsplugin / dlna）
-│       └── shared/             # 共享布局、模型、组件
-├── plugin-toolchain/           # JS 插件开发工具链（SDK + Builder + 脚手架）
-├── jsplugins-src/              # JS 插件源码集合（子模块，构建产物发布在各插件 GitHub Releases）
+├── clients/                    # 客户端集合
+│   ├── player/                 # Flutter 前端（独立子仓库）
+│   │   └── lib/                # Dart 源码
+│   │       ├── config/         # API 配置、部署模式
+│   │       ├── core/           # 网络、路由、主题、存储、音频
+│   │       ├── features/       # 功能模块（auth / startup / home / library / player / playlist / settings / jsplugin / dlna）
+│   │       └── shared/         # 共享布局、模型、组件
+│   ├── player-lynx/            # Lynx 客户端（子模块）
+│   ├── player-build/           # Flutter Web 构建产物（go:embed 嵌入）
+│   └── tv/                     # Android TV 客户端（子模块）
+├── plugins/                    # 插件生态
+│   ├── toolchain/              # JS 插件开发工具链（SDK + Builder + 脚手架）
+│   └── src/                    # JS 插件源码集合（子模块，构建产物发布在各插件 GitHub Releases）
+├── tools/                      # 独立工具
+│   ├── tracely/                # 可观测监控工具（子模块，独立 Go 模块）
+│   └── ffmpeg-builder/         # FFmpeg 构建器（子模块）
+├── integrations/               # 第三方集成
+│   └── home-assistant/         # Home Assistant 加载项（子模块）
 ├── scripts/                    # 构建和发布脚本
 └── docs/                       # 项目文档
 ```
@@ -168,7 +178,7 @@ make build-frontend-all            # 当前系统支持的所有平台
 5. **音频播放**：just_audio + audio_service，支持通知栏控制和后台播放
 6. **歌词显示**：LRC 歌词解析和同步显示
 7. **封面颜色提取**：从封面图片提取主色调用于动态配色
-8. **TV 客户端**：推荐使用 [songloft-tv](https://github.com/boluofan/songloft-tv)
+8. **TV 客户端**：推荐使用 [songloft-tv](https://github.com/songloft-org/songloft-tv)
 
 ## 数据库设计
 

@@ -18,13 +18,13 @@ const REPO_BLOB_BASE = 'https://github.com/songloft-org/songloft/blob/main';
 
 // 子模块 → 其【独立仓库】的 blob 基址。
 // subdir 类同步项里未映射的相对链接，算出来的是「主仓库根视角」的路径
-// （如 'home-assistant-addon/songloft/config.yaml'），但那个路径在 GitHub 上的主仓库里
+// （如 'integrations/home-assistant/songloft/config.yaml'），但那个路径在 GitHub 上的主仓库里
 // 只是个 gitlink，blob URL 必然 404。这里按前缀改写到子模块自己的仓库，
 // 并【剥掉前缀】——子模块内部路径不含它。
 const SUBMODULE_BLOB_BASES = [
-  { prefix: 'home-assistant-addon/', base: 'https://github.com/songloft-org/home-assistant-addon/blob/main' },
-  { prefix: 'songloft-player/', base: 'https://github.com/songloft-org/songloft-player/blob/main' },
-  { prefix: 'plugin-toolchain/', base: 'https://github.com/songloft-org/plugin-toolchain/blob/main' },
+  { prefix: 'integrations/home-assistant/', base: 'https://github.com/songloft-org/home-assistant-addon/blob/main' },
+  { prefix: 'clients/player/', base: 'https://github.com/songloft-org/songloft-player/blob/main' },
+  { prefix: 'plugins/toolchain/', base: 'https://github.com/songloft-org/plugin-toolchain/blob/main' },
 ];
 
 // repoPath 为「主仓库根视角」的路径，返回它在 GitHub 上真正可访问的 blob URL。
@@ -52,22 +52,22 @@ const syncItems = [
   { from: 'TERMS.en.md',   to: 'docs/en/TERMS.md',       en: true },
 
   // ── songloft-player 客户端文档 → docs/player/ ──
-  { from: 'songloft-player/docs/cn/architecture.md',    to: 'docs/player/architecture.md',    subdir: 'songloft-player/docs/cn' },
-  { from: 'songloft-player/docs/cn/build_guide.md',     to: 'docs/player/build_guide.md',     subdir: 'songloft-player/docs/cn' },
-  { from: 'songloft-player/docs/cn/development.md',     to: 'docs/player/development.md',     subdir: 'songloft-player/docs/cn' },
-  { from: 'songloft-player/docs/cn/platform-notes.md',  to: 'docs/player/platform-notes.md',  subdir: 'songloft-player/docs/cn' },
-  { from: 'songloft-player/docs/cn/flutter_patcher_hotupdate.md',  to: 'docs/player/flutter_patcher_hotupdate.md',  subdir: 'songloft-player/docs/cn' },
-  { from: 'songloft-player/docs/cn/backend_hotupdate.md',  to: 'docs/player/backend_hotupdate.md',  subdir: 'songloft-player/docs/cn' },
+  { from: 'clients/player/docs/cn/architecture.md',    to: 'docs/player/architecture.md',    subdir: 'clients/player/docs/cn' },
+  { from: 'clients/player/docs/cn/build_guide.md',     to: 'docs/player/build_guide.md',     subdir: 'clients/player/docs/cn' },
+  { from: 'clients/player/docs/cn/development.md',     to: 'docs/player/development.md',     subdir: 'clients/player/docs/cn' },
+  { from: 'clients/player/docs/cn/platform-notes.md',  to: 'docs/player/platform-notes.md',  subdir: 'clients/player/docs/cn' },
+  { from: 'clients/player/docs/cn/flutter_patcher_hotupdate.md',  to: 'docs/player/flutter_patcher_hotupdate.md',  subdir: 'clients/player/docs/cn' },
+  { from: 'clients/player/docs/cn/backend_hotupdate.md',  to: 'docs/player/backend_hotupdate.md',  subdir: 'clients/player/docs/cn' },
 
   // ── Home Assistant 加载项文档 → docs/addon/ ──
   // 源在独立仓库 songloft-org/home-assistant-addon（子模块）；
   // 目标路径刻意保持 docs/addon/ 不变 —— /addon/ 这个对外 URL 已进 sitemap，改了就是造死链。
-  { from: 'home-assistant-addon/README.md', to: 'docs/addon/index.md', subdir: 'home-assistant-addon' },
-  { from: 'home-assistant-addon/songloft/DOCS.md', to: 'docs/addon/user-guide.md', subdir: 'home-assistant-addon/songloft' },
+  { from: 'integrations/home-assistant/README.md', to: 'docs/addon/index.md', subdir: 'integrations/home-assistant' },
+  { from: 'integrations/home-assistant/songloft/DOCS.md', to: 'docs/addon/user-guide.md', subdir: 'integrations/home-assistant/songloft' },
 
   // ── 插件工具链文档 → docs/plugin-toolchain/ ──
-  { from: 'plugin-toolchain/README.md',                    to: 'docs/plugin-toolchain/index.md',       subdir: 'plugin-toolchain' },
-  { from: 'plugin-toolchain/packages/client-sdk/README.md', to: 'docs/plugin-toolchain/client-sdk.md', subdir: 'plugin-toolchain/packages/client-sdk' },
+  { from: 'plugins/toolchain/README.md',                    to: 'docs/plugin-toolchain/index.md',       subdir: 'plugins/toolchain' },
+  { from: 'plugins/toolchain/packages/client-sdk/README.md', to: 'docs/plugin-toolchain/client-sdk.md', subdir: 'plugins/toolchain/packages/client-sdk' },
 ];
 
 // markdown 链接重写：把 (...) 中的链接（不含 http/https/锚点）按规则改写。
@@ -130,7 +130,7 @@ function buildLinkMap() {
 
 function rewriteSubdirLinks(content, { srcFile, subdir }) {
   const linkMap = buildLinkMap();
-  const srcDir = dirname(srcFile);         // e.g. 'home-assistant-addon' or 'songloft-player/docs/cn'
+  const srcDir = dirname(srcFile);         // e.g. 'integrations/home-assistant' or 'clients/player/docs/cn'
   const dstFile = linkMap.get(srcFile);    // e.g. 'docs/addon/index.md'
   const dstDir = dirname(dstFile);         // e.g. 'docs/addon'
 
@@ -150,7 +150,7 @@ function rewriteSubdirLinks(content, { srcFile, subdir }) {
 
     // 解析相对路径为仓库根视角的绝对路径
     const resolvedSrc = resolve(repoRoot, srcDir, path)
-      .slice(repoRoot.length + 1); // 去掉 repoRoot 前缀，得到 'home-assistant-addon/songloft/DOCS.md' 之类
+      .slice(repoRoot.length + 1); // 去掉 repoRoot 前缀，得到 'integrations/home-assistant/songloft/DOCS.md' 之类
 
     // 查找该路径是否在同步清单中
     const mappedDst = linkMap.get(resolvedSrc);

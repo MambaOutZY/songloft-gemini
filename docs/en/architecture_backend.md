@@ -206,7 +206,7 @@ Holds reusable public packages:
 ### Frontend Embedding Mechanism
 
 ```
-web_embed.go      (build tag: !lite)  → //go:embed all:songloft-player-build/web-embedded
+web_embed.go      (build tag: !lite)  → //go:embed all:clients/player-build/web-embedded
 web_embed_lite.go  (build tag: lite)   → empty embed.FS
 ```
 

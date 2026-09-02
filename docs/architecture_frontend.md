@@ -30,7 +30,7 @@ Songloft 前端是一个基于 Flutter 的跨平台音乐播放器，支持 **An
 ## 目录结构
 
 ```
-songloft-player/lib/
+clients/player/lib/
 ├── config/                          # 应用配置
 │   ├── app_config.dart              # API 配置、部署模式、版本号
 │   └── constants.dart               # 应用常量
@@ -354,7 +354,7 @@ SongloftAudioHandler (extends BaseAudioHandler)
 ## 开发命令
 
 ```bash
-cd songloft-player
+cd clients/player
 flutter pub get                    # 安装依赖
 flutter run -d chrome              # Web 调试（standalone 模式）
 flutter run -d chrome --dart-define=DEPLOY_MODE=embedded  # 模拟嵌入模式
@@ -368,7 +368,7 @@ flutter test                       # 运行测试
 ### 构建命令
 
 ```bash
-# Web 嵌入模式（输出至 songloft-player-build/web-embedded，供 Go 二进制 //go:embed）
+# Web 嵌入模式（输出至 clients/player-build/web-embedded，供 Go 二进制 //go:embed）
 make build-frontend-web-embedded
 
 # Web 独立部署版
@@ -390,16 +390,16 @@ make build-frontend-all
 
 # Bundle 本地模式（先编译 Go 后端，再构建 Flutter 客户端）
 # 1. 编译 Go 后端为移动端库 / 桌面端可执行文件
-make build-go-mobile-android       # → songloft-player/android/app/libs/songloft.aar
-make build-go-mobile-ios           # → songloft-player/ios/Songloft.xcframework（仅 macOS）
-make build-go-desktop-linux        # → songloft-player/linux/songloft-server
-make build-go-desktop-windows      # → songloft-player/windows/songloft-server.exe
-make build-go-desktop-macos-arm64  # → songloft-player/macos/Runner/songloft-server
+make build-go-mobile-android       # → clients/player/android/app/libs/songloft.aar
+make build-go-mobile-ios           # → clients/player/ios/Songloft.xcframework（仅 macOS）
+make build-go-desktop-linux        # → clients/player/linux/songloft-server
+make build-go-desktop-windows      # → clients/player/windows/songloft-server.exe
+make build-go-desktop-macos-arm64  # → clients/player/macos/Runner/songloft-server
 
 # 2. 构建 Flutter 客户端（需加 --dart-define=HAS_BACKEND=true）
 # CI 中由 release.yml 的 build-bundled-{android,linux,apple,windows} Job 自动完成
 ```
 
 预编译安装包下载:
-- 标准版（需连接服务器）: [https://github.com/songloft-org/songloft-player/releases](https://github.com/songloft-org/songloft-player/releases)
+- 标准版（需连接服务器）: [https://github.com/songloft-org/clients/player/releases](https://github.com/songloft-org/clients/player/releases)
 - Bundle 版（内嵌后端）: [https://github.com/songloft-org/songloft/releases](https://github.com/songloft-org/songloft/releases)（`songloft-bundled-*` 文件）

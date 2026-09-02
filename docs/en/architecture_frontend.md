@@ -30,7 +30,7 @@ The Songloft frontend is a Flutter-based cross-platform music player supporting 
 ## Directory Structure
 
 ```
-songloft-player/lib/
+clients/player/lib/
 ├── config/                          # App configuration
 │   ├── app_config.dart              # API config, deployment mode, version number
 │   └── constants.dart               # App constants
@@ -368,7 +368,7 @@ flutter test                       # Run tests
 ### Build Commands
 
 ```bash
-# Web embedded mode (output to songloft-player-build/web-embedded, for Go binary //go:embed)
+# Web embedded mode (output to clients/player-build/web-embedded, for Go binary //go:embed)
 make build-frontend-web-embedded
 
 # Web standalone deployment build
@@ -390,16 +390,16 @@ make build-frontend-all
 
 # Bundle local mode (compile the Go backend first, then build the Flutter client)
 # 1. Compile the Go backend into a mobile library / desktop executable
-make build-go-mobile-android       # → songloft-player/android/app/libs/songloft.aar
-make build-go-mobile-ios           # → songloft-player/ios/Songloft.xcframework (macOS only)
-make build-go-desktop-linux        # → songloft-player/linux/songloft-server
-make build-go-desktop-windows      # → songloft-player/windows/songloft-server.exe
-make build-go-desktop-macos-arm64  # → songloft-player/macos/Runner/songloft-server
+make build-go-mobile-android       # → clients/player/android/app/libs/songloft.aar
+make build-go-mobile-ios           # → clients/player/ios/Songloft.xcframework (macOS only)
+make build-go-desktop-linux        # → clients/player/linux/songloft-server
+make build-go-desktop-windows      # → clients/player/windows/songloft-server.exe
+make build-go-desktop-macos-arm64  # → clients/player/macos/Runner/songloft-server
 
 # 2. Build the Flutter client (add --dart-define=HAS_BACKEND=true)
 # In CI this is done automatically by release.yml's build-bundled-{android,linux,apple,windows} Jobs
 ```
 
 Prebuilt installer downloads:
-- Standard edition (requires connecting to a server): [https://github.com/songloft-org/songloft-player/releases](https://github.com/songloft-org/songloft-player/releases)
+- Standard edition (requires connecting to a server): [https://github.com/songloft-org/clients/player/releases](https://github.com/songloft-org/clients/player/releases)
 - Bundle edition (backend embedded): [https://github.com/songloft-org/songloft/releases](https://github.com/songloft-org/songloft/releases) (`songloft-bundled-*` files)

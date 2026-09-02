@@ -1,45 +1,54 @@
 [submodule "pkg/tag"]
 	path = pkg/tag
 	url = https://github.com/hanxi/tag.git
-[submodule "songloft-player"]
-	path = songloft-player
+[submodule "clients/player"]
+	path = clients/player
 	url = https://github.com/songloft-org/songloft-player.git
-[submodule "plugin-toolchain"]
-	path = plugin-toolchain
+[submodule "plugins/toolchain"]
+	path = plugins/toolchain
 	url = https://github.com/songloft-org/plugin-toolchain.git
-[submodule "jsplugins-src/songloft-plugin-miot"]
-	path = jsplugins-src/songloft-plugin-miot
+[submodule "plugins/src/songloft-plugin-miot"]
+	path = plugins/src/songloft-plugin-miot
 	url = https://github.com/songloft-org/songloft-plugin-miot.git
-[submodule "ffmpeg-builder"]
-	path = ffmpeg-builder
+[submodule "tools/ffmpeg-builder"]
+	path = tools/ffmpeg-builder
 	url = https://github.com/hanxi/ffmpeg-builder.git
-[submodule "jsplugins-src/songloft-plugin-subsonic"]
-	path = jsplugins-src/songloft-plugin-subsonic
+[submodule "plugins/src/songloft-plugin-subsonic"]
+	path = plugins/src/songloft-plugin-subsonic
 	url = https://github.com/songloft-org/songloft-plugin-subsonic.git
-[submodule "jsplugins-src/songloft-plugin-cloudflared"]
-	path = jsplugins-src/songloft-plugin-cloudflared
+[submodule "plugins/src/songloft-plugin-cloudflared"]
+	path = plugins/src/songloft-plugin-cloudflared
 	url = https://github.com/songloft-org/songloft-plugin-cloudflared.git
-[submodule "jsplugins-src/songloft-plugin-dav"]
-	path = jsplugins-src/songloft-plugin-dav
+[submodule "plugins/src/songloft-plugin-dav"]
+	path = plugins/src/songloft-plugin-dav
 	url = https://github.com/songloft-org/songloft-plugin-dav.git
-[submodule "jsplugins-src/songloft-plugin-hostc"]
-	path = jsplugins-src/songloft-plugin-hostc
+[submodule "plugins/src/songloft-plugin-hostc"]
+	path = plugins/src/songloft-plugin-hostc
 	url = https://github.com/songloft-org/songloft-plugin-hostc.git
-[submodule "jsplugins-src/songloft-plugin-registry"]
-	path = jsplugins-src/songloft-plugin-registry
+[submodule "plugins/src/songloft-plugin-registry"]
+	path = plugins/src/songloft-plugin-registry
 	url = https://github.com/songloft-org/songloft-plugin-registry.git
-[submodule "jsplugins-src/songloft-plugin-downloader"]
-	path = jsplugins-src/songloft-plugin-downloader
+[submodule "plugins/src/songloft-plugin-downloader"]
+	path = plugins/src/songloft-plugin-downloader
 	url = https://github.com/songloft-org/songloft-plugin-downloader.git
-[submodule "jsplugins-src/songloft-plugin-lyrics"]
-	path = jsplugins-src/songloft-plugin-lyrics
+[submodule "plugins/src/songloft-plugin-lyrics"]
+	path = plugins/src/songloft-plugin-lyrics
 	url = https://github.com/songloft-org/songloft-plugin-lyrics.git
-[submodule "jsplugins-src/songloft-plugin-radio"]
-	path = jsplugins-src/songloft-plugin-radio
+[submodule "plugins/src/songloft-plugin-radio"]
+	path = plugins/src/songloft-plugin-radio
 	url = https://github.com/songloft-org/songloft-plugin-radio.git
-[submodule "home-assistant-addon"]
-	path = home-assistant-addon
+[submodule "integrations/home-assistant"]
+	path = integrations/home-assistant
 	url = https://github.com/songloft-org/home-assistant-addon.git
-[submodule "jsplugins-src/songloft-plugin-tagger"]
-	path = jsplugins-src/songloft-plugin-tagger
+[submodule "plugins/src/songloft-plugin-tagger"]
+	path = plugins/src/songloft-plugin-tagger
 	url = https://github.com/songloft-org/songloft-plugin-tagger.git
+[submodule "clients/tv"]
+	path = clients/tv
+	url = https://github.com/songloft-org/songloft-tv.git
+[submodule "clients/player-lynx"]
+	path = clients/player-lynx
+	url = https://github.com/songloft-org/songloft-player-lynx.git
+[submodule "tools/tracely"]
+	path = tools/tracely
+	url = https://github.com/hanxi/tracely.git

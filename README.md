@@ -190,7 +190,7 @@ Songloft 提供三种版本，满足不同使用场景：
 
 ### 📺 TV / 车机客户端
 
-除 Flutter 客户端外，TV 端和车机端推荐使用专门的 **[songloft-tv](https://github.com/boluofan/songloft-tv)** 客户端，专为 Android TV 及车载信息娱乐系统设计，支持遥控器和触屏操作。
+除 Flutter 客户端外，TV 端和车机端推荐使用专门的 **[songloft-tv](https://github.com/songloft-org/songloft-tv)** 客户端，专为 Android TV 及车载信息娱乐系统设计，支持遥控器和触屏操作。
 
 ### 📺 Kodi 插件
 

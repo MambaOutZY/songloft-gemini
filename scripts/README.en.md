@@ -34,7 +34,7 @@ Once the tag is pushed, [`release.yml`](../.github/workflows/release.yml) automa
 
 ## 🔁 submodule-update.sh
 
-Batch-syncs all submodules (`songloft-player` / `plugin-toolchain` / `pkg/tag` / `jsplugins-src/*` / `jsplugins`, etc.) to their respective main branches:
+Batch-syncs all submodules (`clients/player` / `plugins/toolchain` / `pkg/tag` / `plugins/src/*` / `jsplugins`, etc.) to their respective main branches:
 
 ```bash
 ./scripts/submodule-update.sh
@@ -44,10 +44,10 @@ Batch-syncs all submodules (`songloft-player` / `plugin-toolchain` / `pkg/tag` /
 
 | Script | Purpose |
 |------|------|
-| `plugin-build.sh <plugin-name>` | Enters `jsplugins-src/<plugin-name>/`, runs `pnpm install && pnpm run build`, and copies the artifacts into `jsplugins/` |
+| `plugin-build.sh <plugin-name>` | Enters `plugins/src/<plugin-name>/`, runs `pnpm install && pnpm run build`, and copies the artifacts into `jsplugins/` |
 | `plugin-release.sh <plugin-name>` | Uploads the corresponding `.jsplugin.zip` to the GitHub Release of that plugin's submodule |
 
-See `plugin-toolchain/README.md` for the detailed plugin development workflow.
+See `plugins/toolchain/README.md` for the detailed plugin development workflow.
 
 ## 🧪 test_tag.sh
 

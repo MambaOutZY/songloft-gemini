@@ -134,8 +134,8 @@
 
 - **产品文档**：`docs/js-plugin-development-guide.md` §8 + 英文版（**改一边必须同步另一边**）
 - **宿主垫片层**：`internal/jsplugin/assets/common.js`（`isWebFEngine()` 分支内）、`common.css`
-- **Dart 渲染层**：`songloft-player/lib/features/home/presentation/render/`
+- **Dart 渲染层**：`clients/player/lib/features/home/presentation/render/`
   （`elements/` 子目录**只能** import `flutter` 与 `webf`，验证探针要跨 package 拷它）
-- **验证探针**：`songloft-player/scripts/webf-verify/`（用法见 `handoff.md` §5）
+- **验证探针**：`clients/player/scripts/webf-verify/`（用法见 `handoff.md` §5）
 - **合并前必须撤掉的临时改动**：两个 release 工作流发布到独立 tag `dev-webf`
   （见 `handoff.md` §1，**里面夹着两处真 bug 修复，撤销时要保留**）

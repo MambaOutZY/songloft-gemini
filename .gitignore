@@ -28,7 +28,7 @@ go.work
 /bin/
 /build/
 /dist/
-songloft-player-build
+clients/player-build
 mimusic-player-build
 
 # songloft binaries
@@ -103,11 +103,8 @@ examples/
 
 songloft-plugin-lxmusic
 songloft-plugin-lxmusic-api
-tracely/
-jsplugins-src/songloft-plugin-ytdlp
+plugins/src/songloft-plugin-ytdlp
 hostc/
-jsplugins-src/songloft-plugin-bili
+plugins/src/songloft-plugin-bili
 cloudflare-github-proxy
-songloft-player-lynx/
-jsplugins-src/pcyear-bridge
-songloft-tv/
+plugins/src/pcyear-bridge

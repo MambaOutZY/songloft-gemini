@@ -3,7 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PLUGINS_DIR="$ROOT_DIR/jsplugins-src"
+PLUGINS_DIR="$ROOT_DIR/plugins/src"
 OUTPUT_DIR="$ROOT_DIR/data/jsplugins"
 
 mkdir -p "$OUTPUT_DIR"
