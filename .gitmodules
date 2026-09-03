@@ -52,3 +52,6 @@
 [submodule "tools/tracely"]
 	path = tools/tracely
 	url = https://github.com/hanxi/tracely.git
+[submodule "clients/themes"]
+	path = clients/themes
+	url = git@github.com:songloft-org/songloft-themes.git
