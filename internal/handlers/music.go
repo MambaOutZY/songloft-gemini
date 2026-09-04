@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"songloft/internal/database"
@@ -1094,46 +1093,9 @@ func (h *SongHandler) AddRemoteSongs(w http.ResponseWriter, r *http.Request) {
 }
 
 // probeRemoteSongsMetadata 对刚导入、缺失技术元数据的网络歌曲发起后台异步探测补齐。
-// 限并发（避免整目录导入时打爆服务端与上游音源），每首独立超时；RefreshSong 自带 inflight 去重。
+// 实际逻辑见 MetadataRefresher.RefreshSongsBackground（HTTP 导入与 jsplugin 桥接导入共用）。
 func (h *SongHandler) probeRemoteSongsMetadata(songs []*models.Song) {
-	if h.metadataRefresher == nil {
-		return
-	}
-
-	pending := make([]*models.Song, 0, len(songs))
-	for _, song := range songs {
-		if services.NeedsMetadata(song) {
-			// 复制一份，避免后台 goroutine 与调用方共享指针
-			copied := *song
-			pending = append(pending, &copied)
-		}
-	}
-	if len(pending) == 0 {
-		return
-	}
-
-	go func() {
-		// issue #265：探测走 ffprobe + ytdlp 插件唯一 worker，与批量下载撞车会打满 CPU 并把
-		// 下载解析挤到 30s 超时判死。故 (1) 降并发 4→2 从源头收敛占用；(2) 每首探测前若有活跃
-		// 下载则退避让路，把 worker 让给下载解析。探测是尽力而为的后台补齐，让路/延后无副作用。
-		const maxConcurrent = 2
-		sem := make(chan struct{}, maxConcurrent)
-		var wg sync.WaitGroup
-		for _, song := range pending {
-			h.waitForDownloadIdle()
-			wg.Add(1)
-			sem <- struct{}{}
-			go func(s *models.Song) {
-				defer wg.Done()
-				defer func() { <-sem }()
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer cancel()
-				h.metadataRefresher.RefreshSong(ctx, s, "", nil)
-			}(song)
-		}
-		wg.Wait()
-		slog.Info("导入歌曲元数据探测完成", "count", len(pending))
-	}()
+	h.metadataRefresher.RefreshSongsBackground(songs, h.waitForDownloadIdle)
 }
 
 // waitForDownloadIdle 在有活跃下载时退避，把插件 worker 让给下载解析（issue #265）。

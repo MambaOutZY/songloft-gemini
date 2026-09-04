@@ -1206,6 +1206,11 @@ func (h *BridgeHandler) handleSongs(action, data string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("handleSongs: create: %w", err)
 		}
+		// 与 HTTP 导入路径一致：导入即探测缺失的技术元数据（duration 等）。wendav 等 WebDAV
+		// 音源无法自带时长，不探测则 duration 长期为 0，MIot 插件无法注册切歌定时器，表现为
+		// 「单曲循环、不推进列表」（songloft-org/songloft#437）。桥接路径暂无下载闸门，传 nil
+		// 不让路；inflight 去重 + 并发上限已足够收敛占用。
+		h.metadataRefresher.RefreshSongsBackground(songs, nil)
 		result, err := json.Marshal(songs)
 		if err != nil {
 			return "", fmt.Errorf("handleSongs: marshal create: %w", err)

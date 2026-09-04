@@ -30,6 +30,58 @@ func NeedsMetadata(song *models.Song) bool {
 		(song.Duration == 0 || song.BitRate == 0 || song.SampleRate == 0 || song.Format == "")
 }
 
+// RefreshSongsBackground 对刚导入、缺失技术元数据的网络歌曲发起后台异步探测补齐。
+//
+// 限并发（避免整目录导入时打爆服务端与上游音源），每首独立超时；RefreshSong 自带 inflight 去重。
+// waitForIdle 非空时，每首探测前调用它退避以让路活跃下载（issue #265）；为 nil 则不退避（如
+// jsplugin songs.create 桥接路径暂无下载闸门，inflight 去重 + 并发上限已足够收敛占用）。
+//
+// 供 HTTP 导入路径（handlers.SongHandler.probeRemoteSongsMetadata，带下载让路）与 jsplugin
+// songs.create 桥接路径共用：wendav 等 WebDAV 音源无法自带时长，导入后若不探测，duration 会
+// 长期为 0，MIot 插件无法据此注册切歌定时器，表现为「单曲循环、不推进列表」
+// （songloft-org/songloft#437）。
+func (d *MetadataRefresher) RefreshSongsBackground(songs []*models.Song, waitForIdle func()) {
+	if d == nil {
+		return
+	}
+	pending := make([]*models.Song, 0, len(songs))
+	for _, song := range songs {
+		if NeedsMetadata(song) {
+			// 复制一份，避免后台 goroutine 与调用方共享指针
+			copied := *song
+			pending = append(pending, &copied)
+		}
+	}
+	if len(pending) == 0 {
+		return
+	}
+
+	go func() {
+		// issue #265：探测走 ffprobe + ytdlp 插件唯一 worker，与批量下载撞车会打满 CPU 并把
+		// 下载解析挤到 30s 超时判死。故 (1) 降并发 4→2 从源头收敛占用；(2) 每首探测前若有活跃
+		// 下载则退避让路，把 worker 让给下载解析。探测是尽力而为的后台补齐，让路/延后无副作用。
+		const maxConcurrent = 2
+		sem := make(chan struct{}, maxConcurrent)
+		var wg sync.WaitGroup
+		for _, song := range pending {
+			if waitForIdle != nil {
+				waitForIdle()
+			}
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(s *models.Song) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				d.RefreshSong(ctx, s, "", nil)
+			}(song)
+		}
+		wg.Wait()
+		slog.Info("导入歌曲元数据探测完成", "count", len(pending))
+	}()
+}
+
 type MetadataRefreshStatus = string
 
 const (
