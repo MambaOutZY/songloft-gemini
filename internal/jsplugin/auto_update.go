@@ -18,7 +18,22 @@ const (
 	autoUpdateInitialDelay = 5 * time.Minute
 	// autoUpdateInterval 自动更新检查的固定周期。
 	autoUpdateInterval = 6 * time.Hour
+	// autoUpdateReloadRetryInterval 因插件忙而推迟的热重载的重试周期。
+	// 取远小于 autoUpdateInterval 的值：新版本已经落盘了，不该等下一个 6 小时周期才生效。
+	autoUpdateReloadRetryInterval = 10 * time.Minute
 )
+
+// UpdateAllOptions 控制 RunUpdateAll 的行为。
+type UpdateAllOptions struct {
+	// Force 为 true 时强制重新下载安装（跳过"已是最新版"判断）。
+	Force bool
+	// DeferReloadWhenBusy 为 true 时，若插件报告自己正忙（onQueryBusy），
+	// 就跳过本次热重载——新版本 zip 已落盘，由调用方在插件空闲后补做。
+	//
+	// 只给后台自动更新用。手动更新**不能**开：用户点了"更新"就是希望立刻生效，
+	// 悄悄推迟会让人以为更新没成功。
+	DeferReloadWhenBusy bool
+}
 
 // PluginUpdateResult 单个插件的更新结果。
 type PluginUpdateResult struct {
@@ -30,6 +45,8 @@ type PluginUpdateResult struct {
 	CurrentVersion string
 	NewVersion     string
 	Error          string
+	// ReloadDeferred 表示新版本已安装但热重载被推迟（插件当时正忙）。
+	ReloadDeferred bool
 }
 
 // UpdateAllResult 批量更新的聚合结果。
@@ -38,7 +55,11 @@ type UpdateAllResult struct {
 	Updated int
 	Failed  int
 	Skipped int
-	Results []PluginUpdateResult
+	// ReloadDeferred 本次有多少插件的热重载被推迟。
+	ReloadDeferred int
+	// PendingReload 被推迟重载的插件 entryPath，供调用方在插件空闲后补做重载。
+	PendingReload []string
+	Results       []PluginUpdateResult
 }
 
 // RunUpdateAll 检查并更新所有具有远程更新源的插件。
@@ -49,6 +70,12 @@ type UpdateAllResult struct {
 //
 // 该方法同时被批量更新 HTTP 端点与后台自动更新 ticker 复用。
 func (m *Manager) RunUpdateAll(ctx context.Context, githubProxy string, force bool) (UpdateAllResult, error) {
+	return m.RunUpdateAllWithOptions(ctx, githubProxy, UpdateAllOptions{Force: force})
+}
+
+// RunUpdateAllWithOptions 是 RunUpdateAll 的可配置版本，语义见 UpdateAllOptions。
+func (m *Manager) RunUpdateAllWithOptions(ctx context.Context, githubProxy string, opts UpdateAllOptions) (UpdateAllResult, error) {
+	force := opts.Force
 	plugins, err := m.repo.GetAll(ctx)
 	if err != nil {
 		return UpdateAllResult{}, fmt.Errorf("get all js plugins: %w", err)
@@ -95,8 +122,25 @@ func (m *Manager) RunUpdateAll(ctx context.Context, githubProxy string, force bo
 		}
 
 		if updatedPlugin.Status == JSPluginStatusActive {
-			if reloadErr := m.ReloadPlugin(ctx, updatedPlugin.EntryPath); reloadErr != nil {
-				slog.Warn("reload plugin after update failed", "entryPath", updatedPlugin.EntryPath, "error", reloadErr)
+			// 热重载会销毁整个 JS 环境，插件维护在内存里的状态和定时器一起消失。
+			// miot 正在放歌时被重载就表现为"播着播着突然停了"
+			// （songloft-org/songloft-plugin-miot#96）。后台自动更新因此先问一句忙不忙，
+			// 忙就把重载记成待办，等空闲了补做；新版本 zip 此刻已经落盘，不会丢。
+			if opts.DeferReloadWhenBusy {
+				if busy, reason := m.IsPluginBusy(updatedPlugin.EntryPath); busy {
+					slog.Info("plugin busy, defer reload after update",
+						"entryPath", updatedPlugin.EntryPath,
+						"newVersion", updatedPlugin.Version,
+						"reason", reason)
+					item.ReloadDeferred = true
+					result.ReloadDeferred++
+					result.PendingReload = append(result.PendingReload, updatedPlugin.EntryPath)
+				}
+			}
+			if !item.ReloadDeferred {
+				if reloadErr := m.ReloadPlugin(ctx, updatedPlugin.EntryPath); reloadErr != nil {
+					slog.Warn("reload plugin after update failed", "entryPath", updatedPlugin.EntryPath, "error", reloadErr)
+				}
 			}
 		}
 
@@ -114,11 +158,15 @@ func (m *Manager) RunUpdateAll(ctx context.Context, githubProxy string, force bo
 // 每次触发前读取 plugin_auto_update 开关，关闭则跳过。
 type AutoUpdater struct {
 	manager *Manager
+	// pendingReload 记录"新版本已落盘、但当时插件正忙所以没重载"的插件 entryPath。
+	// 只在 Run 的 goroutine 里读写（runOnce / retryPendingReloads 都由同一个 select 驱动），
+	// 因此不需要加锁。
+	pendingReload map[string]struct{}
 }
 
 // NewAutoUpdater 创建自动更新调度器。
 func NewAutoUpdater(m *Manager) *AutoUpdater {
-	return &AutoUpdater{manager: m}
+	return &AutoUpdater{manager: m, pendingReload: make(map[string]struct{})}
 }
 
 // Run 阻塞运行自动更新循环，直到 ctx 取消。应在独立 goroutine 中调用。
@@ -136,13 +184,38 @@ func (a *AutoUpdater) Run(ctx context.Context) {
 
 	ticker := time.NewTicker(autoUpdateInterval)
 	defer ticker.Stop()
+	// 被推迟的重载单独用一个短周期 ticker 补做，不必等下一个 6 小时检查周期。
+	retryTicker := time.NewTicker(autoUpdateReloadRetryInterval)
+	defer retryTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			a.runOnce(ctx)
+		case <-retryTicker.C:
+			a.retryPendingReloads(ctx)
 		}
+	}
+}
+
+// retryPendingReloads 重试因插件忙而推迟的热重载：仍然忙就继续等下一个周期。
+func (a *AutoUpdater) retryPendingReloads(ctx context.Context) {
+	m := a.manager
+	for entryPath := range a.pendingReload {
+		if busy, reason := m.IsPluginBusy(entryPath); busy {
+			slog.Debug("deferred reload still pending, plugin busy", "entryPath", entryPath, "reason", reason)
+			continue
+		}
+
+		if err := m.ReloadPlugin(ctx, entryPath); err != nil {
+			slog.Warn("deferred reload after update failed", "entryPath", entryPath, "error", err)
+		} else {
+			slog.Info("deferred reload after update completed", "entryPath", entryPath)
+		}
+		// 成功失败都出队：失败通常是插件本身的问题，每 10 分钟重试只会刷日志。
+		// 交给 HealthChecker 的自愈与下一轮自动更新处理。
+		delete(a.pendingReload, entryPath)
 	}
 }
 
@@ -163,14 +236,21 @@ func (a *AutoUpdater) runOnce(ctx context.Context) {
 		Proxy string `json:"proxy"`
 	}
 	_ = m.configService.GetJSON(githubProxyConfigKey, &proxyCfg)
-	result, err := m.RunUpdateAll(ctx, proxyCfg.Proxy, false)
+	// 自动更新是后台行为，用户无感知：正在播放时热重载会打断播放，
+	// 所以推迟重载，等插件空闲后由 retryPendingReloads 补做。
+	// 手动更新（用户主动点击）不走这个分支，仍然立即重载。
+	result, err := m.RunUpdateAllWithOptions(ctx, proxyCfg.Proxy, UpdateAllOptions{DeferReloadWhenBusy: true})
 	if err != nil {
 		slog.Warn("auto-update run failed", "error", err)
 		return
+	}
+	for _, entryPath := range result.PendingReload {
+		a.pendingReload[entryPath] = struct{}{}
 	}
 	slog.Info("auto-update completed",
 		"total", result.Total,
 		"updated", result.Updated,
 		"failed", result.Failed,
-		"skipped", result.Skipped)
+		"skipped", result.Skipped,
+		"reloadDeferred", result.ReloadDeferred)
 }

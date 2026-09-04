@@ -508,6 +508,18 @@ func (m *Manager) GetService(entryPath string) (*JSService, bool) {
 	return value.(*JSService), true
 }
 
+// IsPluginBusy 询问插件此刻重载是否会打断正在进行的事（见 JSService.QueryBusy）。
+//
+// 刻意用 GetService 而非 EnsureLoaded：没加载的插件没有正在进行的事，
+// 为了问一句"忙不忙"反而把空闲驱逐掉的插件唤起来是本末倒置。
+func (m *Manager) IsPluginBusy(entryPath string) (bool, string) {
+	svc, ok := m.GetService(entryPath)
+	if !ok {
+		return false, ""
+	}
+	return svc.QueryBusy()
+}
+
 // EnsureLoaded 确保插件已加载并返回其 Service。
 //
 // 用于请求路径的"按需懒加载"：

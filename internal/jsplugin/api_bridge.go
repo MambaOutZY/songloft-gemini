@@ -39,6 +39,10 @@ var songloft = songloft || {};
 // onHTTPRequest 默认实现为 async：与异步 songloft.* API 自然组合。
 if (typeof globalThis.onInit !== 'function') { globalThis.onInit = async function() {}; }
 if (typeof globalThis.onDeinit !== 'function') { globalThis.onDeinit = async function() {}; }
+// onQueryBusy 供宿主询问"现在重载你会不会打断正在进行的事"。返回 true（或
+// { busy: true, reason: '...' }）时后台自动更新会推迟重载，等空闲了再做。
+// 默认 false：不实现这个钩子的插件行为与以前完全一致。
+if (typeof globalThis.onQueryBusy !== 'function') { globalThis.onQueryBusy = async function() { return false; }; }
 if (typeof globalThis.onHTTPRequest !== 'function') {
     globalThis.onHTTPRequest = async function(req) {
         return { statusCode: 404, headers: {}, body: 'not implemented' };

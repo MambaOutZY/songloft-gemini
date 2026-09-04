@@ -348,6 +348,54 @@ func (s *JSService) Init() error {
 	return nil
 }
 
+// QueryBusy 调用插件的 onQueryBusy() 生命周期回调，询问此刻重载是否会打断正在进行的事。
+//
+// 用于后台自动更新：miot 这类插件把"当前播到哪、什么时候该切下一首"维护在 JS 内存里，
+// 重载会连同定时器一起销毁，正在放歌时更新就表现为"播着播着突然停了"
+// （songloft-org/songloft-plugin-miot#96）。有了这个钩子，自动更新可以等空闲了再重载。
+//
+// 返回值宽松解析：布尔、`{"busy":true,"reason":"..."}` 形式的 JSON **字符串**都接受。
+// （ExecuteJS 用 fmt.Sprintf("%v") 字符串化返回值，插件直接返回对象会变成 Go 的 map
+// 文本而丢掉结构，所以插件要自己 JSON.stringify——这类值会落到下面的"看不懂"分支。）
+// 任何异常（钩子抛错、超时、返回值看不懂）都按**不忙**处理——宁可照旧重载，
+// 也不要因为一个探测失败就让插件永远更新不上。
+//
+// 只有 Ready/Running 状态才问。冻结/已停止的插件没有正在进行的事可打断。
+func (s *JSService) QueryBusy() (bool, string) {
+	s.mu.RLock()
+	status := s.status
+	s.mu.RUnlock()
+
+	if status != ServiceStatusReady && status != ServiceStatusRunning {
+		return false, ""
+	}
+
+	result, err := s.jsManager.ExecuteJS(context.Background(), s.envID, "onQueryBusy()", 3000)
+	if err != nil {
+		slog.Debug("onQueryBusy() failed, treating as idle", "plugin", s.plugin.EntryPath, "error", err)
+		return false, ""
+	}
+
+	raw := strings.TrimSpace(result.Result)
+	switch raw {
+	case "true":
+		return true, ""
+	case "", "false", "undefined", "null":
+		return false, ""
+	}
+
+	var payload struct {
+		Busy   bool   `json:"busy"`
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		slog.Debug("onQueryBusy() returned unparsable value, treating as idle",
+			"plugin", s.plugin.EntryPath, "value", raw)
+		return false, ""
+	}
+	return payload.Busy, payload.Reason
+}
+
 // Deinit 调用插件的 onDeinit() 生命周期回调
 func (s *JSService) Deinit() error {
 	s.mu.RLock()
