@@ -33,7 +33,7 @@ On Web, covers occasionally turn **solid black** (pure black, not the load-failu
 
 ## 2. Web plugin-tab iframe reloading / jitter
 
-The `<iframe>` (`HtmlElementView` platform view) hosting a plugin page suffered repeated reloads (the entry page requested 25–40 times/sec) and visual jitter. Fixed; there were three layers of root cause:
+The `<iframe>` (`HtmlElementView` platform view) hosting a plugin page suffered repeated reloads (the entry page requested 25–40 times/sec) and visual jitter. Fixed; there were four layers of root cause (layer 4 is not limited to plugin pages — **the whole app shakes**):
 
 ### 1. Widget tree: iframe reload ⟺ its hosting widget element is disposed+rebuilt
 
@@ -46,15 +46,26 @@ On Flutter Web the iframe DOM element is cached once per platform view `viewId` 
 
 When content height ≈ viewport, "scrollbar appears → content narrows → reflow → height changes → scrollbar disappears → …" flips every frame.
 
-- Fix: in `internal/jsplugin/assets/common.css`, give `html` `overflow-y: scroll` (scrollbar always present, constant width, loop broken).
+- Fix: in `internal/jsplugin/assets/theme.css`, give the **embedded** case (`html.embed`) `overflow-y: scroll` (scrollbar always present, constant width, loop broken), plus `scrollbar-width: none` + `::-webkit-scrollbar { display: none }` so it takes no layout width (otherwise `100vw`-sized elements inside plugins overflow horizontally, #341). Only forced in the embedded case: a plugin page opened directly in a browser can be resized freely and has no such loop.
 - Note: `scrollbar-gutter: stable` **only works on scroll containers (`overflow:auto/scroll`)**; it's a no-op when `html` is `visible` — which is why an earlier attempt didn't fix it. Linux/headless with overlay (0-width) scrollbars can never reproduce it; only Windows Chrome (classic ~15px scrollbar) does.
 
 ### 3. Cache layer (hard rule): immutable long-cache assets must use versioned URLs
 
-Even after the CSS was correct, users still saw jitter — the real culprit was cache headers. `jsplugin-assets/*` (`common.css`/`common.js`) previously used a **fixed, unversioned URL** + `Cache-Control: immutable`, so browsers didn't even revalidate and cached the old file for a year; the fix could never reach users.
+Even after the CSS was correct, users still saw jitter — the real culprit was cache headers. `jsplugin-assets/*` (`common.css`/`common.js` at the time, now split into `theme.css` / `components.css` / `common.js` / `webf-shims.css` / `webf-shims.js`) previously used a **fixed, unversioned URL** + `Cache-Control: immutable`, so browsers didn't even revalidate and cached the old file for a year; the fix could never reach users.
 
 - **General rule**: any `immutable` long-cache asset **must use a content-hash versioned URL** (e.g. `?v=<first 8 of sha256>`), or any later change is unreachable for existing users.
-- Implementation: `injectHTMLHead` appends `?v=<hash>` to the injected `common.css/js` URLs; the hosting HTML is `no-cache` so it always carries the latest version. When content is unchanged the URL is stable and the long cache still applies.
+- Implementation: `injectHTMLHead` appends `?v=<hash>` to every injected common-asset URL (`assetVersions` in `internal/jsplugin/routes.go`); the hosting HTML is `no-cache` so it always carries the latest version. When content is unchanged the URL is stable and the long cache still applies. Any new common asset must be registered in `assetVersions` too.
+
+### 4. Host page (hard rule): `<html>` must have viewport scrollbars disabled, or the whole page shakes (#439)
+
+Layer 2 only fixed the plugin iframe's **own document**; the exact same loop also applies to the **Flutter host page** — symptom: home / library / plugin store / plugin pages **all shake**, with no plugin involved.
+
+- **Mechanism**: the engine's `FullPageEmbeddingStrategy` only styles `<body>` (`position:fixed; inset:0; overflow:hidden`) and leaves **`<html>` at the default `overflow:visible`**. As soon as anything overflows the document by a few pixels (e.g. an overlay a browser extension injects into `<html>` — our own DOM all lives inside the fixed body and never contributes), a classic scrollbar appears and eats 15px of the viewport → the viewport-sized body narrows → Flutter relayouts the whole app → the overflow is gone → the scrollbar is removed → flip every frame, i.e. a ~15Hz whole-page shake.
+- **Fix**: `clients/player/web/index.html` sets `html { overflow: hidden; scrollbar-width: none }` + `html::-webkit-scrollbar { display: none }`. The host page never needs document-level scrolling (the Flutter view is a fixed full-screen element; all scrolling happens inside the app), so disabling it makes the loop structurally impossible — no need to first identify what overflowed the document.
+- **How to diagnose** (the visual shake cannot be reproduced where scrollbars are overlay-style, but the mechanism is measurable):
+  - Frame-diff a screen recording: in a shaking frame pair a large left-hand region is **pixel-identical** (left-aligned content doesn't move) while right-aligned elements translate by exactly one scrollbar width (~15px for a classic scrollbar), and a scrollbar thumb appears along the right and bottom edges (when the overflow is only a few pixels the thumb nearly fills the track). That combination is the fingerprint of "the viewport lost a slice to a scrollbar", unlike an app animation (which wouldn't leave the left side bit-identical);
+  - Measure in-page: `innerWidth - document.documentElement.clientWidth` (>0 means a scrollbar is taking width) and whether `scrollWidth/scrollHeight` exceed the client sizes.
+- **Don't** try to work around it with `scrollbar-gutter` or app-side `Scrollbar` config: the former is a no-op while `<html>` is `visible` (same trap as layer 2), and the latter isn't a variable in this loop at all.
 
 ---
 
@@ -126,6 +137,6 @@ Android Chrome shows a black screen after returning from background.
 
 ## Related module references
 
-- Plugin common assets and theme bridge: `internal/jsplugin/assets/` (`common.css`/`common.js`), `injectHTMLHead`.
+- Plugin common assets and theme bridge: `internal/jsplugin/assets/` (`theme.css` / `components.css` / `common.js` / `webf-shims.*`), `injectHTMLHead`.
 - Play activity / prefetch transcoding: prefetch transcoding must not be canceled by activating the current song via `playactivity.Activate` (`Activate` skips `CatPrefetch`); otherwise the next track's prefetch ffmpeg is SIGKILLed and playback still transcodes in real time.
 - Sources without duration (e.g. WebDAV): `song.duration=0` makes miot speakers not advance tracks (advancing relies on server-side duration); probe and backfill on import (`RefreshSong` with bounded concurrency after `AddRemoteSongs`).

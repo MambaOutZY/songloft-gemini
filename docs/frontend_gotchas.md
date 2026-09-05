@@ -33,7 +33,7 @@ Web 端封面偶发**变黑**（纯黑，不是加载失败占位图标）或退
 
 ## 二、Web 插件 Tab 的 iframe 反复重载 / 抖动
 
-承载插件页的 `<iframe>`（`HtmlElementView` 平台视图）曾出现反复重新加载（入口页被 25~40 次/秒重复请求）与视觉抖动。已修复，涉及三层根因：
+承载插件页的 `<iframe>`（`HtmlElementView` 平台视图）曾出现反复重新加载（入口页被 25~40 次/秒重复请求）与视觉抖动。已修复，涉及四层根因（第 4 层不止插件页，**整个 App 都会抖**）：
 
 ### 1. widget 树层：iframe 重载 ⟺ 承载它的 widget 元素 dispose+重建
 
@@ -46,15 +46,26 @@ Flutter Web 里 iframe DOM 元素按 platform view 的 `viewId` 缓存一次，�
 
 内容高度 ≈ 视口时「滚动条出现→内容变窄→重排→高度变化→滚动条消失→…」每帧翻转。
 
-- 修复：`internal/jsplugin/assets/common.css` 给 `html` 加 `overflow-y: scroll`（滚动条常驻、宽度恒定，打断回路）。
+- 修复：`internal/jsplugin/assets/theme.css` 给**嵌入态**的 `html.embed` 加 `overflow-y: scroll`（滚动条常驻、宽度恒定，打断回路），并配 `scrollbar-width: none` + `::-webkit-scrollbar { display: none }` 让它不占布局宽度（否则插件里 `100vw` 定宽元素会横向溢出，#341）。只在嵌入态强制：普通浏览器直开插件页窗口可自由伸缩、无此回路。
 - 注意：`scrollbar-gutter: stable` **只对滚动容器（`overflow:auto/scroll`）生效**，`html` 是 `visible` 时无效——这是它一度没修好的原因。Linux/headless 用覆盖式（0 宽度）滚动条永远复现不了，Windows Chrome（经典 ~15px 滚动条）才复现。
 
 ### 3. 缓存层（铁律）：immutable 长缓存资源必须走版本化 URL
 
-CSS 改对了用户却仍抖——真凶是缓存头。`jsplugin-assets/*`（`common.css`/`common.js`）原用**固定无版本 URL** + `Cache-Control: immutable`，浏览器连重新验证都不做，把旧文件缓存一年，修复永远到不了用户。
+CSS 改对了用户却仍抖——真凶是缓存头。`jsplugin-assets/*`（当时是 `common.css`/`common.js`，现已拆为 `theme.css` / `components.css` / `common.js` / `webf-shims.css` / `webf-shims.js`）原用**固定无版本 URL** + `Cache-Control: immutable`，浏览器连重新验证都不做，把旧文件缓存一年，修复永远到不了用户。
 
 - **通用铁律**：凡 `immutable` 长缓存的资源，**必须走内容哈希版本化 URL**（如 `?v=<sha256前8位>`），否则任何后续修改对老用户都不可达。
-- 实现：`injectHTMLHead` 给注入的 `common.css/js` URL 加 `?v=<hash>`，承载页 HTML 为 `no-cache` 每次带出最新版本号；内容不变时 URL 恒定，长缓存照旧。
+- 实现：`injectHTMLHead` 给注入的每个公共资源 URL 加 `?v=<hash>`（`internal/jsplugin/routes.go` 的 `assetVersions`），承载页 HTML 为 `no-cache` 每次带出最新版本号；内容不变时 URL 恒定，长缓存照旧。新增公共资源必须同时登记进 `assetVersions`。
+
+### 4. 宿主页层（铁律）：`<html>` 必须禁掉视口滚动条，否则整页抖（#439）
+
+第 2 层只修了插件 iframe 的**文档**，同一条回路在 **Flutter 宿主页**上也成立——表现是首页 / 曲库 / 插件商店 / 插件页**全都抖**，与插件无关。
+
+- **机制**：引擎的 `FullPageEmbeddingStrategy` 只给 `<body>` 设 `position:fixed; inset:0; overflow:hidden`，**`<html>` 保持默认 `overflow:visible`**。只要有任何东西把文档撑破几像素（浏览器扩展注入到 `<html>` 的浮层等，我们自己的 DOM 全在 fixed 的 body 里、不参与），经典滚动条一出现就吃掉 15px 视口 → 跟着视口定尺寸的 body 变窄 → Flutter 整页按新尺寸重排 → 不再溢出 → 滚动条消失 → 每帧翻转，肉眼 ~15Hz 抖动。
+- **修复**：`clients/player/web/index.html` 加 `html { overflow: hidden; scrollbar-width: none }` + `html::-webkit-scrollbar { display: none }`。宿主页永远不需要文档级滚动（Flutter 视图是 fixed 全屏、滚动全在应用内），禁掉即让回路结构上不成立，且不依赖「查出谁撑破了文档」。
+- **诊断口径**（视觉抖动无法在覆盖式滚动条环境复现，但机制可量化）：
+  - 录屏逐帧差分：抖动帧对里左侧大片像素**完全一致**（左对齐内容不动），只有右对齐元素整体平移一个滚动条宽度（经典滚动条约 15px），同时右 / 下边缘各出现一条滚动条滑块（溢出只有几像素时滑块几乎占满轨道）——这组合是「视口被滚动条吃掉一截」的指纹，区别于应用自身动画（后者不会让左侧像素逐位相同）；
+  - 页面里直接测 `innerWidth - document.documentElement.clientWidth`（>0 即滚动条占了宽度）与 `scrollWidth/scrollHeight` 是否超出 client 尺寸。
+- **不要**再靠 `scrollbar-gutter` 或应用侧 `Scrollbar` 配置绕：`<html>` 是 `visible` 时前者无效（同第 2 层的坑），后者根本不是这条回路的变量。
 
 ---
 
@@ -126,6 +137,6 @@ Android Chrome 切后台回来黑屏。
 
 ## 相关模块参考
 
-- 插件公共资源与主题桥接：`internal/jsplugin/assets/`（`common.css`/`common.js`）、`injectHTMLHead`
+- 插件公共资源与主题桥接：`internal/jsplugin/assets/`（`theme.css` / `components.css` / `common.js` / `webf-shims.*`）、`injectHTMLHead`
 - 播放活动 / 预热转码：预热（prefetch）转码不应被切当前歌的 `playactivity.Activate` 取消（`Activate` 跳过 `CatPrefetch`），否则下一首预热 ffmpeg 被 SIGKILL、播放仍实时转码。
 - WebDAV 等无时长源：`song.duration=0` 会导致 miot 音箱不切歌（切歌依赖服务端 duration），导入时应探测补齐（`AddRemoteSongs` 后台限并发 `RefreshSong`）。
