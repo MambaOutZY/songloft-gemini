@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -1011,8 +1012,15 @@ func TestGetSongPlayNormalizeStreamsLive(t *testing.T) {
 		if ct := rr.Header().Get("Content-Type"); ct != "audio/mpeg" {
 			t.Errorf("Content-Type=%q, 期望 audio/mpeg", ct)
 		}
-		if cl := rr.Header().Get("Content-Length"); cl != "" {
-			t.Errorf("Content-Length=%q, 期望为空（chunked 实时流）", cl)
+		// 实时流带 CBR 估算的 Content-Length + Accept-Ranges（songloft-org/songloft#442）：
+		// 少了这两个头，浏览器判定该流不可 seek，拖动进度条会静默卡死（实测 readyState 4→1、
+		// buffered 零增长、无 error）。均衡流从 #61 起就有同样问题，一并修掉。
+		// 200s × 320kbps / 8 = 8,000,000 字节。
+		if cl := rr.Header().Get("Content-Length"); cl != "8000000" {
+			t.Errorf("Content-Length=%q, 期望 8000000（200s × 320k CBR）", cl)
+		}
+		if ar := rr.Header().Get("Accept-Ranges"); ar != "bytes" {
+			t.Errorf("Accept-Ranges=%q, 期望 bytes", ar)
 		}
 		body := rr.Body.String()
 		for _, want := range []string{"-af loudnorm=", "-codec:a libmp3lame", "-b:a 320k", "-f mp3", "pipe:1"} {
@@ -1074,6 +1082,450 @@ func TestGetSongPlayNormalizeStreamsLive(t *testing.T) {
 
 		if strings.Contains(rr.Body.String(), "loudnorm") {
 			t.Errorf("HEAD 起了均衡流: %s", rr.Body.String())
+		}
+	})
+}
+
+// writeRealMP3TestFile 把仓库里的真实 MP3 样本复制到临时目录并返回路径。
+//
+// 需要「真」mp3 而不是 writeSeekTestFile 那种占位字节，是因为 NeedsTranscodeForServe 在
+// 「声称格式 == 目标格式」时会用 magic bytes 复核（防伪装扩展名，songloft-org/songloft#300）：
+// 占位内容会被判成伪 mp3 而强制转码，测不出「无需转码」这条短路。
+func writeRealMP3TestFile(t *testing.T, name string) string {
+	t.Helper()
+	data, err := os.ReadFile("../../pkg/tag/testdata/with_tags/sample.id3v23.mp3")
+	if err != nil {
+		t.Fatalf("read sample mp3: %v", err)
+	}
+	p := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(p, data, 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+	return p
+}
+
+// TestGetSongPlayTranscodeStreamsLive 验证普通 ?format= / ?quality= 转码播放也走边转边发
+// （songloft-org/songloft#442）。
+//
+// 修复前只有 normalize 有这条快路径，普通转码一律阻塞到整首转完才发第一个字节——弱 CPU
+// （报告环境是 N5095）上无损转 mp3 要等 5 秒以上才出声。
+//
+// 同时钉住「泛化后不能对不需要转码的请求误起 ffmpeg」这条不变量：守卫从原来的
+// `!opts.normalize` 换成了自洽的 needsTranscode 判断，判错的代价是每次播放都白烧一个
+// libmp3lame 进程。
+func TestParseFirstByteRange(t *testing.T) {
+	const total = 1000
+	cases := []struct {
+		header                    string
+		wantStart, wantEnd        int64
+		wantOK, wantUnsatisfiable bool
+	}{
+		{"", 0, 0, false, false},
+		{"bytes=0-", 0, total - 1, true, false},
+		{"bytes=500-", 500, total - 1, true, false},
+		{"bytes=100-199", 100, 199, true, false},
+		{"bytes=100-99999", 100, total - 1, true, false},
+		{"bytes=-200", total - 200, total - 1, true, false},
+		{"bytes=-99999", 0, total - 1, true, false},
+		{"bytes=1000-", 0, 0, false, true},
+		{"bytes=2000-3000", 0, 0, false, true},
+		{"bytes=0-99,200-299", 0, 0, false, false},
+		{"bytes=abc-", 0, 0, false, false},
+		{"bytes=200-100", 0, 0, false, false},
+		{"bytes=-0", 0, 0, false, false},
+		{"items=0-100", 0, 0, false, false},
+		{"bytes=-", 0, 0, false, false},
+	}
+	for _, c := range cases {
+		t.Run(c.header, func(t *testing.T) {
+			start, end, ok, unsat := parseFirstByteRange(c.header, total)
+			if ok != c.wantOK || unsat != c.wantUnsatisfiable {
+				t.Fatalf("ok=%v unsatisfiable=%v, want ok=%v unsatisfiable=%v", ok, unsat, c.wantOK, c.wantUnsatisfiable)
+			}
+			if ok && (start != c.wantStart || end != c.wantEnd) {
+				t.Errorf("range = [%d,%d], want [%d,%d]", start, end, c.wantStart, c.wantEnd)
+			}
+		})
+	}
+}
+
+func TestPlanCBRRange(t *testing.T) {
+	song := &models.Song{ID: 1, Duration: 200}
+	newReq := func(rangeHeader string) *http.Request {
+		r := httptest.NewRequest("GET", "/play", nil)
+		if rangeHeader != "" {
+			r.Header.Set("Range", rangeHeader)
+		}
+		return r
+	}
+
+	t.Run("no range gives total length but not 206", func(t *testing.T) {
+		p := planCBRRange(newReq(""), song, servePlayOptions{targetFormat: "mp3", speed: 1.0})
+		if p == nil {
+			t.Fatal("want range mode enabled")
+		}
+		if p.totalBytes != 8_000_000 || p.contentLength() != 8_000_000 {
+			t.Errorf("totalBytes=%d contentLength=%d, want both 8000000", p.totalBytes, p.contentLength())
+		}
+		if p.partial {
+			t.Error("no Range header must not be 206")
+		}
+	})
+
+	t.Run("bytes=0- answered as full 200", func(t *testing.T) {
+		p := planCBRRange(newReq("bytes=0-"), song, servePlayOptions{targetFormat: "mp3", speed: 1.0})
+		if p == nil || p.partial {
+			t.Fatalf("want full 200, got plan=%+v", p)
+		}
+		if p.startSecond != 0 {
+			t.Errorf("startSecond=%v, want 0", p.startSecond)
+		}
+	})
+
+	t.Run("byte offset converts back to seconds", func(t *testing.T) {
+		p := planCBRRange(newReq("bytes=2400000-"), song, servePlayOptions{targetFormat: "mp3", speed: 1.0})
+		if p == nil || !p.partial {
+			t.Fatalf("want 206, got plan=%+v", p)
+		}
+		if p.startSecond != 60 {
+			t.Errorf("startSecond=%v, want 60", p.startSecond)
+		}
+		if p.contentLength() != 8_000_000-2_400_000 {
+			t.Errorf("contentLength=%d, want %d", p.contentLength(), 8_000_000-2_400_000)
+		}
+	})
+
+	t.Run("quality changes the byte-to-time ratio", func(t *testing.T) {
+		p := planCBRRange(newReq("bytes=960000-"), song, servePlayOptions{targetFormat: "mp3", bitrate: 128, speed: 1.0})
+		if p == nil {
+			t.Fatal("want range mode enabled")
+		}
+		if p.totalBytes != 3_200_000 {
+			t.Errorf("totalBytes=%d, want 3200000", p.totalBytes)
+		}
+		if p.startSecond != 60 {
+			t.Errorf("startSecond=%v, want 60", p.startSecond)
+		}
+	})
+
+	t.Run("start past the end marks 416", func(t *testing.T) {
+		p := planCBRRange(newReq("bytes=9000000-"), song, servePlayOptions{targetFormat: "mp3", speed: 1.0})
+		if p == nil || !p.unsatisfiable {
+			t.Fatalf("want unsatisfiable, got plan=%+v", p)
+		}
+	})
+
+	t.Run("disabled when preconditions unmet", func(t *testing.T) {
+		cases := []struct {
+			name string
+			song *models.Song
+			opts servePlayOptions
+		}{
+			{"unknown duration", &models.Song{ID: 1, Duration: 0}, servePlayOptions{targetFormat: "mp3", speed: 1.0}},
+			{"seek param", song, servePlayOptions{targetFormat: "mp3", speed: 1.0, seekSeconds: 30}},
+			{"speed change", song, servePlayOptions{targetFormat: "mp3", speed: 1.5}},
+		}
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				if p := planCBRRange(newReq("bytes=100-"), c.song, c.opts); p != nil {
+					t.Errorf("want range mode disabled, got plan=%+v", p)
+				}
+			})
+		}
+	})
+}
+
+func TestExactLengthWriter(t *testing.T) {
+	t.Run("truncates overflow and stops upstream", func(t *testing.T) {
+		var buf bytes.Buffer
+		ew := &exactLengthWriter{w: &buf, want: 10}
+		n, err := ew.Write([]byte("0123456789ABCDEF"))
+		if n != 10 {
+			t.Errorf("n=%d, want 10", n)
+		}
+		if !errors.Is(err, errExactLengthReached) {
+			t.Errorf("err=%v, want errExactLengthReached", err)
+		}
+		if buf.String() != "0123456789" {
+			t.Errorf("wrote %q, want %q", buf.String(), "0123456789")
+		}
+	})
+
+	t.Run("further writes report the sentinel", func(t *testing.T) {
+		var buf bytes.Buffer
+		ew := &exactLengthWriter{w: &buf, want: 4}
+		_, _ = ew.Write([]byte("abcd"))
+		if _, err := ew.Write([]byte("efgh")); !errors.Is(err, errExactLengthReached) {
+			t.Errorf("err=%v, want errExactLengthReached", err)
+		}
+		if buf.Len() != 4 {
+			t.Errorf("wrote %d bytes, want 4", buf.Len())
+		}
+	})
+
+	t.Run("pads with zeros when short", func(t *testing.T) {
+		var buf bytes.Buffer
+		ew := &exactLengthWriter{w: &buf, want: 100}
+		_, _ = ew.Write([]byte("short"))
+		ew.fill()
+		if buf.Len() != 100 {
+			t.Fatalf("padded to %d bytes, want 100", buf.Len())
+		}
+		if !bytes.Equal(buf.Bytes()[5:], make([]byte, 95)) {
+			t.Error("padding must be zero bytes")
+		}
+	})
+
+	t.Run("exact fit reports no error", func(t *testing.T) {
+		var buf bytes.Buffer
+		ew := &exactLengthWriter{w: &buf, want: 4}
+		if n, err := ew.Write([]byte("abcd")); n != 4 || err != nil {
+			t.Errorf("n=%d err=%v, want 4/nil", n, err)
+		}
+	})
+}
+
+func TestGetSongPlayTranscodeStreamsLive(t *testing.T) {
+	t.Run("无损源 format=mp3 走实时流", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "song.flac")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "无损歌", FilePath: src, Format: "flac", Duration: 240})
+
+		rr := playSeekRequest(t, handler, id, "format=mp3")
+
+		if ct := rr.Header().Get("Content-Type"); ct != "audio/mpeg" {
+			t.Errorf("Content-Type=%q, 期望 audio/mpeg", ct)
+		}
+		// 240s × 320kbps / 8 = 9,600,000 字节。带上 Content-Length + Accept-Ranges 客户端才能
+		// 把「第 N 秒」映射成字节偏移去发 Range 请求，否则拖动会静默卡死（见 cbrRangePlan）。
+		if cl := rr.Header().Get("Content-Length"); cl != "9600000" {
+			t.Errorf("Content-Length=%q, 期望 9600000（240s × 320k CBR）", cl)
+		}
+		if ar := rr.Header().Get("Accept-Ranges"); ar != "bytes" {
+			t.Errorf("Accept-Ranges=%q, 期望 bytes", ar)
+		}
+		if cc := rr.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+			t.Errorf("Cache-Control=%q, 期望含 no-store", cc)
+		}
+		body := rr.Body.String()
+		for _, want := range []string{"-codec:a libmp3lame", "-b:a 320k", "-map 0:a:0", "-vn", "-write_xing 0", "-f mp3", "pipe:1"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("实时转码流参数缺 %q，实际: %s", want, body)
+			}
+		}
+		if strings.Contains(body, "-ss") {
+			t.Errorf("没请求 seek 却出现 -ss: %s", body)
+		}
+		if strings.Contains(body, "-af") {
+			t.Errorf("没请求均衡/变速却出现滤镜: %s", body)
+		}
+	})
+
+	// ?quality= 被上游翻成 bitrate 并把 targetFormat 自动填成 mp3，各档都要如实出现在 -b:a 上。
+	for _, q := range []string{"128", "192", "320"} {
+		t.Run("quality="+q+" 走实时流且码率如实", func(t *testing.T) {
+			handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+			src := writeSeekTestFile(t, "song.flac")
+			id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "无损歌", FilePath: src, Format: "flac", Duration: 240})
+
+			rr := playSeekRequest(t, handler, id, "quality="+q)
+
+			body := rr.Body.String()
+			if !strings.Contains(body, "pipe:1") {
+				t.Fatalf("quality=%s 未走实时流，实际: %s", q, body)
+			}
+			if want := "-b:a " + q + "k"; !strings.Contains(body, want) {
+				t.Errorf("参数缺 %q，实际: %s", want, body)
+			}
+		})
+	}
+
+	// 源已是 mp3 但请求了 quality：必须重编码到请求码率，不能 copy（copy 出来是源码率）。
+	t.Run("mp3 源指定 quality 仍重编码", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeRealMP3TestFile(t, "song.mp3")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "mp3 歌", FilePath: src, Format: "mp3", Duration: 240})
+
+		rr := playSeekRequest(t, handler, id, "quality=128")
+
+		body := rr.Body.String()
+		if !strings.Contains(body, "-b:a 128k") || !strings.Contains(body, "-codec:a libmp3lame") {
+			t.Errorf("期望按 128k 重编码，实际: %s", body)
+		}
+		if strings.Contains(body, "-codec:a copy") {
+			t.Errorf("指定 quality 时走了 copy（码率会是源码率而非请求值）: %s", body)
+		}
+	})
+
+	// 这是本次泛化最大的风险面：真 mp3 源 + format=mp3 根本不需要转码，
+	// 必须直出原文件（支持 Range），一个 ffmpeg 都不能起。
+	t.Run("无需转码时不起 ffmpeg", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeRealMP3TestFile(t, "song.mp3")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "mp3 歌", FilePath: src, Format: "mp3", Duration: 240})
+
+		rr := playSeekRequest(t, handler, id, "format=mp3")
+
+		body := rr.Body.String()
+		if strings.Contains(body, "pipe:1") || strings.Contains(body, "-codec:a") {
+			t.Errorf("无需转码却起了 ffmpeg: %s", body)
+		}
+		if cc := rr.Header().Get("Cache-Control"); !strings.Contains(cc, "public") {
+			t.Errorf("Cache-Control=%q, 期望走 ServeFile 的 public 长缓存", cc)
+		}
+	})
+
+	// pipe 固定输出 MP3，冒充不了 m4a/ogg/flac/wav —— 这些目标一律留给阻塞转码路径。
+	t.Run("目标格式非 mp3 不走实时流", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeRealMP3TestFile(t, "song.mp3")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "mp3 歌", FilePath: src, Format: "mp3", Duration: 240})
+
+		rr := playSeekRequest(t, handler, id, "format=flac")
+
+		if body := rr.Body.String(); strings.Contains(body, "pipe:1") {
+			t.Errorf("目标 flac 走了只会出 mp3 的实时流: %s", body)
+		}
+	})
+
+	// 转码产物已落盘 → 交给 ServeFile（支持 Range 且更快），不该再起实时流。
+	t.Run("转码产物已就绪走 ServeFile", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "song.flac")
+		song := &models.Song{Type: models.TypeLocal, Title: "无损歌", FilePath: src, Format: "flac", Duration: 240}
+		id := seedSong(t, repo, song)
+		if _, err := handler.cacheService.GetOrTranscode(context.Background(), src, song, "mp3", 0, -1, false); err != nil {
+			t.Fatalf("预置转码产物失败: %v", err)
+		}
+
+		rr := playSeekRequest(t, handler, id, "format=mp3")
+
+		if body := rr.Body.String(); strings.Contains(body, "pipe:1") {
+			t.Errorf("产物已就绪却仍走实时流: %s", body)
+		}
+		if cc := rr.Header().Get("Cache-Control"); !strings.Contains(cc, "public") {
+			t.Errorf("Cache-Control=%q, 期望走 ServeFile 的 public 长缓存", cc)
+		}
+	})
+
+	// 修复前这两件事要两条 ffmpeg：先整首转码落盘，再对产物起一条 seek 流。
+	t.Run("转码叠加 seek 由同一条 ffmpeg 完成", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "song.flac")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "无损歌", FilePath: src, Format: "flac", Duration: 240})
+
+		rr := playSeekRequest(t, handler, id, "format=mp3&seek=60")
+
+		body := rr.Body.String()
+		for _, want := range []string{"-ss 60.000", "-codec:a libmp3lame"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("参数缺 %q，实际: %s", want, body)
+			}
+		}
+		if n := strings.Count(body, "pipe:1"); n != 1 {
+			t.Errorf("pipe:1 出现 %d 次，期望 1（转码与 seek 应由同一条 ffmpeg 完成）: %s", n, body)
+		}
+	})
+
+	// media=video 下上游已清空 targetFormat 保画面，实时流的 -vn 会把画面切掉，必须不接管。
+	t.Run("media=video 直出原容器", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "clip.mkv")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "视频", FilePath: src, Format: "mkv", Duration: 240})
+
+		rr := playSeekRequest(t, handler, id, "format=mp3&media=video")
+
+		if body := rr.Body.String(); body != "audio-file-bytes" {
+			t.Errorf("body=%q, 期望原容器字节（未经任何 ffmpeg）", body)
+		}
+	})
+
+	t.Run("HEAD 不起实时流", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, "/bin/echo")
+		src := writeSeekTestFile(t, "song.flac")
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "无损歌", FilePath: src, Format: "flac", Duration: 240})
+
+		rr := playSeekRequestMethod(t, handler, id, "format=mp3", "HEAD")
+
+		if body := rr.Body.String(); strings.Contains(body, "pipe:1") {
+			t.Errorf("HEAD 起了实时流: %s", body)
+		}
+	})
+}
+
+// TestGetSongPlayTranscodeStreamsLiveRealFFmpeg 用**真** ffmpeg 端到端验证实时转码流
+// （songloft-org/songloft#442）。
+//
+// 上面那些用 /bin/echo 的测试只能钉住参数串，钉不住「ffmpeg 真的接受这个组合」和
+// 「客户端拿到的是一段可解码、没被截断的 mp3」——参数写错的典型表现恰恰是 ffmpeg 零输出后
+// 静默降级，参数断言全绿而用户听不到声。
+func TestGetSongPlayTranscodeStreamsLiveRealFFmpeg(t *testing.T) {
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not available")
+	}
+	ffprobePath, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Skip("ffprobe not available")
+	}
+
+	// 合成一首 5 秒的无损源：够短所以测试快，够长所以能验证「没被截断」。
+	src := filepath.Join(t.TempDir(), "in.flac")
+	gen := exec.Command(ffmpegPath, "-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=5:sample_rate=44100",
+		"-ac", "2", "-c:a", "flac", "-y", src)
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Skipf("合成测试音频失败: %v: %s", err, out)
+	}
+
+	// probe 把响应体落盘后用 ffprobe 读一个字段（duration / bit_rate）。
+	probe := func(t *testing.T, body []byte, entry string) string {
+		t.Helper()
+		p := filepath.Join(t.TempDir(), "got.mp3")
+		if err := os.WriteFile(p, body, 0644); err != nil {
+			t.Fatalf("write response body: %v", err)
+		}
+		out, err := exec.Command(ffprobePath, "-v", "error",
+			"-show_entries", "format="+entry,
+			"-of", "default=nw=1:nokey=1", p).Output()
+		if err != nil {
+			t.Fatalf("ffprobe %s 失败（响应可能不是有效 mp3，%d 字节）: %v", entry, len(body), err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	t.Run("format=mp3 产出完整可解码的 mp3", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, ffmpegPath)
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "无损歌", FilePath: src, Format: "flac", Duration: 5})
+
+		rr := playSeekRequest(t, handler, id, "format=mp3")
+
+		if ct := rr.Header().Get("Content-Type"); ct != "audio/mpeg" {
+			t.Fatalf("Content-Type=%q, 期望 audio/mpeg（未走实时流？）", ct)
+		}
+		dur, err := strconv.ParseFloat(probe(t, rr.Body.Bytes(), "duration"), 64)
+		if err != nil {
+			t.Fatalf("解析 duration: %v", err)
+		}
+		// 允许 ±0.5s：mp3 帧对齐与无 Xing 头的估算都会有小偏差，但截断会差一个量级。
+		if dur < 4.5 || dur > 5.5 {
+			t.Errorf("输出时长 %.2fs，期望约 5s（偏差过大说明流被截断）", dur)
+		}
+	})
+
+	t.Run("quality=128 输出的实际码率就是 128k", func(t *testing.T) {
+		handler, repo, _ := newSeekTestHandler(t, ffmpegPath)
+		id := seedSong(t, repo, &models.Song{Type: models.TypeLocal, Title: "无损歌", FilePath: src, Format: "flac", Duration: 5})
+
+		rr := playSeekRequest(t, handler, id, "quality=128")
+
+		br, err := strconv.Atoi(probe(t, rr.Body.Bytes(), "bit_rate"))
+		if err != nil {
+			t.Fatalf("解析 bit_rate: %v", err)
+		}
+		// CBR 128k，容差 ±15% 覆盖容器开销；修复前这里会是 320k（pipe 固定码率）。
+		if br < 110_000 || br > 148_000 {
+			t.Errorf("实际码率 %d bps，期望约 128000（?quality= 未生效？）", br)
 		}
 	})
 }

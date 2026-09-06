@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,8 +54,9 @@ func TestStreamSeekedMP3Unavailable(t *testing.T) {
 			opts: SeekStreamOptions{SourcePath: src, StartSecond: 30},
 		},
 		{
-			// StartSecond 0 只在 Normalize 时合法（纯均衡流），不均衡时仍是「没活干」。
-			name: "起播秒数非正且未开均衡",
+			// StartSecond 0 只在 Normalize / Speed / ForceTranscode / Bitrate 至少有一个时合法，
+			// 四者全无就是「没活干」，调用方应改走 http.ServeFile（支持 Range 且更快）。
+			name: "起播秒数非正且无均衡/变速/转码理由",
 			cs:   &CacheService{ffmpegPath: "/bin/echo"},
 			opts: SeekStreamOptions{SourcePath: src, StartSecond: 0},
 		},
@@ -245,6 +247,105 @@ func TestStreamSeekedMP3SpeedArgs(t *testing.T) {
 		// 两者必须由逗号拼接进同一条 -af，而非两条 -af
 		if n := bytes.Count([]byte(out), []byte("-af ")); n != 1 {
 			t.Errorf("-af 出现 %d 次，期望 1（变速与均衡应由同一条 -af 拼接）: %s", n, out)
+		}
+	})
+}
+
+// TestStreamSeekedMP3TranscodeArgs 钉住「普通转码播放也边转边发」的参数契约
+// （songloft-org/songloft#442）：
+//   - ForceTranscode 让 StartSecond=0、不均衡、不变速、未指定码率的纯转码流也能开始，
+//     否则守卫会判它「没活干」，那条路就只剩阻塞整首转码（首字节 = 整首转码墙钟时间）；
+//   - ForceTranscode 必须同时禁掉 copy 快路径：伪 mp3（扩展名 .mp3 内容是 WebM/Opus，
+//     songloft-org/songloft#300）走 copy 会被 mp3 muxer 拒收 → 零输出 → 降级，白起一个 ffmpeg；
+//   - Bitrate 按请求出 CBR（?quality=128/192/320），且 mp3 源也不能 copy——copy 保留的是
+//     源码率，与请求的 quality 不符。
+func TestStreamSeekedMP3TranscodeArgs(t *testing.T) {
+	dir := t.TempDir()
+
+	run := func(t *testing.T, name string, opts SeekStreamOptions) string {
+		t.Helper()
+		src := filepath.Join(dir, name)
+		if err := os.WriteFile(src, []byte("x"), 0644); err != nil {
+			t.Fatalf("write src: %v", err)
+		}
+		opts.SourcePath = src
+		cs := &CacheService{ffmpegPath: "/bin/echo"}
+		var buf bytes.Buffer
+		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, opts); err != nil {
+			t.Fatalf("StreamSeekedMP3: %v", err)
+		}
+		return buf.String()
+	}
+
+	t.Run("纯转码从头起播", func(t *testing.T) {
+		out := run(t, "lossless.flac", SeekStreamOptions{RemainingSecond: 240, ForceTranscode: true})
+		for _, want := range []string{"-codec:a libmp3lame", "-b:a 320k", "-map 0:a:0", "-vn", "-write_xing 0", "-f mp3", "pipe:1"} {
+			if !bytes.Contains([]byte(out), []byte(want)) {
+				t.Errorf("ffmpeg 参数缺 %q，实际: %s", want, out)
+			}
+		}
+		if bytes.Contains([]byte(out), []byte("-ss")) {
+			t.Errorf("StartSecond=0 不该出现 -ss，实际: %s", out)
+		}
+		if bytes.Contains([]byte(out), []byte("-af")) {
+			t.Errorf("未请求均衡/变速却出现滤镜: %s", out)
+		}
+	})
+
+	// 伪 mp3：扩展名骗过了 NormalizeFormat，只有 ForceTranscode 能拦住 copy 快路径。
+	t.Run("mp3 扩展名叠加 ForceTranscode 仍重编码", func(t *testing.T) {
+		out := run(t, "fake.mp3", SeekStreamOptions{RemainingSecond: 240, ForceTranscode: true})
+		if !bytes.Contains([]byte(out), []byte("-codec:a libmp3lame")) {
+			t.Errorf("期望重编码，实际: %s", out)
+		}
+		if bytes.Contains([]byte(out), []byte("-codec:a copy")) {
+			t.Errorf("ForceTranscode 下仍走了 copy（伪 mp3 会被 mp3 muxer 拒收）: %s", out)
+		}
+	})
+
+	// ?quality= 的各档码率都要如实出现在 -b:a 上，否则客户端拿到的码率是假的。
+	for _, bitrate := range []int{128, 192, 320} {
+		t.Run(fmt.Sprintf("quality %dk 按请求出 CBR", bitrate), func(t *testing.T) {
+			out := run(t, fmt.Sprintf("q%d.flac", bitrate), SeekStreamOptions{
+				RemainingSecond: 240, ForceTranscode: true, Bitrate: bitrate,
+			})
+			want := fmt.Sprintf("-b:a %dk", bitrate)
+			if !bytes.Contains([]byte(out), []byte(want)) {
+				t.Errorf("ffmpeg 参数缺 %q，实际: %s", want, out)
+			}
+		})
+	}
+
+	// Bitrate 单独就是一个充分理由：调用方只想改码率、忘了 ForceTranscode 也不该被守卫误拒。
+	t.Run("仅 Bitrate 也能开始且 mp3 源不 copy", func(t *testing.T) {
+		out := run(t, "src.mp3", SeekStreamOptions{RemainingSecond: 240, Bitrate: 128})
+		if !bytes.Contains([]byte(out), []byte("-b:a 128k")) {
+			t.Errorf("期望 -b:a 128k，实际: %s", out)
+		}
+		if bytes.Contains([]byte(out), []byte("-codec:a copy")) {
+			t.Errorf("指定码率时 mp3 源仍走 copy（码率会是源码率而非请求值）: %s", out)
+		}
+	})
+
+	// 回归保护：不带转码理由的纯 seek 必须保留 mp3 源的 copy 快路径（实测整首 0.14s、近零 CPU）。
+	t.Run("纯 seek 的 mp3 源仍走 copy", func(t *testing.T) {
+		out := run(t, "seekonly.mp3", SeekStreamOptions{StartSecond: 30, RemainingSecond: 240})
+		if !bytes.Contains([]byte(out), []byte("-codec:a copy")) {
+			t.Errorf("纯 seek 的 mp3 源应走 copy 快路径，实际: %s", out)
+		}
+	})
+
+	t.Run("转码叠加 seek 与变速由同一条 ffmpeg 完成", func(t *testing.T) {
+		out := run(t, "combo.flac", SeekStreamOptions{
+			StartSecond: 42, RemainingSecond: 240, ForceTranscode: true, Bitrate: 192, Speed: 1.5,
+		})
+		for _, want := range []string{"-ss 42.000", "-af atempo=1.500", "-codec:a libmp3lame", "-b:a 192k"} {
+			if !bytes.Contains([]byte(out), []byte(want)) {
+				t.Errorf("ffmpeg 参数缺 %q，实际: %s", want, out)
+			}
+		}
+		if n := bytes.Count([]byte(out), []byte("pipe:1")); n != 1 {
+			t.Errorf("pipe:1 出现 %d 次，期望 1（转码/seek/变速应由同一条 ffmpeg 完成）: %s", n, out)
 		}
 	})
 }

@@ -1572,32 +1572,40 @@ func parseSpeed(raw string) float64 {
 // 返回 false 表示尚未向响应写入任何字节（含未请求 seek/变速、ffmpeg 缺失/并发满/零输出等），
 // 调用方应继续走原本的 http.ServeFile 从头、原速提供文件。
 func (h *SongHandler) trySeekStream(w http.ResponseWriter, r *http.Request, song *models.Song, path string, opts servePlayOptions) bool {
-	if (opts.seekSeconds <= 0 && (opts.speed == 0 || opts.speed == 1.0)) || h.cacheService == nil {
+	if (opts.seekSeconds <= 0 && !speedRequested(opts.speed)) || h.cacheService == nil {
 		return false
 	}
+	// plan 传 nil：?seek= 与 Range 是两套并存的位置语义，这条路服务的推流客户端不发 Range。
 	return h.streamPipedMP3(r.Context(), r.Context(), w, song, services.SeekStreamOptions{
 		SourcePath:      path,
 		StartSecond:     opts.seekSeconds,
 		RemainingSecond: remainingAfter(song, opts.seekSeconds),
 		Speed:           opts.speed,
-	}, "seek stream")
+	}, nil, "seek stream")
 }
 
-// tryLiveNormalizeStream 在「请求了音量均衡但均衡产物还没转好」时边转边发一条 MP3 流，
+// tryLiveTranscodeStream 在「这次播放需要转码但转码产物还没落盘」时边转边发一条 MP3 流，
 // 成功接管响应返回 true。必须调用在原有的阻塞转码分支 **之前**。
 //
-// 存在的理由：整首 loudnorm 要 20 多秒，而 GetOrTranscode 是同步的——设备的首个 play 请求
-// 会被一路挂住（实测 dur_ms=22392 / 24348 / 22381）。音箱那端表现为「前 20 多秒空白」，
-// 而插件的自动切歌定时器在推 URL 那一刻就起算，于是尾部还会被砍掉同样长度
-// （songloft-org/songloft-plugin-miot#61）。边转边发让首字节 1 秒内出来，两个症状一起消失。
+// 存在的理由：GetOrTranscode 是同步的，首字节 = 整首转码的墙钟时间。两处实测：
+//   - 音量均衡：整首 loudnorm 要 20 多秒（dur_ms=22392 / 24348 / 22381），音箱那端表现为
+//     「前 20 多秒空白」，而插件的自动切歌定时器在推 URL 那一刻就起算，尾部还会被砍掉同样长度
+//     （songloft-org/songloft-plugin-miot#61）。
+//   - 普通 ?format= / ?quality= 转码：弱 CPU（N5095）无损转 mp3 要等 5 秒以上才出声
+//     （songloft-org/songloft#442）。
 //
-// 均衡产物已存在时返回 false 走 http.ServeFile——那条路支持 Range 且更快；产物由
-// `?prefetch=1&normalize=1` 提前热好（prepareSongPlayback 现在会带上 normalize）。
+// 两者是同一个根因，也用同一条 pipe 解决：边转边发让首字节 1 秒内出来。
+//
+// 转码产物已存在时返回 false 走 http.ServeFile——那条路支持 Range 且更快；产物由
+// `?prefetch=1`（带同样的 format/quality/normalize）提前热好，客户端在播上一首时就会预热下一首。
 //
 // 刻意不顺手起一个后台转码去补缓存文件：同一首歌同时跑两个 ffmpeg 会在弱 NAS 上把 CPU 翻倍，
 // 而用户正等着这一秒出声。缓存产物交给预热生成。
-func (h *SongHandler) tryLiveNormalizeStream(w http.ResponseWriter, r *http.Request, song *models.Song, path string, opts servePlayOptions) bool {
-	if !opts.normalize || h.cacheService == nil {
+//
+// 这条流**支持 Range**（`cbrRangePlan`）：拖动进度条会被真正满足，而不是像最初那样静默卡死。
+// 剩余差异只有「Content-Length 是按 CBR 估算的、`Cache-Control: no-store`」，见 exactLengthWriter。
+func (h *SongHandler) tryLiveTranscodeStream(w http.ResponseWriter, r *http.Request, song *models.Song, path string, opts servePlayOptions) bool {
+	if h.cacheService == nil {
 		return false
 	}
 	// 下面这些一律留给原来的阻塞转码路径，语义不变：
@@ -1605,15 +1613,26 @@ func (h *SongHandler) tryLiveNormalizeStream(w http.ResponseWriter, r *http.Requ
 	//   trackIndex  —— 抽轨的目标容器由后端探测决定，不一定是 mp3；
 	//   CUE 轨      —— 必须先按 CueStart/End 提取成独立文件，否则 -ss 会叠到整轨镜像的绝对位置；
 	//   HEAD        —— 探测请求不该起 ffmpeg；
-	//   非 mp3 目标 / 指定了码率 —— 本函数固定输出 320k CBR MP3，冒充不了其他格式或码率。
+	//   非 mp3 目标 —— 本函数固定输出 MP3，冒充不了 m4a/ogg/flac/wav。
+	//                  （码率不再是排除项：SeekStreamOptions.Bitrate 已能如实表达 ?quality=。）
 	if opts.videoIntent || opts.trackIndex >= 0 || song.CueSourcePath != "" || r.Method == http.MethodHead {
 		return false
 	}
-	if services.NormalizeFormat(opts.targetFormat) != "mp3" || opts.bitrate != 0 {
+	if services.NormalizeFormat(opts.targetFormat) != "mp3" {
 		return false
 	}
-	// 均衡产物已就绪 → 交给 ServeFile。
-	if _, ok := h.cacheService.FindTranscodedFile(song, "mp3", opts.bitrate, -1, true); ok {
+	// 自己复核「这次是否真的需要转码」，不依赖调用点的 if 条件——两个调用点（serveLocal /
+	// serveCachedFile）各自算过一遍，但把判断收在函数内才能保证将来新增调用点不会误起 ffmpeg。
+	// 三个理由与调用点、与 GetOrTranscode 的 needsTranscode 同源：格式不符（含伪装扩展名）、
+	// 指定码率、音量均衡。
+	needsTranscode := opts.normalize || opts.bitrate > 0 ||
+		services.NeedsTranscodeForServe(song, path, opts.targetFormat)
+	if !needsTranscode {
+		return false
+	}
+	// 转码产物已就绪 → 交给 ServeFile。缓存键含 bitrate 与 normalize 维度，
+	// 各档 quality、均衡/非均衡的产物互不通用，这里的查找天然按当次请求的组合命中。
+	if _, ok := h.cacheService.FindTranscodedFile(song, "mp3", opts.bitrate, -1, opts.normalize); ok {
 		return false
 	}
 	// 注册进 playActivity（与被它替代的阻塞转码分支同一 Category），让 ActivateSong 能在用户切歌时
@@ -1627,13 +1646,277 @@ func (h *SongHandler) tryLiveNormalizeStream(w http.ResponseWriter, r *http.Requ
 	trackedCtx, release := h.trackActivity(r.Context(), sk, song.ID, playactivity.CatTranscode)
 	defer release()
 
+	// Range 应答计划：让客户端能真正拖动这条实时流。不满足前提时为 nil，退回 chunked 无长度。
+	plan := planCBRRange(r, song, opts)
+	if plan != nil && plan.unsatisfiable {
+		// start 越过了资源末尾。此时一个字节都还没写，直接以 416 接管响应。
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", plan.totalBytes))
+		http.Error(w, "range not satisfiable", http.StatusRequestedRangeNotSatisfiable)
+		return true
+	}
+
+	// 起播位置：Range 模式下由字节偏移换算而来，否则用 ?seek=（两者互斥，见 planCBRRange）。
+	startSecond := opts.seekSeconds
+	if plan != nil && plan.partial {
+		startSecond = plan.startSecond
+	}
+
 	return h.streamPipedMP3(trackedCtx, r.Context(), w, song, services.SeekStreamOptions{
 		SourcePath:      path,
-		StartSecond:     opts.seekSeconds, // 可为 0（纯均衡）；> 0 时与均衡由同一条 ffmpeg 一起做
-		RemainingSecond: remainingAfter(song, opts.seekSeconds),
-		Normalize:       true,
-		Speed:           opts.speed, // 均衡与变速可与同一条 ffmpeg 一起做，见 StreamSeekedMP3 的滤镜拼接
-	}, "live normalize stream")
+		StartSecond:     startSecond, // 可为 0（纯转码/纯均衡）；> 0 时与转码由同一条 ffmpeg 一起做
+		RemainingSecond: remainingAfter(song, startSecond),
+		Normalize:       opts.normalize,
+		Bitrate:         opts.bitrate, // 0 = 沿用 320k CBR；?quality= 时按请求码率出 CBR
+		// 必须显式置 true：普通 ?format=mp3（不 seek、不均衡、不变速、未指定码率）下
+		// StreamSeekedMP3 的守卫会认为「无事可做」而拒绝，而伪 mp3（扩展名 .mp3 内容是 WebM，
+		// songloft-org/songloft#300）还会被 copy 快路径吃掉。见 SeekStreamOptions.ForceTranscode。
+		ForceTranscode: true,
+		Speed:          opts.speed, // 转码/均衡与变速可与同一条 ffmpeg 一起做，见 StreamSeekedMP3 的滤镜拼接
+	}, plan, "live transcode stream")
+}
+
+// cbrRangePlan 是一次 CBR pipe 流的 Range 应答计划（songloft-org/songloft#442）。
+//
+// **为什么 pipe 流必须支持 Range**：pipe 响应原本是 chunked、无 `Content-Length`，浏览器据此
+// 判定该资源不可 seek——实测 Chrome 拖动进度条后**不发任何新请求**，`readyState` 从 4 掉到 1、
+// buffered 零增长、`error` 为 null，播放**静默卡死**，只能重新点播。而进度条的总时长来自 DB
+// （`song.duration`），UI 上完全看不出这条流不能拖，用户必然会去拖。
+//
+// 只补 `Accept-Ranges: bytes` 不够（实测同样只发一个请求就卡死）：浏览器需要**总字节数**
+// 才能把「第 N 秒」映射成「第几个字节」，从而构造 Range 请求。
+//
+// **为什么能算得出来**：pipe 一律输出 CBR（`-b:a`），所以字节与时间是线性的，
+// 再加上已知的 `song.duration` 就能同时给出总长度与任意字节偏移对应的秒数；而「从第 N 秒起流」
+// 正是 `StreamSeekedMP3` 已有的能力（`-ss` input seek）。于是 Range 请求可以被**真正**满足，
+// 而不是靠「忽略 Range 从头重发」糊过去（那会让进度条与实际声音错位）。
+type cbrRangePlan struct {
+	totalBytes    int64   // 按 duration 估算的总字节数
+	start, end    int64   // 本次要送出的闭区间字节范围
+	partial       bool    // true → 206 + Content-Range；false → 200 全量
+	unsatisfiable bool    // true → 416，start 越过了总长度
+	startSecond   float64 // start 换算出的时间偏移，喂给 ffmpeg -ss
+}
+
+// contentLength 返回本次应答承诺的字节数。承诺了就必须精确写出这么多，见 exactLengthWriter。
+func (p *cbrRangePlan) contentLength() int64 { return p.end - p.start + 1 }
+
+// planCBRRange 计算 pipe 流的 Range 应答计划；返回 nil 表示**不启用** Range 模式，
+// 保持原来的 chunked 无 Content-Length 行为。
+//
+// 四个前提缺一不可：
+//   - `song.Duration > 0`：总时长未知就估不出总字节（远程歌曲元数据未刷新时是常态）；
+//   - 目标是重编码而非 `-c:a copy`：copy 的源可能是 VBR mp3，字节与时间不成线性。
+//     本函数只服务 tryLiveTranscodeStream，它一律带 ForceTranscode（必然重编码 CBR）；
+//   - 不变速：atempo 改变输出时长，字节↔时间要再套一层换算，风险不值当，保持现状；
+//   - 无 `?seek=`：那是给「只会从头拉流、不支持 Range」的推流客户端表达位置的专用参数
+//     （songloft-plugin-miot#60），与 Range 是两套并存的位置语义，叠加只会互相干扰。
+func planCBRRange(r *http.Request, song *models.Song, opts servePlayOptions) *cbrRangePlan {
+	if song == nil || song.Duration <= 0 || song.Duration > maxRangeDurationSeconds ||
+		opts.seekSeconds > 0 || speedRequested(opts.speed) {
+		return nil
+	}
+	bitrate := opts.bitrate
+	if bitrate <= 0 {
+		bitrate = services.DefaultPipeBitrateKbps
+	}
+	bps := int64(bitrate) * 1000 / 8
+	total := int64(song.Duration * float64(bps))
+	if total <= 0 {
+		return nil
+	}
+	p := &cbrRangePlan{totalBytes: total, start: 0, end: total - 1}
+
+	start, end, ok, unsatisfiable := parseFirstByteRange(r.Header.Get("Range"), total)
+	switch {
+	case unsatisfiable:
+		p.unsatisfiable = true
+	case ok:
+		p.start, p.end = start, end
+		// `bytes=0-` 覆盖整个资源（Chrome 的首个请求就长这样）：按 200 全量应答。
+		// RFC 7233 允许服务器忽略 Range，而 200 + Content-Length 已经足够让客户端后续算出偏移。
+		p.partial = !(start == 0 && end == total-1)
+		p.startSecond = float64(start) / float64(bps)
+	}
+	return p
+}
+
+// maxRangeDurationSeconds 是启用 Range 模式的时长上限（24 小时，足够覆盖有声书）。
+//
+// `song.duration` 是 DB 里的 float64，损坏的元数据会让「时长 × 码率」溢出 int64，
+// 而 float64→int64 的溢出结果在 Go 里是实现定义的：万一落成一个巨大正数，就会给客户端
+// 承诺一个天文数字的 Content-Length，把它挂在等永远不会来的字节上。超限时退回
+// chunked 无长度（只是不能拖动，不会挂住）。
+const maxRangeDurationSeconds = 24 * 3600
+
+// parseFirstByteRange 解析 `Range: bytes=...` 的**第一个**区间，返回闭区间 [start, end]。
+//
+// ok=false 表示「按 200 全量应答」：无 Range 头、语法不认识、或多区间请求（`bytes=0-99,200-299`）
+// ——多区间要 multipart/byteranges 应答，对音频播放没有实际需求，RFC 7233 也允许服务器
+// 忽略 Range 返回 200，故刻意不支持。
+// unsatisfiable=true 表示 start 越过了资源末尾，调用方应回 416。
+func parseFirstByteRange(header string, total int64) (start, end int64, ok, unsatisfiable bool) {
+	const prefix = "bytes="
+	// total <= 0 时任何区间都无从计算（调用方已挡住，这里兜住将来的新调用点）。
+	// 前缀比对大小写敏感，与 stdlib http.ServeContent 的口径一致。
+	if total <= 0 || !strings.HasPrefix(header, prefix) {
+		return 0, 0, false, false
+	}
+	spec := strings.TrimPrefix(header, prefix)
+	if strings.Contains(spec, ",") {
+		return 0, 0, false, false
+	}
+	spec = strings.TrimSpace(spec)
+	dash := strings.IndexByte(spec, '-')
+	if dash < 0 {
+		return 0, 0, false, false
+	}
+	startStr, endStr := strings.TrimSpace(spec[:dash]), strings.TrimSpace(spec[dash+1:])
+
+	// `bytes=-N`：末尾 N 字节。N=0 无意义（RFC 明确不满足）。
+	if startStr == "" {
+		n, err := strconv.ParseInt(endStr, 10, 64)
+		if err != nil || n <= 0 {
+			return 0, 0, false, false
+		}
+		if n > total {
+			n = total
+		}
+		return total - n, total - 1, true, false
+	}
+
+	start, err := strconv.ParseInt(startStr, 10, 64)
+	if err != nil || start < 0 {
+		return 0, 0, false, false
+	}
+	if start >= total {
+		return 0, 0, false, true
+	}
+	end = total - 1
+	if endStr != "" {
+		e, err := strconv.ParseInt(endStr, 10, 64)
+		if err != nil || e < start {
+			return 0, 0, false, false
+		}
+		if e < end {
+			end = e
+		}
+	}
+	return start, end, true, false
+}
+
+// exactLengthWriter 把写出的字节数**精确**约束成 want 字节：超出的丢弃，
+// 不足的在 fill() 里补零。
+//
+// 承诺了 `Content-Length` 就必须写够，否则客户端把响应视为连接提前断开（报错或无限重试）；
+// 写多了则违反 HTTP/1.1 的长度契约。而 ffmpeg 的实际输出量不会精确等于「码率 × 时长」：
+// LAME 的 CBR 靠帧 padding 贴合目标码率（每帧在 N/N+1 字节间浮动）、末尾可能是不完整帧、
+// `-ss` 又只能对齐到帧边界，累计误差通常在几帧（几 KB）以内。
+//
+// 补零而不是提前收尾：mp3 解码器会把全零字节当作无效帧跳过，末尾几 KB 静音远好于
+// 「客户端认为下载失败」。截断同理——宁可少送最后不到一帧的音频。
+type exactLengthWriter struct {
+	w       io.Writer
+	want    int64
+	written int64
+}
+
+// errExactLengthReached 表示已按承诺的 Content-Length 写满，ffmpeg 可以停了。
+//
+// 不把多余输出静默丢弃、而是主动报错中断 io.Copy：闭区间 Range（`bytes=N-M`）只要一小段，
+// 而 ffmpeg 会一路转到源结尾，静默丢弃等于让一个 `bytes=0-100` 请求白转整首——弱 CPU 上
+// 这既是浪费也是一个放大面。返回 error 让 services 侧 cancel 掉 runCtx、及时回收 ffmpeg。
+//
+// 浏览器与 just_audio 的媒体请求都是开放式的 `bytes=N-`（want 正好到结尾），所以这条路
+// 平时不会触发；它守的是闭区间与异常客户端。
+var errExactLengthReached = errors.New("exact length reached")
+
+func (ew *exactLengthWriter) Write(p []byte) (int, error) {
+	remaining := ew.want - ew.written
+	if remaining <= 0 {
+		return 0, errExactLengthReached
+	}
+	truncated := int64(len(p)) > remaining
+	if truncated {
+		p = p[:remaining]
+	}
+	n, err := ew.w.Write(p)
+	ew.written += int64(n)
+	if err != nil {
+		return n, err
+	}
+	if truncated {
+		// 本次写入成功但已触到上限。必须连同 n 一起返回 error：只返回 (n, nil) 且 n < len(p)
+		// 会让 io.Copy 报 ErrShortWrite，那是个会被记成「中途失败」的假错误。
+		return n, errExactLengthReached
+	}
+	return n, nil
+}
+
+// Flush 必须转发：services 侧是 `io.Copy(&flushingWriter{w: w}, ...)`，而 flushingWriter 靠
+// **类型断言** `w.(http.Flusher)` 决定要不要 flush。少了这个方法，包装层会把断言挡掉，
+// 字节攒在缓冲里不下发——首字节延迟原地回归，本次优化白做。
+func (ew *exactLengthWriter) Flush() {
+	if f, ok := ew.w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// fill 在 ffmpeg 输出不足承诺长度时补零补满。只在流正常结束后调用。
+func (ew *exactLengthWriter) fill() {
+	if ew.written >= ew.want {
+		return // 常见情况：ffmpeg 输出刚好够或已被截断，不必分配补零缓冲
+	}
+	const chunk = 32 * 1024
+	zero := make([]byte, chunk)
+	for ew.written < ew.want {
+		n := ew.want - ew.written
+		if n > chunk {
+			n = chunk
+		}
+		written, err := ew.w.Write(zero[:n])
+		ew.written += int64(written)
+		if err != nil {
+			return
+		}
+	}
+}
+
+// deferredStatusWriter 把 WriteHeader 推迟到**第一次真的有字节要写**的时刻。
+//
+// 206 必须显式 WriteHeader，而一旦调用响应就提交了、再也无法降级。StreamSeekedMP3 的契约是
+// 「Peek(1) 确认 ffmpeg 真有输出后才开始写」，所以「首次 Write」正是那个安全时刻：
+// 在此之前失败仍可 Del 掉响应头、无损降级为阻塞转码路径。
+type deferredStatusWriter struct {
+	w      http.ResponseWriter
+	status int
+	sent   bool
+}
+
+func (dw *deferredStatusWriter) Write(p []byte) (int, error) {
+	dw.commit()
+	return dw.w.Write(p)
+}
+
+// Flush 同 exactLengthWriter.Flush：类型断言必须能穿透包装层。
+// 先 commit 再 flush——ResponseWriter.Flush 本身会隐式提交 200，抢在它之前写下真正的状态码。
+func (dw *deferredStatusWriter) Flush() {
+	dw.commit()
+	if f, ok := dw.w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (dw *deferredStatusWriter) commit() {
+	if !dw.sent {
+		dw.sent = true
+		dw.w.WriteHeader(dw.status)
+	}
+}
+
+// speedRequested 判断倍速是否需要实际生效（区分「未指定」与「显式传 1.0」，两者效果一致）。
+// 与 services.speedActive 同源；handlers 侧原先有两处内联的同款判断。
+func speedRequested(speed float64) bool {
+	return speed != 0 && speed != 1.0
 }
 
 // streamPipedMP3 调用 StreamSeekedMP3 并处理「先设响应头、降级时原样还原」的契约。
@@ -1643,15 +1926,44 @@ func (h *SongHandler) tryLiveNormalizeStream(w http.ResponseWriter, r *http.Requ
 // HTTP 请求/连接 ctx（seek 流直接用 r.Context() 传两次，均衡流的 ctx 是 trackedCtx、
 // connCtx 是 r.Context()），只在客户端真的断开时才会 Done——两者的区分详见
 // services.StreamSeekedMP3 注释与 songloft-org/songloft-player#35。
-func (h *SongHandler) streamPipedMP3(ctx, connCtx context.Context, w http.ResponseWriter, song *models.Song, sopts services.SeekStreamOptions, reason string) bool {
+//
+// plan 非 nil 时按 Range 语义应答（`Content-Length` + `Accept-Ranges`，206 时另加
+// `Content-Range`），让客户端能真正拖动进度条，见 cbrRangePlan。为 nil 时保持
+// chunked 无长度的原行为（seek 流、变速流、时长未知的歌走这条）。
+func (h *SongHandler) streamPipedMP3(ctx, connCtx context.Context, w http.ResponseWriter, song *models.Song, sopts services.SeekStreamOptions, plan *cbrRangePlan, reason string) bool {
 	// 先设响应头：StreamSeekedMP3 一旦写出字节就无法再改。降级时下面会原样删掉。
 	// 降级时 Del 是**必需**的而非可选：http.ServeFile 只在 Content-Type 缺失时才按扩展名推断，
 	// 残留的 audio/mpeg 会让降级后提供的 mp4/flac 拿到错误的 Content-Type。
 	w.Header().Set("Content-Type", "audio/mpeg")
 	w.Header().Set("Cache-Control", "no-store")
 
-	err := h.cacheService.StreamSeekedMP3(ctx, connCtx, w, sopts)
+	// dst 是真正交给 StreamSeekedMP3 的写入端。Range 模式下要在响应与 ffmpeg 之间插两层：
+	// 精确长度约束（承诺了 Content-Length 就必须写够写准）与延迟状态码（206 一旦发出就无法降级）。
+	var dst io.Writer = w
+	var exact *exactLengthWriter
+	if plan != nil {
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("Content-Length", strconv.FormatInt(plan.contentLength(), 10))
+		status := http.StatusOK
+		if plan.partial {
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", plan.start, plan.end, plan.totalBytes))
+			status = http.StatusPartialContent
+		}
+		exact = &exactLengthWriter{w: &deferredStatusWriter{w: w, status: status}, want: plan.contentLength()}
+		dst = exact
+	}
+
+	err := h.cacheService.StreamSeekedMP3(ctx, connCtx, dst, sopts)
+	// 写满承诺长度而主动中断 ffmpeg 的情况：响应已完整送出，是正常结束而非失败。
+	if errors.Is(err, errExactLengthReached) {
+		return true
+	}
 	if err == nil {
+		// 正常结束：ffmpeg 的实际输出量与「码率 × 时长」有几帧误差，补零补满承诺的长度，
+		// 否则客户端会把响应当成连接提前断开。
+		if exact != nil {
+			exact.fill()
+		}
 		return true
 	}
 	if errors.Is(err, services.ErrSeekStreamAborted) {
@@ -1670,8 +1982,13 @@ func (h *SongHandler) streamPipedMP3(ctx, connCtx context.Context, w http.Respon
 		return true
 	}
 	// 一个字节都没写出：清掉预设的响应头，让调用方降级。
+	// Range 模式那几个头同样必须清掉——残留的 Content-Length/Content-Range 会和降级后
+	// http.ServeFile 自己算出的长度冲突，客户端拿到的是长度对不上的响应。
 	w.Header().Del("Content-Type")
 	w.Header().Del("Cache-Control")
+	w.Header().Del("Accept-Ranges")
+	w.Header().Del("Content-Length")
+	w.Header().Del("Content-Range")
 	slog.Warn(reason+" unavailable, falling back",
 		"songId", song.ID, "seek", sopts.StartSecond, "normalize", sopts.Normalize,
 		"path", sopts.SourcePath, "error", err)
@@ -1836,9 +2153,10 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 			srcPath = path
 		}
 	} else if services.NeedsTranscodeForServe(song, srcPath, targetFormat) || bitrate > 0 || normalize {
-		// 均衡产物还没转好时先试边转边发，避免整首 loudnorm 把这个请求挂住 20+ 秒。
+		// 转码产物还没落盘时先试边转边发，避免整首转码把这个请求挂住数秒到 20+ 秒
+		// （无损转 mp3：songloft-org/songloft#442；整首 loudnorm：songloft-plugin-miot#61）。
 		// 它内部已把 seek 一起做掉，接管成功就不再走下面的 trySeekStream。
-		if h.tryLiveNormalizeStream(w, r, song, srcPath, opts) {
+		if h.tryLiveTranscodeStream(w, r, song, srcPath, opts) {
 			return
 		}
 		tcCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -2109,7 +2427,7 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 	if opts.seekSeconds > 0 {
 		slog.Info("seek ignored for uncached remote song", "songId", song.ID, "seek", opts.seekSeconds)
 	}
-	if opts.speed != 0 && opts.speed != 1.0 {
+	if speedRequested(opts.speed) {
 		slog.Info("speed ignored for uncached remote song", "songId", song.ID, "speed", opts.speed)
 	}
 
@@ -2183,8 +2501,8 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 func (h *SongHandler) serveCachedFile(w http.ResponseWriter, r *http.Request, song *models.Song, cachedPath string, opts servePlayOptions) {
 	targetFormat, bitrate, normalize := opts.targetFormat, opts.bitrate, opts.normalize
 	if services.NeedsTranscodeForServe(song, cachedPath, targetFormat) || bitrate > 0 || normalize {
-		// 同 serveLocal：均衡产物未就绪时先边转边发，不让整首 loudnorm 挂住这个请求。
-		if h.tryLiveNormalizeStream(w, r, song, cachedPath, opts) {
+		// 同 serveLocal：转码产物未就绪时先边转边发，不让整首转码挂住这个请求。
+		if h.tryLiveTranscodeStream(w, r, song, cachedPath, opts) {
 			return
 		}
 		sk := playactivity.SessionFromContext(r.Context())

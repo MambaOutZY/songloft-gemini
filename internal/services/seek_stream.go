@@ -28,7 +28,7 @@ var ErrSeekStreamUnavailable = errors.New("seek stream unavailable")
 // http.Hijacker + Close），而不能优雅返回。
 var ErrSeekStreamAborted = errors.New("seek stream aborted by activity cancellation")
 
-// seekStreamMaxConcurrent 同时存活的 seek / 均衡流上限。
+// seekStreamMaxConcurrent 同时存活的 seek / 均衡 / 变速 / 普通转码流上限。
 //
 // 这些流不占用 transcodeSem（见 StreamSeekedMP3 注释），所以必须自带闸门：seek 流由「用户每按一次
 // 暂停/续播」触发，频率比电台转码高一个数量级；均衡流的存活时长取决于客户端读得多快（音箱贪婪缓冲
@@ -36,11 +36,24 @@ var ErrSeekStreamAborted = errors.New("seek stream aborted by activity cancellat
 // 满了直接降级而 **不排队**——排队意味着音箱那端干等，比降级更糟。
 //
 // 上限刻意保守：每条均衡流是一个 libmp3lame 全解码进程，4 条并发在弱 NAS 上已经吃满 CPU。
-// 降级路径本身无损：seek 流降级为从头播，均衡流降级为原来的「阻塞整首转码」，不比修复前更差
-// ——但那正是 songloft-org/songloft-plugin-miot#61 要消除的 20 秒卡顿，所以调用方应把流注册进
-// playActivity（`CatTranscode`），至少让用户切歌时旧流的 ffmpeg 能被 Activate 掐掉、不白烧 CPU。
+// 降级路径本身无损：seek 流降级为从头播，均衡流与普通转码流降级为原来的「阻塞整首转码」，
+// 不比修复前更差——但那正是 songloft-org/songloft-plugin-miot#61 与 songloft-org/songloft#442
+// 要消除的首字节卡顿，所以调用方应把流注册进 playActivity（`CatTranscode`），至少让用户切歌时
+// 旧流的 ffmpeg 能被 Activate 掐掉、不白烧 CPU。
 // 槽位本身要等 io.Copy 结束（客户端读完或断开）才归还，ctx 取消不会打断它。
+//
+// **接入 #442（普通 ?format= / ?quality= 转码播放）后没有提高这个上限**：普通转码播放的频率
+// 比 seek/均衡高一个数量级，槽位更容易占满，但 #442 的报告环境正是 N5095 这类弱 CPU
+// ——放大并发对它是伤害而非帮助，而占满时的降级本身无损。真占满只是回到修复前的行为。
 const seekStreamMaxConcurrent = 4
+
+// DefaultPipeBitrateKbps 是 pipe 流未指定 SeekStreamOptions.Bitrate 时的输出码率（kbps）。
+//
+// 导出是因为 handlers 侧要用同一个值算 Range 应答的 Content-Length：CBR 下
+// 总字节 = 码率/8 × 时长（songloft-org/songloft#442）。两处各写一个 320 的字面量，
+// 一旦有人只改了其中一处，承诺的长度与实际输出的比例就失配，客户端据此算出的
+// 时间位置随之偏移——而症状是「拖动跳到错误位置」，极难归因。
+const DefaultPipeBitrateKbps = 320
 
 // seekStreamGrace 是 ffmpeg 硬超时相对于「剩余音频时长」的宽限。
 // 音箱只挂着连接却不再读数据时 r.Context() 不会取消，靠这个上限回收孤儿进程。
@@ -80,6 +93,27 @@ type SeekStreamOptions struct {
 	// 与 StartSecond=0 场景一样，Speed!=1.0 本身也应触发「必须走实时流」，
 	// 因为 atempo 需要重编码，静态文件的 http.ServeFile 快路径做不到变速。
 	Speed float64
+	// Bitrate 目标码率（kbps），0 表示沿用本函数默认的 320k CBR。
+	//
+	// 为「普通转码播放也边转边发」而加（songloft-org/songloft#442）：`?quality=128/192/320`
+	// 会被上游翻成 bitrate，而修复前本函数固定 320k，冒充不了其他码率，于是 quality 请求
+	// 只能走阻塞整首转码。本字段让这条 pipe 能如实表达 quality。
+	//
+	// 值域与 ParseBitrate 一致（128/192/320）；本函数不再二次校验，非法值由调用方拦住。
+	// 注意 Bitrate > 0 时**不能**吃下面的 copy 快路径：源是 mp3 也必须重编码，
+	// 否则 copy 出来的是源码率，与请求的 quality 不符（客户端拿到的码率是假的）。
+	Bitrate int
+	// ForceTranscode 表示调用方已判定「这一次必须转码」，即使 StartSecond=0、不均衡、不变速、
+	// 未指定码率也要出流（songloft-org/songloft#442 的 `?format=mp3` 场景）。
+	//
+	// 必须显式传而不能靠「源扩展名不是 mp3」推断：`NeedsTranscodeForServe` 的伪 mp3 分支
+	// （扩展名 .mp3 但内容是 WebM/Opus，songloft-org/songloft#300）恰恰是扩展名为 mp3 却必须
+	// 转码的一类，靠扩展名推断会把它判成「无需实时流」而被下面的守卫拒掉。
+	//
+	// 同理它**必须**一并禁掉 copy 快路径：对伪 mp3 走 `-c:a copy` 会让 mp3 muxer 拒收 Opus 流，
+	// ffmpeg 零输出 → Peek(1) 触发降级 → 白起一个 ffmpeg 且延迟一点没改善（功能上安全，但
+	// 修复的目的就落空了）。
+	ForceTranscode bool
 }
 
 // speedActive 判断 speed 是否需要实际生效（区分「未指定」与「显式传 1.0」，两者效果一致）。
@@ -117,6 +151,11 @@ func seekStreamTimeout(remainingSecond, speed float64) time.Duration {
 // opts.Speed 时同理兼「边转边发变速播放」（atempo 滤镜），StartSecond 同样允许为 0（从头即变速）；
 // 可与 Normalize/StartSecond 任意组合，一条 ffmpeg 用逗号拼接的 -af 同时处理。
 //
+// opts.ForceTranscode / opts.Bitrate 时兼「普通转码播放（?format=mp3 / ?quality=）也边转边发」
+// （songloft-org/songloft#442）：那条路径原先只有阻塞整首转码，首字节 = 整首转码墙钟时间，
+// 在弱 CPU（如 N5095）上无损转 mp3 要等 5 秒以上。与 Normalize 同理复用这套骨架，
+// StartSecond 允许为 0，也可与 seek/变速任意组合。
+//
 // 与 runFFmpeg 不同，本函数 **不占用** c.transcodeSem：进程会存活整首歌的剩余时长，
 // 持串行信号量会长时间饿死其他有限文件的转码。并发由 seekStreamSem 单独限。
 //
@@ -137,8 +176,11 @@ func seekStreamTimeout(remainingSecond, speed float64) time.Duration {
 //     断开底层连接（如 http.Hijacker + Close），不能优雅返回。
 //   - 其他 error：已写出部分字节后中途失败，无法再降级。
 func (c *CacheService) StreamSeekedMP3(ctx, connCtx context.Context, w io.Writer, opts SeekStreamOptions) error {
-	if opts.StartSecond <= 0 && !opts.Normalize && !speedActive(opts.Speed) {
-		return fmt.Errorf("%w: non-positive start second", ErrSeekStreamUnavailable)
+	// 没有任何「必须走实时流」的理由就拒绝：调用方应改用 http.ServeFile（支持 Range、更快）。
+	// Bitrate > 0 单独作为一个充分理由，这样调用方只想改码率时忘了 ForceTranscode 也不会被误拒。
+	if opts.StartSecond <= 0 && !opts.Normalize && !speedActive(opts.Speed) &&
+		!opts.ForceTranscode && opts.Bitrate == 0 {
+		return fmt.Errorf("%w: nothing to do (no seek/normalize/speed/transcode)", ErrSeekStreamUnavailable)
 	}
 	ffmpegPath := c.ffmpegPath
 	if ffmpegPath == "" {
@@ -163,13 +205,21 @@ func (c *CacheService) StreamSeekedMP3(ctx, connCtx context.Context, w io.Writer
 	// 这个时长估算同样会偏几个百分点。只影响客户端自己显示的总时长——插件的进度与自动切歌都由
 	// 它本地计时驱动（见 PlaylistManager.playCurrent）——故不为此放弃零开销的 copy 快路径。
 	// Normalize 必须重编码（loudnorm 是滤镜，copy 下滤镜不生效），Speed!=1.0 同理（atempo 是
-	// 时域滤镜，直接影响采样点，copy 下不生效），两者都不吃上面的 copy 快路径。
+	// 时域滤镜，直接影响采样点，copy 下不生效），Bitrate > 0 同理（copy 保留的是源码率，
+	// 冒充不了请求的 quality），三者都不吃上面的 copy 快路径。
+	//
+	// Bitrate > 0 时按请求码率出 CBR（songloft-org/songloft#442 的 `?quality=` 场景）；
+	// 为 0 时保持 320k —— 对无损源不构成可闻损失，也让上面那段「CBR 才能让音箱估准时长」
+	// 的理由继续成立（各档 quality 同样是 CBR，估算精度不受影响）。
 	encoder := "libmp3lame"
 	var qualityArgs []string
-	if !opts.Normalize && !speedActive(opts.Speed) && NormalizeFormat(filepath.Ext(opts.SourcePath)) == "mp3" {
+	if !opts.Normalize && !speedActive(opts.Speed) && !opts.ForceTranscode && opts.Bitrate == 0 &&
+		NormalizeFormat(filepath.Ext(opts.SourcePath)) == "mp3" {
 		encoder = "copy"
+	} else if opts.Bitrate > 0 {
+		qualityArgs = []string{"-b:a", fmt.Sprintf("%dk", opts.Bitrate)}
 	} else {
-		qualityArgs = []string{"-b:a", "320k"}
+		qualityArgs = []string{"-b:a", fmt.Sprintf("%dk", DefaultPipeBitrateKbps)}
 	}
 
 	args := []string{"-hide_banner", "-loglevel", "error"}

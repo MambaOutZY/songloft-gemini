@@ -652,17 +652,77 @@ Currently only the miot plugin uses it (settings page "volume normalization" tog
   stream share it — **don't** inline it in either place: both paths must produce the same loudness
 - Artifacts are keyed with a `norm.` marker (`transcodedFileName`) and are **not interchangeable**
   with non-normalized ones
-- **Streams while transcoding when the artifact isn't ready** (`tryLiveNormalizeStream` →
-  `StreamSeekedMP3(Normalize: true)`): a whole-track loudnorm takes 20+ seconds, and
-  `GetOrTranscode` is synchronous, so it stalls the device's first play request for that entire time
-  (songloft-org/songloft-plugin-miot#61 measured `dur_ms=22392/24348/22381`). On the speaker this is
-  "the first 20-odd seconds are blank", and since the plugin's auto-next timer starts the moment the
-  URL is pushed, the tail gets cut by the same amount. Piping directly took time-to-first-byte from
-  10.03s to 0.088s. Only applies when the target format is mp3, no `quality` is requested, and it's
-  not `media=video` / track extraction / CUE / HEAD; all other cases keep the original blocking path
+- **Streams while transcoding when the artifact isn't ready** (`tryLiveTranscodeStream` →
+  `StreamSeekedMP3`, `internal/handlers/music.go`): `GetOrTranscode` is synchronous, so
+  time-to-first-byte equals the wall-clock time of transcoding the whole track. Two measurements: a
+  whole-track loudnorm takes 20+ seconds and stalls the device's first play request for that entire
+  time (songloft-org/songloft-plugin-miot#61 measured `dur_ms=22392/24348/22381`) — on the speaker
+  this is "the first 20-odd seconds are blank", and since the plugin's auto-next timer starts the
+  moment the URL is pushed, the tail gets cut by the same amount; and plain `?format=` / `?quality=`
+  transcoding takes 5+ seconds before any sound on a weak CPU (N5095) when converting lossless to
+  mp3 (songloft-org/songloft#442). Piping directly took time-to-first-byte from 10.03s to 0.088s in
+  the normalize case. **Both `format` and `quality` are covered** (`SeekStreamOptions.Bitrate` lets
+  the pipe faithfully express `?quality=` instead of being pinned to 320k); only applies when the
+  target format is mp3 and it's not `media=video` / track extraction / CUE / HEAD, all other cases
+  keep the original blocking path
+- **`ForceTranscode` must be passed explicitly, never inferred from "the source extension isn't
+  mp3"** (`SeekStreamOptions`): a plain `?format=mp3` neither seeks nor normalizes nor changes speed,
+  so `StreamSeekedMP3`'s guard would judge it as "nothing to do" and refuse; and a fake mp3
+  (extension `.mp3` but WebM/Opus content, songloft-org/songloft#300) is precisely a case where the
+  extension *is* mp3 yet transcoding is mandatory — inferring from the extension would drop it into
+  the `-c:a copy` fast path → the mp3 muxer rejects Opus → zero output → fallback, burning an ffmpeg
+  process for no latency improvement at all
+- **The generalized guard must be self-contained**: `tryLiveTranscodeStream` computes
+  `normalize || bitrate > 0 || NeedsTranscodeForServe(...)` itself rather than relying on the `if`
+  conditions at its two call sites (`serveLocal` / `serveCachedFile`) — getting it wrong burns a
+  libmp3lame process on every single playback
+- **Pipe streams must support Range, or seeking silently hangs** (`cbrRangePlan`,
+  songloft-org/songloft#442): a chunked response with no `Content-Length` is judged un-seekable by
+  browsers. Measured in Docker headless Chrome: after dragging the progress bar the browser issues
+  **no new request at all**, `readyState` drops from 4 to 1, buffered stops growing, and `error` stays
+  null — **playback silently hangs and the track must be re-started**. The progress bar's total length
+  comes from the DB's `song.duration`, so nothing in the UI hints that this stream can't be seeked.
+  Adding just `Accept-Ranges: bytes` does not help (measured: still one request, still hangs) — the
+  browser needs the **total byte count** to map "second N" onto a byte offset. **Why it's computable**:
+  the pipe always emits CBR (`-b:a`), so bytes and time are linear; combined with the known
+  `song.duration` that yields both the total length and the seconds corresponding to any offset, and
+  "start the stream at second N" is exactly `StreamSeekedMP3`'s `-ss` input seek. Range requests are
+  therefore **genuinely** satisfied rather than papered over by "ignore Range, resend from the start"
+  (which would desync the progress bar from the actual audio)
+- **Four preconditions for enabling Range, all required** (see `planCBRRange`): `song.Duration > 0`
+  (an unknown duration makes the total size unknowable, which is routine for remote tracks whose
+  metadata hasn't been refreshed), re-encoding rather than `-c:a copy` (a copy source may be VBR mp3,
+  where bytes and time aren't linear — guaranteed by `ForceTranscode`), no speed change (atempo alters
+  the output duration, requiring a second layer of conversion), and no `?seek=` (that's a separate
+  position mechanism for push-streaming clients; combining them only causes interference). When unmet,
+  fall back to chunked with no length
+- **Promising a `Content-Length` means writing exactly that many bytes** (`exactLengthWriter`):
+  ffmpeg's actual output never exactly equals "bitrate × duration" — LAME's CBR uses frame padding to
+  track the target bitrate, the last frame may be partial, and `-ss` only aligns to frame boundaries,
+  leaving an error of a few frames. Writing less makes the client treat it as a prematurely closed
+  connection; writing more violates the HTTP/1.1 length contract. Hence truncate the overflow and pad
+  the shortfall with zeros. **On overflow it must return an error to break `io.Copy`**
+  (`errExactLengthReached`) rather than silently discarding: a closed range (`bytes=N-M`) wants only a
+  slice while ffmpeg runs to the end of the source, so discarding silently lets a `bytes=0-100`
+  request burn a full-track transcode
+- **A 206's `WriteHeader` must be deferred until the first byte is actually written**
+  (`deferredStatusWriter`): once WriteHeader is called the response is committed and can no longer be
+  downgraded, while `StreamSeekedMP3`'s contract is "only write after `Peek(1)` confirms ffmpeg really
+  produced output" — "first Write" is precisely that safe moment. For the same reason the fallback path
+  must Del `Content-Length` / `Content-Range` / `Accept-Ranges`; a leftover length would conflict with
+  the one `http.ServeFile` computes itself
+- **Wrapper writers must forward `Flush()`**: the services side is `io.Copy(&flushingWriter{w: w}, ...)`
+  and `flushingWriter` decides whether to flush via the **type assertion** `w.(http.Flusher)`. Without
+  that method on `exactLengthWriter` / `deferredStatusWriter` the assertion is blocked, bytes pile up
+  in the buffer instead of going out — and **the time-to-first-byte win evaporates**
 - **The live stream deliberately does not kick off a background transcode** to fill the cache:
   running two ffmpeg processes over the same track doubles CPU on a weak NAS while the user is
-  waiting for sound right now. Cache artifacts are produced by `?prefetch=1&normalize=1`
+  waiting for sound right now. Cache artifacts are produced by `?prefetch=1` (carrying the same
+  format/quality/normalize)
+- **`seekStreamMaxConcurrent` was *not* raised (still 4) when #442 was wired in**: plain transcoded
+  playback happens an order of magnitude more often than seek/normalize so the slots fill up more
+  easily, but #442's reported environment is exactly a weak CPU — widening concurrency hurts it,
+  while falling back to the blocking path when full is itself lossless (just the pre-fix behavior)
 - **Prewarming must carry normalize**: `prepareSongPlayback`'s `normalize` parameter must not be
   dropped, and the short-circuit check needs `!normalize` — for an mp3 source with `format=mp3`,
   `NeedsTranscodeForServe` is false, so without it prewarming returns immediately and does nothing
@@ -703,7 +763,8 @@ otherwise a sentinel error lets the handler degrade losslessly to serving the wh
   starve other transcodes); uses a separate `cap=4` semaphore in the same file that degrades
   immediately instead of queueing. `exec.CommandContext` also carries a "remaining duration +
   5min" hard timeout to reap orphaned processes. That semaphore is **shared** with the live
-  normalization stream above (`StreamSeekedMP3` is the same function), so 4 is the total for both.
+  normalization stream above, the speed stream, and the plain transcode stream (#442) —
+  `StreamSeekedMP3` is the same function — so 4 is the total across all of them.
   How long a slot is held depends on how fast the client drains the stream, not on track duration —
   speakers buffer greedily; a measured 4-minute track streamed out and exited in 10 seconds.
   The slot is held by `io.Copy`, and **cancelling the ctx does not interrupt it** (io.Copy only

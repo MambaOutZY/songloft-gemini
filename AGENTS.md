@@ -598,14 +598,52 @@ EBU R128 响度均衡（songloft-org/songloft#315），消除不同音源之间�
 - 滤镜串是 `internal/services` 的包级常量 `loudnormFilter`（`loudnorm=I=-16:LRA=11:TP=-1.5`，**单遍**动态模式）。
   落盘转码与实时流共用它，**不要**在任一处内联写死——两条路径必须给出同一响度
 - 产物缓存键带 `norm.` 标记（`transcodedFileName`），与不均衡的产物**互不通用**
-- **均衡产物未就绪时边转边发**（`tryLiveNormalizeStream` → `StreamSeekedMP3(Normalize: true)`）：
-  整首 loudnorm 要 20+ 秒，而 `GetOrTranscode` 是同步的，会把设备的首个 play 请求整段挂住
-  （songloft-org/songloft-plugin-miot#61 实测 `dur_ms=22392/24348/22381`）。音箱那端是「前 20 多秒空白」，
-  而插件的自动切歌定时器在推 URL 那一刻就起算，尾部又被砍掉同样长度。改为 pipe 直出后实测
-  首字节 10.03s → 0.088s。仅当目标格式是 mp3、未指定 `quality`、非 `media=video` / 抽轨 / CUE / HEAD 时生效，
-  其余场景保持原阻塞路径
+- **转码产物未就绪时边转边发**（`tryLiveTranscodeStream` → `StreamSeekedMP3`，`internal/handlers/music.go`）：
+  `GetOrTranscode` 是同步的，首字节 = 整首转码的墙钟时间。两处实测：整首 loudnorm 要 20+ 秒，
+  会把设备的首个 play 请求整段挂住（songloft-org/songloft-plugin-miot#61 实测 `dur_ms=22392/24348/22381`），
+  音箱那端是「前 20 多秒空白」，而插件的自动切歌定时器在推 URL 那一刻就起算，尾部又被砍掉同样长度；
+  普通 `?format=` / `?quality=` 转码在弱 CPU（N5095）上无损转 mp3 也要等 5 秒以上才出声
+  （songloft-org/songloft#442）。改为 pipe 直出后实测均衡场景首字节 10.03s → 0.088s。
+  **`format` 与 `quality` 两条路都覆盖**（`SeekStreamOptions.Bitrate` 让 pipe 能如实表达 `?quality=`，
+  不再固定 320k），仅当目标格式是 mp3、非 `media=video` / 抽轨 / CUE / HEAD 时生效，其余场景保持原阻塞路径
+- **`ForceTranscode` 必须显式传，不能靠「源扩展名不是 mp3」推断**（`SeekStreamOptions`）：纯 `?format=mp3`
+  既不 seek 也不均衡不变速，`StreamSeekedMP3` 的守卫会判它「没活干」而拒绝；而伪 mp3（扩展名 `.mp3`
+  内容是 WebM/Opus，songloft-org/songloft#300）恰恰是扩展名为 mp3 却必须转码的一类，靠扩展名推断
+  会把它放进 `-c:a copy` 快路径 → mp3 muxer 拒收 Opus → 零输出 → 降级，白起一个 ffmpeg 且延迟一点没改善
+- **泛化后的守卫必须自洽**：`tryLiveTranscodeStream` 自己算 `normalize || bitrate > 0 ||
+  NeedsTranscodeForServe(...)`，不依赖两个调用点（`serveLocal` / `serveCachedFile`）的 `if` 条件
+  ——判错的代价是每次播放都白烧一个 libmp3lame 进程
+- **pipe 流必须支持 Range，否则拖动会静默卡死**（`cbrRangePlan`，songloft-org/songloft#442）：
+  chunked 无 `Content-Length` 的响应会被浏览器判定为不可 seek。Docker 无头 Chrome 实测拖动进度条后
+  **一个新请求都不发**，`readyState` 从 4 掉到 1、buffered 零增长、`error` 为 null——**播放静默卡住，
+  只能重新点播**。而进度条总时长取自 DB 的 `song.duration`，UI 上完全看不出这条流不能拖。
+  只补 `Accept-Ranges: bytes` 没用（实测同样只发一个请求就卡死）：浏览器需要**总字节数**才能把
+  「第 N 秒」映射成字节偏移。**能算得出来的原因**：pipe 一律 CBR（`-b:a`），字节与时间成线性，
+  配合已知的 `song.duration` 即可给出总长度与任意偏移对应的秒数；而「从第 N 秒起流」正是
+  `StreamSeekedMP3` 的 `-ss` input seek。于是 Range 被**真正**满足，而不是「忽略 Range 从头重发」
+  （那会让进度条与实际声音错位）
+- **启用 Range 的四个前提，缺一不可**（见 `planCBRRange`）：`song.Duration > 0`（时长未知就估不出
+  总字节，远程歌曲元数据未刷新时是常态）、必须重编码而非 `-c:a copy`（copy 的源可能是 VBR mp3，
+  字节与时间不成线性；由 `ForceTranscode` 保证）、不变速（atempo 改变输出时长，要再套一层换算）、
+  无 `?seek=`（那是给推流客户端的另一套位置语义，叠加只会互相干扰）。不满足时退回 chunked 无长度
+- **承诺了 `Content-Length` 就必须写够写准**（`exactLengthWriter`）：ffmpeg 的实际输出量不会精确等于
+  「码率 × 时长」——LAME 的 CBR 靠帧 padding 贴合码率、末尾可能是不完整帧、`-ss` 只能对齐到帧边界，
+  累计误差在几帧内。写少了客户端当作连接提前断开，写多了违反 HTTP/1.1 长度契约，所以超出截断、
+  不足补零。**超出时必须返回 error 中断 io.Copy**（`errExactLengthReached`）而非静默丢弃：
+  闭区间 Range（`bytes=N-M`）只要一小段而 ffmpeg 会转到源结尾，静默丢弃等于让一个 `bytes=0-100`
+  请求白转整首
+- **206 的 `WriteHeader` 必须推迟到首次真的写字节时**（`deferredStatusWriter`）：一旦 WriteHeader
+  响应就提交了、再也无法降级，而 `StreamSeekedMP3` 的契约是「`Peek(1)` 确认 ffmpeg 真有输出后才写」
+  ——「首次 Write」正是那个安全时刻。同理**降级时要 Del 掉 `Content-Length`/`Content-Range`/
+  `Accept-Ranges`**，残留的长度会和 `http.ServeFile` 自己算的冲突
+- **包装 writer 必须转发 `Flush()`**：services 侧是 `io.Copy(&flushingWriter{w: w}, ...)`，而
+  `flushingWriter` 靠**类型断言** `w.(http.Flusher)` 决定要不要 flush。`exactLengthWriter` /
+  `deferredStatusWriter` 少了这个方法就会把断言挡掉，字节攒在缓冲里不下发——**首字节延迟原地回归**
 - **实时流刻意不顺手起后台转码补缓存**：同一首歌并跑两个 ffmpeg 会在弱 NAS 上把 CPU 翻倍，
-  而用户正等着这一秒出声。缓存产物交给 `?prefetch=1&normalize=1` 生成
+  而用户正等着这一秒出声。缓存产物交给 `?prefetch=1`（带同样的 format/quality/normalize）生成
+- **接入 #442 后没有提高 `seekStreamMaxConcurrent`（仍是 4）**：普通转码播放的频率比 seek/均衡高一个
+  数量级，槽位更容易占满，但 #442 的报告环境正是弱 CPU——放大并发对它是伤害，而占满时降级回
+  阻塞路径本身无损（只是回到修复前的行为）
 - **预热必须带 normalize**：`prepareSongPlayback` 的 `normalize` 参数不能丢，且短路判断里要有 `!normalize`
   ——mp3 源 + `format=mp3` 时 `NeedsTranscodeForServe` 为 false，少了这一项预热会直接 return、一行没干
   （#61 的另一半根因，日志里连一条 `prefetch ready` 都不会出现）
@@ -634,7 +672,8 @@ handler 无损降级为从头 `ServeFile`）。
   越过文件尾 → ffmpeg 零输出 → 触发降级 → **整首从头重播**，比忽略 seek 更糟
 - **不占 `transcodeSem`**（进程存活整首剩余时长，会饿死其他转码），改用本文件内 `cap=4` 的独立
   信号量，满了直接降级不排队；`exec.CommandContext` 另带「剩余时长 + 5min」硬超时回收孤儿进程。
-  该信号量与上面的实时均衡流**共用**（`StreamSeekedMP3` 是同一个函数），所以 4 是两类流的总额。
+  该信号量与上面的实时均衡流、变速流、普通转码流（#442）**共用**（`StreamSeekedMP3` 是同一个函数），
+  所以 4 是这几类流的总额。
   实际占用时长取决于客户端读得多快而非歌曲时长——音箱是贪婪缓冲，实测 4 分钟的歌 10 秒就流完退出。
   槽位由 `io.Copy` 持有，**ctx 取消不会打断它**（io.Copy 只看读端 EOF / 写端出错），
   所以注册 playActivity 只能掐掉 ffmpeg 省 CPU，不能提前归还槽位
