@@ -334,6 +334,7 @@ type Playlist struct {
 	SortBy      string     `json:"sort_by" example:"position"`                           // 视图排序字段：position/added_at/file_modified_at/title/artist/duration
 	SortOrder   string     `json:"sort_order" example:"asc"`                             // 视图排序方向：asc/desc
 	SongCount   int        `json:"song_count" example:"10"`                              // 歌曲数量
+	RemoteCount int        `json:"remote_count" example:"3"`                             // 歌单内网络歌曲（songs.type=remote）数量，>0 即为「网络歌单」；仅列表接口填充，详情接口恒为 0
 	PinnedAt    *time.Time `json:"pinned_at,omitempty" example:"2024-01-01T12:00:00Z"`   // 置顶时间，nil 表示未置顶；多个置顶歌单按此字段倒序排列
 	CreatedAt   time.Time  `json:"created_at" example:"2024-01-01T12:00:00Z"`            // 创建时间
 	UpdatedAt   time.Time  `json:"updated_at" example:"2024-01-01T12:00:00Z"`            // 最后更新时间

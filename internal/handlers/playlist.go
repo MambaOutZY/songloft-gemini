@@ -40,16 +40,20 @@ func (h *PlaylistHandler) SetThumbCache(tc *services.CoverThumbCache) {
 
 // ListPlaylists 获取歌单列表
 // @Summary 获取歌单列表
-// @Description 获取歌单列表，支持按类型过滤、关键词搜索和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部
+// @Description 获取歌单列表，支持按类型过滤、按歌单内歌曲来源过滤、关键词搜索和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部。
+// @Description song_source 按歌单内歌曲的来源筛选（歌单本身没有来源字段，只能由歌曲反推）：remote=歌单内含网络歌曲（「网络歌单」），local=含本地歌曲（「本地歌单」）。
+// @Description 判定是 EXISTS 而非「全部是」，故本地+网络混合的歌单在两个取值下都会出现，空歌单两个取值下都不出现。电台歌曲的 type 是 radio 而非 remote，故电台歌单不会被 song_source=remote 命中。
 // @Tags 歌单管理
 // @Accept json
 // @Produce json
 // @Param type query string false "歌单类型" Enums(normal, radio)
+// @Param song_source query string false "按歌单内歌曲来源过滤: remote=含网络歌曲, local=含本地歌曲" Enums(remote, local)
 // @Param keyword query string false "搜索关键词（模糊匹配歌单名称/描述）"
 // @Param exclude_labels query string false "要排除的标签(逗号分隔), 默认排除 hidden; 传 none 显示全部" default(hidden)
 // @Param limit query int false "每页数量" default(20)
 // @Param offset query int false "偏移量" default(0)
 // @Success 200 {object} map[string]interface{} "成功返回歌单列表"
+// @Failure 400 {object} map[string]string "song_source 取值非法"
 // @Failure 500 {object} map[string]string "服务器错误"
 // @Security BearerAuth
 // @Router /playlists [get]
@@ -60,6 +64,13 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 	keyword := r.URL.Query().Get("keyword")
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
+
+	// song_source 直接进 SQL 的 s.type 比较，必须白名单校验，不能透传任意值。
+	songSource := r.URL.Query().Get("song_source")
+	if songSource != "" && songSource != models.TypeRemote && songSource != models.TypeLocal {
+		respondError(w, http.StatusBadRequest, "无效的 song_source，仅支持 remote 或 local", nil)
+		return
+	}
 
 	limit := models.DefaultPaginationLimit
 	offset := 0
@@ -86,6 +97,7 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 
 	filter := &database.PlaylistFilter{
 		Type:          playlistType,
+		SongSource:    songSource,
 		Keyword:       keyword,
 		ExcludeLabels: excludeLabels,
 		Limit:         limit,
@@ -100,6 +112,7 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 
 	countFilter := &database.PlaylistFilter{
 		Type:          filter.Type,
+		SongSource:    songSource,
 		Keyword:       keyword,
 		ExcludeLabels: excludeLabels,
 	}

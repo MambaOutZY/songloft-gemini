@@ -723,8 +723,15 @@ func playlistSelectBuilder() sq.SelectBuilder {
 		"p.sort_by", "p.sort_order", "p.pinned_at",
 		"p.created_at", "p.updated_at",
 		"COALESCE(cnt.song_count, 0) AS song_count",
+		"COALESCE(cnt.remote_count, 0) AS remote_count",
 	).From("playlists p").
-		LeftJoin("(SELECT playlist_id, COUNT(*) AS song_count FROM playlist_songs GROUP BY playlist_id) cnt ON p.id = cnt.playlist_id")
+		// 子查询 JOIN songs 只为多算一个 remote_count（网络歌单徽标用）。
+		// song_count 语义不受影响：foreign_keys(1) 已开 + playlist_songs.song_id
+		// 是 ON DELETE CASCADE 外键，不存在指向已删歌曲的孤儿行。
+		LeftJoin("(SELECT ps.playlist_id, COUNT(*) AS song_count, " +
+			"SUM(CASE WHEN s.type = 'remote' THEN 1 ELSE 0 END) AS remote_count " +
+			"FROM playlist_songs ps JOIN songs s ON s.id = ps.song_id " +
+			"GROUP BY ps.playlist_id) cnt ON p.id = cnt.playlist_id")
 }
 
 func applyPlaylistFilter(sb sq.SelectBuilder, filter *PlaylistFilter, prefix string) sq.SelectBuilder {
@@ -744,6 +751,22 @@ func applyPlaylistFilter(sb sq.SelectBuilder, filter *PlaylistFilter, prefix str
 			sq.Like{prefix + "description": kw},
 		})
 	}
+	// SongSource 是 EXISTS 语义（含该来源的歌曲即命中），故混合歌单同时命中
+	// remote 与 local，空歌单两者都不命中。
+	//
+	// 引用外层歌单 id 时**必须**带表限定：子查询里 join 了 songs，裸 `id` 会被
+	// SQLite 判为 ambiguous column name（songs 也有 id 列）。prefix 为 "p."（List，
+	// 带 JOIN 且表有别名）时用 "p."，为 ""（Count，From("playlists") 无别名）时
+	// 必须补成 "playlists."，不能直接用空前缀。
+	if filter.SongSource != "" {
+		outer := prefix
+		if outer == "" {
+			outer = "playlists."
+		}
+		sb = sb.Where(fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM playlist_songs ps JOIN songs s ON s.id = ps.song_id "+
+				"WHERE ps.playlist_id = %sid AND s.type = ?)", outer), filter.SongSource)
+	}
 	return sb
 }
 
@@ -754,16 +777,18 @@ func scanPlaylistRow(scanner interface {
 	var labelsJSON sql.NullString
 	var pinnedAt sql.NullTime
 	var songCount int64
+	var remoteCount int64
 	if err := scanner.Scan(
 		&p.ID, &p.Type, &p.Name, &p.Description,
 		&p.CoverPath, &p.CoverURL, &labelsJSON,
 		&p.SortBy, &p.SortOrder, &pinnedAt,
-		&p.CreatedAt, &p.UpdatedAt, &songCount,
+		&p.CreatedAt, &p.UpdatedAt, &songCount, &remoteCount,
 	); err != nil {
 		return nil, fmt.Errorf("scan playlist: %w", err)
 	}
 	p.Labels = parseLabelsJSON(labelsJSON)
 	p.SongCount = int(songCount)
+	p.RemoteCount = int(remoteCount)
 	if pinnedAt.Valid {
 		p.PinnedAt = &pinnedAt.Time
 	}

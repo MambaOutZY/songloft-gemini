@@ -22,16 +22,20 @@ type libraryBrowseSetting struct {
 	Views []libraryBrowseView `json:"views"`
 }
 
-// libraryViewKeys 是 16 个合法视图 key 的**默认顺序**，按三组连续排列：
+// libraryViewKeys 是 18 个合法视图 key 的**默认顺序**，按三组连续排列：
 //   - 歌曲组：all(全部)/local(本地)/remote(网络)/radio(电台) —— 按 type 过滤的扁平歌曲列表；
 //   - 分类组：folder(文件夹)/artist(歌手)/album(专辑)/genre(流派)/year(年份)/decade(年代)/language(语种)/style(风格)/tag(标签) —— folder 为目录浏览，其余为 facet 分类聚合，下钻歌曲；tag 维度按用户自定义标签聚合（见 ListFacet 的 tag 分支）；
-//   - 歌单组：playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单) —— 歌单卡片列表。
+//   - 歌单组：playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单)/playlist_remote(网络歌单)/playlist_local(本地歌单) —— 歌单卡片列表。
+//
+// 前 3 个歌单视图按 playlists.type 过滤，playlist_remote / playlist_local 则**不按 type**，
+// 而是按歌单内歌曲的来源过滤（`song_source` 参数，见 ListPlaylists）—— 歌单表本身没有来源
+// 字段，只能由歌曲反推（songloft-org/songloft#445）。
 //
 // 前端渲染时按组固定顺序展示并在组间加分割线，组内顺序沿用用户配置。
 var libraryViewKeys = []string{
 	"all", "local", "remote", "radio", "folder",
 	"artist", "album", "genre", "year", "decade", "language", "style", "tag",
-	"playlist", "playlist_normal", "playlist_radio",
+	"playlist", "playlist_normal", "playlist_radio", "playlist_remote", "playlist_local",
 }
 
 // defaultLibraryBrowse 默认全部可见、按 libraryViewKeys 顺序。
@@ -51,7 +55,7 @@ func isValidLibraryViewKey(key string) bool {
 
 // GetLibraryBrowseSetting 获取曲库浏览视图配置
 // @Summary 获取曲库浏览视图配置
-// @Description 获取用户自定义的曲库统一浏览页视图显示与顺序。共 16 个视图，分三组：歌曲组 all(全部)/local(本地)/remote(网络)/radio(电台)；分类组 folder(文件夹)/artist(歌手)/album(专辑)/genre(流派)/year(年份)/decade(年代)/language(语种)/style(风格)/tag(标签)；歌单组 playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单)。未配置时返回默认（全部可见、默认顺序）。返回始终包含完整 16 项。
+// @Description 获取用户自定义的曲库统一浏览页视图显示与顺序。共 18 个视图，分三组：歌曲组 all(全部)/local(本地)/remote(网络)/radio(电台)；分类组 folder(文件夹)/artist(歌手)/album(专辑)/genre(流派)/year(年份)/decade(年代)/language(语种)/style(风格)/tag(标签)；歌单组 playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单)/playlist_remote(网络歌单)/playlist_local(本地歌单)。未配置时返回默认（全部可见、默认顺序）。返回始终包含完整 18 项。
 // @Tags 设置
 // @Produce json
 // @Success 200 {object} libraryBrowseSetting "曲库浏览视图配置"
@@ -68,7 +72,7 @@ func (h *ConfigHandler) GetLibraryBrowseSetting(w http.ResponseWriter, r *http.R
 
 // UpdateLibraryBrowseSetting 保存曲库浏览视图配置
 // @Summary 保存曲库浏览视图配置
-// @Description 保存用户自定义的曲库浏览页视图显示与顺序。每个 view 的 key 必须属于合法的 16 个 key 且不能重复；未出现的 key 会按默认顺序补到末尾（visible=true），保证返回完整 16 项。
+// @Description 保存用户自定义的曲库浏览页视图显示与顺序。每个 view 的 key 必须属于合法的 18 个 key 且不能重复；未出现的 key 会按默认顺序补到末尾（visible=true），保证返回完整 18 项。
 // @Tags 设置
 // @Accept json
 // @Produce json
@@ -107,7 +111,7 @@ func (h *ConfigHandler) UpdateLibraryBrowseSetting(w http.ResponseWriter, r *htt
 }
 
 // normalizeLibraryBrowse 去掉非法 key，并把缺失的 key 按默认顺序补到末尾（visible=true），
-// 保证返回始终是完整、无重复的 16 项。
+// 保证返回始终是完整、无重复的 18 项。
 func normalizeLibraryBrowse(cfg libraryBrowseSetting) libraryBrowseSetting {
 	seen := make(map[string]bool, len(cfg.Views))
 	views := make([]libraryBrowseView, 0, len(libraryViewKeys))

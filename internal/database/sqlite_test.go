@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"songloft/internal/models"
+	"sort"
 	"testing"
 )
 
@@ -1985,4 +1986,129 @@ func TestAutoCreateBubbleUpNoMusicPath(t *testing.T) {
 	if _, ok := ids["Rock"]; !ok {
 		t.Errorf("expected Rock playlist, got %+v", ids)
 	}
+}
+
+// TestListPlaylistsBySongSource 验证按歌单内歌曲来源过滤（songloft-org/songloft#445）：
+// EXISTS 语义下混合歌单同时命中 remote 与 local，空歌单两者都不命中；
+// 电台歌曲的 type 是 radio 而非 remote，故电台歌单不被 remote 命中。
+// 同时验证 remote_count 与 song_count 的取值。
+func TestListPlaylistsBySongSource(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	repo := db.PlaylistRepository()
+	songRepo := db.SongRepository()
+	psRepo := db.PlaylistSongRepository()
+
+	songs := []*models.Song{
+		{Type: models.TypeLocal, Title: "local1", FilePath: "/music/a.mp3"},
+		{Type: models.TypeLocal, Title: "local2", FilePath: "/music/b.mp3"},
+		{Type: models.TypeRemote, Title: "remote1", URL: "https://example.com/1"},
+		{Type: models.TypeRemote, Title: "remote2", URL: "https://example.com/2"},
+		{Type: models.TypeRadio, Title: "radio1", URL: "https://example.com/radio"},
+	}
+	if err := songRepo.BatchCreate(ctx, songs); err != nil {
+		t.Fatalf("BatchCreate error = %v", err)
+	}
+	// BatchCreate 不回填 ID，按标题查回真实 ID。
+	ids := map[string]int64{}
+	for _, title := range []string{"local1", "local2", "remote1", "remote2", "radio1"} {
+		found, err := songRepo.List(ctx, &SongFilter{Keyword: title})
+		if err != nil || len(found) != 1 {
+			t.Fatalf("lookup song %q: err=%v count=%d", title, err, len(found))
+		}
+		ids[title] = found[0].ID
+	}
+
+	// 四个歌单：纯本地 / 纯网络 / 混合 / 空。另加一个电台歌单。
+	cases := []struct {
+		name     string
+		plType   string
+		songKeys []string
+	}{
+		{"纯本地歌单", models.PlaylistTypeNormal, []string{"local1", "local2"}},
+		{"纯网络歌单", models.PlaylistTypeNormal, []string{"remote1", "remote2"}},
+		{"混合歌单", models.PlaylistTypeNormal, []string{"local1", "remote1"}},
+		{"空歌单", models.PlaylistTypeNormal, nil},
+		{"电台歌单", models.PlaylistTypeRadio, []string{"radio1"}},
+	}
+	plIDs := map[string]int64{}
+	for _, c := range cases {
+		p := &models.Playlist{Type: c.plType, Name: c.name}
+		if err := repo.Create(ctx, p); err != nil {
+			t.Fatalf("Create playlist %q error = %v", c.name, err)
+		}
+		plIDs[c.name] = p.ID
+		for i, key := range c.songKeys {
+			if err := psRepo.AddSong(ctx, p.ID, ids[key], i); err != nil {
+				t.Fatalf("AddSong to %q error = %v", c.name, err)
+			}
+		}
+	}
+
+	// names 把 List 结果压成本次测试关心的歌单名集合（忽略内置歌单）。
+	names := func(filter *PlaylistFilter) map[string]*models.Playlist {
+		list, err := repo.List(ctx, filter)
+		if err != nil {
+			t.Fatalf("List(%+v) error = %v", filter, err)
+		}
+		out := map[string]*models.Playlist{}
+		for _, p := range list {
+			if _, ok := plIDs[p.Name]; ok {
+				out[p.Name] = p
+			}
+		}
+		return out
+	}
+
+	remote := names(&PlaylistFilter{SongSource: models.TypeRemote})
+	if len(remote) != 2 || remote["纯网络歌单"] == nil || remote["混合歌单"] == nil {
+		t.Errorf("song_source=remote 应只命中 纯网络歌单+混合歌单, got %v", mapKeys(remote))
+	}
+
+	local := names(&PlaylistFilter{SongSource: models.TypeLocal})
+	if len(local) != 2 || local["纯本地歌单"] == nil || local["混合歌单"] == nil {
+		t.Errorf("song_source=local 应只命中 纯本地歌单+混合歌单, got %v", mapKeys(local))
+	}
+
+	// 不过滤时全部 5 个都在，且 song_count / remote_count 正确。
+	all := names(&PlaylistFilter{})
+	if len(all) != 5 {
+		t.Fatalf("无过滤应返回全部 5 个测试歌单, got %v", mapKeys(all))
+	}
+	wantCounts := map[string][2]int{
+		"纯本地歌单": {2, 0},
+		"纯网络歌单": {2, 2},
+		"混合歌单":  {2, 1},
+		"空歌单":   {0, 0},
+		"电台歌单":  {1, 0}, // 电台歌曲不计入 remote_count
+	}
+	for name, want := range wantCounts {
+		got := all[name]
+		if got.SongCount != want[0] || got.RemoteCount != want[1] {
+			t.Errorf("%s: song_count/remote_count = %d/%d, want %d/%d",
+				name, got.SongCount, got.RemoteCount, want[0], want[1])
+		}
+	}
+
+	// Count 走 prefix="" 的另一条 SQL 路径，必须与 List 结果一致。
+	for _, src := range []string{models.TypeRemote, models.TypeLocal} {
+		n, err := repo.Count(ctx, &PlaylistFilter{SongSource: src})
+		if err != nil {
+			t.Fatalf("Count(song_source=%s) error = %v", src, err)
+		}
+		if n != 2 {
+			t.Errorf("Count(song_source=%s) = %d, want 2（内置歌单为空不命中）", src, n)
+		}
+	}
+}
+
+func mapKeys(m map[string]*models.Playlist) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

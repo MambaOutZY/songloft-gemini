@@ -783,6 +783,10 @@ definitions:
         description: 置顶时间，nil 表示未置顶；多个置顶歌单按此字段倒序排列
         example: "2024-01-01T12:00:00Z"
         type: string
+      remote_count:
+        description: 歌单内网络歌曲（songs.type=remote）数量，>0 即为「网络歌单」；仅列表接口填充，详情接口恒为 0
+        example: 3
+        type: integer
       song_count:
         description: 歌曲数量
         example: 10
@@ -3080,7 +3084,10 @@ paths:
     get:
       consumes:
       - application/json
-      description: 获取歌单列表，支持按类型过滤、关键词搜索和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部
+      description: |-
+        获取歌单列表，支持按类型过滤、按歌单内歌曲来源过滤、关键词搜索和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部。
+        song_source 按歌单内歌曲的来源筛选（歌单本身没有来源字段，只能由歌曲反推）：remote=歌单内含网络歌曲（「网络歌单」），local=含本地歌曲（「本地歌单」）。
+        判定是 EXISTS 而非「全部是」，故本地+网络混合的歌单在两个取值下都会出现，空歌单两个取值下都不出现。电台歌曲的 type 是 radio 而非 remote，故电台歌单不会被 song_source=remote 命中。
       parameters:
       - description: 歌单类型
         enum:
@@ -3088,6 +3095,13 @@ paths:
         - radio
         in: query
         name: type
+        type: string
+      - description: '按歌单内歌曲来源过滤: remote=含网络歌曲, local=含本地歌曲'
+        enum:
+        - remote
+        - local
+        in: query
+        name: song_source
         type: string
       - description: 搜索关键词（模糊匹配歌单名称/描述）
         in: query
@@ -3115,6 +3129,12 @@ paths:
           description: 成功返回歌单列表
           schema:
             additionalProperties: true
+            type: object
+        "400":
+          description: song_source 取值非法
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "500":
           description: 服务器错误
@@ -4643,10 +4663,10 @@ paths:
       - 设置
   /settings/library-browse:
     get:
-      description: 获取用户自定义的曲库统一浏览页视图显示与顺序。共 16 个视图，分三组：歌曲组 all(全部)/local(本地)/remote(网络)/radio(电台)；分类组
+      description: 获取用户自定义的曲库统一浏览页视图显示与顺序。共 18 个视图，分三组：歌曲组 all(全部)/local(本地)/remote(网络)/radio(电台)；分类组
         folder(文件夹)/artist(歌手)/album(专辑)/genre(流派)/year(年份)/decade(年代)/language(语种)/style(风格)/tag(标签)；歌单组
-        playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单)。未配置时返回默认（全部可见、默认顺序）。返回始终包含完整
-        16 项。
+        playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单)/playlist_remote(网络歌单)/playlist_local(本地歌单)。未配置时返回默认（全部可见、默认顺序）。返回始终包含完整
+        18 项。
       produces:
       - application/json
       responses:
@@ -4662,8 +4682,8 @@ paths:
     put:
       consumes:
       - application/json
-      description: 保存用户自定义的曲库浏览页视图显示与顺序。每个 view 的 key 必须属于合法的 16 个 key 且不能重复；未出现的
-        key 会按默认顺序补到末尾（visible=true），保证返回完整 16 项。
+      description: 保存用户自定义的曲库浏览页视图显示与顺序。每个 view 的 key 必须属于合法的 18 个 key 且不能重复；未出现的
+        key 会按默认顺序补到末尾（visible=true），保证返回完整 18 项。
       parameters:
       - description: 曲库浏览视图配置
         in: body

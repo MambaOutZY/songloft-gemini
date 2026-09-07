@@ -2400,7 +2400,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取歌单列表，支持按类型过滤、关键词搜索和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部",
+                "description": "获取歌单列表，支持按类型过滤、按歌单内歌曲来源过滤、关键词搜索和分页。默认排除隐藏歌单，传 exclude_labels=none 显示全部。\nsong_source 按歌单内歌曲的来源筛选（歌单本身没有来源字段，只能由歌曲反推）：remote=歌单内含网络歌曲（「网络歌单」），local=含本地歌曲（「本地歌单」）。\n判定是 EXISTS 而非「全部是」，故本地+网络混合的歌单在两个取值下都会出现，空歌单两个取值下都不出现。电台歌曲的 type 是 radio 而非 remote，故电台歌单不会被 song_source=remote 命中。",
                 "consumes": [
                     "application/json"
                 ],
@@ -2420,6 +2420,16 @@ const docTemplate = `{
                         "type": "string",
                         "description": "歌单类型",
                         "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "remote",
+                            "local"
+                        ],
+                        "type": "string",
+                        "description": "按歌单内歌曲来源过滤: remote=含网络歌曲, local=含本地歌曲",
+                        "name": "song_source",
                         "in": "query"
                     },
                     {
@@ -2456,6 +2466,15 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "song_source 取值非法",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "500": {
@@ -4815,7 +4834,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "获取用户自定义的曲库统一浏览页视图显示与顺序。共 16 个视图，分三组：歌曲组 all(全部)/local(本地)/remote(网络)/radio(电台)；分类组 folder(文件夹)/artist(歌手)/album(专辑)/genre(流派)/year(年份)/decade(年代)/language(语种)/style(风格)/tag(标签)；歌单组 playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单)。未配置时返回默认（全部可见、默认顺序）。返回始终包含完整 16 项。",
+                "description": "获取用户自定义的曲库统一浏览页视图显示与顺序。共 18 个视图，分三组：歌曲组 all(全部)/local(本地)/remote(网络)/radio(电台)；分类组 folder(文件夹)/artist(歌手)/album(专辑)/genre(流派)/year(年份)/decade(年代)/language(语种)/style(风格)/tag(标签)；歌单组 playlist(全部歌单)/playlist_normal(普通歌单)/playlist_radio(电台歌单)/playlist_remote(网络歌单)/playlist_local(本地歌单)。未配置时返回默认（全部可见、默认顺序）。返回始终包含完整 18 项。",
                 "produces": [
                     "application/json"
                 ],
@@ -4838,7 +4857,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "保存用户自定义的曲库浏览页视图显示与顺序。每个 view 的 key 必须属于合法的 16 个 key 且不能重复；未出现的 key 会按默认顺序补到末尾（visible=true），保证返回完整 16 项。",
+                "description": "保存用户自定义的曲库浏览页视图显示与顺序。每个 view 的 key 必须属于合法的 18 个 key 且不能重复；未出现的 key 会按默认顺序补到末尾（visible=true），保证返回完整 18 项。",
                 "consumes": [
                     "application/json"
                 ],
@@ -10826,6 +10845,11 @@ const docTemplate = `{
                     "description": "置顶时间，nil 表示未置顶；多个置顶歌单按此字段倒序排列",
                     "type": "string",
                     "example": "2024-01-01T12:00:00Z"
+                },
+                "remote_count": {
+                    "description": "歌单内网络歌曲（songs.type=remote）数量，\u003e0 即为「网络歌单」；仅列表接口填充，详情接口恒为 0",
+                    "type": "integer",
+                    "example": 3
                 },
                 "song_count": {
                     "description": "歌曲数量",

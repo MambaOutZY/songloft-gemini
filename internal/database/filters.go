@@ -48,10 +48,15 @@ type PlaylistFilter struct {
 	Labels        []string
 	ExcludeLabels []string
 	Keyword       string
-	Limit         int
-	Offset        int
-	OrderBy       string
-	Order         string
+	// SongSource 按「歌单内歌曲的来源」过滤，取值为 songs.type：
+	// remote=歌单内含网络歌曲（即「网络歌单」），local=含本地歌曲（即「本地歌单」），空=不过滤。
+	// 语义是 EXISTS 而非「全部是」：混合歌单两边都命中，空歌单两边都不命中
+	// （来源未知，归任何一边都是编的）。歌单本身没有来源字段，只能这样反推（songloft-org/songloft#445）。
+	SongSource string
+	Limit      int
+	Offset     int
+	OrderBy    string
+	Order      string
 }
 
 // PlaylistSongFilter 歌单歌曲过滤/排序条件
