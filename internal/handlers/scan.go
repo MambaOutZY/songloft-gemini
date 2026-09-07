@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -243,7 +244,8 @@ func (h *ScanHandler) ListDirectories(w http.ResponseWriter, r *http.Request) {
 
 // ListDirNames 获取所有目录名称（自动补全用）
 // @Summary 获取所有目录名称
-// @Description 递归收集音乐目录下所有唯一的目录名称，按字母排序返回，用于排除目录名称的自动补全
+// @Description 递归收集音乐目录下所有唯一的目录名称，按字母排序返回，用于排除目录名称的自动补全。
+// @Description 结果带 60 秒进程内缓存；万首级曲库首次遍历可能较慢，客户端超时后重试会直接命中缓存。
 // @Tags 扫描管理
 // @Accept json
 // @Produce json
@@ -252,7 +254,10 @@ func (h *ScanHandler) ListDirectories(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Router /scan/dir-names [get]
 func (h *ScanHandler) ListDirNames(w http.ResponseWriter, r *http.Request) {
-	names, err := h.scanner.CollectAllDirNames(r.Context())
+	// 刻意脱开请求的取消信号：大曲库遍历可能超过客户端超时，若跟着 r.Context() 一起
+	// 取消，遍历半途中止、缓存永远填不上，前端每次重试都从零再走一遍并再次 500
+	// （songloft-org/songloft#447）。脱开后首次遍历会跑完并填缓存，重试立刻命中。
+	names, err := h.scanner.CollectAllDirNames(context.WithoutCancel(r.Context()))
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "收集目录名称失败", err)
 		return

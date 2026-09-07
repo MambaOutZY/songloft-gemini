@@ -431,6 +431,39 @@ manager/scheduler 的内存 map 键，以及 `plugin_storage.plugin_entry_path` 
   而 `ShouldExcludeDir` 是**按路径任一层级的目录名**匹配的，于是整个 `/tmp/...` 根目录被排除。
   表现是扫描「成功完成」但 `discovered_files=0`，**不报错、不打 warn**，极易误判为自己的改动坏了
 
+### scan 流式入库（大曲库铁律 — songloft-org/songloft#447）
+
+`doScanAndImport` 的入库是**流式**的：`scanBatchAccumulator`（`scan_batch.go`）按目录分组，
+目录定稿即 `flushScanBatch`。别改回「全量累积后一次性写」——几万首的库会在整个提取阶段
+（数十分钟）里进度恒为 0、数据库一条不写，用户只能判定为卡死。
+
+- **定稿单位必须是目录，不能是固定条数**：`fixSpamTags` 按目录分组、以「同目录内超过一半文件
+  共享同一 `(title, artist)`」判定垃圾 tag，需要整个目录作样本。按 50 条切批会把一个目录劈成
+  几段，判定结果随切分位置漂移
+- **`scanDirGroupCap` 是内存兜底**：平铺几千文件的目录到达上限就提前定稿，否则退化成全库累积。
+  代价是该目录的垃圾 tag 判定改用子样本，可接受（判据是 >50% 且 ≥3 条）
+- **进度计数只在批次落库后累加**（`flushScanBatch` 里的 `UpdateProgress`）。提取阶段单独调
+  `SetCurrentFile` 上报当前文件，别在提取阶段也走 `UpdateProgress`，会双重计数
+- **写库的 ctx 与取消的 ctx 必须分开**：`doScanAndImport` 会把入参 ctx 派生成可取消 ctx（取消时
+  杀 ffmpeg 子进程），但 `flushScanBatch` 必须用派生前的 `flushCtx`。取消时要把已提取的成果落库，
+  用被取消的 ctx 会让事务立刻失败、重试三次后全部记为 failed，「取消保留成果」静默不生效
+- **取消不再丢弃已提取结果**（v2.12.0 之后的行为变更）：worker 退出前的结果照样入库，
+  `sealAll` 负责冲出 pending 归不了零的残余目录组。以前整批丢弃，用户连续取消两次就白干二十分钟
+
+### 目录遍历不要逐条目 `os.Stat`（songloft-org/songloft#447）
+
+`scanDirWithCue` / `collectDirNames` 用 `resolveEntry`（`scanner.go`）判断目录项类型：
+`os.ReadDir` 返回的 `DirEntry.Type()` 在 Linux 上直接来自 `d_type`，零额外系统调用；
+只有软链接与未知类型才回退 `os.Stat`（跟随软链接，保持「软链接目录仍递归、断链跳过」的语义）。
+
+- 逐条目 `os.Stat` 会让万首级曲库多出几万次系统调用。`GET /scan/dir-names` 就是因此超过客户端
+  10s 超时 → `r.Context()` 被取消 → 遍历半途中止 → 500，且**每次重试都从零重来**
+- 该端点因此还有两层保护：`CollectAllDirNames` 的 60s TTL 缓存（`dirNamesMu` 兼作单飞锁，
+  挡住前端重试风暴），以及 handler 侧的 `context.WithoutCancel(r.Context())`——脱开客户端取消，
+  让首次遍历跑完并填上缓存，重试立刻命中。缓存挂在 `Scanner` 上，`music_path` 变更时
+  `app.go` 重建 Scanner，缓存自然失效
+- d_type 不可用的文件系统上 `ReadDir` 内部会自行 lstat 补齐类型，等价于原行为，不会变慢
+
 ### 旁挂歌词（.lrc）
 
 - **匹配规则**（`FindSidecarLyricFile`）：`<base>.lrc` / `.LRC` / `.Lrc`，然后 `<含扩展名>.lrc` / `.LRC` / `.Lrc`。

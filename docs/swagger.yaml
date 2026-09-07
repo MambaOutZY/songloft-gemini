@@ -4235,7 +4235,9 @@ paths:
     get:
       consumes:
       - application/json
-      description: 递归收集音乐目录下所有唯一的目录名称，按字母排序返回，用于排除目录名称的自动补全
+      description: |-
+        递归收集音乐目录下所有唯一的目录名称，按字母排序返回，用于排除目录名称的自动补全。
+        结果带 60 秒进程内缓存；万首级曲库首次遍历可能较慢，客户端超时后重试会直接命中缓存。
       produces:
       - application/json
       responses:

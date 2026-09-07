@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,15 +27,50 @@ type DirEntry struct {
 	HasChildren bool   `json:"has_children"`
 }
 
-// Scanner 文件扫描器
+// dirNamesCacheTTL 目录名称列表的缓存有效期。
+// 该列表只服务「排除目录名称」自动补全，短时陈旧无害；缓存的真正目的是让
+// 客户端超时后的重试立刻命中，而不是又触发一次全树遍历。
+const dirNamesCacheTTL = 60 * time.Second
+
+// Scanner 文件扫描器。
+// 含缓存状态，必须按指针使用，不要拷贝 Scanner 值。
 type Scanner struct {
 	config *ScanConfig
+
+	// dirNamesMu 同时充当单飞锁：并发调用只会有一次全树遍历，
+	// 其余调用阻塞后直接拿缓存（songloft-org/songloft#447 的前端重试风暴）。
+	dirNamesMu sync.Mutex
+	dirNames   []string
+	dirNamesAt time.Time
 }
 
 // NewScanner 创建新的扫描器
 func NewScanner(config *ScanConfig) *Scanner {
 	return &Scanner{
 		config: config,
+	}
+}
+
+// resolveEntry 判断目录项是否为目录，并给出是否应跳过。
+//
+// 刻意不对每个目录项都做 os.Stat：os.ReadDir 返回的 DirEntry 类型在 Linux 上直接
+// 来自 d_type，零额外系统调用，而逐项 Stat 会让万首级曲库多出几万次系统调用
+// （songloft-org/songloft#447 里 /scan/dir-names 因此超过客户端 10s 超时）。
+// 只有软链接与未知类型才回退 os.Stat（跟随软链接），保持「软链接目录仍递归、
+// 断链条目跳过」的既有语义。d_type 不可用的文件系统上 ReadDir 内部会自行 lstat
+// 补齐类型，等价于原行为。
+func resolveEntry(entryPath string, entry os.DirEntry) (isDir bool, skip bool) {
+	switch mode := entry.Type(); {
+	case mode.IsDir():
+		return true, false
+	case mode.IsRegular():
+		return false, false
+	default:
+		info, err := os.Stat(entryPath)
+		if err != nil {
+			return false, true
+		}
+		return info.IsDir(), false
 	}
 }
 
@@ -138,12 +174,12 @@ func (s *Scanner) scanDirWithCue(ctx context.Context, dirPath string, visited ma
 		}
 
 		entryPath := filepath.Join(dirPath, entry.Name())
-		info, err := os.Stat(entryPath)
-		if err != nil {
+		isDir, skip := resolveEntry(entryPath, entry)
+		if skip {
 			continue
 		}
 
-		if info.IsDir() {
+		if isDir {
 			if err := s.scanDirWithCue(ctx, entryPath, visited, result, onProgress); err != nil {
 				return err
 			}
@@ -352,8 +388,19 @@ func (s *Scanner) ListSubDirs(dirPath string) ([]DirEntry, error) {
 	return dirs, nil
 }
 
-// CollectAllDirNames 递归收集音乐目录下所有唯一的目录名称（用于自动补全）
+// CollectAllDirNames 递归收集音乐目录下所有唯一的目录名称（用于自动补全）。
+//
+// 结果带 dirNamesCacheTTL 的进程内缓存：万首级曲库遍历整棵树可能超过客户端超时，
+// 缓存让重试立刻命中；持锁期间只会有一次遍历在跑。
+// music_path 变更时上层会重建 Scanner（app.go），缓存随之失效，无需显式 invalidate。
 func (s *Scanner) CollectAllDirNames(ctx context.Context) ([]string, error) {
+	s.dirNamesMu.Lock()
+	defer s.dirNamesMu.Unlock()
+
+	if s.dirNames != nil && time.Since(s.dirNamesAt) < dirNamesCacheTTL {
+		return s.dirNames, nil
+	}
+
 	if _, err := os.Stat(s.config.MusicPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("music directory does not exist: %s", s.config.MusicPath)
 	}
@@ -372,6 +419,9 @@ func (s *Scanner) CollectAllDirNames(ctx context.Context) ([]string, error) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+
+	s.dirNames = names
+	s.dirNamesAt = time.Now()
 
 	return names, nil
 }
@@ -402,13 +452,12 @@ func (s *Scanner) collectDirNames(ctx context.Context, dirPath string, visited m
 	for _, entry := range entries {
 		entryPath := filepath.Join(dirPath, entry.Name())
 
-		// 获取文件信息（跟随软链接）
-		info, err := os.Stat(entryPath)
-		if err != nil {
+		isDir, skip := resolveEntry(entryPath, entry)
+		if skip {
 			continue
 		}
 
-		if info.IsDir() {
+		if isDir {
 			// 收集目录名称
 			nameSet[entry.Name()] = true
 			// 递归收集子目录

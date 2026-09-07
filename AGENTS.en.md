@@ -461,6 +461,53 @@ registry fetch — up to 500 `plugin.json` files, 8 concurrent, 15s timeout each
   the entire `/tmp/...` root gets excluded. The symptom is a scan that "completes successfully" with
   `discovered_files=0` — **no error, no warning** — easy to misread as your own change breaking things
 
+### Streaming scan imports (large-library iron rule — songloft-org/songloft#447)
+
+`doScanAndImport` imports **incrementally**: `scanBatchAccumulator` (`scan_batch.go`) groups results by
+directory and calls `flushScanBatch` as soon as a directory is finalized. Do not revert to
+"accumulate everything, then write once" — on a library of tens of thousands of tracks, progress stays
+at 0 and not a single row is written for the entire extraction phase (tens of minutes), which users can
+only read as a hang.
+
+- **The finalization unit must be the directory, not a fixed count**: `fixSpamTags` groups by directory
+  and flags spam tags when "more than half the files in this directory share the same
+  `(title, artist)`", so it needs the whole directory as its sample. Cutting batches every 50 results
+  splits one directory across several batches and makes the verdict drift with the cut points
+- **`scanDirGroupCap` is the memory backstop**: a directory holding thousands of flat files finalizes
+  early once it hits the cap, otherwise this degrades back to whole-library accumulation. The cost is
+  that such a directory's spam-tag verdict uses a sub-sample, which is acceptable (the test is >50%
+  and ≥3 matches)
+- **Progress counters only advance after a batch lands in the DB** (`UpdateProgress` inside
+  `flushScanBatch`). The extraction phase reports the current file via `SetCurrentFile` instead — never
+  call `UpdateProgress` from the extraction phase, that double-counts
+- **The write context and the cancellation context must be separate**: `doScanAndImport` derives a
+  cancellable ctx from its argument (to kill ffmpeg subprocesses on cancel), but `flushScanBatch` must
+  use the pre-derivation `flushCtx`. On cancel we still persist what was already extracted; using the
+  cancelled ctx makes the transaction fail immediately, exhaust its three retries and mark everything
+  failed — so "cancel keeps the work" silently does nothing
+- **Cancel no longer discards extracted results** (behavior change after v2.12.0): results produced
+  before the workers exit are still imported, and `sealAll` flushes leftover directory groups whose
+  pending count never reaches zero. Previously the whole batch was dropped, so two consecutive cancels
+  threw away twenty minutes of work
+
+### Never `os.Stat` every directory entry (songloft-org/songloft#447)
+
+`scanDirWithCue` / `collectDirNames` determine entry types via `resolveEntry` (`scanner.go`):
+`DirEntry.Type()` from `os.ReadDir` comes straight from `d_type` on Linux at zero extra syscall cost,
+and only symlinks and unknown types fall back to `os.Stat` (following symlinks, preserving
+"symlinked directories are still recursed, dangling entries are skipped").
+
+- A per-entry `os.Stat` adds tens of thousands of syscalls on a large library. That is exactly why
+  `GET /scan/dir-names` exceeded the client's 10s timeout → `r.Context()` was cancelled → the walk
+  aborted mid-way → 500, and **every retry started over from scratch**
+- That endpoint therefore has two more layers of protection: a 60s TTL cache in `CollectAllDirNames`
+  (`dirNamesMu` doubles as a single-flight lock against the frontend's retry storm), and
+  `context.WithoutCancel(r.Context())` on the handler side — detaching from client cancellation so the
+  first walk finishes and populates the cache, making retries instant. The cache lives on `Scanner`,
+  and `app.go` rebuilds the Scanner when `music_path` changes, so it invalidates naturally
+- On filesystems without `d_type`, `ReadDir` fills the type in via its own lstat, which is equivalent
+  to the old behavior — no regression
+
 ### Sidecar lyrics (.lrc)
 
 - **Matching rules** (`FindSidecarLyricFile`): `<base>.lrc` / `.LRC` / `.Lrc`, then `<full filename>.lrc` / `.LRC` / `.Lrc`.

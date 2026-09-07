@@ -493,6 +493,12 @@ const (
 func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeRoots []string) {
 	cancelCh := s.scanProgressManager.GetCancelChannel()
 
+	// flushCtx 刻意保留取消前的 ctx，专供 flushScanBatch 写库使用。
+	// 取消时要把已提取的成果落库（见提取循环收尾），若沿用下面派生的可取消 ctx，
+	// 事务会立刻失败、重试三次后全部记为 failed——「取消保留成果」会静默不生效。
+	// 单批写入很短，不随取消中断也不会拖住取消响应。
+	flushCtx := ctx
+
 	// 派生可取消 ctx：用户取消时同步 cancel，使 CUE 切分阶段的 ffmpeg 子进程
 	// （exec.CommandContext）被及时杀掉，而非等其自然结束。
 	ctx, cancel := context.WithCancel(ctx)
@@ -611,6 +617,10 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 				default:
 				}
 
+				// 计数只在批次落库后累加，一个目录组定稿前最多 scanDirGroupCap 个文件
+				// 计数不动；这里单独上报当前文件，让前端看到扫描仍在推进。
+				s.scanProgressManager.SetCurrentFile(item.filePath)
+
 				metadata, err := s.safeExtractMetadata(ctx, item.filePath)
 				extractionFailed := err != nil
 				if err != nil {
@@ -687,7 +697,10 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 		close(resultCh)
 	}()
 
-	allResults := make([]scanExtractResult, 0, len(toProcess))
+	// 流式入库：按目录分组定稿，攒够一批就写库，不再全库累积后一次性写。
+	// 全量累积会让几万首的曲库在整个提取阶段（数十分钟）里进度恒为 0、
+	// 数据库一条不写，用户只能判定为卡死（songloft-org/songloft#447）。
+	acc := newScanBatchAccumulator(toProcess, scanDirGroupCap)
 	cancelled := false
 	for result := range resultCh {
 		select {
@@ -695,20 +708,23 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 			cancelled = true
 		default:
 		}
-		if !cancelled {
-			allResults = append(allResults, result)
+		// 取消后仍收下已提取的结果：worker 正在退出，这些元数据已经花掉了 IO 与 CPU，
+		// 丢弃等于让用户白干（#447 的用户连续取消两次，每次作废十分钟的提取）。
+		acc.add(result)
+		for batch := acc.takeBatch(dbBatchSize, false); batch != nil; batch = acc.takeBatch(dbBatchSize, false) {
+			s.flushScanBatch(flushCtx, batch)
 		}
 	}
+
+	// 取消时 pending 永远归不了零，这里把未提取完的目录组也按现有样本定稿冲出来。
+	acc.sealAll()
+	for batch := acc.takeBatch(dbBatchSize, true); batch != nil; batch = acc.takeBatch(dbBatchSize, true) {
+		s.flushScanBatch(flushCtx, batch)
+	}
+
 	if cancelled {
 		s.scanProgressManager.SetCancelled()
 		return
-	}
-
-	fixSpamTags(allResults)
-
-	for i := 0; i < len(allResults); i += dbBatchSize {
-		end := min(i+dbBatchSize, len(allResults))
-		s.flushScanBatch(ctx, allResults[i:end])
 	}
 
 	select {

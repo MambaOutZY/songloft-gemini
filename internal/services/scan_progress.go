@@ -140,6 +140,15 @@ func (m *ScanProgressManager) SetTotalFiles(total int) {
 	m.progress.Status = ScanStatusImporting
 }
 
+// SetCurrentFile 仅更新当前处理的文件，不改动任何计数。
+// 供元数据提取阶段的 worker 调用：计数只在批次落库后累加（见 flushScanBatch），
+// 一个目录组定稿前计数会停住，靠这里让前端看出扫描仍在推进而非卡死。
+func (m *ScanProgressManager) SetCurrentFile(currentFile string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.progress.CurrentFile = currentFile
+}
+
 // UpdateProgress 更新进度
 func (m *ScanProgressManager) UpdateProgress(currentFile string, updateType ProgressUpdateType) {
 	m.mu.Lock()
