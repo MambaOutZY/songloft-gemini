@@ -105,7 +105,7 @@ Holds the project's core business logic, organized by functional module:
 - `filters.go`: Shared squirrel helpers (sort whitelist, `applyOrder`, `applyPagination`)
 - `config_repository.go`: Config repository (`ConfigRepository`)
 - `song_repository.go`: Song repository (includes `UpsertRemoteSong`: reuses an existing ID on a `(plugin_entry_path, dedup_key)` hit, and falls back to a direct INSERT when dedup_key is empty)
-- `playlist_repository.go`: Playlist repository
+- `playlist_repository.go`: Playlist repository (includes `AutoCreate` auto-playlist creation and cover selection logic)
 - `playlist_song_repository.go`: Playlist-song association repository (includes `ReplaceSong`, etc.)
 - `token_repository.go`: Authentication token repository
 - `jsplugin_repository.go`: JS plugin repository
@@ -121,6 +121,8 @@ Holds the project's core business logic, organized by functional module:
 - `auth_service.go`: Authentication service (JWT dual-token generation/verification, token management, secret generation)
 - `config_service.go`: Configuration service (database config management, supports reading/writing JSON format)
 - `metadata.go`: Metadata extraction service (uses hanxi/tag to extract tags and covers, ffprobe for technical parameters). Title strategy: prefer the tag's title when present, and fall back to the filename only when it's missing (no more longest-common-substring concatenation)
+- `cover_finder.go`: External cover lookup (`FindExternalCover`) and save (`SaveExternalCover`, content-hash deduplication)
+- `cover_thumb_cache.go`: Cover thumbnail disk LRU cache (`{dataDir}/cover_thumbs/`, 200 MB cap, CatmullRom scaling)
 - `scanner.go`: File scanning service (recursively scans the music directory, supports directory exclusion and format filtering)
 - `scan_progress.go`: Scan progress tracking (async scan state management)
 - `song_service.go`: Song service (CRUD, bulk operations, duration backfill)
@@ -277,3 +279,32 @@ In addition, music files, cover images, and lyrics are accessed via song-ID endp
 > The old `/music/*` and `/cover/*` Base62-encoded short-link scheme has been fully retired; the related helper was removed along with the routes (`routers.go` only keeps a deprecation comment).
 
 For detailed API documentation, refer to the Swagger docs (visit `/swagger/index.html` in a development environment).
+
+## Cover Handling
+
+### Song Cover Extraction (Scan Phase)
+
+When importing each song during a scan, the cover is extracted in the following priority:
+
+1. **Embedded cover in audio file** — extracted from tags (`tag.Picture()`)
+2. **External cover file in directory** — via `fileutil.FindExternalCover(dirPath)`
+
+All covers are deduplicated by content SHA-256 hash and stored at `{coverStoragePath}/{hash[0:2]}/{hash[2:4]}/{hash}.{ext}`.
+
+### Auto-Playlist Cover Selection
+
+When auto-creating playlists (`AutoCreate`), covers are selected per playlist using `pickDirCover` in the following priority:
+
+1. **External cover image in directory** — searched by filename priority: `cover` > `Cover` > `album` > `folder` > `.folder` > `AlbumArtSmall`, each tried with extensions `.png` > `.jpg` > `.jpeg` > `.webp` > `.bmp` > `.gif` (plus uppercase variants)
+2. **Single image fallback** — if the directory contains exactly one image file, it is used
+3. **Song embedded cover fallback** — uses the `CoverPath` or `CoverURL` of the first song (in sort order) that has a cover
+
+This rule applies to both regular directory playlists and CUE album playlists (CUE playlists use the directory containing the CUE file to find covers). Auto-playlists that already have a non-empty cover are preserved on rescan and will not be overwritten.
+
+### Cover Serving (Request Phase)
+
+Song cover endpoint `/api/v1/songs/{id}/cover` priority: local `CoverPath` → proxy remote `CoverURL` → cover search plugin fallback.
+
+Playlist cover endpoint `/api/v1/playlists/{id}/cover` priority: local `cover_path` → remote `cover_url` → first song with a cover among the first 20 songs in the playlist.
+
+Covers support `?w=N` server-side thumbnailing (CatmullRom scaling, JPEG quality 85, no upscaling), with thumbnails cached via `cover_thumb_cache` disk LRU (200 MB cap).

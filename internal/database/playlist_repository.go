@@ -618,7 +618,8 @@ func (r *PlaylistRepository) AutoCreate(ctx context.Context, playlistMode string
 				si, sj := songIDToSong[album.songIDs[i]], songIDToSong[album.songIDs[j]]
 				return si.CueTrackIndex < sj.CueTrackIndex
 			})
-			coverPath, coverURL := pickSongCover(album.songIDs, songIDToSong)
+			cueDir := filepath.Dir(cuePath)
+			coverPath, coverURL := pickDirCover(cueDir, album.songIDs, songIDToSong, coverStoragePath)
 			if err := upsertPlaylist(album.name, album.desc, coverPath, coverURL, album.songIDs); err != nil {
 				return err
 			}

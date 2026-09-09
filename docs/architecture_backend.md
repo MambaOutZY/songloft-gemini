@@ -105,7 +105,7 @@ HTTP Server (main.go)
 - `filters.go`: squirrel 共用辅助（排序白名单、`applyOrder`、`applyPagination`）
 - `config_repository.go`: 配置仓储（`ConfigRepository`）
 - `song_repository.go`: 歌曲仓储（含 `UpsertRemoteSong`：按 `(plugin_entry_path, dedup_key)` 命中复用 ID，空 dedup_key 时退化为直接 INSERT）
-- `playlist_repository.go`: 歌单仓储
+- `playlist_repository.go`: 歌单仓储（含 `AutoCreate` 自动创建歌单及封面选择逻辑）
 - `playlist_song_repository.go`: 歌单-歌曲关联仓储（含 `ReplaceSong` 等）
 - `token_repository.go`: 认证令牌仓储
 - `jsplugin_repository.go`: JS 插件仓储
@@ -121,6 +121,8 @@ HTTP Server (main.go)
 - `auth_service.go`: 认证服务（JWT 双 Token 生成/验证、令牌管理、密钥生成）
 - `config_service.go`: 配置服务（数据库配置管理，支持 JSON 格式读写）
 - `metadata.go`: 元数据提取服务（使用 hanxi/tag 提取标签和封面，ffprobe 获取技术参数）。标题策略:tag 有 title 优先用,缺失才用文件名(不再做最长公共子串拼接)
+- `cover_finder.go`: 外部封面查找（`FindExternalCover`）与保存（`SaveExternalCover`，按内容哈希去重存储）
+- `cover_thumb_cache.go`: 封面缩略图磁盘 LRU 缓存（`{dataDir}/cover_thumbs/`，上限 200MB，CatmullRom 缩放）
 - `scanner.go`: 文件扫描服务（递归扫描音乐目录，支持排除目录和格式过滤）
 - `scan_progress.go`: 扫描进度追踪（异步扫描状态管理）
 - `song_service.go`: 歌曲服务（CRUD、批量操作、时长回填）
@@ -277,3 +279,32 @@ Service 层注入 `database.DB` 接口；单表写直接拿 `db.SongRepository()
 > 旧的 `/music/*` 和 `/cover/*` Base62 编码短链方案已完全下线，相关 helper 已随路由一并删除（`routers.go` 仅保留废弃注释）。
 
 详细 API 文档请参考 Swagger 文档（开发环境下访问 `/swagger/index.html`）。
+
+## 封面处理
+
+### 歌曲封面提取（扫描阶段）
+
+扫描导入每首歌曲时，按以下优先级提取封面：
+
+1. **音频文件内嵌封面** — 从标签中提取（`tag.Picture()`）
+2. **目录外部封面文件** — 调用 `fileutil.FindExternalCover(dirPath)` 查找
+
+所有封面按内容 SHA-256 哈希去重存储到 `{coverStoragePath}/{hash[0:2]}/{hash[2:4]}/{hash}.{ext}`。
+
+### 自动歌单封面选择
+
+自动创建歌单（`AutoCreate`）时，按以下优先级为歌单选择封面（`pickDirCover`）：
+
+1. **目录下的外部封面图片** — 按文件名优先级查找：`cover` > `Cover` > `album` > `folder` > `.folder` > `AlbumArtSmall`，每个文件名按扩展名 `.png` > `.jpg` > `.jpeg` > `.webp` > `.bmp` > `.gif` 顺序匹配（含大写扩展名）
+2. **目录内唯一图片兜底** — 目录下刚好只有一张图片文件时使用
+3. **歌曲内嵌封面回退** — 取排序后第一首有封面的歌曲的 `CoverPath` 或 `CoverURL`
+
+此规则同时适用于普通目录歌单和 CUE 专辑歌单（CUE 歌单使用 CUE 文件所在目录查找封面）。已有非空封面的自动歌单在重新扫描时保留原封面，不会被覆盖。
+
+### 封面服务（请求阶段）
+
+歌曲封面端点 `/api/v1/songs/{id}/cover` 的优先级：本地 `CoverPath` → 代理远程 `CoverURL` → 封面搜索插件兜底。
+
+歌单封面端点 `/api/v1/playlists/{id}/cover` 的优先级：本地 `cover_path` → 远程 `cover_url` → 歌单内前 20 首歌中第一首有封面的。
+
+封面支持 `?w=N` 服务端缩略图（CatmullRom 缩放，JPEG 85 质量，不上采样），缩略图通过 `cover_thumb_cache` 磁盘 LRU 缓存（上限 200MB）。
