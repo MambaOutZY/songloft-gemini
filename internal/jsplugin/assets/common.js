@@ -235,16 +235,21 @@
     var API_BASE = '.';
 
     /**
-     * 从 localStorage 获取 Songloft 认证 Token
+     * 从 localStorage 或 URL 参数获取 Songloft 认证 Token
      * @returns {string}
      */
     function getAuthToken() {
         try {
+            // 优先从 localStorage 读取（Flutter/浏览器环境）
             var authData = localStorage.getItem('songloft-auth');
             if (authData) {
                 var auth = JSON.parse(authData);
-                return auth.accessToken || '';
+                if (auth.accessToken) return auth.accessToken;
             }
+            // HarmonyOS webview localStorage 隔离，从 URL 参数读取作为 fallback
+            var urlParams = new URLSearchParams(window.location.search);
+            var token = urlParams.get('access_token');
+            if (token) return token;
         } catch (e) {
             // ignore
         }
