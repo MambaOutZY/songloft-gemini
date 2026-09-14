@@ -22,6 +22,19 @@ func seedFacetSongs(t *testing.T, db DB) {
 	if err := db.SongRepository().BatchCreate(ctx, songs); err != nil {
 		t.Fatalf("BatchCreate: %v", err)
 	}
+	// 同步建立 song_artists 关联：新架构下歌手 facet/过滤走关联表，
+	// seed 须把每首歌的 artist 写成 song_artists 行，否则 artist 维度为空。
+	ar := db.SongArtistRepository()
+	for _, s := range songs {
+		if s.Artist == "" {
+			continue
+		}
+		if err := ar.SetSongArtists(ctx, s.ID, []models.ArtistInput{
+			{Name: s.Artist, Role: models.ArtistRoleArtist},
+		}); err != nil {
+			t.Fatalf("SetSongArtists %d (%q): %v", s.ID, s.Artist, err)
+		}
+	}
 }
 
 func TestListFacet(t *testing.T) {

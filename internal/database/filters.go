@@ -156,10 +156,14 @@ func IsSongNameField(field string) bool {
 // 用常量集中，避免 handlers / repository / play_history 各处硬编码字符串而漂移。
 const songFacetTagField = "tag"
 
+// songFacetArtistField 是 artist 维度的 field 名。它走 song_artists 关联表（多值拆分），
+// 不走 songs.artist 单列，故同样作为特殊分支处理（见 buildArtistFacetSelect）。
+const songFacetArtistField = "artist"
+
 // IsSongFacetField 判断给定字符串是否为受支持的歌曲分面维度。
 // 对外导出以便 models / handlers 复用同一份维度清单，避免各层各写一份枚举而漂移。
 func IsSongFacetField(field string) bool {
-	if field == songFacetTagField {
+	if field == songFacetTagField || field == songFacetArtistField {
 		return true
 	}
 	_, ok := songFacetColumn[field]

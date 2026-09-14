@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+type Artist struct {
+	ID            int64
+	Name          string
+	NormalizedKey string
+	CreatedAt     time.Time
+}
+
 type AuthToken struct {
 	ID            int64
 	TokenID       string
@@ -139,6 +146,14 @@ type Song struct {
 	CueEndSeconds          float64
 	FingerprintAttemptedAt int64
 	FingerprintError       string
+}
+
+type SongArtist struct {
+	SongID    int64
+	ArtistID  int64
+	Role      string
+	Position  int64
+	CreatedAt sql.NullTime
 }
 
 type SongTag struct {

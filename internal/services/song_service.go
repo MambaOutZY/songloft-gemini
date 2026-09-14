@@ -208,6 +208,70 @@ func (s *SongService) Update(ctx context.Context, song *models.Song) error {
 	return nil
 }
 
+// SetSongArtists 全量替换一首歌的参与歌手，并同步刷新 songs.artist 显示串。
+// 在同一事务内完成（song + song_artists），防止 SQLITE_BUSY 与不一致。
+// 返回写入后的参与歌手列表（按 role、position 排序）。歌曲不存在时返回
+// database.ErrNotFound，由 handler 转 404。
+func (s *SongService) SetSongArtists(ctx context.Context, songID int64, inputs []models.ArtistInput) ([]models.SongArtist, error) {
+	var result []models.SongArtist
+	err := s.tx.RunInTx(ctx, func(ctx context.Context, uow *database.UnitOfWork) error {
+		song, err := uow.Songs.GetByID(ctx, songID)
+		if err != nil {
+			return fmt.Errorf("failed to get song: %w", err)
+		}
+		if err := uow.SongArtists.SetSongArtists(ctx, songID, inputs); err != nil {
+			return fmt.Errorf("set song artists: %w", err)
+		}
+		// 由 role=artist 的输入重建显示串（对唱得到 "A & B"）；与 song_artists 同源写。
+		display := displayArtistFromInputs(inputs)
+		if display != song.Artist {
+			song.Artist = display
+			song.UpdatedAt = time.Now()
+			if err := uow.Songs.Update(ctx, song); err != nil {
+				return fmt.Errorf("update song display artist: %w", err)
+			}
+		}
+		result, err = uow.SongArtists.GetBySongID(ctx, songID)
+		if err != nil {
+			return fmt.Errorf("get song artists: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// GetSongArtists 返回一首歌的全部参与歌手（只读，仍走事务以复用 UnitOfWork）。
+func (s *SongService) GetSongArtists(ctx context.Context, songID int64) ([]models.SongArtist, error) {
+	var result []models.SongArtist
+	err := s.tx.RunInTx(ctx, func(ctx context.Context, uow *database.UnitOfWork) error {
+		if _, err := uow.Songs.GetByID(ctx, songID); err != nil {
+			return fmt.Errorf("failed to get song: %w", err)
+		}
+		var gErr error
+		result, gErr = uow.SongArtists.GetBySongID(ctx, songID)
+		return gErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// displayArtistFromInputs 由编辑输入重建 songs.artist 显示串：取 role=artist 的
+// 名字按 position 顺序用 " & " 连接；无主唱输入则返回空串（清空显示）。
+func displayArtistFromInputs(inputs []models.ArtistInput) string {
+	names := make([]string, 0, len(inputs))
+	for _, in := range inputs {
+		if in.Role == "" || in.Role == models.ArtistRoleArtist {
+			names = append(names, in.Name)
+		}
+	}
+	return database.JoinDisplayArtists(names)
+}
+
 // Delete 删除歌曲
 func (s *SongService) Delete(ctx context.Context, id int64, deleteFiles bool) error {
 	song, err := s.GetByID(ctx, id)
@@ -970,7 +1034,7 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 					continue
 				}
 				song.Title = r.metadata.Title
-				song.Artist = r.metadata.Artist
+				song.Artist = artistDisplay(r.metadata)
 				song.Album = r.metadata.Album
 				song.Duration = r.metadata.Duration
 				song.Format = r.metadata.Format
@@ -1009,6 +1073,10 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 					itemResults[i] = ProgressUpdateFailed
 					continue
 				}
+				// 多值歌手：重扫时全量替换 song_artists（结构化 Artists/AlbumArtists）。
+				if err := uow.SongArtists.SetSongArtists(ctx, song.ID, artistInputsFromMetadata(r.metadata)); err != nil {
+					slog.Warn("写入多值歌手失败，保留旧关联", "err", err, "songId", song.ID)
+				}
 				if r.metadata.SongloftTags != "" {
 					tagImports = append(tagImports, scanTagImport{songID: song.ID, tags: r.metadata.SongloftTags})
 				}
@@ -1017,7 +1085,7 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 				song := &models.Song{
 					Type:       models.TypeLocal,
 					Title:      r.metadata.Title,
-					Artist:     r.metadata.Artist,
+					Artist:     artistDisplay(r.metadata),
 					Album:      r.metadata.Album,
 					Duration:   r.metadata.Duration,
 					FilePath:   r.item.filePath,
@@ -1049,6 +1117,9 @@ func (s *SongService) flushScanBatch(ctx context.Context, batch []scanExtractRes
 					slog.Error("创建歌曲失败", "err", err, "song", song)
 					itemResults[i] = ProgressUpdateFailed
 					continue
+				}
+				if err := uow.SongArtists.SetSongArtists(ctx, song.ID, artistInputsFromMetadata(r.metadata)); err != nil {
+					slog.Warn("写入多值歌手失败", "err", err, "songId", song.ID)
 				}
 				if r.metadata.SongloftTags != "" {
 					tagImports = append(tagImports, scanTagImport{songID: song.ID, tags: r.metadata.SongloftTags})
@@ -1714,4 +1785,30 @@ func (s *SongService) ListFolders(ctx context.Context, absPrefix, keyword string
 // ListDirectSongs 返回路径前缀下直属歌曲。
 func (s *SongService) ListDirectSongs(ctx context.Context, absPrefix, keyword string) ([]*models.Song, error) {
 	return s.songs.ListDirectSongs(ctx, absPrefix, keyword)
+}
+
+// artistDisplay 返回扫描写入 songs.artist 的显示串。优先用结构化多值列表
+// （JoinDisplayArtists，对唱得到 "A & B"），因为 tag.Artist() 在 ID3v2.4 多值时
+// 会被合并成无分隔串（如 "AB"）；多值为空时回退单值 Artist。
+func artistDisplay(m *Metadata) string {
+	if len(m.Artists) > 0 {
+		if s := database.JoinDisplayArtists(m.Artists); s != "" {
+			return s
+		}
+	}
+	return m.Artist
+}
+
+// artistInputsFromMetadata 把扫描元数据的多值歌手转成 SetSongArtists 的输入：
+// Artists → role=artist（按出现顺序 position 递增），AlbumArtists → role=album_artist。
+// 全空时返回 nil（SetSongArtists 会清空旧关联，符合重扫语义）。
+func artistInputsFromMetadata(m *Metadata) []models.ArtistInput {
+	var inputs []models.ArtistInput
+	for i, name := range m.Artists {
+		inputs = append(inputs, models.ArtistInput{Name: name, Role: models.ArtistRoleArtist, Position: i})
+	}
+	for i, name := range m.AlbumArtists {
+		inputs = append(inputs, models.ArtistInput{Name: name, Role: models.ArtistRoleAlbumArtist, Position: i})
+	}
+	return inputs
 }

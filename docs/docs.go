@@ -7964,6 +7964,120 @@ const docTemplate = `{
                 }
             }
         },
+        "/songs/{id}/artists": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回一首歌的全部参与歌手（含角色 artist/album_artist 与顺序）。多值歌手由此拆分展示，供前端编辑界面加载当前状态。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "获取歌曲参与歌手",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌曲 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "参与歌手列表",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.songArtistsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效的歌曲 ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "歌曲不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "用请求体整组替换一首歌的参与歌手（删旧建新）。请求体 artists 数组每一项含 name/role/position：role 取 artist（主唱/表演者）或 album_artist（专辑歌手），缺省 artist；position 为同角色内展示顺序（可省略）。主要解决对唱/合唱歌曲只存了一个歌手、按搭档检索不到的问题——可在此手动补录搭档。同时按 role=artist 的名字重建 songs.artist 显示串（对唱得到 \"A \u0026 B\"）。角色非法返回 400；歌曲不存在返回 404。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "歌曲管理"
+                ],
+                "summary": "全量更新歌曲参与歌手",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "歌曲 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "参与歌手全量列表（整组替换）",
+                        "name": "artists",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.songArtistsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的参与歌手列表",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.songArtistsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "无效的歌曲 ID 或角色非法",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "歌曲不存在",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/songs/{id}/audio-tracks": {
             "get": {
                 "security": [
@@ -10358,6 +10472,28 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.songArtistsRequest": {
+            "type": "object",
+            "properties": {
+                "artists": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ArtistInput"
+                    }
+                }
+            }
+        },
+        "handlers.songArtistsResponse": {
+            "type": "object",
+            "properties": {
+                "artists": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.SongArtist"
+                    }
+                }
+            }
+        },
         "handlers.startFingerprintRequest": {
             "type": "object",
             "properties": {
@@ -10549,6 +10685,38 @@ const docTemplate = `{
                 },
                 "url": {
                     "type": "string"
+                }
+            }
+        },
+        "models.Artist": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ArtistInput": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "周杰伦"
+                },
+                "position": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "role": {
+                    "description": "artist | album_artist，缺省 artist",
+                    "type": "string",
+                    "example": "artist"
                 }
             }
         },
@@ -11095,6 +11263,22 @@ const docTemplate = `{
                     "description": "发行年份",
                     "type": "integer",
                     "example": 2005
+                }
+            }
+        },
+        "models.SongArtist": {
+            "type": "object",
+            "properties": {
+                "artist": {
+                    "$ref": "#/definitions/models.Artist"
+                },
+                "position": {
+                    "description": "同角色内的展示顺序",
+                    "type": "integer"
+                },
+                "role": {
+                    "description": "artist | album_artist",
+                    "type": "string"
                 }
             }
         },

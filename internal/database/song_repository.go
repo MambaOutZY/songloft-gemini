@@ -650,6 +650,8 @@ func applySongFilter(sb sq.SelectBuilder, filter *SongFilter) sq.SelectBuilder {
 			sq.Like{"artist": kw},
 			sq.Like{"album": kw},
 			sq.Expr("id IN (SELECT l.song_id FROM song_tag_links l JOIN song_tags t ON l.tag_id = t.id WHERE t.name LIKE ?)", kw),
+			// 多值歌手：关键词命中任一参与歌手名（song_artists 关联表），使对唱歌曲也能搜到。
+			sq.Expr("id IN (SELECT sa.song_id FROM song_artists sa JOIN artists a ON a.id = sa.artist_id WHERE a.name LIKE ?)", kw),
 		})
 	}
 	if filter.PathPrefix != "" {
@@ -660,7 +662,10 @@ func applySongFilter(sb sq.SelectBuilder, filter *SongFilter) sq.SelectBuilder {
 		sb = sb.Where(sq.Eq{"genre": filter.Genre})
 	}
 	if filter.Artist != "" {
-		sb = sb.Where(sq.Eq{"artist": filter.Artist})
+		// 按歌手过滤走 song_artists 关联表（归一键匹配），命中该歌的任一参与歌手，
+		// 而非 songs.artist 整串精确匹配——对唱歌曲因此可被任一搭档检索到。
+		key := NormalizeArtistKey(filter.Artist)
+		sb = sb.Where("id IN (SELECT sa.song_id FROM song_artists sa JOIN artists a ON a.id = sa.artist_id WHERE a.normalized_key = ? AND sa.role = 'artist')", key)
 	}
 	if filter.Album != "" {
 		sb = sb.Where(sq.Eq{"album": filter.Album})
@@ -1124,6 +1129,9 @@ func buildFacetSelect(field string, f *FacetFilter) (sq.SelectBuilder, error) {
 	if field == songFacetTagField {
 		return buildTagFacetSelect(f), nil
 	}
+	if field == songFacetArtistField {
+		return buildArtistFacetSelect(f), nil
+	}
 	col, ok := songFacetColumn[field]
 	if !ok {
 		return sq.SelectBuilder{}, ErrNotFound
@@ -1167,6 +1175,30 @@ func buildTagFacetSelect(f *FacetFilter) sq.SelectBuilder {
 		sb = sb.Where(sq.Like{"t.name": "%" + f.Keyword + "%"})
 	}
 	sb = sb.GroupBy("t.id", "t.name")
+	sb = applyFacetOrder(sb, f)
+	if f != nil {
+		sb = applyPagination(sb, f.Limit, f.Offset)
+	}
+	return sb
+}
+
+// buildArtistFacetSelect 构造 artist 维度的 facet 聚合：按 song_artists 关联表逐个
+// 歌手聚合歌曲数 + 代表封面。多值歌手（对唱/合唱）的 "A & B" 在这里被拆成 A、B
+// 两个独立取值，各自计数——而不是合并成一项。仅统计 role='artist' 的参与歌手。
+func buildArtistFacetSelect(f *FacetFilter) sq.SelectBuilder {
+	sb := sq.Select(
+		"a.name AS value",
+		"COUNT(DISTINCT sa.song_id) AS count",
+		"MAX(CASE WHEN s.cover_path != '' OR s.cover_url != '' THEN s.id END) AS cover_song_id",
+	).
+		From("song_artists sa").
+		Join("artists a ON a.id = sa.artist_id").
+		Join("songs s ON s.id = sa.song_id").
+		Where(sq.Eq{"sa.role": models.ArtistRoleArtist})
+	if f != nil && f.Keyword != "" {
+		sb = sb.Where(sq.Like{"a.name": "%" + f.Keyword + "%"})
+	}
+	sb = sb.GroupBy("a.id", "a.name")
 	sb = applyFacetOrder(sb, f)
 	if f != nil {
 		sb = applyPagination(sb, f.Limit, f.Offset)
@@ -1227,6 +1259,16 @@ func (r *SongRepository) CountFacet(ctx context.Context, field, keyword string) 
 			inner = inner.Where(sq.Like{"t.name": "%" + keyword + "%"})
 		}
 		inner = inner.GroupBy("t.id")
+	} else if field == songFacetArtistField {
+		// artist：去重参与歌手数（仅 role='artist'），与 buildArtistFacetSelect 一致。
+		inner = sq.Select("1").
+			From("song_artists sa").
+			Join("artists a ON a.id = sa.artist_id").
+			Where(sq.Eq{"sa.role": models.ArtistRoleArtist})
+		if keyword != "" {
+			inner = inner.Where(sq.Like{"a.name": "%" + keyword + "%"})
+		}
+		inner = inner.GroupBy("a.id")
 	} else {
 		col, ok := songFacetColumn[field]
 		if !ok {
@@ -1254,6 +1296,37 @@ func (r *SongRepository) CountFacet(ctx context.Context, field, keyword string) 
 // 不分页、不带计数与封面，供第三方客户端一次性拉取曲库歌名/歌手名做本地搜索匹配。
 // 未知 field 返回 ErrNotFound，交由 handler 转 400。
 func (r *SongRepository) ListDistinctNames(ctx context.Context, field string) ([]string, error) {
+	// artist 维度走 song_artists 关联表：返回逐个参与歌手（多值已拆开），而非
+	// songs.artist 整串去重。仅 role='artist'。
+	if field == "artist" {
+		query, args, err := sq.Select("DISTINCT a.name").
+			From("song_artists sa").
+			Join("artists a ON a.id = sa.artist_id").
+			Where(sq.Eq{"sa.role": models.ArtistRoleArtist}).
+			OrderBy("a.name COLLATE NOCASE ASC").
+			ToSql()
+		if err != nil {
+			return nil, fmt.Errorf("build distinct artist sql: %w", err)
+		}
+		rows, err := r.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, fmt.Errorf("distinct artist: %w", err)
+		}
+		defer rows.Close()
+		out := []string{}
+		for rows.Next() {
+			var value string
+			if err := rows.Scan(&value); err != nil {
+				return nil, fmt.Errorf("scan distinct artist: %w", err)
+			}
+			out = append(out, value)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("iterate distinct artist: %w", err)
+		}
+		return out, nil
+	}
+
 	col, ok := songNameColumn[field]
 	if !ok {
 		return nil, ErrNotFound
@@ -1380,7 +1453,7 @@ func (r *SongRepository) GetLibraryStats(ctx context.Context) (*LibraryStats, er
 	}
 
 	// 分别查询去重后的歌手、专辑、流派数量
-	countQuery := `SELECT COUNT(DISTINCT artist) FROM songs WHERE artist != ''`
+	countQuery := `SELECT COUNT(DISTINCT a.id) FROM artists a JOIN song_artists sa ON sa.artist_id = a.id WHERE sa.role = 'artist'`
 	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&stats.ArtistCount); err != nil {
 		return nil, fmt.Errorf("count artists: %w", err)
 	}

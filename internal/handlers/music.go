@@ -721,6 +721,92 @@ func (h *SongHandler) GetSong(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, song)
 }
 
+// songArtistsResponse 歌曲参与歌手响应体。
+type songArtistsResponse struct {
+	Artists []models.SongArtist `json:"artists"`
+}
+
+// songArtistsRequest PUT /songs/{id}/artists 请求体：整组替换的参与歌手输入。
+type songArtistsRequest struct {
+	Artists []models.ArtistInput `json:"artists"`
+}
+
+// GetSongArtists 获取歌曲的参与歌手
+// @Summary 获取歌曲参与歌手
+// @Description 返回一首歌的全部参与歌手（含角色 artist/album_artist 与顺序）。多值歌手由此拆分展示，供前端编辑界面加载当前状态。
+// @Tags 歌曲管理
+// @Produce json
+// @Param id path int true "歌曲 ID"
+// @Success 200 {object} songArtistsResponse "参与歌手列表"
+// @Failure 400 {object} map[string]string "无效的歌曲 ID"
+// @Failure 404 {object} map[string]string "歌曲不存在"
+// @Security BearerAuth
+// @Router /songs/{id}/artists [get]
+func (h *SongHandler) GetSongArtists(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "无效的歌曲 ID", err)
+		return
+	}
+	artists, err := h.songService.GetSongArtists(ctx, id)
+	if err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			respondError(w, http.StatusNotFound, "歌曲不存在", err)
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "获取参与歌手失败", err)
+		return
+	}
+	if artists == nil {
+		artists = []models.SongArtist{}
+	}
+	respondJSON(w, http.StatusOK, songArtistsResponse{Artists: artists})
+}
+
+// SetSongArtists 全量更新歌曲参与歌手
+// @Summary 全量更新歌曲参与歌手
+// @Description 用请求体整组替换一首歌的参与歌手（删旧建新）。请求体 artists 数组每一项含 name/role/position：role 取 artist（主唱/表演者）或 album_artist（专辑歌手），缺省 artist；position 为同角色内展示顺序（可省略）。主要解决对唱/合唱歌曲只存了一个歌手、按搭档检索不到的问题——可在此手动补录搭档。同时按 role=artist 的名字重建 songs.artist 显示串（对唱得到 "A & B"）。角色非法返回 400；歌曲不存在返回 404。
+// @Tags 歌曲管理
+// @Accept json
+// @Produce json
+// @Param id path int true "歌曲 ID"
+// @Param artists body songArtistsRequest true "参与歌手全量列表（整组替换）"
+// @Success 200 {object} songArtistsResponse "更新后的参与歌手列表"
+// @Failure 400 {object} map[string]string "无效的歌曲 ID 或角色非法"
+// @Failure 404 {object} map[string]string "歌曲不存在"
+// @Security BearerAuth
+// @Router /songs/{id}/artists [put]
+func (h *SongHandler) SetSongArtists(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		respondError(w, http.StatusBadRequest, "无效的歌曲 ID", err)
+		return
+	}
+	var req songArtistsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "无效的请求数据", err)
+		return
+	}
+	artists, err := h.songService.SetSongArtists(ctx, id, req.Artists)
+	if err != nil {
+		switch {
+		case errors.Is(err, database.ErrNotFound):
+			respondError(w, http.StatusNotFound, "歌曲不存在", err)
+		case strings.Contains(err.Error(), "invalid artist role"):
+			respondError(w, http.StatusBadRequest, err.Error(), err)
+		default:
+			respondError(w, http.StatusInternalServerError, "更新参与歌手失败", err)
+		}
+		return
+	}
+	if artists == nil {
+		artists = []models.SongArtist{}
+	}
+	respondJSON(w, http.StatusOK, songArtistsResponse{Artists: artists})
+}
+
 // audioTracksResponse GET /songs/{id}/audio-tracks 响应体。
 type audioTracksResponse struct {
 	Tracks []services.AudioTrackInfo `json:"tracks"`

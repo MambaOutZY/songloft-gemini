@@ -126,6 +126,7 @@ func (s *SQLiteDB) RunInTx(ctx context.Context, fn func(context.Context, *UnitOf
 		Playlists:     NewPlaylistRepository(tx),
 		PlaylistSongs: NewPlaylistSongRepository(tx),
 		PlayHistory:   NewPlayHistoryRepository(tx),
+		SongArtists:   NewSongArtistRepository(tx),
 	}
 	if err := fn(ctx, uow); err != nil {
 		_ = tx.Rollback()
@@ -182,4 +183,8 @@ func (s *SQLiteDB) ThemePackRepository() *ThemePackRepository {
 // SongTagRepository 返回自定义标签仓储
 func (s *SQLiteDB) SongTagRepository() *SongTagRepository {
 	return NewSongTagRepository(s.db)
+}
+
+func (s *SQLiteDB) SongArtistRepository() *SongArtistRepository {
+	return NewSongArtistRepository(s.db)
 }
