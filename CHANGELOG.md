@@ -1,3 +1,79 @@
+## [v2.12.1] - 2026-09-14
+### :sparkles: New Features
+- [`fbba7e4`](https://github.com/songloft-org/songloft/commit/fbba7e40eeb1a6302576a5894cc6a13b8bfb4372) - **play-history**: 支持 tag 上下文并删标签时级联清理历史 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`f98ac60`](https://github.com/songloft-org/songloft/commit/f98ac602ad8cdd125b7c094e078c9690b1d794c0) - 歌曲支持按文件大小排序、指纹失败详情查看、修复 401 重复弹窗 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3bbdeca`](https://github.com/songloft-org/songloft/commit/3bbdecafcd513d7c4d459520f4ea71dd27c3286b) - 曲库新增文件夹浏览视图（后端） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`799b0d5`](https://github.com/songloft-org/songloft/commit/799b0d567438849197930b579a3454d85772a630) - **library**: 曲库新增 tag 视图，修复 PUT library-browse 的 400 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`08b9ab7`](https://github.com/songloft-org/songloft/commit/08b9ab776b3a3f29659ae11eb46a74171fec3ad4) - **theme**: 主题包 schema 加独立 glassColor 字段 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`01e4830`](https://github.com/songloft-org/songloft/commit/01e48307c811bfbc0905e9884da94e282d1086df) - **theme**: 主题包数据增加 navigationStyle 字段 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`fff2188`](https://github.com/songloft-org/songloft/commit/fff21889c62438acacfbcb6e34eaf2bde69e5b99) - **playlist**: 歌单列表支持按歌单内歌曲来源筛选 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`01a8454`](https://github.com/songloft-org/songloft/commit/01a84549b58f4d31038c0807a2f49d1ec143a859) - **scan**: 多值歌手关联与按歌手检索 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :bug: Bug Fixes
+- [`6e1b354`](https://github.com/songloft-org/songloft/commit/6e1b354981828833d29a67177ebd6a26fce3a361) - **scan**: Windows 路径处理导致重复导入与自动歌单无限循环 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c14cbc6`](https://github.com/songloft-org/songloft/commit/c14cbc641e22b9ebceb4f7492d06f4215c996b76) - **playlist**: 修复"按一级子目录"自动歌单在绝对路径下不分组 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a551fba`](https://github.com/songloft-org/songloft/commit/a551fba2ca8ff9fa930a479451862774f1c1e61d) - bubble_up 自动歌单越过 music_path 创建上级目录歌单 *(PR [#428](https://github.com/songloft-org/songloft/pull/428) by [@hanxi](https://github.com/hanxi))*
+- [`9c27613`](https://github.com/songloft-org/songloft/commit/9c27613a1078add4b76df37e7a8d2dd8155be9a4) - **jsplugin**: 自动更新在插件忙时推迟热重载 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`75fc772`](https://github.com/songloft-org/songloft/commit/75fc7723f270fbb54f7200420049cbf475460038) - **jsplugin**: songs.create 桥接导入补元数据探测，避免 duration 长期为 0 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e7807ff`](https://github.com/songloft-org/songloft/commit/e7807ff96554fc243943badbacbfb44fb9a5e055) - **play**: 转码播放不再阻塞首个请求，实时流补上 Range 支持 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`4e6c9bc`](https://github.com/songloft-org/songloft/commit/4e6c9bc389146e340fcd0b6aac8a814b4ebc2250) - **scan**: 大曲库扫描流式入库，取消不再丢弃已导入成果 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`67a22ef`](https://github.com/songloft-org/songloft/commit/67a22ef1606a069120ab2d2ae2e6c2c6df6964be) - **playlist**: CUE 专辑歌单使用目录封面图片 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`38b837e`](https://github.com/songloft-org/songloft/commit/38b837e2f46797e73f959bfa15c62411deb245f4) - **jsplugin**: 修复 HarmonyOS 插件认证问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d9c2a78`](https://github.com/songloft-org/songloft/commit/d9c2a784735d82cb83e67b47753816177f9e55a2) - **metadata**: 优化 ffprobe 远程探测并添加 Range 回退 *(PR [#456](https://github.com/songloft-org/songloft/pull/456) by [@deerwan](https://github.com/deerwan))*
+- [`09feebf`](https://github.com/songloft-org/songloft/commit/09feebf7d6cb64d9d2e2a615cd4aa2bd927e1aba) - **mobile**: 内嵌后端监听所有网卡，修复本地模式投屏小爱音箱失败 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :zap: Performance Improvements
+- [`c5f6221`](https://github.com/songloft-org/songloft/commit/c5f6221ef8bef97cf3169a37515501cadf291cdf) - **logs**: 日志导出脱敏改并行分块，端点耗时降到七分之一 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :recycle: Refactors
+- [`f5b41d4`](https://github.com/songloft-org/songloft/commit/f5b41d4bd810db72503f6ef5b835ea01871c73c2) - 整理工程目录结构，客户端/插件/工具/集成归类 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :memo: Documentation Changes
+- [`19d6ec0`](https://github.com/songloft-org/songloft/commit/19d6ec03753977fc024c66bfc6f26d3becdc6e69) - update CHANGELOG for v2.12.0 *(commit by [@github-actions[bot]](https://github.com/apps/github-actions))*
+- [`b93f918`](https://github.com/songloft-org/songloft/commit/b93f9182a35e4a073d956d9ee2aceae175212d0d) - **frontend**: 补宿主页视口滚动条这层抖动坑，订正插件公共资源过期引用 *(commit by [@hanxi](https://github.com/hanxi))*
+
+### :wrench: Chores
+- [`b2ab664`](https://github.com/songloft-org/songloft/commit/b2ab66496ff07a9af27a334b1f20c723db481cda) - 更新 songloft-player 子模块指针(歌单排序升降序切换) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3955bb9`](https://github.com/songloft-org/songloft/commit/3955bb96f4d6637244e17434d6cd0eaf43194f3e) - 更新 songloft-player 子模块（文件夹根视图修复） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c676a4a`](https://github.com/songloft-org/songloft/commit/c676a4a703c483b20708debb57938fdf02f3ef22) - bump clients/player-lynx — P1b 设置行彩色色调图标 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c648c4a`](https://github.com/songloft-org/songloft/commit/c648c4a2973cc8dc01789bfef1846122b002d791) - bump clients/player-lynx — P2 SongRow Apple 曲目行形态 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`6d537aa`](https://github.com/songloft-org/songloft/commit/6d537aac171f471d1e29f24062fb92577ee882e6) - bump clients/player-lynx — P3 导航度量令牌化 + 配色 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`df307dd`](https://github.com/songloft-org/songloft/commit/df307ddbf908ba155bef6533b6b33c4646cc1593) - bump clients/player-lynx — P4 首页排版 + 统计卡 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c2d0429`](https://github.com/songloft-org/songloft/commit/c2d04296668f4df0aa1aa6401f6ffce7abbb7c2a) - bump clients/player-lynx — P5 歌单列表与详情 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`fffdea9`](https://github.com/songloft-org/songloft/commit/fffdea908a2cf68170ff90e1f8c781ac5dee3240) - bump clients/player-lynx — P6 播放器迁 Apple *(commit by [@hanxi](https://github.com/hanxi))*
+- [`fee14a9`](https://github.com/songloft-org/songloft/commit/fee14a9642fbade371f37e7d2396b0250d34ff68) - bump clients/player-lynx — P7 登录页迁 Apple *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b8ea573`](https://github.com/songloft-org/songloft/commit/b8ea573b9e74162e00532f298fafb90762ca6540) - bump clients/player-lynx — P8 对话框/抽屉/菜单 + 全仓别名扫荡 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`92447c9`](https://github.com/songloft-org/songloft/commit/92447c97367ed8636b33c331933572b48f6fce8f) - bump clients/player-lynx — P9 硬编码 px 清零 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`0a6eeb9`](https://github.com/songloft-org/songloft/commit/0a6eeb97119eb5826df87b443b09561b2ad1d72f) - bump clients/player-lynx — P10 删除 Muse 颜色别名层 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`216af44`](https://github.com/songloft-org/songloft/commit/216af44e8439895b0b3f3e31509390eae84a460e) - bump clients/player-lynx — Docker Chrome 真机验证记录 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ff1db97`](https://github.com/songloft-org/songloft/commit/ff1db97e0be28459a005bd2eef2ccbfa35f17f09) - bump clients/player-lynx — font-role 扫荡删 legacy --font-* *(commit by [@hanxi](https://github.com/hanxi))*
+- [`13fe0ff`](https://github.com/songloft-org/songloft/commit/13fe0ff4d6839b86bc0e90022dc2e46813dd23a0) - bump clients/player-lynx — 修复计划文档中文乱码 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`dc923b3`](https://github.com/songloft-org/songloft/commit/dc923b3f566a55efc75f01291ca46c3345dbe5dc) - **player**: 更新 songloft-player 子模块指针(WebF 桌面端最小化恢复重载修复) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c9a9931`](https://github.com/songloft-org/songloft/commit/c9a9931fd4e9dbc7ccdad57062713a826f392fcf) - bump clients/player-lynx — 实机前 Apple 风格五项收尾
+- [`cac5a30`](https://github.com/songloft-org/songloft/commit/cac5a30c6267b9d99f0fab9db92836d9a15697ae) - bump clients/player-lynx — 登录页全屏白底无卡(Apple 登录式)
+- [`ad23166`](https://github.com/songloft-org/songloft/commit/ad2316684d296fcbb9be79ecb6185a87a79122c1) - bump clients/player-lynx — 实机前收尾五项 + 截图审计 + 宽屏侧栏 iPad 化 + 登录页白边修复
+- [`a5e50e6`](https://github.com/songloft-org/songloft/commit/a5e50e623de3c08de0773d5eb776f3c21e31a2be) - bump clients/player-lynx — 设置圆角对齐 iOS 26 + 外观页全面 iOS 化
+- [`6f0c05b`](https://github.com/songloft-org/songloft/commit/6f0c05b4a1a79978ab1dcc68e26a8d9c310cdf5e) - bump clients/player-lynx — 勾选列表选中项去背景只留对勾 + Icon accent 修正
+- [`1b37ad2`](https://github.com/songloft-org/songloft/commit/1b37ad2b9bf14a6c417c3c96ab424126dd76fe46) - bump clients/player-lynx — Icon PALETTES 全部对齐 Apple(完成迁移遗漏)
+- [`13b89b5`](https://github.com/songloft-org/songloft/commit/13b89b5d71bce1480b91ef6a7f2cbd3d2f9303be) - bump songloft-plugin-miot 子模块指针（修复语音设置按钮超宽 [#440](https://github.com/songloft-org/songloft/pull/440)） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c00d8ef`](https://github.com/songloft-org/songloft/commit/c00d8eff2a8979cdb561f21260366577753280a5) - bump clients/player — 宿主页禁掉视口滚动条根治整页抖动 *(PR [#439](https://github.com/songloft-org/songloft/pull/439) by [@hanxi](https://github.com/hanxi))*
+- [`c29f7f3`](https://github.com/songloft-org/songloft/commit/c29f7f3aa1ea7aa4804091bb62e035a8c3dced70) - bump clients/player — 曲库宽屏行内与多选工具栏补「管理标签」入口 *(PR [#441](https://github.com/songloft-org/songloft/pull/441) by [@hanxi](https://github.com/hanxi))*
+- [`1161ecf`](https://github.com/songloft-org/songloft/commit/1161ecf1e3f66b633665110d8c9e61d9703a2a25) - bump clients/player-lynx — 播放队列抽屉改虚拟化 <list>，修 500+ 首打开卡死 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`74fdb6a`](https://github.com/songloft-org/songloft/commit/74fdb6a358ed29e9546dad6bf0a7e7b49d3db668) - bump songloft-plugin-miot 子模块指针（15acf85..d67fe74） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e55b46a`](https://github.com/songloft-org/songloft/commit/e55b46a2d285913fcc353166c399fda91b71b0d6) - **plugins**: bump miot 子模块（v2026.9.8 + 歌单回滑到顶空白修复） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`499b37d`](https://github.com/songloft-org/songloft/commit/499b37d63da8988c18bcb002627e9ee15f9e0ade) - **deps**: 更新 miot 子模块至 0940c11 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`90c20b9`](https://github.com/songloft-org/songloft/commit/90c20b9569c161a12d735cbe53957579fa368ad7) - update player-lynx submodule (title unification + iOS font-scale fix) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`aae23a2`](https://github.com/songloft-org/songloft/commit/aae23a272b6b76551ab1dbbce7dbb32a74519782) - update player-lynx submodule ([#9](https://github.com/songloft-org/songloft/pull/9) 播放全部队列补全 + mini/全屏播放 UI) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`bd60164`](https://github.com/songloft-org/songloft/commit/bd601644b90edbdf21797b8d46e0e9144ff9b981) - update player-lynx submodule (harmony webview DOM storage patch) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`88cab5d`](https://github.com/songloft-org/songloft/commit/88cab5dc358edde6da04f75bf80d10224dd9775b) - update player-lynx submodule (auto-apply harmony webview patch) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c2ec614`](https://github.com/songloft-org/songloft/commit/c2ec6142ab6c518226a406bdc679a546a7c15085) - bump songloft-plugin-miot for [#455](https://github.com/songloft-org/songloft/pull/455) *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e2b505e`](https://github.com/songloft-org/songloft/commit/e2b505e8346fc3abfd89265fad28ea7d9d0f9f57) - **subrepo**: 升级 player-lynx 子模块（插件商店无限滚动） *(commit by [@hanxi](https://github.com/hanxi))*
+- [`96eb892`](https://github.com/songloft-org/songloft/commit/96eb892efbe620a14dcf4af7078acbffb3d3cddf) - bump clients/player to fix lyric race condition *(commit by [@hanxi](https://github.com/hanxi))*
+- [`cc05f58`](https://github.com/songloft-org/songloft/commit/cc05f5858acb81633071ce2d111f7234c11b5e69) - **miot**: 更新子模块至 aefb02d *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d74ab2e`](https://github.com/songloft-org/songloft/commit/d74ab2ed57cefbef868c8a7e0e05b9bbc73c70ad) - **submodule**: 升级 clients/player-lynx 至多歌手编辑版本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b769f4c`](https://github.com/songloft-org/songloft/commit/b769f4c5cbdff24749137d14df9a4f139473804b) - release version 2.12.1 *(commit by [@hanxi](https://github.com/hanxi))*
+
+
 ## [v2.12.0] - 2026-08-31
 ### :sparkles: New Features
 - [`747468c`](https://github.com/songloft-org/songloft/commit/747468c17dcf7f1d70032056ce28036a1c45b820) - **jsplugin**: 新增 net:insecure-tls 权限，支持 fetch 跳过 TLS 证书校验 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -2228,3 +2304,4 @@
 [v2.11.5]: https://github.com/songloft-org/songloft/compare/v2.11.4...v2.11.5
 [v2.11.6]: https://github.com/songloft-org/songloft/compare/v2.11.5...v2.11.6
 [v2.12.0]: https://github.com/songloft-org/songloft/compare/v2.11.6...v2.12.0
+[v2.12.1]: https://github.com/songloft-org/songloft/compare/v2.12.0...v2.12.1
