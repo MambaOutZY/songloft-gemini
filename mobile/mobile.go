@@ -72,7 +72,9 @@ func Start(dataDir, musicDir string, port int) (int, error) {
 		return -1, fmt.Errorf("后端初始化失败: %w", err)
 	}
 
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	// 监听所有网卡（而非 127.0.0.1）：DLNA 投屏等场景需要局域网设备（如小爱音箱）
+	// 能直接拉取播放流，否则投屏 URL 只能解析到设备自身的回环地址。
+	addr := fmt.Sprintf(":%d", port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		a.Close()
