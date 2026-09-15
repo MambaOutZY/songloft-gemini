@@ -5208,6 +5208,80 @@
                 }
             }
         },
+        "/settings/plugin-order": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "获取用户在主页插件网格中拖拽形成的排序（entry_path 列表）。未在此列表中的已安装插件由客户端按 GET /jsplugins 返回顺序追加到末尾；卸载插件在保存时或插件卸载时被静默清理。未配置时返回空列表（等价于沿用后端默认顺序）。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "获取主页插件网格排序",
+                "responses": {
+                    "200": {
+                        "description": "插件排序配置",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginOrderSetting"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "保存用户在主页插件网格中拖拽形成的排序。order 元素为插件 entry_path，不能为空、不能重复；插件已不存在的条目会在保存时被静默清理（保存即自愈，客户端应以响应为准）。禁用插件的条目刻意保留：重新启用后位置自动恢复，与 tab-config 语义一致。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "设置"
+                ],
+                "summary": "保存主页插件网格排序",
+                "parameters": [
+                    {
+                        "description": "插件排序配置",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginOrderSetting"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "保存后的插件排序（孤儿条目已清理）",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.pluginOrderSetting"
+                        }
+                    },
+                    "400": {
+                        "description": "请求格式错误或校验失败",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "服务器错误",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/settings/plugin-registries": {
             "get": {
                 "security": [
@@ -10222,6 +10296,17 @@
             "type": "object",
             "properties": {
                 "plugins": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handlers.pluginOrderSetting": {
+            "type": "object",
+            "properties": {
+                "order": {
                     "type": "array",
                     "items": {
                         "type": "string"

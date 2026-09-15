@@ -391,6 +391,8 @@ func (h *JSPluginHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	// 清理底部导航 Tab 配置中该插件的条目，防止孤儿条目永久占名额（#416）
 	h.removeTabConfigEntry(plugin.EntryPath)
+	// 同步清理主页插件排序中的孤儿条目（#463）
+	h.removePluginOrderEntry(plugin.EntryPath)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "插件已删除",
@@ -420,6 +422,32 @@ func (h *JSPluginHandler) removeTabConfigEntry(entryPath string) {
 	cfg.PluginTabs = cleaned
 	if err := h.configService.SetJSON(tabConfigKey, cfg); err != nil {
 		slog.Warn("卸载插件：清理 tab_config 条目失败", "entryPath", entryPath, "error", err)
+	}
+}
+
+// removePluginOrderEntry 从主页插件网格排序中移除指定插件的条目（best-effort，失败仅 warn）。
+// 与 removeTabConfigEntry 对称：卸载后不清理会让下次 PUT 前配置里一直挂着孤儿
+// entry_path（songloft-org/songloft#463）。
+func (h *JSPluginHandler) removePluginOrderEntry(entryPath string) {
+	var cfg pluginOrderSetting
+	if err := h.configService.GetJSON(pluginOrderKey, &cfg); err != nil {
+		return
+	}
+	cleaned := make([]string, 0, len(cfg.Order))
+	changed := false
+	for _, ep := range cfg.Order {
+		if ep == entryPath {
+			changed = true
+			continue
+		}
+		cleaned = append(cleaned, ep)
+	}
+	if !changed {
+		return
+	}
+	cfg.Order = cleaned
+	if err := h.configService.SetJSON(pluginOrderKey, cfg); err != nil {
+		slog.Warn("卸载插件：清理 plugin_order 条目失败", "entryPath", entryPath, "error", err)
 	}
 }
 
