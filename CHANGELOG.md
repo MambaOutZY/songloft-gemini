@@ -1,3 +1,11 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+
 ## [v2.12.1] - 2026-09-14
 ### :sparkles: New Features
 - [`fbba7e4`](https://github.com/songloft-org/songloft/commit/fbba7e40eeb1a6302576a5894cc6a13b8bfb4372) - **play-history**: 支持 tag 上下文并删标签时级联清理历史 *(commit by [@hanxi](https://github.com/hanxi))*
@@ -336,172 +344,6 @@
 - [`4d2d655`](https://github.com/songloft-org/songloft/commit/4d2d6558d719aaf8165bee592f4289c160fc89ad) - update pkg/tag submodule (gofmt) *(commit by [@hanxi](https://github.com/hanxi))*
 - [`c3c35a2`](https://github.com/songloft-org/songloft/commit/c3c35a2e5efed8eec622a44984c50d1d34615714) - release version 2.11.1 *(commit by [@hanxi](https://github.com/hanxi))*
 
-
-## [Unreleased]
-### :sparkles: New Features
-- **jsplugin**: 客户端内置 webf-ui 原生组件库（`webf_cupertino_ui`，Apache-2.0）。声明
-  `renderEngine: "webf"` 的插件页现在可以直接使用 31 个 `<flutter-cupertino-*>` 原生元素
-  （按钮 / 输入框 / 开关 / 复选框 / 列表 / 表单 / 弹层 / 导航 / 1300+ 图标），以及 `webf` 包内建的
-  `<webf-list-view>`（映射到 Flutter ListView，自带 view 回收）—— 插件侧无需安装任何运行时。
-  这些元素直接映射到 Flutter widget，绕开 CSS 布局层，因此不再受 WebF 那批布局缺陷影响
-  （grid `auto` 行高按 min-content 测、`position: sticky` 全局失效、`<table>` 家族未注册等）。
-  ⚠️ 客户端与插件各自独立发版、`minHostVersion` 只约束服务端，所以插件**必须做特性探测**
-  （探 `document.createElement('flutter-cupertino-switch').checked !== undefined`）并保留
-  HTML 回落分支，否则在尚未内置该组件库的旧客户端上控件会**静默全部消失**。
-  可用元素清单、属性契约的三个静默失效坑（HTML 属性 kebab-case vs JS 属性 camelCase、
-  输入框的值属性叫 `val` 且是受控的、布尔属性两个入口语义不同）见
-  「JS 插件开发指南 · WebF 渲染引擎与原生元素 · webf-ui 原生组件」
-  *(songloft-org/songloft#341)*
-- **submodule**: 更新 songloft-plugin-downloader——前端用 webf-ui 重写并重新启用 WebF 渲染。
-  页面改为 Vue 3 + Vite（源码 `frontend/`，产物 `static/`），表单控件走 `<flutter-cupertino-*>`、
-  歌曲列表走 `<webf-list-view>`，引擎分叉收敛在一层薄包装组件里、业务代码只有一套，
-  因此浏览器 / 系统 WebView / Web iframe / Linux arm64 等拿不到 WebF 渲染面的路径功能不变。
-  上一版（v2026.8.3）的 CSS Grid 伪表格随之退休，它为绕开 WebF 缺陷付出的两处降级
-  （整行 hover 变单元格 hover、表格无障碍语义丢失）也一并恢复
-  *(songloft-org/songloft#341)*
-- **jsplugin**: 插件页渲染引擎改为**逐插件声明**。`plugin.json` 新增可选字段 `renderEngine`
-  （`webview` / `webf`，缺失或空串等同 `webview`），插件列表 API 以 `render_engine` 返回；
-  非法取值在清单校验阶段报错、插件装不上。原生客户端据此为声明 `webf` 的插件启用
-  [WebF](https://openwebf.com/) 渲染面（纯 Flutter 渲染，替代系统 WebView），
-  其余插件保持系统 WebView 不变。客户端设置页里原先的全局渲染引擎开关随之移除 ——
-  能力缺口是逐页面的，只有插件作者能验证自己的页面。
-  目前只有官方插件 downloader（歌曲下载）声明了 `webf`；miot（智能音箱）与 lyrics（歌词搜索）
-  的页面尚未按 WebF 的能力边界重写，仍保持 `webview`。
-  Web 端不受影响（WebF 不支持 Flutter Web，浏览器里永远走 iframe）；
-  Linux 端 WebF 仅支持 x86-64 + glibc ≥ 2.38，arm64 / NAS / 树莓派等环境拿不到 WebF 渲染面。
-  字段语义与作者须知见「JS 插件开发指南 · renderEngine 渲染引擎声明」
-  *(songloft-org/songloft#341)*
-- **jsplugin**: WebF 渲染面下的滑块补齐。WebF 没有实现 `input[type=range]`（实测那一整行一个像素
-  都不画：既没有滑块也没有文本框，同一行的兄弟文字与行背景会一起消失），现在客户端提供原生元素
-  `<songloft-slider>`，`common.js` 垫片会自动把每个 `input[type="range"]` **隐藏**并在其后插入滑块、
-  双向同步 `.value` / `.disabled` / `input` 与 `change` 事件 / `matches(':active')`——原 `<input>` 仍留在
-  DOM 里，**插件既有 JS 无需改动**。竖向滑块需在原 input 上声明 `data-sl-orientation="vertical"`
-  （不自动推断朝向），并按新标签补几行几何 CSS（垫片只拷 inline style、不拷 class）；
-  `data-sl-no-slider` 可退出该垫片。仅 WebF 渲染面生效，浏览器与系统 WebView 下行为不变。
-  官方插件 miot 的音量条已适配。属性契约与适配示例见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
-  *(songloft-org/songloft#341)*
-- **jsplugin**: WebF 渲染面下补齐安全区（刘海屏 / 圆角屏 / 手势条）。WebF 压根不实现
-  CSS `env(safe-area-inset-*)`（连解析入口都不存在），写 `env()` 的插件页在这些设备上会顶到状态栏
-  或被下巴切掉。现在客户端把真实安全区（`MediaQuery.viewPadding`）注入成四个 CSS 变量
-  `--sl-safe-top` / `--sl-safe-right` / `--sl-safe-bottom` / `--sl-safe-left`，转屏、进退全屏、
-  页面重挂都会重推；`common.css` 给这四个变量备了默认值，**普通浏览器与系统 WebView 下它们就等于
-  `env()` 本身**，所以插件只写一种形式 `var(--sl-safe-bottom)` 即可三端通吃、行为不变。
-  **不做自动改写**——CSSOM 没有可用的写入面（`cssText` 只读、规则不暴露 `selectorText` 与 `.style`、
-  `@media` 内的规则完全不可达），且真实写法都套在 `calc()` / `max()` 里，而 WebF 同样没有实现
-  `max()` / `min()`（`clamp()` 可用，可作等价替换）。官方插件 miot 的 3 处已适配。
-  变量语义与 `max()` 的替换写法见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
-  *(songloft-org/songloft#341)*
-- **jsplugin**: WebF 渲染面下新增原生环形进度条元素 `<songloft-progress-ring>`。WebF 的 `<svg>` 是把
-  整棵子树重新序列化后交给 `flutter_svg` 渲染，任何子节点变更都会让整棵 SVG 重新拼串 + 重新解析 +
-  重新光栅化，所以「每秒改 `strokeDashoffset` 的 SVG 进度环」在 WebF 下是最差的一类写法；新元素的
-  进度变化只走一次重绘。颜色默认跟随 CSS `color`（currentColor），因此零配置即跟随主题。
-  **不做自动替换**——插件需自己改用该标签（内联 SVG 是任意图形，机械判定「这个 svg 是进度环」必然
-  误伤）。仅 WebF 渲染面生效 *(songloft-org/songloft#341)*
-- **jsplugin**: WebF 渲染面下补齐 `input[type=file]` —— 现在会弹出**宿主的原生文件选择器**。
-  WebF 的 `<input>` 没有 file 分支（`type=file` 落到 default，渲染成一个点了毫无反应的文本框，
-  既不报错也无日志），`common.js` 垫片改为拦下点击（同时覆写实例 `click()` 方法，
-  因此「隐藏 input + 外部按钮代点」这种常见写法照样生效）、经桥调宿主选择器、并强制
-  `display:none` 隐藏原 input（实测 **WebF 不认 HTML `hidden` 属性**，带与不带 hidden 的
-  file input 盒子都是 170×24，插件刻意隐藏的 input 会实打实占掉一行）。
-  **插件的 HTML 零改动即可用，但读结果的方式变了**：主通道是 `SongloftPlugin.lastPickedFiles`
-  （普通 JS 数组，每项 `{name, size, text?/bytesBase64?, encoding?, textLossy?, error?}`），
-  `change` 事件上的 `event.data` 只是锦上添花（WebF 的 `Event` 是 binding object，
-  挂自定义属性没有契约）。**`input.files` / `FileReader` / `FileList` 在 WebF 下都不可用**
-  （后两者实测压根不存在），故宿主刻意不去伪造它们——假 `File` 配不上真 `FileReader`，
-  而真 `FileReader` 根本没有。载荷形态由 `data-sl-file-as` 声明（`text` 默认 / `bytes` base64 /
-  `none` 只要元信息；默认 text 是因为真实用例只要文本，而 base64 会让 20 MB 文件变成约 27 MB
-  字符串跨两次桥），`data-sl-no-file-picker` 可退出该垫片。单文件上限 32 MB，超限返回明确错误
-  而非静默截断；用户取消时不派发 `change`。仅 WebF 渲染面生效，浏览器与系统 WebView 下不变。
-  读结果的两端兼容写法见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
-  *(songloft-org/songloft#341)*
-- **jsplugin**: 新增 `SongloftPlugin.blobToDataURL(blob, mimeType?)`，替代 WebF 下不存在的
-  `URL.createObjectURL`（实测 `typeof` 为 undefined；`Blob` 本身有，但没有任何入口能产出
-  `blob:`，而 WebF 的资源加载器只认 http/https/assets/file/`data:`，纯 JS 也垫不出来）。
-  返回形如 `data:image/jpeg;base64,...` 的字符串，`<img src>` 与 CSS
-  `background-image: url(data:…)` 两个消费点均已实测可用（后者走的是另一条代码路径，
-  且 data URL 含逗号分号、CSS `url()` 词法本可能切错），所以同一张图当封面和当模糊背景可以
-  沿用同一个 URL。⚠️ **它返回 Promise，而 `createObjectURL` 是同步的 —— 插件必须改调用点**：
-  `Blob → base64` 只能经异步的 `arrayBuffer()`（`FileReader` 在 WebF 下不存在），
-  无法提供同步替身，且函数变 async 会往上传染到它的调用者（漏改不报错，只是图不出来）。
-  data URL 不需要也没有 `revokeObjectURL`，但会常驻内存（约为原始字节的 4/3）。
-  浏览器与系统 WebView 下同样可用，插件不必按引擎分叉
-  *(songloft-org/songloft#341)*
-- **jsplugin**: WebF 渲染面下 `window.open` 与外链点击改为用**系统浏览器**打开
-  （以前是彻底静默：WebF 的 `window.open` 不抛错、也什么都不发生，归因是没装导航代理时
-  默认导航策略把外链无条件 cancel 掉了，所以「点『去网页登录』毫无反应」既没有报错也没有日志）。
-  现在客户端装了导航代理，三档决策：`#` 开头的页内锚点照常跳转；**外部** http(s)/mailto/tel
-  交给系统浏览器或系统默认应用；**同源**整页跳转被拦下并留一条 warn（WebF 里那条路会把整个
-  插件页 `load()` 成新地址，宿主注入的上下文、loading 状态与返回键行为全部错位——
-  **WebF 下不要做多页跳转**）。**插件侧无需改动**，单参与带 `target` 的双参两种调用形态都已实测
-  转发到宿主；但它打开的是**外部浏览器而非页内新窗口**，所以「弹窗回填数据到父页」
-  （`window.opener` / 跨窗口 `postMessage`）这类流程走不通，需改成回调或轮询。
-  官方插件 miot 的账号二次验证据此可用。见「JS 插件开发指南 · WebF 渲染引擎与原生元素」
-  *(songloft-org/songloft#341)*
-- **jsplugin**: WebF 渲染面下检测到 `<table>` 时打一条 `console.warn` 并给元素标上
-  `data-sl-table-unsupported`。WebF 的元素注册表里 `table` / `thead` / `tbody` / `tr` / `th` / `td`
-  **一个都没注册**，全部退化成 `display:block` —— 后果不是样式差一点，而是**信息结构丢失**
-  （6 列表格竖排成 6 行），且**完全静默**：不报错、不打日志，插件作者只看到「一堆没有表头的文本」。
-  **只警告不改写**：WebF 自带的 `<webf-table>` 家族是 Flutter `Table` widget 的薄封装，
-  `colspan`/`rowspan` 零支持、CSS `width` 无效、行必须是直接子节点（`<thead>`/`<tbody>` 不拆就渲染出
-  一张**空表且不报错**），且那些标签在普通浏览器与系统 WebView 下根本不存在，用它就要长期维护两套模板。
-  推荐改用 **CSS Grid**（标准 CSS，三条渲染路径共用一套代码），完整改法与六条硬约束
-  （不能用 `display:table`；单元格必须 `nowrap` + 省略号，否则 WebF 的 grid `auto` 行高会按
-  min-content 宽度测量、行高暴涨约 7 倍；表头别用 `position: sticky`（WebF 下压根不生效）而应
-  留在纵向滚动容器外面；纵向滚动条宽度要实测补偿；轨道别用 `auto`；窄屏别用 `display:none` 隐藏列）
-  见「JS 插件开发指南 · WebF 渲染引擎与原生元素」。官方插件 downloader 的歌曲列表已按此改造
-  *(songloft-org/songloft#341)*
-- **client**: 客户端新增「设置 → 关于与更新 → 开源许可」页。引入 WebF（GPL-3.0-only，
-  无链接例外）后客户端二进制整体按 GPL-3.0 分发，而 GPLv3 §4/§5 要求分发时**随附**许可全文与
-  「完整对应源码」的获取方式 —— 此前全文只作为 release 附件存在，App 里看不到任何许可信息、
-  安装包内部也没有一份。新页面写明分发许可为何是 GPL-3.0、三个源码仓库直链，并可查看
-  GPL-3.0 全文、NOTICE 第三方组件声明与 Flutter 汇总的逐个依赖包许可。
-  **许可全文内嵌为安装包内的 asset 而非外链** —— Songloft 的典型场景是局域网自托管、
-  设备可能长期离线，纯外链拿不到全文；这条路径在签名之前，因此一次覆盖全部平台且不动打包/签名流程。
-  Linux 便携包（tar.gz/deb/rpm/AppImage）、Windows（zip/msix）与 macOS zip 另外在解包后的根目录
-  直接放一份 `LICENSE-GPL-3.0.txt`
-  *(songloft-org/songloft#341)*
-
-### :zap: Performance Improvements
-- **jsplugin**: 插件商店拉取结果服务端缓存 5 分钟，翻页与搜索不再重复拉取整棵注册表树
-  （以前每翻一页都会重新递归拉取，最多 500 个 `plugin.json`、8 并发、单请求 15s 超时）。
-  点「刷新」或拉取失败后重试会绕过缓存；改动订阅源配置会立即失效缓存。
-  插件安装状态不受缓存影响，仍每次请求实时计算
-
-### :bug: Bug Fixes
-- **downloader 插件**: 修复 WebF 渲染面下歌曲列表**一屏只装得下一行**、以及表头随内容滚走。
-  两个独立根因：① WebF 的 grid `auto` 行高是**在 min-content 宽度下**测量子项高度的，而 CJK
-  每个字都是断行点 —— 一行实测占 **281px**（同内容自然高 41px）、表头 72px，用户看到的是一张
-  几乎空的表；单元格改 `white-space: nowrap` + 省略号后行距 41 / 表头 39（这同时也更像表格该有的
-  观感，长内容用 `title` 属性悬停看全）。② `position: sticky` 在 WebF 下**压根不生效**，
-  且不限于 grid 路径（页面级最标准的配置也整量滚走），改为把表头放到纵向滚动容器**外面**、
-  结构上不再需要 sticky；数据区滚动条占掉的宽度由 JS 实测补偿，保证表头与数据区 6 列逐像素对齐。
-  三条渲染路径（浏览器 / 系统 WebView / WebF）仍共用同一套 HTML/CSS/JS，无引擎分叉
-  *(songloft-org/songloft#341)*
-- **jsplugin**: 修复插件商店中 `entry_path` 相同的多个插件只显示一个、且安装状态互相串台
-  （装了 A 却显示 B 已安装）。去重与安装态匹配改用「`entry_path` + 作者身份」
-  （作者规范化后比较，缺 author 时用 `updateUrl` 的 GitHub 仓库兜底），同名不同作者的插件
-  各自成行、各自计算安装状态；同一插件被多个源收录时仍只显示一条。
-  商店条目新增来源标注，`has_update` 改用版本号比较而非字符串不等
-  *(fixes songloft-org/songloft#339)*
-- **jsplugin**: 从商店安装时若 `entry_path` 已被**另一个作者**的插件占用，不再静默覆盖
-  （旧行为会删除原插件的 ZIP 与 static 目录、原地改写数据库记录，使新插件继承原插件在
-  `plugin_storage` 里的数据、原插件导入的歌曲也被记账到新插件名下）。现在返回 409
-  且不做任何写入，前端弹框说明会替换哪个插件，用户确认后才带 `overwrite=true` 覆盖。
-  手动上传 ZIP 的行为不变 *(fixes songloft-org/songloft#339)*
-- **addon**: Home Assistant 加载项拆为独立仓库
-  [songloft-org/home-assistant-addon](https://github.com/songloft-org/home-assistant-addon)，
-  修复「加载项商店 → 仓库」添加地址始终失败（`is not a valid app repository`）——
-  HA Supervisor 只在 git 仓库根目录查找 `repository.yaml`，而清单一直在 `addon/` 子目录。
-  顺带解决 Supervisor 递归 clone 会连带拉取主仓库全部子模块（约 60 MiB，实测 2 分钟）的问题，
-  新仓库无子模块、clone 为百 KiB 级。**用户请改用新地址**
-  `https://github.com/songloft-org/home-assistant-addon` *(fixes songloft-org/songloft#340)*
-- **lyric**: 本地 .lrc 歌词文件优先适配 — 支持大小写扩展名（`.LRC`/`.Lrc`）及 `<文件名>.lrc` 变体；
-  已入库歌曲旁后放 .lrc 下次扫描即生效；运行时 GET /lyric 旁挂优先于插件歌词；
-  0 字节 .lrc 不再导致前端无法请求歌词 *(fixes songloft-org/songloft#334)*
-
-### :warning: Breaking Changes
-- **lyric**: 扫描/重新导入时若读不到歌词，不再清空库中已有歌词（含插件 `scraped`、`url` 来源的
-  `lyric_remote_url`）。要清空歌词请使用 `PUT /api/v1/songs/{id}/lyrics` 接口。
 
 ## [v2.11.0] - 2026-07-22
 ### :sparkles: New Features
@@ -1199,11 +1041,6 @@
 - [`41c1528`](https://github.com/songloft-org/songloft/commit/41c15281364d842c20ba0c196580f7e5048080e6) - release version 2.5.1 *(commit by [@hanxi](https://github.com/hanxi))*
 
 
-## [Unreleased]
-### :sparkles: New Features
-- 插件商店支持自定义代理输入（与插件更新/系统升级对话框一致的 RadioGroup + 自定义输入框）
-- 新增通用 HTTP 代理设置（`/settings/http-proxy`），所有后端外发请求可通过用户配置的代理转发
-
 ## [v2.5.0] - 2026-06-04
 ### :sparkles: New Features
 - [`8cd86bb`](https://github.com/songloft-org/songloft/commit/8cd86bb8657fabcc435004dc1185fb1ae8748a39) - 支持一键更新所有插件 songloft-org/songloft[#61](https://github.com/songloft-org/songloft/pull/61) *(commit by [@hanxi](https://github.com/hanxi))*
@@ -1427,836 +1264,666 @@
 
 
 ## [1.4.1] - 2026-05-28
+### :sparkles: New Features
+- [`c9f81fe`](https://github.com/songloft-org/songloft/commit/c9f81fe9f388e71591207e45d2dea79a99eff040) - 默认开启网络歌单自动转本地歌单 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ea29cdf`](https://github.com/songloft-org/songloft/commit/ea29cdf8e075ff0a28fba72afe3a7342404bf3dc) - 重构歌词接口问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`0011325`](https://github.com/songloft-org/songloft/commit/0011325b8a57d600e453ba9f17fe390a440afdd7) - 修复缓存歌曲冲突问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`44e5de6`](https://github.com/songloft-org/songloft/commit/44e5de6ea5a86680ab46debbfc47832bbbfe4614) - 修复rename文件报错问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `c9f81fe` 默认开启网络歌单自动转本地歌单
-- `ea29cdf` 重构歌词接口问题
+### :wrench: Chores
+- `964233c` - release version 1.4.1 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`cdf8359`](https://github.com/songloft-org/songloft/commit/cdf8359ad18812e8001e1bc2730c9d6fc6f0b85d) - 优化扫描设置开关文案 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
-
-- `0011325` 修复缓存歌曲冲突问题
-- `44e5de6` 修复rename文件报错问题
-
-### 🔧 Chores
-
-- `964233c` release version 1.4.1
-- `cdf8359` 优化扫描设置开关文案
 
 ## [1.4.0] - 2026-05-27
+### :sparkles: New Features
+- [`4483c45`](https://github.com/songloft-org/songloft/commit/4483c45485f2cbedd384ecd3e33347b99f5d8638) - 自动创建歌单功能简化 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`6cfd245`](https://github.com/songloft-org/songloft/commit/6cfd245c069bee517197bd86a2ef4f5193ea1efa) - 歌曲下载功能优化 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`f8dcd21`](https://github.com/songloft-org/songloft/commit/f8dcd21b93bffbb6e96f50ac9bee24ade3d95d18) - 简化歌曲歌词封面的url逻辑 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`9148dc9`](https://github.com/songloft-org/songloft/commit/9148dc92e9247d5f906efc44149857bd8cc2c50e) - 重构url *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e8c91b1`](https://github.com/songloft-org/songloft/commit/e8c91b1e9e01d07e68171665dfae1d7a613abe22) - 优化url路径 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`7ff56ff`](https://github.com/songloft-org/songloft/commit/7ff56ffc192ecd3bc1ab95097da5e453ab4896fc) - 移除wasm插件模块 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`81c618f`](https://github.com/songloft-org/songloft/commit/81c618fde89826ac770e93489c184f2e3b56d3e4) - 网络歌曲转本地歌曲支持写入tag *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`8de0455`](https://github.com/songloft-org/songloft/commit/8de0455cd108911f7031a9478a33e7978c30e6bb) - 修复 js fetch 接口问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`55e6818`](https://github.com/songloft-org/songloft/commit/55e6818a8dec8d476aa86edbaadabc5bce5c5de1) - 歌曲去重 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`f612c13`](https://github.com/songloft-org/songloft/commit/f612c131b8b4e0df73aa39917d417cfa840940d9) - 修复歌单名重复问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e450a56`](https://github.com/songloft-org/songloft/commit/e450a56e1f05e069e7f26cad74bab9179b97e6de) - 修复歌单名重复问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c4951d3`](https://github.com/songloft-org/songloft/commit/c4951d3d3c3ee0ef1d27b3b9b45f524969c49899) - sqlite问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`97bc3de`](https://github.com/songloft-org/songloft/commit/97bc3dea0815481486ed5a8d8c6ab2a113c908fa) - 修复url问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`43b2431`](https://github.com/songloft-org/songloft/commit/43b2431d35edb1dd3062cd990b326e99874dbe0c) - 修复插件接口问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `4483c45` 自动创建歌单功能简化
-- `6cfd245` 歌曲下载功能优化
-- `f8dcd21` 简化歌曲歌词封面的url逻辑
-- `9148dc9` 重构url
-- `e8c91b1` 优化url路径
-- `7ff56ff` 移除wasm插件模块
-- `81c618f` 网络歌曲转本地歌曲支持写入tag
+### :recycle: Refactors
+- [`a37070b`](https://github.com/songloft-org/songloft/commit/a37070bd40721c6f37a8ba16c24eaa925a36d036) - **test**: 删除手写 mock，全切 :memory: 真实 DB *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c7e2032`](https://github.com/songloft-org/songloft/commit/c7e2032255c290cb24e44e2971d2c9376b9c9ade) - **database**: 引入 UnitOfWork，下线 database.Tx/SQLiteTx *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d58e1d4`](https://github.com/songloft-org/songloft/commit/d58e1d4cbb9e73b1cd59bb3d10a6726cbafad490) - **database**: playlist_songs 表切到 PlaylistSongRepository *(commit by [@hanxi](https://github.com/hanxi))*
+- [`8c23575`](https://github.com/songloft-org/songloft/commit/8c23575ab8acfc4eae36358fb647b5810abf21e1) - **database**: playlists 表切到 PlaylistRepository *(commit by [@hanxi](https://github.com/hanxi))*
+- [`10337aa`](https://github.com/songloft-org/songloft/commit/10337aa474c1feca92d966158112ae3631828d44) - **database**: songs 表切到 SongRepository *(commit by [@hanxi](https://github.com/hanxi))*
+- [`9d995cc`](https://github.com/songloft-org/songloft/commit/9d995cc0b2006e4705949d8a1ff315b57439beca) - **database**: js_plugins 仓储改用 sqlc.Queries *(commit by [@hanxi](https://github.com/hanxi))*
+- [`7094d5f`](https://github.com/songloft-org/songloft/commit/7094d5faca6134d54f3828a3e3baceee94e18537) - **database**: configs 表切到 ConfigRepository *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ea352cd`](https://github.com/songloft-org/songloft/commit/ea352cd590cd9c2aecb2f323883e852446c99e76) - **database**: tokens 表切到 TokenRepository *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b004464`](https://github.com/songloft-org/songloft/commit/b00446446fc85b6378b77452f2d111d549cdc5c9) - **database**: 引入 sqlc + goose + squirrel 基础设施 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1910fd0`](https://github.com/songloft-org/songloft/commit/1910fd016d6d7416c3769fc7f9abb2bdf57f5885) - 抽取 InternalURLResolver,让歌词代理 URL 也能带 token 访问 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :memo: Documentation Changes
+- [`50a67b1`](https://github.com/songloft-org/songloft/commit/50a67b1c11797fef15aee89a6302e0d3f6e7eac3) - **database**: 新增 DATABASE_MIGRATIONS 操作指南 + 集成 sqlc 命令到 Makefile *(commit by [@hanxi](https://github.com/hanxi))*
+- [`703d2bc`](https://github.com/songloft-org/songloft/commit/703d2bc3448f582fcc394f75ae90c4455b5896d0) - **agents**: 同步数据库重构后的开发约定 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `8de0455` 修复 js fetch 接口问题
-- `55e6818` 歌曲去重
-- `f612c13` 修复歌单名重复问题
-- `e450a56` 修复歌单名重复问题
-- `c4951d3` sqlite问题
-- `97bc3de` 修复url问题
-- `43b2431` 修复插件接口问题
+### :wrench: Chores
+- [`3c07269`](https://github.com/songloft-org/songloft/commit/3c072694374b730af1a8fe6bb0785565f9b42f17) - release version 1.4.0 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`96aa6c4`](https://github.com/songloft-org/songloft/commit/96aa6c40b7ec4a5743d40abdf7a9bceddfc111b0) - bump musicsdk v1.1.0 + lxmusic 用上 LyricFetcher.lyricParams *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ♻️ Code Refactoring
-
-- `a37070b` **test**: 删除手写 mock，全切 :memory: 真实 DB
-- `c7e2032` **database**: 引入 UnitOfWork，下线 database.Tx/SQLiteTx
-- `d58e1d4` **database**: playlist_songs 表切到 PlaylistSongRepository
-- `8c23575` **database**: playlists 表切到 PlaylistRepository
-- `10337aa` **database**: songs 表切到 SongRepository
-- `9d995cc` **database**: js_plugins 仓储改用 sqlc.Queries
-- `7094d5f` **database**: configs 表切到 ConfigRepository
-- `ea352cd` **database**: tokens 表切到 TokenRepository
-- `b004464` **database**: 引入 sqlc + goose + squirrel 基础设施
-- `1910fd0` 抽取 InternalURLResolver,让歌词代理 URL 也能带 token 访问
-
-### 📚 Documentation
-
-- `50a67b1` **database**: 新增 DATABASE_MIGRATIONS 操作指南 + 集成 sqlc 命令到 Makefile
-- `703d2bc` **agents**: 同步数据库重构后的开发约定
-
-### 🔧 Chores
-
-- `3c07269` release version 1.4.0
-- `96aa6c4` bump musicsdk v1.1.0 + lxmusic 用上 LyricFetcher.lyricParams
 
 ## [1.3.50] - 2026-05-25
+### :sparkles: New Features
+- [`37ac3b4`](https://github.com/songloft-org/songloft/commit/37ac3b43e0116515581d77a820c9828d1fa132f2) - 支持网络歌曲转本地歌曲 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`923b254`](https://github.com/songloft-org/songloft/commit/923b254f19f3a21a478b3440469991691b0cd62c) - release version 1.3.50 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `37ac3b4` 支持网络歌曲转本地歌曲
-
-### 🔧 Chores
-
-- `923b254` release version 1.3.50
 
 ## [1.3.49] - 2026-05-24
+### :bug: Bug Fixes
+- [`4a60ca1`](https://github.com/songloft-org/songloft/commit/4a60ca163a43c7d30fb9912ae17a87efedcda8d3) - 修复js插件休眠问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :wrench: Chores
+- [`6bcb020`](https://github.com/songloft-org/songloft/commit/6bcb020c345315bd7b4821b9e0a97a61354d81b2) - release version 1.3.49 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `4a60ca1` 修复js插件休眠问题
-
-### 🔧 Chores
-
-- `6bcb020` release version 1.3.49
 
 ## [1.3.48] - 2026-05-22
+### :bug: Bug Fixes
+- [`7d8999d`](https://github.com/songloft-org/songloft/commit/7d8999d57ce6b4e29b1b502f9d971cca24174e91) - 修复js插件导致宕机问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :wrench: Chores
+- [`16754d4`](https://github.com/songloft-org/songloft/commit/16754d4847a2e7248e416c387fd7736ad6494cd3) - release version 1.3.48 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `7d8999d` 修复js插件导致宕机问题
-
-### 🔧 Chores
-
-- `16754d4` release version 1.3.48
 
 ## [1.3.47] - 2026-05-22
+### :sparkles: New Features
+- [`89eea57`](https://github.com/songloft-org/songloft/commit/89eea57cd71a64767ed652afca98a4662f20c7d9) - js插件支持手动上传更新 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`bac969a`](https://github.com/songloft-org/songloft/commit/bac969a63f72c1152d27457f0be1b315c9efd9e8) - 修复编译警告 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`53e19c0`](https://github.com/songloft-org/songloft/commit/53e19c0cb712f465c11e8d3277ac25cfd15a0214) - 修复js异步问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `89eea57` js插件支持手动上传更新
+### :wrench: Chores
+- [`452aacb`](https://github.com/songloft-org/songloft/commit/452aacb99bb1334caadec09ef17a64a71dfcee45) - release version 1.3.47 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
-
-- `bac969a` 修复编译警告
-- `53e19c0` 修复js异步问题
-
-### 🔧 Chores
-
-- `452aacb` release version 1.3.47
 
 ## [1.3.46] - 2026-05-21
+### :sparkles: New Features
+- [`f7b47bc`](https://github.com/songloft-org/songloft/commit/f7b47bc814dfb884e97fca1ce8935fe6349bb087) - js插件改成真异步环境 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`65f1164`](https://github.com/songloft-org/songloft/commit/65f1164f26f3f6799db02e9793ae6128d31034d3) - 优化插件不可用时的提示 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`3bd3a57`](https://github.com/songloft-org/songloft/commit/3bd3a57dd805d521305e6a7c0f9ce6674c816b07) - release version 1.3.46 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `f7b47bc` js插件改成真异步环境
-- `65f1164` 优化插件不可用时的提示
-
-### 🔧 Chores
-
-- `3bd3a57` release version 1.3.46
 
 ## [1.3.45] - 2026-05-20
+### :sparkles: New Features
+- [`989769c`](https://github.com/songloft-org/songloft/commit/989769cac50bee30f1255afe82d9829f36458632) - 自动创建的歌单默认按照数字前缀排序 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`5c47ffc`](https://github.com/songloft-org/songloft/commit/5c47ffc8e3530c7a816b8cb76b555756fcac7376) - 新增js虚拟机 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`39dab1b`](https://github.com/songloft-org/songloft/commit/39dab1b1b1c171595cda13ce07b0248991742eeb) - 新增js api *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ac27696`](https://github.com/songloft-org/songloft/commit/ac2769657d2cff487ef698cff40eb8f4a12fd3d7) - 新增 lxmusic 插件 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`627f885`](https://github.com/songloft-org/songloft/commit/627f8858781fb91553a55830cb1a1ae98185bf0f) - 修复关闭进程卡死问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `989769c` 自动创建的歌单默认按照数字前缀排序
-- `5c47ffc` 新增js虚拟机
-- `39dab1b` 新增js api
-- `ac27696` 新增 lxmusic 插件
+### :wrench: Chores
+- [`f9ddbec`](https://github.com/songloft-org/songloft/commit/f9ddbec273e53436c880176524662c839eae0e4a) - release version 1.3.45 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
-
-- `627f885` 修复关闭进程卡死问题
-
-### 🔧 Chores
-
-- `f9ddbec` release version 1.3.45
 
 ## [1.3.43] - 2026-05-16
+### :wrench: Chores
+- [`a9d666a`](https://github.com/songloft-org/songloft/commit/a9d666a1cf0ce9c55c984d629b90a66b10cb9e87) - release version 1.3.43 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `a9d666a` release version 1.3.43
 
 ## [1.3.42] - 2026-05-16
+### :sparkles: New Features
+- [`1349f40`](https://github.com/songloft-org/songloft/commit/1349f40594b869cf14bdab91757a2856549443a0) - js插件性能优化 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`170a793`](https://github.com/songloft-org/songloft/commit/170a793bde5389cd75e4d843dcdee3bce0c4073d) - js插件支持jsc *(commit by [@hanxi](https://github.com/hanxi))*
+- [`6058a32`](https://github.com/songloft-org/songloft/commit/6058a3250fafdbe9067187a8acb131599f0eecda) - 新增JS插件管理 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`bca3678`](https://github.com/songloft-org/songloft/commit/bca36781c1e199c7d7e5ebb313af3d2912b2aaf1) - js插件开发 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`9a2dc3a`](https://github.com/songloft-org/songloft/commit/9a2dc3a3a63ecd81a3121c55355cdf863d252b88) - 新增js插件机制 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1352e6e`](https://github.com/songloft-org/songloft/commit/1352e6e5c2d54b995097cb5a340833480ad2b7e9) - 插件休眠更激进 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`1528474`](https://github.com/songloft-org/songloft/commit/1528474296d07f144bae8a165668b389ca2dff65) - 修复js插件相关问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`71565f6`](https://github.com/songloft-org/songloft/commit/71565f6c223bb47953ab015716e64ad7f7e74ad8) - 修复js插件问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ea95c15`](https://github.com/songloft-org/songloft/commit/ea95c15214f364c312e43e2c47228ed34a41612a) - JS插件问题修复 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `1349f40` js插件性能优化
-- `170a793` js插件支持jsc
-- `6058a32` 新增JS插件管理
-- `bca3678` js插件开发
-- `9a2dc3a` 新增js插件机制
-- `1352e6e` 插件休眠更激进
+### :recycle: Refactors
+- [`c706dbb`](https://github.com/songloft-org/songloft/commit/c706dbb1d3ee6965d006172e70eaf536d3560744) - **jsplugin**: split playlists permission into read/write *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :wrench: Chores
+- [`1dafd4a`](https://github.com/songloft-org/songloft/commit/1dafd4ac5e2a8f422e5670537348d5b84af0c72a) - release version 1.3.42 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `1528474` 修复js插件相关问题
-- `71565f6` 修复js插件问题
-- `ea95c15` JS插件问题修复
+### :memo: Other Changes
+- [`e66cf67`](https://github.com/songloft-org/songloft/commit/e66cf6714a4d230637ae00f2753bac1697ffd74a) - log *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ♻️ Code Refactoring
-
-- `c706dbb` **jsplugin**: split playlists permission into read/write
-
-### 🔧 Chores
-
-- `1dafd4a` release version 1.3.42
-
-### 📝 Other Changes
-
-- `e66cf67` log
 
 ## [1.3.41] - 2026-05-11
+### :sparkles: New Features
+- [`a04fb2f`](https://github.com/songloft-org/songloft/commit/a04fb2f9e3b5ac88592c72d01a7d79f09e0c8844) - 内存优化：空闲插件自动休眠 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`fc60dfd`](https://github.com/songloft-org/songloft/commit/fc60dfdd9b0dd90d60051461149d9276957168ba) - 内存优化 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`4f77b55`](https://github.com/songloft-org/songloft/commit/4f77b558c2939be27616f1042f8a5e07edef7b8d) - 内存优化 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`7ca4fad`](https://github.com/songloft-org/songloft/commit/7ca4fada7663a799afae73f74b03907f8dfb40aa) - release version 1.3.41 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `a04fb2f` 内存优化：空闲插件自动休眠
-- `fc60dfd` 内存优化
-- `4f77b55` 内存优化
-
-### 🔧 Chores
-
-- `7ca4fad` release version 1.3.41
 
 ## [1.3.40] - 2026-05-07
+### :bug: Bug Fixes
+- [`b055dc0`](https://github.com/songloft-org/songloft/commit/b055dc05ad645a13c9f7e8ea090f8db542db72cd) - 修复打包脚本问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :wrench: Chores
+- [`a49aa4c`](https://github.com/songloft-org/songloft/commit/a49aa4c1ccd12734f30dd892fc10aed12a041089) - release version 1.3.40 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `b055dc0` 修复打包脚本问题
-
-### 🔧 Chores
-
-- `a49aa4c` release version 1.3.40
 
 ## [1.3.39] - 2026-05-06
+### :sparkles: New Features
+- [`dd30f31`](https://github.com/songloft-org/songloft/commit/dd30f31b2ab3d8ee6557111774ba5e4a48384e1e) - 歌单排序功能优化，首页歌单数量显示优化，自动生成的歌单名字优化 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`24c37f9`](https://github.com/songloft-org/songloft/commit/24c37f934e9821685c0cb9738f1cb8a4397dad4e) - release version 1.3.39 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `dd30f31` 歌单排序功能优化，首页歌单数量显示优化，自动生成的歌单名字优化
-
-### 🔧 Chores
-
-- `24c37f9` release version 1.3.39
 
 ## [1.3.38] - 2026-05-06
+### :sparkles: New Features
+- [`f886d0c`](https://github.com/songloft-org/songloft/commit/f886d0cbc05471518f0b6238cc41d5ff6324cde6) - 新增歌单排序功能 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a0f0b89`](https://github.com/songloft-org/songloft/commit/a0f0b89af4a2222bba6e97599753c169a2105564) - 添加wma格式支持 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`d078fa7`](https://github.com/songloft-org/songloft/commit/d078fa78d42f3505dc5adbdc77ba66f87a87293c) - 清理失效的本地歌曲 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3dc4eed`](https://github.com/songloft-org/songloft/commit/3dc4eed85cb90051c1938bb615b3238919197ba7) - 修复windows网络歌曲无法缓存的问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `f886d0c` 新增歌单排序功能
-- `a0f0b89` 添加wma格式支持
+### :wrench: Chores
+- [`85de484`](https://github.com/songloft-org/songloft/commit/85de48447351c57df32cfbd605a6e10f2444ae4d) - release version 1.3.38 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
-
-- `d078fa7` 清理失效的本地歌曲
-- `3dc4eed` 修复windows网络歌曲无法缓存的问题
-
-### 🔧 Chores
-
-- `85de484` release version 1.3.38
 
 ## [1.3.37] - 2026-04-30
+### :bug: Bug Fixes
+- [`d0b3c2c`](https://github.com/songloft-org/songloft/commit/d0b3c2cd16b45ed7f3543d27e437077a226421e6) - 修复vbr播放时长读取错误问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :wrench: Chores
+- [`46592df`](https://github.com/songloft-org/songloft/commit/46592df74fd6759e3482cdbdbb9b1c5313cd6867) - release version 1.3.37 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `d0b3c2c` 修复vbr播放时长读取错误问题
-
-### 🔧 Chores
-
-- `46592df` release version 1.3.37
 
 ## [1.3.35] - 2026-04-29
+### :sparkles: New Features
+- [`a30430c`](https://github.com/songloft-org/songloft/commit/a30430cc3bb201318a9202dfb04f4440b7b1cbef) - 优化插件静态资源访问 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`d72e680`](https://github.com/songloft-org/songloft/commit/d72e680e2ac4dba338117067902d4391dd81432a) - release version 1.3.35 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `a30430c` 优化插件静态资源访问
-
-### 🔧 Chores
-
-- `d72e680` release version 1.3.35
 
 ## [1.3.34] - 2026-04-27
+### :bug: Bug Fixes
+- [`2d0877d`](https://github.com/songloft-org/songloft/commit/2d0877d13e779acd71e08bcf524af8e41704d96e) - 修复arm/v7系统无法加载插件问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :wrench: Chores
+- [`761c5a1`](https://github.com/songloft-org/songloft/commit/761c5a1340b6ff0ada06882d9b772209e71d1a7d) - release version 1.3.34 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `2d0877d` 修复arm/v7系统无法加载插件问题
-
-### 🔧 Chores
-
-- `761c5a1` release version 1.3.34
 
 ## [1.3.33] - 2026-04-26
+### :wrench: Chores
+- [`b616fd7`](https://github.com/songloft-org/songloft/commit/b616fd73f2fca641d7fb3fdfb3d47ee957ac8311) - release version 1.3.33 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `b616fd7` release version 1.3.33
 
 ## [1.3.32] - 2026-04-26
+### :bug: Bug Fixes
+- [`3f5f78d`](https://github.com/songloft-org/songloft/commit/3f5f78d80993bfb8530010c454be0b046ee36365) - 修复升级后404问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :wrench: Chores
+- [`04a3278`](https://github.com/songloft-org/songloft/commit/04a3278fcd408f71ef4f33e2cbb5414f01ff5b3c) - release version 1.3.32 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `3f5f78d` 修复升级后404问题
-
-### 🔧 Chores
-
-- `04a3278` release version 1.3.32
 
 ## [1.3.31] - 2026-04-25
+### :wrench: Chores
+- [`430e88d`](https://github.com/songloft-org/songloft/commit/430e88d74082c6045ef89457cb80cbf894627274) - release version 1.3.31 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `430e88d` release version 1.3.31
 
 ## [1.3.30] - 2026-04-25
+### :bug: Bug Fixes
+- [`b074f73`](https://github.com/songloft-org/songloft/commit/b074f7359d3acf92309d8ba667cbbf3d080454d7) - 兼容 J3455 CPU *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :wrench: Chores
+- [`973edd1`](https://github.com/songloft-org/songloft/commit/973edd1f2ecb8f19032554f70b31dcb4e7efee32) - release version 1.3.30 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `b074f73` 兼容 J3455 CPU
+### :memo: Other Changes
+- [`8541df4`](https://github.com/songloft-org/songloft/commit/8541df427c63a47c837849382dd7a7e2ef796bb7) - 插件加载失败添加错误日志 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `973edd1` release version 1.3.30
-
-### 📝 Other Changes
-
-- `8541df4` 插件加载失败添加错误日志
 
 ## [1.3.29] - 2026-04-20
+### :sparkles: New Features
+- [`304270f`](https://github.com/songloft-org/songloft/commit/304270f2d80a6af15eda2125d3927d7577aa6e9d) - 插件支持更新 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`fa7e192`](https://github.com/songloft-org/songloft/commit/fa7e1925091d060158771f9ef52568c7c35702ad) - 插件支持更新 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`60202c9`](https://github.com/songloft-org/songloft/commit/60202c987468b421dd55ee4207a2636b27da124b) - 修复部分洛雪音源无法使用问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `304270f` 插件支持更新
-- `fa7e192` 插件支持更新
+### :wrench: Chores
+- [`1a41ee7`](https://github.com/songloft-org/songloft/commit/1a41ee7364b41baa2575115e54b78f765b2bdb87) - release version 1.3.29 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
-
-- `60202c9` 修复部分洛雪音源无法使用问题
-
-### 🔧 Chores
-
-- `1a41ee7` release version 1.3.29
 
 ## [1.3.28] - 2026-04-20
+### :sparkles: New Features
+- [`27d8ca0`](https://github.com/songloft-org/songloft/commit/27d8ca0d51dce05c5b1ce0d95f14e2d9c8a49285) - 新增排除目录设置 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`04bae3b`](https://github.com/songloft-org/songloft/commit/04bae3b4e258ea6e2cb6bb22f036225aff4006fa) - release version 1.3.28 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `27d8ca0` 新增排除目录设置
-
-### 🔧 Chores
-
-- `04bae3b` release version 1.3.28
 
 ## [1.3.24] - 2026-04-19
+### :wrench: Chores
+- [`acb5fc2`](https://github.com/songloft-org/songloft/commit/acb5fc21e6e6b0e4a2caa30dd7bd1dacd4dbedfd) - release version 1.3.24 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
+### :memo: Other Changes
+- [`6419bcd`](https://github.com/songloft-org/songloft/commit/6419bcd78eee79138d24b9e297918aa81c6fc02b) - 插件超时优化 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `acb5fc2` release version 1.3.24
-
-### 📝 Other Changes
-
-- `6419bcd` 插件超时优化
 
 ## [1.3.22] - 2026-04-17
+### :sparkles: New Features
+- [`1110184`](https://github.com/songloft-org/songloft/commit/1110184a0911ca52b3666fef0afe5ddbf67275f0) - 优化启动速度 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`9dc1eda`](https://github.com/songloft-org/songloft/commit/9dc1eda4a53c83a6e20d237f13829e344514eb5b) - 删除 entry_path 字段 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1e880a1`](https://github.com/songloft-org/songloft/commit/1e880a16c97b502e4f68e30e690bf50ec771a360) - 新增插件重置功能 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`2fce1be`](https://github.com/songloft-org/songloft/commit/2fce1bed94f7aa985991c499e7e674863a0bc8e0) - release version 1.3.22 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `1110184` 优化启动速度
-- `9dc1eda` 删除 entry_path 字段
-- `1e880a1` 新增插件重置功能
-
-### 🔧 Chores
-
-- `2fce1be` release version 1.3.22
 
 ## [1.3.21] - 2026-04-17
+### :sparkles: New Features
+- [`e7a6779`](https://github.com/songloft-org/songloft/commit/e7a6779effb5c06e146b1af3cc2244e99e46b83b) - 优化升级 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`cfded04`](https://github.com/songloft-org/songloft/commit/cfded0475a5e5065c8b56a38082856043b9d0957) - 修复 FLAC 中的 ID3v2 信息无法解析的问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c488c01`](https://github.com/songloft-org/songloft/commit/c488c012e85daab95e14adc876f27c57c5e057a3) - 修复导入相同插件问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `e7a6779` 优化升级
+### :wrench: Chores
+- [`99b5e73`](https://github.com/songloft-org/songloft/commit/99b5e739c96feb9e449b9601469031753833a434) - release version 1.3.21 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
-
-- `cfded04` 修复 FLAC 中的 ID3v2 信息无法解析的问题
-- `c488c01` 修复导入相同插件问题
-
-### 🔧 Chores
-
-- `99b5e73` release version 1.3.21
 
 ## [1.3.20] - 2026-04-16
+### :wrench: Chores
+- [`0851d64`](https://github.com/songloft-org/songloft/commit/0851d64754db96ac11de306f294fba15d3ccd17b) - release version 1.3.20 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
+### :memo: Other Changes
+- [`1fca16e`](https://github.com/songloft-org/songloft/commit/1fca16e01e8fd8ba1761c3bc16bd2c2785feb8df) - 配置国内镜像 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `0851d64` release version 1.3.20
-
-### 📝 Other Changes
-
-- `1fca16e` 配置国内镜像
 
 ## [1.3.18] - 2026-04-15
+### :sparkles: New Features
+- [`dd8887d`](https://github.com/songloft-org/songloft/commit/dd8887dab5340d09c4c8ef6858ffec518bc22820) - 新增批量删除歌单接口 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`5abf830`](https://github.com/songloft-org/songloft/commit/5abf830dfbe6fd47468da0fb46ec180c537695cd) - 缓存功能优化 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`4b74298`](https://github.com/songloft-org/songloft/commit/4b74298c5d4363a3cea0d9d5511fcf4c350a394a) - 服务端资源缓存优化 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`a166e7e`](https://github.com/songloft-org/songloft/commit/a166e7e88325b0926f9057560a3a774713cd4118) - 修复从lite切换到full的问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `dd8887d` 新增批量删除歌单接口
-- `5abf830` 缓存功能优化
-- `4b74298` 服务端资源缓存优化
+### :wrench: Chores
+- [`cb3b3f7`](https://github.com/songloft-org/songloft/commit/cb3b3f7b29a2eb1fb89eb4475fcf5da7505794bd) - release version 1.3.18 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
-
-- `a166e7e` 修复从lite切换到full的问题
-
-### 🔧 Chores
-
-- `cb3b3f7` release version 1.3.18
 
 ## [1.3.16] - 2026-04-10
+### :sparkles: New Features
+- [`128aab0`](https://github.com/songloft-org/songloft/commit/128aab0c0ed623b99ae892e6d67e726811c0bcaa) - 支持版本回退到底包 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`4c80b7c`](https://github.com/songloft-org/songloft/commit/4c80b7ccd0d78217fa1b4e175ce2be3a0ccd3305) - 更新后端支持使用代理 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`db0e395`](https://github.com/songloft-org/songloft/commit/db0e39523fa575a3773de4011eb919f5efe29839) - 修复升级问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`00ff400`](https://github.com/songloft-org/songloft/commit/00ff400603a03bc4f43e825f1daf557fc77cf505) - 修复升级问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b904424`](https://github.com/songloft-org/songloft/commit/b904424de0c1f7560f078f7f269f468b30eaa45e) - 修复更新问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3d9ac57`](https://github.com/songloft-org/songloft/commit/3d9ac5784f1efc290f3b1d3c92323fb06df75a56) - 修复更新问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`eb69df6`](https://github.com/songloft-org/songloft/commit/eb69df67f448452f1f82bcc661c93a17c7653989) - 修复更新问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`7b6b45a`](https://github.com/songloft-org/songloft/commit/7b6b45a01a60f32fa1d7ae250cd1f158175c7c33) - 修复更新问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`67e8840`](https://github.com/songloft-org/songloft/commit/67e8840d250ec69f1c78ff4c1dc8ce9fb5fe9d73) - 修复更新问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a09c6a9`](https://github.com/songloft-org/songloft/commit/a09c6a986d954772f8613c30a2e791f270271d5e) - 修复端内更新问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `128aab0` 支持版本回退到底包
-- `4c80b7c` 更新后端支持使用代理
+### :wrench: Chores
+- [`3b6a91d`](https://github.com/songloft-org/songloft/commit/3b6a91d3b837966002122a4032613d2fe39859bd) - release version 1.3.16 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a478a02`](https://github.com/songloft-org/songloft/commit/a478a0291bdfd5ae11464d0b99e5add6235c76e9) - release version 1.3.14 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :memo: Other Changes
+- [`85983bb`](https://github.com/songloft-org/songloft/commit/85983bb70550c8ec5a5ac5d3af87699b6aa13ff7) - 更新问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `db0e395` 修复升级问题
-- `00ff400` 修复升级问题
-- `b904424` 修复更新问题
-- `3d9ac57` 修复更新问题
-- `eb69df6` 修复更新问题
-- `7b6b45a` 修复更新问题
-- `67e8840` 修复更新问题
-- `a09c6a9` 修复端内更新问题
-
-### 🔧 Chores
-
-- `3b6a91d` release version 1.3.16
-- `a478a02` release version 1.3.14
-
-### 📝 Other Changes
-
-- `85983bb` 更新问题
 
 ## [1.3.13] - 2026-04-09
+### :sparkles: New Features
+- [`4e3ec57`](https://github.com/songloft-org/songloft/commit/4e3ec57ad5ba2b04b52de05c5545dd695d015abe) - 新增发布内容 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c912ace`](https://github.com/songloft-org/songloft/commit/c912ace58e79f524ee903ea38319cc11dee3e9c2) - 支持断点续传 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`03a67b4`](https://github.com/songloft-org/songloft/commit/03a67b4dfa917bfa7d84ac844bcc14a239e7ed0d) - 新增异步下载接口 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a381643`](https://github.com/songloft-org/songloft/commit/a381643368fb20b548180e89a43a1bb955da7595) - 写入 server_platform 到数据库 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`720a06e`](https://github.com/songloft-org/songloft/commit/720a06ece55cc737207a87aca9947db9affd2500) - 新增执行命令协议 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d124fd9`](https://github.com/songloft-org/songloft/commit/d124fd9194b2bdec32cb4976781b12b346884f29) - 优化无参数启动方式 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`d060619`](https://github.com/songloft-org/songloft/commit/d060619693502f5033ead44badf81688fda197ca) - 解决文件权限问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`326b618`](https://github.com/songloft-org/songloft/commit/326b61809774692c4dbd616a654b1aa29480c006) - 网络歌曲导入问题修复 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1fcce62`](https://github.com/songloft-org/songloft/commit/1fcce62bec40edc6dbe6e2d591c4736aba5bfc2f) - 修复导入歌曲问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `4e3ec57` 新增发布内容
-- `c912ace` 支持断点续传
-- `03a67b4` 新增异步下载接口
-- `a381643` 写入 server_platform 到数据库
-- `720a06e` 新增执行命令协议
-- `d124fd9` 优化无参数启动方式
+### :wrench: Chores
+- [`303407d`](https://github.com/songloft-org/songloft/commit/303407d7ad93233c769421db6d09ff1b2d14e101) - release version 1.3.13 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :memo: Other Changes
+- [`4cfb584`](https://github.com/songloft-org/songloft/commit/4cfb584d218436efba8d2455200d2fab13c00044) - update doc *(commit by [@hanxi](https://github.com/hanxi))*
+- [`0ea9351`](https://github.com/songloft-org/songloft/commit/0ea9351c0cd1a88556b6ff2236f013273f288ce6) - update doc *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3baf9e9`](https://github.com/songloft-org/songloft/commit/3baf9e973768a4b2af0ba67412d603e35b836ee2) - 歌单排序优化 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a2f5968`](https://github.com/songloft-org/songloft/commit/a2f5968f7a4e459775b1367fdb26fa9471eb7619) - 调试 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `d060619` 解决文件权限问题
-- `326b618` 网络歌曲导入问题修复
-- `1fcce62` 修复导入歌曲问题
-
-### 🔧 Chores
-
-- `303407d` release version 1.3.13
-
-### 📝 Other Changes
-
-- `4cfb584` update doc
-- `0ea9351` update doc
-- `3baf9e9` 歌单排序优化
-- `a2f5968` 调试
 
 ## [1.3.12] - 2026-04-08
+### :sparkles: New Features
+- [`e605965`](https://github.com/songloft-org/songloft/commit/e605965d0f12034fe695927277c137bdbbfde88b) - 歌词支持URL类型 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`a199b72`](https://github.com/songloft-org/songloft/commit/a199b72c01ac975cc3ef865e9f2f842383304d2c) - release version 1.3.12 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `e605965` 歌词支持URL类型
+### :memo: Other Changes
+- [`f98a23b`](https://github.com/songloft-org/songloft/commit/f98a23bfde2d5de6ceb315c76f003e962131325e) - 歌词优化 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `a199b72` release version 1.3.12
-
-### 📝 Other Changes
-
-- `f98a23b` 歌词优化
 
 ## [1.3.10] - 2026-04-06
+### :bug: Bug Fixes
+- [`3aee951`](https://github.com/songloft-org/songloft/commit/3aee9511f82240d1f782a0f6b8eb59fe56a18f3e) - 修复报错 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d80dda2`](https://github.com/songloft-org/songloft/commit/d80dda24de48477e22b77feebf090b438214b544) - sql error *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c908f4e`](https://github.com/songloft-org/songloft/commit/c908f4e1f12c316118974d28f0326e43d733f5a9) - 修复问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :recycle: Refactors
+- [`12e3c76`](https://github.com/songloft-org/songloft/commit/12e3c760bbdac73d628481a465437d1cd715a964) - 优化扫码登录 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`825ceaa`](https://github.com/songloft-org/songloft/commit/825ceaa9e180c1fa2429ab733fad0e300c7c4182) - 优化超时 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`77578cc`](https://github.com/songloft-org/songloft/commit/77578ccbbeb609fb975772ce99b5ee650b420427) - 优化网络歌曲播放时长 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `3aee951` 修复报错
-- `d80dda2` sql error
-- `c908f4e` 修复问题
+### :wrench: Chores
+- [`1579a86`](https://github.com/songloft-org/songloft/commit/1579a86df3e76cce5b13e636c36597ec75779176) - release version 1.3.10 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ♻️ Code Refactoring
+### :memo: Other Changes
+- [`54ff2b8`](https://github.com/songloft-org/songloft/commit/54ff2b83b85b53958ae0a63bfded7d9243404528) - update http *(commit by [@hanxi](https://github.com/hanxi))*
+- [`96559c5`](https://github.com/songloft-org/songloft/commit/96559c592917a3739ab87464784ec37f505a0bc1) - update http *(commit by [@hanxi](https://github.com/hanxi))*
+- [`daa2ca3`](https://github.com/songloft-org/songloft/commit/daa2ca312520e431e884c24c8ba966d55b1f4ae9) - 插件时间问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `12e3c76` 优化扫码登录
-- `825ceaa` 优化超时
-- `77578cc` 优化网络歌曲播放时长
-
-### 🔧 Chores
-
-- `1579a86` release version 1.3.10
-
-### 📝 Other Changes
-
-- `54ff2b8` update http
-- `96559c5` update http
-- `daa2ca3` 插件时间问题
 
 ## [1.3.9] - 2026-04-03
+### :sparkles: New Features
+- [`ae3865f`](https://github.com/songloft-org/songloft/commit/ae3865f1f94c70c6f098123e76b224c19a768bc4) - add song_count *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`7f805c2`](https://github.com/songloft-org/songloft/commit/7f805c213c75402ec027b848b65eac199eeabd64) - release version 1.3.9 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `ae3865f` add song_count
+### :memo: Other Changes
+- [`a6a551b`](https://github.com/songloft-org/songloft/commit/a6a551b0c3e196a515da6d2cf0897e59df9d31b6) - 启动优化 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`4c2e0f1`](https://github.com/songloft-org/songloft/commit/4c2e0f1636ded17ed1b4e7be646ad537020eb9bc) - build *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `7f805c2` release version 1.3.9
-
-### 📝 Other Changes
-
-- `a6a551b` 启动优化
-- `4c2e0f1` build
 
 ## [1.3.8] - 2026-04-03
+### :sparkles: New Features
+- [`cb8a958`](https://github.com/songloft-org/songloft/commit/cb8a9585c671214bec35b6f1b047b70b53a934d8) - 新增并行执行js *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`bd6a323`](https://github.com/songloft-org/songloft/commit/bd6a32311815b33a16f8a89a9d44a09c829a8947) - release version 1.3.8 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `cb8a958` 新增并行执行js
+### :memo: Other Changes
+- [`9f727f1`](https://github.com/songloft-org/songloft/commit/9f727f147a01d061bb71aca22df2bfefe281c484) - 歌曲缓存目录优化 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `bd6a323` release version 1.3.8
-
-### 📝 Other Changes
-
-- `9f727f1` 歌曲缓存目录优化
 
 ## [1.3.7] - 2026-04-02
+### :wrench: Chores
+- [`667be2b`](https://github.com/songloft-org/songloft/commit/667be2b14e304a8a3f4327e628c28ffaf4a1cbec) - release version 1.3.7 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
+### :memo: Other Changes
+- [`569fc83`](https://github.com/songloft-org/songloft/commit/569fc8327e142fb07f82da5e0dc8003ee7d0d14b) - 歌词 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `667be2b` release version 1.3.7
-
-### 📝 Other Changes
-
-- `569fc83` 歌词
 
 ## [1.3.6] - 2026-04-02
+### :recycle: Refactors
+- [`4e25b28`](https://github.com/songloft-org/songloft/commit/4e25b28c2b50ba20733c678d5ed9afa3b792fd8b) - 优化播放体验 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ♻️ Code Refactoring
+### :wrench: Chores
+- [`8dc2774`](https://github.com/songloft-org/songloft/commit/8dc2774d079b18cc5475cd66b87a4c3225c740c3) - release version 1.3.6 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `4e25b28` 优化播放体验
-
-### 🔧 Chores
-
-- `8dc2774` release version 1.3.6
 
 ## [1.3.5] - 2026-04-02
+### :wrench: Chores
+- [`91dd27e`](https://github.com/songloft-org/songloft/commit/91dd27e7b35efa719950af21776f0151a2d74bba) - release version 1.3.5 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `91dd27e` release version 1.3.5
 
 ## [1.3.4] - 2026-04-01
+### :sparkles: New Features
+- [`5dbf196`](https://github.com/songloft-org/songloft/commit/5dbf196985519d11edcf80d9019f1502950aae4e) - 支持上传封面 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`54dcc44`](https://github.com/songloft-org/songloft/commit/54dcc44b4638e702bdf8a326a4241f10c2d5bb12) - 支持上传封面 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`5d253e9`](https://github.com/songloft-org/songloft/commit/5d253e942ee29f5eaffbf5552e709d0ed7d776c9) - 扫描歌曲宕机问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `5dbf196` 支持上传封面
-- `54dcc44` 支持上传封面
+### :wrench: Chores
+- [`6bc0414`](https://github.com/songloft-org/songloft/commit/6bc04142ce08325aebb10221ce01fe7d8ab1c3c0) - release version 1.3.4 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
-
-- `5d253e9` 扫描歌曲宕机问题
-
-### 🔧 Chores
-
-- `6bc0414` release version 1.3.4
 
 ## [1.3.3] - 2026-03-31
+### :sparkles: New Features
+- [`8ce8662`](https://github.com/songloft-org/songloft/commit/8ce8662bc1f806bd9dd33048b5436b916e50fd92) - 尝试修复lx运行问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`cffd9b5`](https://github.com/songloft-org/songloft/commit/cffd9b511efac59a5371cfcdeaa7988d39d0c52a) - release version 1.3.3 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `8ce8662` 尝试修复lx运行问题
+### :memo: Other Changes
+- [`ed877c3`](https://github.com/songloft-org/songloft/commit/ed877c368402781b4457975e858df29c642bb357) - delete web *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e38af01`](https://github.com/songloft-org/songloft/commit/e38af015d4290c07868b58286f249db94c046a16) - delete web *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `cffd9b5` release version 1.3.3
-
-### 📝 Other Changes
-
-- `ed877c3` delete web
-- `e38af01` delete web
 
 ## [1.3.2] - 2026-03-30
+### :sparkles: New Features
+- [`663576d`](https://github.com/songloft-org/songloft/commit/663576d8ef9870cd2ba4b54cfe0697953e3ad74e) - 添加网络歌曲电台接口改为批量 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`0b7f3a2`](https://github.com/songloft-org/songloft/commit/0b7f3a25c75155a73f45d5a3532019d94c9d6e27) - release version 1.3.2 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `663576d` 添加网络歌曲电台接口改为批量
+### :memo: Other Changes
+- [`738896f`](https://github.com/songloft-org/songloft/commit/738896f48289fe44b71d92d2b2c4396a6e8b9e0f) - Update todo list with song-related tasks *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `0b7f3a2` release version 1.3.2
-
-### 📝 Other Changes
-
-- `738896f` Update todo list with song-related tasks
 
 ## [1.3.1] - 2026-03-30
+### :wrench: Chores
+- [`5c358c7`](https://github.com/songloft-org/songloft/commit/5c358c748d1695073a1bb0c4a52f8b3341c32040) - release version 1.3.1 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `5c358c7` release version 1.3.1
 
 ## [1.3.0] - 2026-03-30
+### :wrench: Chores
+- [`48368d9`](https://github.com/songloft-org/songloft/commit/48368d9fa61cf0809695d51f48077ea52f68ec7f) - release version 1.3.0 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `48368d9` release version 1.3.0
 
 ## [1.2.8] - 2026-03-30
+### :sparkles: New Features
+- [`e195111`](https://github.com/songloft-org/songloft/commit/e1951117717631f7af44865de6443c00a586bdc7) - 网络歌曲支持导入图片 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`de1c838`](https://github.com/songloft-org/songloft/commit/de1c838aeae80789638f9abfb98b0ac18228fa0e) - 重构jsruntime *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b78130f`](https://github.com/songloft-org/songloft/commit/b78130fcf5485f3e49f974529075462c1ae797dd) - use ccgo quickjs *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :recycle: Refactors
+- [`9ceaecc`](https://github.com/songloft-org/songloft/commit/9ceaecc1cb0ac73d58b3e5267e6498b128dac70b) - 优化 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `e195111` 网络歌曲支持导入图片
-- `de1c838` 重构jsruntime
-- `b78130f` use ccgo quickjs
+### :wrench: Chores
+- [`9aec414`](https://github.com/songloft-org/songloft/commit/9aec4146c735b5023b557cb9cdb78939af1dabbb) - release version 1.2.8 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ♻️ Code Refactoring
+### :memo: Other Changes
+- [`fb424e2`](https://github.com/songloft-org/songloft/commit/fb424e296559ad9f079fc58e524b84b81902cf40) - 提交wiki *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3972cad`](https://github.com/songloft-org/songloft/commit/3972cad3d3d9d3bda49a6f9f4ce71c6ee8f3727c) - 接入cqjs *(commit by [@hanxi](https://github.com/hanxi))*
+- [`cffb54e`](https://github.com/songloft-org/songloft/commit/cffb54e27265274c9c2552044ecbc606630393b8) - 插件健康检测 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `9ceaecc` 优化
-
-### 🔧 Chores
-
-- `9aec414` release version 1.2.8
-
-### 📝 Other Changes
-
-- `fb424e2` 提交wiki
-- `3972cad` 接入cqjs
-- `cffb54e` 插件健康检测
 
 ## [1.2.7] - 2026-03-26
+### :sparkles: New Features
+- [`abff90a`](https://github.com/songloft-org/songloft/commit/abff90a0092f3479a57d95f207791d255578765f) - 添加歌曲批量删除 API (POST /songs/batch-delete) *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :wrench: Chores
+- [`902d4fe`](https://github.com/songloft-org/songloft/commit/902d4fe89782df1d957d34796ad917a88da9173b) - release version 1.2.7 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `abff90a` 添加歌曲批量删除 API (POST /songs/batch-delete)
+### :memo: Other Changes
+- [`33d9f2d`](https://github.com/songloft-org/songloft/commit/33d9f2d1c8328b1eb79642679edb1ac80391442e) - update doc *(commit by [@hanxi](https://github.com/hanxi))*
+- [`9664b49`](https://github.com/songloft-org/songloft/commit/9664b499f7d6bd7c26b2da7405bdf243e567fdc9) - update doc *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `902d4fe` release version 1.2.7
-
-### 📝 Other Changes
-
-- `33d9f2d` update doc
-- `9664b49` update doc
 
 ## [1.2.6] - 2026-03-25
+### :wrench: Chores
+- [`73a0403`](https://github.com/songloft-org/songloft/commit/73a0403111bfb244d83f89fc28001fd8dca6f74a) - release version 1.2.6 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `73a0403` release version 1.2.6
 
 ## [1.2.5] - 2026-03-25
+### :sparkles: New Features
+- [`0c438fb`](https://github.com/songloft-org/songloft/commit/0c438fb3bc5485158543562fea8e3611b7da6232) - add frontend *(commit by [@hanxi](https://github.com/hanxi))*
+- [`490db3c`](https://github.com/songloft-org/songloft/commit/490db3cda5039cefac82205fbf0da2dd3ed58578) - add mobile *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :recycle: Refactors
+- [`d61dfae`](https://github.com/songloft-org/songloft/commit/d61dfaefccc8a622165c55af909bdbeac55aca14) - 优化导入速度 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`b1ff8a9`](https://github.com/songloft-org/songloft/commit/b1ff8a9b1bf0e4fc0d4f28869e39c6d984a9a0e7) - 优化界面 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `0c438fb` add frontend
-- `490db3c` add mobile
+### :wrench: Chores
+- [`96b42c5`](https://github.com/songloft-org/songloft/commit/96b42c5dc843f45d217b88a1b971f85a1aebb4d3) - release version 1.2.5 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`7b00668`](https://github.com/songloft-org/songloft/commit/7b00668023e2d2f71a8119eec049449b3906f7c3) - convert frontend from directory to submodule *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ♻️ Code Refactoring
+### :memo: Other Changes
+- [`c9d741d`](https://github.com/songloft-org/songloft/commit/c9d741d57fd3bb8e1f8337679d364ea4d67f3f38) - 版本发布脚本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c1ce566`](https://github.com/songloft-org/songloft/commit/c1ce566b6b601d38e80a38efdbc3139ea5dee881) - 版本发布脚本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`6025f4b`](https://github.com/songloft-org/songloft/commit/6025f4b4de3b84402390e6f7fa387f97938a19cb) - 新版本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`54ad790`](https://github.com/songloft-org/songloft/commit/54ad790001e95e7ef4c54aa10f4be23b4343e24e) - 新版本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`51d43a4`](https://github.com/songloft-org/songloft/commit/51d43a4eeb41a27784bb8556e7deab65c2989b70) - 新版本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ca53020`](https://github.com/songloft-org/songloft/commit/ca5302028af3232dc12bd43d424ea8d2d0164854) - 新版本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`90ed646`](https://github.com/songloft-org/songloft/commit/90ed64663cb2b9b3183146493e98c31ea5f53719) - 新版本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`00ff846`](https://github.com/songloft-org/songloft/commit/00ff846abe047ea84d33a6cc215de9f028676cb1) - 新版本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`568c5c0`](https://github.com/songloft-org/songloft/commit/568c5c042f3b0058352705599f0dd517f73f3570) - 新版本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`fdf177e`](https://github.com/songloft-org/songloft/commit/fdf177e5feee3f2c2828fbb78b955aac9df6ce2c) - update frontend *(commit by [@hanxi](https://github.com/hanxi))*
+- [`029c4d6`](https://github.com/songloft-org/songloft/commit/029c4d63a60eef4dfd0e61bf04a714584fa1b62e) - 新版本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`aa66e98`](https://github.com/songloft-org/songloft/commit/aa66e98febe3bf0c995b87e15d9dc821e1e2c81f) - 新版本 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`0833807`](https://github.com/songloft-org/songloft/commit/0833807b40cc8dad779935b8f37496059345f281) - frontend 支持独立部署 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`f61d74e`](https://github.com/songloft-org/songloft/commit/f61d74ebfb414d00833d25d0a5cb21135afab106) - 更新文档 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`72e5c97`](https://github.com/songloft-org/songloft/commit/72e5c9779128fe83d0cbbb2e0d1a725cb913defd) - 修改名字 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1b73996`](https://github.com/songloft-org/songloft/commit/1b73996e4a7db95bb374cefe6f3932e4e5cf4f61) - remove mobile *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d97a16a`](https://github.com/songloft-org/songloft/commit/d97a16a14137679d410887371698e019fb5e8e63) - update mobile *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `d61dfae` 优化导入速度
-- `b1ff8a9` 优化界面
-
-### 🔧 Chores
-
-- `96b42c5` release version 1.2.5
-- `7b00668` convert frontend from directory to submodule
-
-### 📝 Other Changes
-
-- `c9d741d` 版本发布脚本
-- `c1ce566` 版本发布脚本
-- `6025f4b` 新版本
-- `54ad790` 新版本
-- `51d43a4` 新版本
-- `ca53020` 新版本
-- `90ed646` 新版本
-- `00ff846` 新版本
-- `568c5c0` 新版本
-- `fdf177e` update frontend
-- `029c4d6` 新版本
-- `aa66e98` 新版本
-- `0833807` frontend 支持独立部署
-- `f61d74e` 更新文档
-- `72e5c97` 修改名字
-- `1b73996` remove mobile
-- `d97a16a` update mobile
 
 ## [1.2.4] - 2026-03-19
+### :wrench: Chores
+- [`9c70433`](https://github.com/songloft-org/songloft/commit/9c70433015dfdb1ffc85063480f00ca31f464ed1) - release version 1.2.4 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `9c70433` release version 1.2.4
 
 ## [1.2.3] - 2026-03-19
+### :sparkles: New Features
+- [`dee25c4`](https://github.com/songloft-org/songloft/commit/dee25c44c1559988410d49fa9b13ec25c121dc13) - 新增清理歌曲功能 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`7ee9c74`](https://github.com/songloft-org/songloft/commit/7ee9c74dbfda22a61dd98521ca8642675563e632) - build failed *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d8afe4a`](https://github.com/songloft-org/songloft/commit/d8afe4a4e0e5677acd160f03cc6d07b33becd35b) - 修复paw *(commit by [@hanxi](https://github.com/hanxi))*
+- [`be6c2c4`](https://github.com/songloft-org/songloft/commit/be6c2c4d67f55ef375925de810f9d21a73076bea) - 修复通知栏丢失的问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`aa01b1d`](https://github.com/songloft-org/songloft/commit/aa01b1d60f1f7a665b8650a0460a5d1e64ebb12f) - 修复pwa更新问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`154ad14`](https://github.com/songloft-org/songloft/commit/154ad14aae37842d629eed931ce0ff0d963ea7cf) - 修复通知栏消失的问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`4bbf98e`](https://github.com/songloft-org/songloft/commit/4bbf98edc9190157ae018a926a58b6834dbdba00) - 修复乱码问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `dee25c4` 新增清理歌曲功能
+### :recycle: Refactors
+- [`43ff722`](https://github.com/songloft-org/songloft/commit/43ff72282d5932ca3f10b6c92dc8c9412425f0fd) - 优化界面 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`586049a`](https://github.com/songloft-org/songloft/commit/586049aca061a8a425f05a7dcc8e095a2b3cda4d) - 优化移动端播放器 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1d4b350`](https://github.com/songloft-org/songloft/commit/1d4b35085ae27dc7b8830d0134eea4d57c6d774b) - 优化移动端播放器 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`43b20a8`](https://github.com/songloft-org/songloft/commit/43b20a8e0663b790aba065c3df0bb44e5999b0f1) - 优化移动端播放器 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`7abfe93`](https://github.com/songloft-org/songloft/commit/7abfe93dcf2caf01b96bce142b88812dd68414ec) - 优化移动端播放器 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`2cf5923`](https://github.com/songloft-org/songloft/commit/2cf592362ad0f02cd3bba043d7ca91d5c8853c6c) - 优化移动端播放器 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e6d7afe`](https://github.com/songloft-org/songloft/commit/e6d7afe03230fe950e26ff999b2b81e07d0564e6) - 优化移动端播放器 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`6ee93ee`](https://github.com/songloft-org/songloft/commit/6ee93eedecaf8c5193ad8a7112813c967ee7d3e3) - 优化播放器界面 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`7836361`](https://github.com/songloft-org/songloft/commit/7836361525f7e55e02579b343e64c145fac30a99) - 重构错误捕获 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`dda851a`](https://github.com/songloft-org/songloft/commit/dda851aa90bd070e72d8448c3a497f8b1c05b3e3) - 优化播放列表 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`0f3adee`](https://github.com/songloft-org/songloft/commit/0f3adee073fcc04b5d503053dc6d3675df2452fc) - 优化主页 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3bd566e`](https://github.com/songloft-org/songloft/commit/3bd566e3066c571012067617361b2893746761f2) - 优化日志 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e1da51d`](https://github.com/songloft-org/songloft/commit/e1da51d7c2996550be8a9f606100d146fa27d348) - 优化插件管理 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1aa8bfa`](https://github.com/songloft-org/songloft/commit/1aa8bfaa93664c7b41e00b675973c994e4dc968f) - 优化插件管理 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`892fb58`](https://github.com/songloft-org/songloft/commit/892fb5817c4d2af149ff6e3abb1d46ea5811bca5) - 优化插件管理 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :wrench: Chores
+- [`eec45bf`](https://github.com/songloft-org/songloft/commit/eec45bf29752bd0be6cf8778dfcda47e3310426e) - release version 1.2.3 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`84cefea`](https://github.com/songloft-org/songloft/commit/84cefead389c9e0900304b6ef2f094ed19dde626) - release version 1.2.2 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `7ee9c74` build failed
-- `d8afe4a` 修复paw
-- `be6c2c4` 修复通知栏丢失的问题
-- `aa01b1d` 修复pwa更新问题
-- `154ad14` 修复通知栏消失的问题
-- `4bbf98e` 修复乱码问题
+### :memo: Other Changes
+- [`8fbf17f`](https://github.com/songloft-org/songloft/commit/8fbf17fe9dbe41da27c132cba857234c115c585c) - 尝试修复后台通知栏丢失问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`30ab1c0`](https://github.com/songloft-org/songloft/commit/30ab1c08990e61d1060a23e2a64292512e9408ce) - 尝试修复后台通知栏丢失问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`53cd756`](https://github.com/songloft-org/songloft/commit/53cd756f971323e4eef874aa8893985fbf5cb8c1) - 强制更新pwa *(commit by [@hanxi](https://github.com/hanxi))*
+- [`a572312`](https://github.com/songloft-org/songloft/commit/a5723126f8b30c9d06a42118a59f09835f1d06f2) - 测试 tracely sdk *(commit by [@hanxi](https://github.com/hanxi))*
+- [`eb48e8b`](https://github.com/songloft-org/songloft/commit/eb48e8b6607c78b5801204d889800a5d017f41b2) - 测试 tracely sdk *(commit by [@hanxi](https://github.com/hanxi))*
+- [`5309e1c`](https://github.com/songloft-org/songloft/commit/5309e1c65a9b7c8ec22e205aca5af345b6963e60) - 测试 tracely sdk *(commit by [@hanxi](https://github.com/hanxi))*
+- [`af8bfbe`](https://github.com/songloft-org/songloft/commit/af8bfbe65ac96a0f3eee2115988ae4d9b1cdc0ac) - 测试 tracely sdk *(commit by [@hanxi](https://github.com/hanxi))*
+- [`9991da4`](https://github.com/songloft-org/songloft/commit/9991da45e4f0128ce793ee8b81776a9a267e19d8) - 接入tracely *(commit by [@hanxi](https://github.com/hanxi))*
+- [`472c300`](https://github.com/songloft-org/songloft/commit/472c3008f88adb23eaa2056141c964beb9c6e4b7) - 接入tracely *(commit by [@hanxi](https://github.com/hanxi))*
+- [`4c8719f`](https://github.com/songloft-org/songloft/commit/4c8719f56b657afd2d2f22b315140dd6cce424d2) - 细节优化 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`5485f4e`](https://github.com/songloft-org/songloft/commit/5485f4eeb174d0a27a227dd1034ce5341627f694) - 标题超长则循环滚动 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c31da28`](https://github.com/songloft-org/songloft/commit/c31da28d9b39d1f3151194a6822e9a567cdab817) - 修改菜单按钮颜色 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`3f974c7`](https://github.com/songloft-org/songloft/commit/3f974c779fdcb353d8a07c657c8d6a7757353cad) - 尝试修复通知栏消失问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ♻️ Code Refactoring
-
-- `43ff722` 优化界面
-- `586049a` 优化移动端播放器
-- `1d4b350` 优化移动端播放器
-- `43b20a8` 优化移动端播放器
-- `7abfe93` 优化移动端播放器
-- `2cf5923` 优化移动端播放器
-- `e6d7afe` 优化移动端播放器
-- `6ee93ee` 优化播放器界面
-- `7836361` 重构错误捕获
-- `dda851a` 优化播放列表
-- `0f3adee` 优化主页
-- `3bd566e` 优化日志
-- `e1da51d` 优化插件管理
-- `1aa8bfa` 优化插件管理
-- `892fb58` 优化插件管理
-
-### 🔧 Chores
-
-- `eec45bf` release version 1.2.3
-- `84cefea` release version 1.2.2
-
-### 📝 Other Changes
-
-- `8fbf17f` 尝试修复后台通知栏丢失问题
-- `30ab1c0` 尝试修复后台通知栏丢失问题
-- `53cd756` 强制更新pwa
-- `a572312` 测试 tracely sdk
-- `eb48e8b` 测试 tracely sdk
-- `5309e1c` 测试 tracely sdk
-- `af8bfbe` 测试 tracely sdk
-- `9991da4` 接入tracely
-- `472c300` 接入tracely
-- `4c8719f` 细节优化
-- `5485f4e` 标题超长则循环滚动
-- `c31da28` 修改菜单按钮颜色
-- `3f974c7` 尝试修复通知栏消失问题
 
 ## [1.2.1] - 2026-02-26
+### :bug: Bug Fixes
+- [`f9543db`](https://github.com/songloft-org/songloft/commit/f9543dbe3f743f4d17f47a51d1948765b67ff29b) - 解决windows网页打不开问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :wrench: Chores
+- [`b042cd3`](https://github.com/songloft-org/songloft/commit/b042cd385e956750d017d7de3a97edf7dc367181) - release version 1.2.1 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `f9543db` 解决windows网页打不开问题
-
-### 🔧 Chores
-
-- `b042cd3` release version 1.2.1
 
 ## [1.2.0] - 2026-02-26
+### :wrench: Chores
+- [`188b602`](https://github.com/songloft-org/songloft/commit/188b602ea54635ca1c0258f8838665575b876a7f) - release version 1.2.0 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `188b602` release version 1.2.0
 
 ## [1.1.0] - 2026-02-25
+### :sparkles: New Features
+- [`391d4dd`](https://github.com/songloft-org/songloft/commit/391d4dd76f80f588db6a089cbe95395e985116d3) - 新增接口获取token *(commit by [@hanxi](https://github.com/hanxi))*
+- [`21aeff9`](https://github.com/songloft-org/songloft/commit/21aeff97463ed762bb93e3d24e355e3ba23eae0d) - Add mimusic-plugin-musictag as submodule *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ✨ Features
+### :bug: Bug Fixes
+- [`893e880`](https://github.com/songloft-org/songloft/commit/893e8800947ecbde996fd068fd024bb4140e7e7c) - 解决标题问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`2092853`](https://github.com/songloft-org/songloft/commit/20928531d47297c4da10f95f26d11d2dd94eb8d2) - 修复乱码问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`af4454f`](https://github.com/songloft-org/songloft/commit/af4454fd4e951bdc2cb52802370ee5cc7ebb88d4) - 解决编码乱码问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`4894785`](https://github.com/songloft-org/songloft/commit/48947856694116322a73bd1235f7b96b3ebbb856) - 解决编码乱码问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`148d36a`](https://github.com/songloft-org/songloft/commit/148d36ae7a31583677ab1d9b660547670aa8ee8b) - 解决编码乱码问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`430bb64`](https://github.com/songloft-org/songloft/commit/430bb64efe059bc54ac67a82be1c23b99c5b850e) - 解决编码乱码问题 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`f8cf809`](https://github.com/songloft-org/songloft/commit/f8cf809984e6f16529852a7df14c7decdfa9021b) - 解决编码乱码问题 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `391d4dd` 新增接口获取token
-- `21aeff9` Add mimusic-plugin-musictag as submodule
+### :recycle: Refactors
+- [`767c806`](https://github.com/songloft-org/songloft/commit/767c806d48ac862879423379397839ed474c03ee) - 优化歌单体验 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`57020cf`](https://github.com/songloft-org/songloft/commit/57020cfead19306622b901e4060bff8701e12db9) - 优化图片 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`87a88b7`](https://github.com/songloft-org/songloft/commit/87a88b7d9da500accdaa0c413ba152ce0d2d4cff) - 优化图片 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🐛 Bug Fixes
+### :wrench: Chores
+- [`f5690fc`](https://github.com/songloft-org/songloft/commit/f5690fcfff331012cc3a443ed412c2d3beabe982) - release version 1.1.0 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`d3cc78b`](https://github.com/songloft-org/songloft/commit/d3cc78bb2c36d274987d4ba2631d43120790f6d0) - release version 1.0.12 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1b9a285`](https://github.com/songloft-org/songloft/commit/1b9a285b97502ec3dd4f7d849c312a73624aef41) - release version 1.0.11 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`e49b9f3`](https://github.com/songloft-org/songloft/commit/e49b9f3ab1c4f1ae23472b4e8d5331419f05423f) - release version 1.0.10 *(commit by [@hanxi](https://github.com/hanxi))*
 
-- `893e880` 解决标题问题
-- `2092853` 修复乱码问题
-- `af4454f` 解决编码乱码问题
-- `4894785` 解决编码乱码问题
-- `148d36a` 解决编码乱码问题
-- `430bb64` 解决编码乱码问题
-- `f8cf809` 解决编码乱码问题
+### :memo: Other Changes
+- [`4d35862`](https://github.com/songloft-org/songloft/commit/4d35862f651f5679606b5266e9f0fd8b5ff721f9) - 处理歌曲封面 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`10739d8`](https://github.com/songloft-org/songloft/commit/10739d8121ccb814ca90def20d42657820f9a0a7) - 网络歌曲播放时长 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`bf35fa5`](https://github.com/songloft-org/songloft/commit/bf35fa5dbcf8656b428b578d19bf94feea75b3ab) - close cgo *(commit by [@hanxi](https://github.com/hanxi))*
+- [`2234e30`](https://github.com/songloft-org/songloft/commit/2234e3009ec801c9a00ee8d83c968dea6bf484d2) - update no cgo sqlite *(commit by [@hanxi](https://github.com/hanxi))*
 
-### ♻️ Code Refactoring
-
-- `767c806` 优化歌单体验
-- `57020cf` 优化图片
-- `87a88b7` 优化图片
-
-### 🔧 Chores
-
-- `f5690fc` release version 1.1.0
-- `d3cc78b` release version 1.0.12
-- `1b9a285` release version 1.0.11
-- `e49b9f3` release version 1.0.10
-
-### 📝 Other Changes
-
-- `4d35862` 处理歌曲封面
-- `10739d8` 网络歌曲播放时长
-- `bf35fa5` close cgo
-- `2234e30` update no cgo sqlite
 
 ## [1.0.9] - 2026-02-21
+### :wrench: Chores
+- [`e88df7a`](https://github.com/songloft-org/songloft/commit/e88df7a7a6a372c231e5bdb8af542c31cfb99aee) - release version 1.0.9 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `e88df7a` release version 1.0.9
 
 ## [1.0.8] - 2026-02-21
+### :wrench: Chores
+- [`415b5ef`](https://github.com/songloft-org/songloft/commit/415b5ef6d4192a428b7ba085b5581b98fdd2e647) - release version 1.0.8 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`c507f93`](https://github.com/songloft-org/songloft/commit/c507f93477d273e2e60b50df7866d1824c32305d) - release version 1.0.7 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `415b5ef` release version 1.0.8
-- `c507f93` release version 1.0.7
 
 ## [1.0.6] - 2026-02-21
+### :wrench: Chores
+- [`823f5db`](https://github.com/songloft-org/songloft/commit/823f5dbdc86f2d016b2302bebc546c6acf755a70) - release version 1.0.6 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`34ca5d4`](https://github.com/songloft-org/songloft/commit/34ca5d4948fe39eac2a7465c91de2edd1082071a) - release version 1.0.5 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`caa1448`](https://github.com/songloft-org/songloft/commit/caa14489ff5863ccfa1d21111a5a86f6c3d2c807) - release version 1.0.4 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1321d73`](https://github.com/songloft-org/songloft/commit/1321d736b44f917a7734c4c9f81d21298eb8ddf9) - release version 1.0.3 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`ad8d269`](https://github.com/songloft-org/songloft/commit/ad8d269be474874deaaf52e07bbcb6dcbc66b6ad) - release version 1.0.2 *(commit by [@hanxi](https://github.com/hanxi))*
+- [`1892189`](https://github.com/songloft-org/songloft/commit/18921899e3153f930a1d88a6195fb4b6777dce32) - release version 1.0.1 *(commit by [@hanxi](https://github.com/hanxi))*
 
-### 🔧 Chores
-
-- `823f5db` release version 1.0.6
-- `34ca5d4` release version 1.0.5
-- `caa1448` release version 1.0.4
-- `1321d73` release version 1.0.3
-- `ad8d269` release version 1.0.2
-- `1892189` release version 1.0.1
-
-### 📝 Other Changes
-
-- `338cd69` upate
-
-## [main] - 2026-02-12
-
-### ✨ Features
-
-- `665486d` Add frontend build job and streamline Docker build
-- `d959def` Add frontend build job to GitHub Actions workflow
-- `be837cf` add web
-- `547c3a8` add web
-- `f58408d` add web
-- `68a50dc` add web
-- `ebd21e1` add web
-- `069896f` add web
-- `518d905` Add mimusic-plugins as a git submodule
-- `db470af` 支持CORS
-- `34dd18a` add MIT licence
-
-### 🐛 Bug Fixes
-
-- `145c668` fix 颜色
-- `22cd7d4` fix 颜色
-- `adb8610` fix 颜色
-- `043d0d1` fix 颜色
-- `244e365` 歌曲读取
-- `6720225` 修复数据显示
-
-### 📝 Other Changes
-
-- `488d33e` Refactor GitHub Actions to use bun setup action
-- `47d1700` Refactor Docker workflow to use bun setup action
-- `3d13902` Remove unnecessary dependency in build-prod target
-- `657e3d3` Simplify Dockerfile by removing go mod commands
-- `c39f723` clean code
-- `09e2957` 简化登录
-- `f8fc2c5` 改名为mimusic
+### :memo: Other Changes
+- [`338cd69`](https://github.com/songloft-org/songloft/commit/338cd69b83888eaa8152a100764fc78e579b4234) - upate *(commit by [@hanxi](https://github.com/hanxi))*
 [v2.0.0-alpha.1]: https://github.com/songloft-org/songloft/compare/e0a9fd8a53e21bc17982323664e10f8d9549531a...v2.0.0-alpha.1
 [v2.0.1]: https://github.com/songloft-org/songloft/compare/v2.0.0...v2.0.1
 [v2.0.2]: https://github.com/songloft-org/songloft/compare/v2.0.1...v2.0.2
