@@ -40,10 +40,14 @@ function blobUrlFor(repoPath) {
 const syncItems = [
   // 中文（根 → docs/ 根，root locale）
   { from: 'README.md',    to: 'docs/quick-start.md' },
-  { from: 'CHANGELOG.md', to: 'docs/changelog.md' },
   { from: 'NOTICE',       to: 'docs/NOTICE.md' },
   { from: 'PRIVACY.md',   to: 'docs/PRIVACY.md' },
   { from: 'TERMS.md',    to: 'docs/TERMS.md' },
+  // CHANGELOG 由 changelog-action 从 commit message 自动生成，commit message 里常有
+  // 裸尖括号（如 <list>、<img>）。VitePress 把 markdown 当 Vue SFC 编译，裸 <tag> 会被
+  // 当成未闭合自定义元素导致 build 报 "Element is missing end tag"。sanitize 会把反引号
+  // 内联代码之外的裸尖括号转义为 &lt;/&gt;（反引号内的 markdown-it 已自行转义，安全）。
+  { from: 'CHANGELOG.md', to: 'docs/changelog.md', sanitize: true },
   // 英文（*.en 源 → docs/en/，en locale）。CHANGELOG 不翻译，故英文侧无 changelog 页，
   // en 模式下 rewriteLinks 会把 CHANGELOG.md 链接指向 GitHub 绝对 URL，避免死链。
   { from: 'README.en.md',  to: 'docs/en/quick-start.md', en: true },
@@ -186,9 +190,38 @@ function rewriteSubdirLinks(content, { srcFile, subdir }) {
   });
 }
 
+// ── 裸 HTML 标签转义 ──
+// 仅用于 CHANGELOG 这类「自动生成、内容不可控」的同步项。
+// 反引号内联代码（`<list>`）会被 markdown-it 转义、对 Vue 编译器安全，原样保留；
+// 围栏代码块内的内容也原样保留。其余位置的裸 <tag>（含自闭合/带属性的）转义为
+// &lt;...&gt;，避免被 @vue/compiler 解析成未闭合的自定义元素而中断 vitepress build。
+function escapeBareHtmlTags(content) {
+  const lines = content.split('\n');
+  let inFence = false;
+  let fenceChar = '';
+  return lines.map((line) => {
+    const stripped = line.replace(/^\s{0,3}/, '');
+    const opening = stripped.match(/^(`{3,}|~{3,})/);
+    if (!inFence && opening) {
+      inFence = true;
+      fenceChar = opening[1][0];
+      return line;
+    }
+    if (inFence && stripped.match(new RegExp(`^${fenceChar}{3,}\\s*$`))) {
+      inFence = false;
+      return line;
+    }
+    if (inFence) return line;
+    // 交替匹配「内联代码」与「裸标签」，只对后者转义。
+    return line.replace(/(`[^`]*`)|(<\/?[a-zA-Z!][^>]*>)/g, (m, code, tag) =>
+      code ? code : tag.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    );
+  }).join('\n');
+}
+
 let failed = false;
 
-for (const { from, to, en = false, subdir } of syncItems) {
+for (const { from, to, en = false, subdir, sanitize = false } of syncItems) {
   const src = resolve(repoRoot, from);
   const dst = resolve(repoRoot, to);
 
@@ -204,9 +237,10 @@ for (const { from, to, en = false, subdir } of syncItems) {
 
   try {
     const content = readFileSync(src, 'utf8');
-    const rewritten = subdir
+    let rewritten = subdir
       ? rewriteSubdirLinks(content, { srcFile: from, subdir })
       : rewriteLinks(content, { en });
+    if (sanitize) rewritten = escapeBareHtmlTags(rewritten);
     mkdirSync(dirname(dst), { recursive: true });
     writeFileSync(dst, rewritten, 'utf8');
     console.log(`[sync-docs] ${from} -> ${to}`);

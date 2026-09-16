@@ -1381,19 +1381,26 @@ jobs:
             fi
           fi
 
+          # 把 Release Notes 写入文件，用 --notes-file 传入。
+          # changelog 可能很大（dev 构建会覆盖自上个 release 以来的全部提交，常达数十万字
+          # 节），若用 --notes "${RELEASE_NOTES}" 把它作为单个 argv 参数，会超过内核
+          # MAX_ARG_STRLEN（128KB），execve 报 E2BIG → "Argument list too long"（exit 126）。
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+          printf '%s\n' "${RELEASE_NOTES}" > "${NOTES_FILE}"
+
           # 创建 Release
           if [[ "${IS_PRERELEASE}" == "true" ]]; then
             gh release create "${RELEASE_TAG}" \
               --repo "${{ env.RELEASE_REPO }}" \
               --title "${RELEASE_TITLE}" \
-              --notes "${RELEASE_NOTES}" \
+              --notes-file "${NOTES_FILE}" \
               --prerelease \
               "${FILES[@]}"
           else
             gh release create "${RELEASE_TAG}" \
               --repo "${{ env.RELEASE_REPO }}" \
               --title "${RELEASE_TITLE}" \
-              --notes "${RELEASE_NOTES}" \
+              --notes-file "${NOTES_FILE}" \
               --latest \
               "${FILES[@]}"
           fi
