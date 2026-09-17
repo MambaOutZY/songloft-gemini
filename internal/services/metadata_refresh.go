@@ -246,6 +246,14 @@ func (d *MetadataRefresher) processOne(ctx context.Context, row sqlc.ListSongsNe
 			slog.Debug("metadata refresh: save cover failed", "songId", row.ID, "error", err)
 		}
 	}
+	// 视频无内嵌封面时从视频抽一帧兜底（需 ffmpeg；失败静默降级）。
+	if coverPath == "" && metadata.IsVideo && row.CoverPath == "" && row.CoverUrl == "" {
+		if cp, err := d.extractor.ExtractCoverFromVideoFile(extractCtx, filePath, metadata.Duration); err == nil && cp != "" {
+			coverPath = cp
+		} else if err != nil {
+			slog.Debug("metadata refresh: extract video frame failed", "songId", row.ID, "error", err)
+		}
+	}
 
 	if err := d.updateMeta(ctx, sqlc.UpdateSongMetadataParams{
 		Column1:    metadata.Duration,
@@ -405,6 +413,14 @@ func (d *MetadataRefresher) RefreshSongFromFile(ctx context.Context, song *model
 	if metadata.HasCover && song.CoverPath == "" && song.CoverURL == "" {
 		if cp, err := d.extractor.SaveCover(song.ID, metadata); err == nil {
 			coverPath = cp
+		}
+	}
+	// 视频无内嵌封面时从视频抽一帧兜底（需 ffmpeg；失败静默降级）。
+	if coverPath == "" && metadata.IsVideo && song.CoverPath == "" && song.CoverURL == "" {
+		if cp, err := d.extractor.ExtractCoverFromVideoFile(ctx, filePath, metadata.Duration); err == nil && cp != "" {
+			coverPath = cp
+		} else if err != nil {
+			slog.Debug("cache backfill: extract video frame failed", "songID", song.ID, "error", err)
 		}
 	}
 

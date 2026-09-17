@@ -748,6 +748,55 @@ func (m *MetadataExtractor) ExtractCoverFromURL(ctx context.Context, url string,
 	return m.SaveCoverData(buf.Bytes(), "jpg")
 }
 
+// ExtractCoverFromVideoFile 从本地视频文件抽一帧作为封面（best-effort）。
+// 仅在 FFMpegPath 已配置时可用；失败/零字节返回空字符串或错误，不应阻塞主流程。
+// duration<=0 或 seek 位置过小时用 0 秒；否则取 duration*0.10。
+// 输出短边不超过 720 的 JPEG，交由 SaveCoverData 走内容哈希去重。
+func (m *MetadataExtractor) ExtractCoverFromVideoFile(ctx context.Context, filePath string, duration float64) (string, error) {
+	if m.config.FFMpegPath == "" {
+		return "", fmt.Errorf("ffmpeg not configured")
+	}
+
+	frameCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	// -ss 放在 -i 前：走关键帧快速定位，牺牲少许精度换低耗时。
+	// -an/-sn/-dn 关掉音频/字幕/数据轨；scale 保证输出高度为偶数（-2）避免 mjpeg 编码奇数高报错。
+	seek := duration * 0.10
+	if seek < 0.5 {
+		seek = 0
+	}
+	args := make([]string, 0, 16)
+	if seek > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(seek, 'f', 3, 64))
+	}
+	args = append(args,
+		"-i", filePath,
+		"-an", "-sn", "-dn",
+		"-frames:v", "1",
+		"-vsync", "vfr",
+		"-vf", "scale='min(720,iw)':-2",
+		"-q:v", "5",
+		"-f", "image2pipe",
+		"-vcodec", "mjpeg",
+		"pipe:1",
+	)
+	cmd := exec.CommandContext(frameCtx, m.config.FFMpegPath, args...)
+
+	var buf bytes.Buffer
+	cmd.Stdout = &limitedWriter{w: &buf, limit: maxCoverSize}
+	cmd.Stderr = nil
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("ffmpeg extract video frame: %w", err)
+	}
+	if buf.Len() == 0 {
+		return "", fmt.Errorf("no frame data extracted")
+	}
+
+	return m.SaveCoverData(buf.Bytes(), "jpg")
+}
+
 type limitedWriter struct {
 	w     *bytes.Buffer
 	limit int
