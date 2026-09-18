@@ -279,7 +279,15 @@ func (s *RegistryService) resolvePluginJSON(ctx context.Context, rawURL string, 
 	if manifest.Icon != "" {
 		iconBase := httputil.ApplyGithubProxy(rawURL, githubProxy)
 		if lastSlash := strings.LastIndex(iconBase, "/"); lastSlash >= 0 {
-			externalURL := iconBase[:lastSlash+1] + "static/" + manifest.Icon
+			// icon 字段解释：
+			// - 含 "/"：视作相对 plugin.json 目录的显式路径（如 "frontend/public/icon.svg"），
+			//   兼容 vite 等前端脚手架把静态资源放在 frontend/public/ 的仓库布局。
+			// - 不含 "/"：视作裸文件名，回落到 "static/<name>"，保留旧插件的向后兼容契约。
+			relPath := manifest.Icon
+			if !strings.Contains(relPath, "/") {
+				relPath = "static/" + relPath
+			}
+			externalURL := iconBase[:lastSlash+1] + relPath
 			entry.Icon = "/api/v1/proxy?url=" + url.QueryEscape(externalURL)
 		}
 	}

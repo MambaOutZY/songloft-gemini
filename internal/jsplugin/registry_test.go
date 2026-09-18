@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -897,5 +898,92 @@ func TestFetchAndMergeMulti_SameEntryPathDifferentAuthorAcrossSources(t *testing
 	}
 	if plugins[0].SourceURL != srvA.URL || plugins[1].SourceURL != srvB.URL {
 		t.Errorf("unexpected source urls: %q, %q", plugins[0].SourceURL, plugins[1].SourceURL)
+	}
+}
+
+// servePluginJSONWithIcon 提供带 icon 字段的 plugin.json，用于 icon URL 拼接测试。
+func servePluginJSONWithIcon(entryPath, icon string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		manifest := PluginManifest{
+			Name:        entryPath,
+			EntryPath:   entryPath,
+			Version:     "1.0.0",
+			DownloadURL: "https://example.com/" + entryPath + ".zip",
+			Icon:        icon,
+		}
+		json.NewEncoder(w).Encode(manifest)
+	}
+}
+
+// TestFetchAndMerge_IconBareFilename 验证裸文件名回落到 static/ 前缀。
+// 兼容旧版布局：icon: "icon.svg" → <base>/static/icon.svg
+func TestFetchAndMerge_IconBareFilename(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/a/plugin.json", servePluginJSONWithIcon("a", "icon.svg"))
+	pluginSrv := httptest.NewServer(mux)
+	defer pluginSrv.Close()
+
+	srv := httptest.NewServer(serveRegistryOf(pluginSrv.URL + "/a/plugin.json"))
+	defer srv.Close()
+
+	svc := NewRegistryService()
+	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
+	if err != nil {
+		t.Fatalf("FetchAndMerge error: %v", err)
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("expected 1 plugin, got %d", len(plugins))
+	}
+	want := "/api/v1/proxy?url=" + url.QueryEscape(pluginSrv.URL+"/a/static/icon.svg")
+	if plugins[0].Icon != want {
+		t.Errorf("bare filename should fall back to static/, got %q want %q", plugins[0].Icon, want)
+	}
+}
+
+// TestFetchAndMerge_IconExplicitPath 验证带 "/" 的显式路径直接用作相对路径，
+// 支持 vite 等前端脚手架 frontend/public/icon.svg 的布局（回归 miot 图标 404）。
+func TestFetchAndMerge_IconExplicitPath(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/m/plugin.json", servePluginJSONWithIcon("m", "frontend/public/icon.svg"))
+	pluginSrv := httptest.NewServer(mux)
+	defer pluginSrv.Close()
+
+	srv := httptest.NewServer(serveRegistryOf(pluginSrv.URL + "/m/plugin.json"))
+	defer srv.Close()
+
+	svc := NewRegistryService()
+	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
+	if err != nil {
+		t.Fatalf("FetchAndMerge error: %v", err)
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("expected 1 plugin, got %d", len(plugins))
+	}
+	want := "/api/v1/proxy?url=" + url.QueryEscape(pluginSrv.URL+"/m/frontend/public/icon.svg")
+	if plugins[0].Icon != want {
+		t.Errorf("explicit path should be used as-is, got %q want %q", plugins[0].Icon, want)
+	}
+}
+
+// TestFetchAndMerge_IconEmpty 验证 icon 为空时 entry.Icon 为空（不拼 URL、不误报 404）。
+func TestFetchAndMerge_IconEmpty(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/n/plugin.json", servePluginJSONWithIcon("n", ""))
+	pluginSrv := httptest.NewServer(mux)
+	defer pluginSrv.Close()
+
+	srv := httptest.NewServer(serveRegistryOf(pluginSrv.URL + "/n/plugin.json"))
+	defer srv.Close()
+
+	svc := NewRegistryService()
+	plugins, _, err := svc.FetchAndMerge(context.Background(), srv.URL, "", "")
+	if err != nil {
+		t.Fatalf("FetchAndMerge error: %v", err)
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("expected 1 plugin, got %d", len(plugins))
+	}
+	if plugins[0].Icon != "" {
+		t.Errorf("empty icon should leave entry.Icon empty, got %q", plugins[0].Icon)
 	}
 }
