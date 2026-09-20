@@ -9,6 +9,19 @@ import (
 	"songloft/internal/services"
 )
 
+// contextKey 是 context value key 的专用类型，避免跨包碰撞。
+type contextKey string
+
+const clientIDKey contextKey = "client_id"
+
+// ClientIDFromContext 从请求上下文中提取 clientID。
+func ClientIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(clientIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
 func respondAuthError(w http.ResponseWriter, status int, message string, err error) {
 	response := map[string]string{"error": message}
 	if err != nil {
@@ -79,7 +92,7 @@ func AuthMiddleware(authService *services.AuthService, publicPathCheckers ...Pub
 			}
 
 			// 将 claims 信息添加到请求上下文
-			ctx := context.WithValue(r.Context(), "client_id", claims.ClientID)
+			ctx := context.WithValue(r.Context(), clientIDKey, claims.ClientID)
 
 			// 认证成功，继续处理请求
 			next.ServeHTTP(w, r.WithContext(ctx))

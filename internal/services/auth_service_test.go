@@ -148,3 +148,27 @@ func TestAuthService_ValidateToken(t *testing.T) {
 		t.Error("ClientID should not be empty")
 	}
 }
+
+// TestGenerateRandomString 测试随机字符串生成
+func TestGenerateRandomString(t *testing.T) {
+	// 正常路径应返回指定长度的非空字符串
+	str, err := generateRandomString(32)
+	if err != nil {
+		t.Fatalf("generateRandomString failed: %v", err)
+	}
+	if len(str) != 32 {
+		t.Errorf("expected length 32, got %d", len(str))
+	}
+	if str == "" {
+		t.Error("expected non-empty string")
+	}
+
+	// 两次生成应该不同
+	str2, err := generateRandomString(32)
+	if err != nil {
+		t.Fatalf("generateRandomString failed: %v", err)
+	}
+	if str == str2 {
+		t.Error("two random strings should not be equal")
+	}
+}

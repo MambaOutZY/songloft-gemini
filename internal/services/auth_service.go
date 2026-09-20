@@ -419,12 +419,17 @@ func (s *AuthService) GeneratePluginToken(ctx context.Context) (string, error) {
 	// 生成一个 100 年后过期的 Token（实际上相当于永久）
 	expirationTime := time.Now().Add(100 * 365 * 24 * time.Hour)
 
+	tokenID, err := generateRandomString(32)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate token ID: %w", err)
+	}
+
 	claims := &Claims{
 		ClientID: clientID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ID:        generateRandomString(32), // Token ID
+			ID:        tokenID,
 		},
 	}
 
@@ -451,12 +456,17 @@ func (s *AuthService) GeneratePluginToken(ctx context.Context) (string, error) {
 func (s *AuthService) generateToken(clientID, tokenType string, expiresIn time.Duration) (string, time.Time, error) {
 	expirationTime := time.Now().Add(expiresIn)
 
+	tokenID, err := generateRandomString(32)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("generate token ID: %w", err)
+	}
+
 	claims := &Claims{
 		ClientID: clientID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ID:        generateRandomString(32), // Token ID
+			ID:        tokenID,
 		},
 	}
 
@@ -471,15 +481,14 @@ func (s *AuthService) generateToken(clientID, tokenType string, expiresIn time.D
 
 // generateClientID 生成客户端ID
 func generateClientID() (string, error) {
-	return generateRandomString(16), nil
+	return generateRandomString(16)
 }
 
 // generateRandomString 生成随机字符串
-func generateRandomString(length int) string {
+func generateRandomString(length int) (string, error) {
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {
-		// fallback to time-based random string
-		return fmt.Sprintf("%x", time.Now().UnixNano())
+		return "", fmt.Errorf("crypto/rand failed: %w", err)
 	}
-	return hex.EncodeToString(bytes)[:length]
+	return hex.EncodeToString(bytes)[:length], nil
 }

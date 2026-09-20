@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"songloft/internal/database"
+	"songloft/internal/middleware"
 	"songloft/internal/models"
 	"songloft/internal/services"
 
@@ -75,9 +76,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// 从请求上下文中获取当前用户信息
-	// 这里假设中间件已经设置了用户信息
-	clientID := r.Header.Get("X-Client-ID") // 这将在中间件中设置
+	// 从请求上下文中获取当前客户端 ID（由 AuthMiddleware 设置）
+	clientID := middleware.ClientIDFromContext(r.Context())
 
 	// 获取当前访问令牌
 	authHeader := r.Header.Get("Authorization")
@@ -219,7 +219,7 @@ func (h *AuthHandler) RevokeToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 获取客户端信息作为撤销者
-	revokedBy := r.Header.Get("X-Client-ID")
+	revokedBy := middleware.ClientIDFromContext(r.Context())
 	if revokedBy == "" {
 		revokedBy = "unknown"
 	}

@@ -240,18 +240,19 @@ func (s *Song) LyricURLPath() string {
 // 所有 type 的播放都通过 /api/v1/songs/{id}/play 统一分发。
 func (s *Song) MarshalJSON() ([]byte, error) {
 	type songAlias Song
-	if s.ID != 0 {
-		if s.Type != TypeLocal && s.URL != "" {
-			s.SourceURL = s.URL
+	cp := *s // 值拷贝，不修改原始 *Song
+	if cp.ID != 0 {
+		if cp.Type != TypeLocal && cp.URL != "" {
+			cp.SourceURL = cp.URL
 		}
-		if s.CoverURL != "" {
-			s.SourceCoverURL = s.CoverURL
+		if cp.CoverURL != "" {
+			cp.SourceCoverURL = cp.CoverURL
 		}
-		s.URL = s.PlaybackURL()
-		s.CoverURL = s.CoverURLPath()
-		s.LyricURL = s.LyricURLPath()
+		cp.URL = cp.PlaybackURL()
+		cp.CoverURL = cp.CoverURLPath()
+		cp.LyricURL = cp.LyricURLPath()
 	}
-	return json.Marshal((*songAlias)(s))
+	return json.Marshal((*songAlias)(&cp))
 }
 
 // Validate 验证歌曲数据有效性
@@ -316,10 +317,11 @@ func (p *Playlist) CoverURLPath() string {
 // 客户端拿到后直接使用,无需关心 cover_path 等内部细节。
 func (p *Playlist) MarshalJSON() ([]byte, error) {
 	type playlistAlias Playlist
-	if p.ID != 0 {
-		p.CoverURL = p.CoverURLPath()
+	cp := *p // 值拷贝，不修改原始 *Playlist
+	if cp.ID != 0 {
+		cp.CoverURL = cp.CoverURLPath()
 	}
-	return json.Marshal((*playlistAlias)(p))
+	return json.Marshal((*playlistAlias)(&cp))
 }
 
 // Playlist 歌单结构体

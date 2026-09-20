@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -547,5 +548,48 @@ func TestConfigValidate(t *testing.T) {
 				t.Errorf("Config.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestSongMarshalJSON_DoesNotMutateReceiver(t *testing.T) {
+	originalURL := "https://example.com/song.mp3"
+	originalCoverURL := "https://example.com/cover.jpg"
+	s := &Song{
+		ID:       42,
+		Type:     TypeRemote,
+		Title:    "测试歌曲",
+		URL:      originalURL,
+		CoverURL: originalCoverURL,
+	}
+
+	// 序列化应该不修改原始字段
+	_, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+
+	if s.URL != originalURL {
+		t.Errorf("Song.URL was mutated: got %q, want %q", s.URL, originalURL)
+	}
+	if s.CoverURL != originalCoverURL {
+		t.Errorf("Song.CoverURL was mutated: got %q, want %q", s.CoverURL, originalCoverURL)
+	}
+}
+
+func TestPlaylistMarshalJSON_DoesNotMutateReceiver(t *testing.T) {
+	originalCoverURL := "https://example.com/playlist-cover.jpg"
+	p := &Playlist{
+		ID:       10,
+		Name:     "测试歌单",
+		CoverURL: originalCoverURL,
+	}
+
+	_, err := json.Marshal(p)
+	if err != nil {
+		t.Fatalf("MarshalJSON failed: %v", err)
+	}
+
+	if p.CoverURL != originalCoverURL {
+		t.Errorf("Playlist.CoverURL was mutated: got %q, want %q", p.CoverURL, originalCoverURL)
 	}
 }
