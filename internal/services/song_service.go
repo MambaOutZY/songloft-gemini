@@ -1718,8 +1718,9 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// RenameLocalSongFile 按 newTitle 重命名本地歌曲文件（保留原目录与扩展名），
+// RenameLocalSongFile 按 "{artist} - {title}" 重命名本地歌曲文件（保留原目录与扩展名），
 // 移动成功后连同 song 其余已修改字段一起写回 DB；DB 失败时回滚文件移动。
+// artist 取 song.Artist（前端按 " & " 拼好的多歌手显示串），为空时回退为仅 title。
 // changed=false 表示清理后的文件名与原文件同名（未移动，但仍写回 DB）。
 // 仅适用于本地非 CUE 歌曲，其余情况返回 error 且不改动任何状态。
 func (s *SongService) RenameLocalSongFile(ctx context.Context, song *models.Song, newTitle string) (changed bool, err error) {
@@ -1737,6 +1738,16 @@ func (s *SongService) RenameLocalSongFile(ctx context.Context, song *models.Song
 	base := sanitizePathComponent(newTitle)
 	if base == "" {
 		return false, fmt.Errorf("标题不适合作为文件名")
+	}
+	base = strings.ReplaceAll(base, "/", "_")
+	// 多歌手信息拼进文件名，避免重名冲突（如 "A & B - 歌曲名.flac"）。
+	// artist 由前端按 " & " 拼好写入 DB，与 JoinDisplayArtists 一致。
+	if a := sanitizePathComponent(song.Artist); a != "" {
+		a = strings.ReplaceAll(a, "/", "_")
+		base = a + " - " + base
+		if len(base) > maxComponentLen {
+			base = base[:maxComponentLen]
+		}
 	}
 
 	oldPath := song.FilePath

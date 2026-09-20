@@ -22,7 +22,8 @@ func TestRenameLocalSongFile_MovesFileAndUpdatesDB(t *testing.T) {
 		t.Fatalf("expected changed=true")
 	}
 
-	wantPath := filepath.Join(musicDir, "新标题.mp3")
+	// makeLocalSong 默认 Artist="A"，命名格式为 "{artist} - {title}"。
+	wantPath := filepath.Join(musicDir, "A - 新标题.mp3")
 	if song.FilePath != wantPath {
 		t.Fatalf("song.FilePath = %q, want %q", song.FilePath, wantPath)
 	}
@@ -49,7 +50,8 @@ func TestRenameLocalSongFile_MovesFileAndUpdatesDB(t *testing.T) {
 func TestRenameLocalSongFile_SameNameNoop(t *testing.T) {
 	musicDir := t.TempDir()
 	svc, repo := newOrganizeService(t, musicDir)
-	song := makeLocalSong(t, repo, musicDir, "keep.mp3")
+	// makeLocalSong 默认 Artist="A"，磁盘文件建为拼接后同名，触发同名 noop 路径。
+	song := makeLocalSong(t, repo, musicDir, "A - keep.mp3")
 	song.Title = "已改标题" // 标题变了但文件名清理后与原名相同
 
 	changed, err := svc.RenameLocalSongFile(context.Background(), song, "keep")
@@ -59,7 +61,7 @@ func TestRenameLocalSongFile_SameNameNoop(t *testing.T) {
 	if changed {
 		t.Fatalf("expected changed=false for same name")
 	}
-	if !fileExists(filepath.Join(musicDir, "keep.mp3")) {
+	if !fileExists(filepath.Join(musicDir, "A - keep.mp3")) {
 		t.Fatalf("file should remain")
 	}
 	// 仍应写回 DB 的 title。
@@ -73,7 +75,7 @@ func TestRenameLocalSongFile_TargetExists(t *testing.T) {
 	musicDir := t.TempDir()
 	svc, repo := newOrganizeService(t, musicDir)
 	song := makeLocalSong(t, repo, musicDir, "a.mp3")
-	makeLocalSong(t, repo, musicDir, "b.mp3") // 目标已被占用
+	makeLocalSong(t, repo, musicDir, "A - b.mp3") // 目标已被占用（含歌手前缀）
 
 	_, err := svc.RenameLocalSongFile(context.Background(), song, "b")
 	if err == nil {
@@ -91,7 +93,7 @@ func TestRenameLocalSongFile_TargetExists(t *testing.T) {
 func TestRenameLocalSongFile_CaseOnlyChange(t *testing.T) {
 	musicDir := t.TempDir()
 	svc, repo := newOrganizeService(t, musicDir)
-	song := makeLocalSong(t, repo, musicDir, "keep.mp3")
+	song := makeLocalSong(t, repo, musicDir, "A - keep.mp3")
 
 	changed, err := svc.RenameLocalSongFile(context.Background(), song, "Keep")
 	if err != nil {
@@ -100,8 +102,9 @@ func TestRenameLocalSongFile_CaseOnlyChange(t *testing.T) {
 	if !changed {
 		t.Fatalf("expected changed=true for case-only rename")
 	}
-	if song.FilePath != filepath.Join(musicDir, "Keep.mp3") {
-		t.Fatalf("song.FilePath = %q, want %q", song.FilePath, filepath.Join(musicDir, "Keep.mp3"))
+	want := filepath.Join(musicDir, "A - Keep.mp3")
+	if song.FilePath != want {
+		t.Fatalf("song.FilePath = %q, want %q", song.FilePath, want)
 	}
 }
 
@@ -133,5 +136,69 @@ func TestRenameLocalSongFile_NonLocalRejected(t *testing.T) {
 
 	if _, err := svc.RenameLocalSongFile(context.Background(), song, "x"); err == nil {
 		t.Fatalf("expected error for non-local song")
+	}
+}
+
+// 多歌手（前端按 " & " 拼接）应完整保留在文件名中，避免与同名歌曲冲突。
+func TestRenameLocalSongFile_MultipleArtists(t *testing.T) {
+	musicDir := t.TempDir()
+	svc, repo := newOrganizeService(t, musicDir)
+	song := makeLocalSong(t, repo, musicDir, "raw.mp3")
+	song.Artist = "A & B"
+	song.Title = "对唱"
+
+	changed, err := svc.RenameLocalSongFile(context.Background(), song, "对唱")
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if !changed {
+		t.Fatalf("expected changed=true")
+	}
+	want := filepath.Join(musicDir, "A & B - 对唱.mp3")
+	if song.FilePath != want {
+		t.Fatalf("song.FilePath = %q, want %q", song.FilePath, want)
+	}
+	if !fileExists(want) {
+		t.Fatalf("new file not found: %s", want)
+	}
+}
+
+// artist 为空时回退到仅标题，保持旧行为，避免脏数据触发 " - 标题" 前导。
+func TestRenameLocalSongFile_EmptyArtistFallback(t *testing.T) {
+	musicDir := t.TempDir()
+	svc, repo := newOrganizeService(t, musicDir)
+	song := makeLocalSong(t, repo, musicDir, "x.mp3")
+	song.Artist = "   " // 清理后为空
+
+	changed, err := svc.RenameLocalSongFile(context.Background(), song, "标题")
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if !changed {
+		t.Fatalf("expected changed=true")
+	}
+	want := filepath.Join(musicDir, "标题.mp3")
+	if song.FilePath != want {
+		t.Fatalf("song.FilePath = %q, want %q", song.FilePath, want)
+	}
+}
+
+// artist 或 title 中的 "/" 会被替换为 "_"，避免误建子目录（如 "AC/DC"）。
+func TestRenameLocalSongFile_ArtistWithSlash(t *testing.T) {
+	musicDir := t.TempDir()
+	svc, repo := newOrganizeService(t, musicDir)
+	song := makeLocalSong(t, repo, musicDir, "y.mp3")
+	song.Artist = "AC/DC"
+
+	changed, err := svc.RenameLocalSongFile(context.Background(), song, "Thunder")
+	if err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if !changed {
+		t.Fatalf("expected changed=true")
+	}
+	want := filepath.Join(musicDir, "AC_DC - Thunder.mp3")
+	if song.FilePath != want {
+		t.Fatalf("song.FilePath = %q, want %q", song.FilePath, want)
 	}
 }
