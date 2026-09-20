@@ -172,12 +172,29 @@ func (h *ThemePackHandler) InstallFromCatalog(w http.ResponseWriter, r *http.Req
 }
 
 // GetCatalogURLSetting 获取主题目录 URL 设置
+// @Summary 获取主题目录 URL
+// @Description 返回当前配置的主题目录远程 URL，未配置时返回默认值
+// @Tags 主题包
+// @Produce json
+// @Success 200 {object} map[string]string "当前目录 URL"
+// @Security BearerAuth
+// @Router /settings/theme-catalog-url [get]
 func (h *ThemePackHandler) GetCatalogURLSetting(w http.ResponseWriter, r *http.Request) {
 	url := h.getCatalogURL()
 	respondJSON(w, http.StatusOK, map[string]string{"url": url})
 }
 
 // UpdateCatalogURLSetting 更新主题目录 URL 设置
+// @Summary 更新主题目录 URL
+// @Description 设置主题目录的远程 URL，同时清除本地目录缓存。URL 不能为空
+// @Tags 主题包
+// @Accept json
+// @Produce json
+// @Param request body object true "包含 url 字段的 JSON 对象"
+// @Success 200 {object} map[string]string "更新后的目录 URL"
+// @Failure 400 {object} map[string]string "URL 为空或请求格式错误"
+// @Security BearerAuth
+// @Router /settings/theme-catalog-url [put]
 func (h *ThemePackHandler) UpdateCatalogURLSetting(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		URL string `json:"url"`

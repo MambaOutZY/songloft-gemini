@@ -26,17 +26,20 @@ A theme pack is a JSON file (with `.songloft-theme` extension) that declares col
   "light": {
     "seedColor": "#6750A4",
     "backgroundColor": "#FFF7FF",
-    "surfaceColor": "#FFFFFF"
+    "surfaceColor": "#FFFFFF",
+    "glassColor": "#9C7CF4"
   },
   "dark": {
     "seedColor": "#D0BCFF",
     "backgroundColor": "#141218",
-    "surfaceColor": "#211F26"
+    "surfaceColor": "#211F26",
+    "glassColor": "#B39DDB"
   },
   "playerGradient": ["#4A148C", "#1A237E"],
   "cardRadius": 16,
   "controlRadius": 20,
-  "navigationRadius": 18
+  "navigationRadius": 18,
+  "navigationStyle": "standard"
 }
 ```
 
@@ -62,6 +65,7 @@ A theme pack is a JSON file (with `.songloft-theme` extension) that declares col
 | `seedColor` | string | ✅ | Seed color in `#RRGGBB` format. Material 3 generates the full `primary`, `secondary`, `tertiary` palette from this color |
 | `backgroundColor` | string | No | Override default background color, `#RRGGBB` format |
 | `surfaceColor` | string | No | Override default surface color (cards, dialogs), `#RRGGBB` format |
+| `glassColor` | string | No | Liquid Glass base color (derives `glassGlow` / `glassGlowFaint` / `glassSheen`), `#RRGGBB` format. Without this field, light falls back to `#3BAEEF`, dark to `#5BC0F5` |
 
 #### How seedColor Works
 
@@ -84,6 +88,12 @@ Light mode typically uses a more saturated, deeper seed color; dark mode uses a 
 | `cardRadius` | number | No | 0-100 | Border radius for cards |
 | `controlRadius` | number | No | 0-100 | Border radius for inputs, buttons, controls |
 | `navigationRadius` | number | No | 0-100 | Border radius for navigation indicators |
+
+### Navigation Style
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `navigationStyle` | string | No | Navigation bar appearance. `"standard"` (default) = standard navigation indicator; `"capsule"` = capsule-shaped glass navigation bar (designed for use with the Liquid Glass theme) |
 
 ## Creation Workflow
 
@@ -170,23 +180,58 @@ Purple and blue neon style, great for nighttime:
   "schemaVersion": 1,
   "id": "songloft.neon-night",
   "name": "Neon Night",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Songloft",
   "description": "A dark theme with purple and blue neon accents",
   "light": {
     "seedColor": "#6750A4",
     "backgroundColor": "#FFF7FF",
-    "surfaceColor": "#FFFFFF"
+    "surfaceColor": "#FFFFFF",
+    "glassColor": "#9C7CF4"
   },
   "dark": {
     "seedColor": "#D0BCFF",
     "backgroundColor": "#141218",
-    "surfaceColor": "#211F26"
+    "surfaceColor": "#211F26",
+    "glassColor": "#B39DDB"
   },
   "playerGradient": ["#4A148C", "#1A237E"],
   "cardRadius": 16,
   "controlRadius": 20,
-  "navigationRadius": 18
+  "navigationRadius": 18,
+  "navigationStyle": "standard"
+}
+```
+
+### Sakura
+
+Warm cherry-blossom pink tones, gentle and romantic:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "songloft.sakura",
+  "name": "Sakura",
+  "version": "1.1.0",
+  "author": "Songloft",
+  "description": "A warm cherry-blossom theme with pink accents",
+  "light": {
+    "seedColor": "#D81B60",
+    "backgroundColor": "#FFF0F5",
+    "surfaceColor": "#FFFFFF",
+    "glassColor": "#F06292"
+  },
+  "dark": {
+    "seedColor": "#F48FB1",
+    "backgroundColor": "#1A0A10",
+    "surfaceColor": "#261418",
+    "glassColor": "#F48FB1"
+  },
+  "playerGradient": ["#880E4F", "#4A148C"],
+  "cardRadius": 14,
+  "controlRadius": 16,
+  "navigationRadius": 14,
+  "navigationStyle": "standard"
 }
 ```
 

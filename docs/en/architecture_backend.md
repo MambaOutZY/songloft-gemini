@@ -5,7 +5,7 @@
 - **Go version**: 1.26+
 - **Web framework**: Chi v5.2.4
 - **Authentication**: JWT dual-token authentication (Access Token + Refresh Token)
-- **Database**: SQLite 3 (modernc.org/sqlite v1.46.1, pure-Go CGO-free implementation)
+- **Database**: SQLite 3 (modernc.org/sqlite v1.49.1, pure-Go CGO-free implementation)
 - **Database access stack**:
   - `pressly/goose v3` — schema migrations (auto `Up` on startup, files in `migrations/000N_xxx.sql`)
   - `sqlc-dev/sqlc` — generates type-safe code from fixed SQL (`queries/*.sql` → `sqlc/*.sql.go`, generated at CLI time)
@@ -65,6 +65,11 @@ Holds the project's core business logic, organized by functional module:
 
 - `types.go`: The application configuration struct `AppConfig` (port, database path, username/password, etc.)
 
+#### fileutil/ - File utilities
+
+- `cover_finder.go`: External cover lookup (`FindExternalCover`) and save (`SaveExternalCover`, content-hash deduplication)
+- `file_move.go`: Cross-partition file move (falls back to copy+delete when `os.Rename` fails)
+
 #### handlers/ - Request handlers
 
 - `auth.go`: Authentication-related requests (login, token refresh, logout, token management)
@@ -79,11 +84,20 @@ Holds the project's core business logic, organized by functional module:
 - `hls.go`: HLS radio proxy (server-side fetches and rewrites the m3u8, proxies segments/key/init segments; `/settings/hls-proxy` toggle)
 - `cache.go`: Music cache management (statistics, cleanup, configuration, custom directory validation)
 - `backup.go`: Data backup and restore (playlist/song export and import)
+- `play_history.go`: Play history management (get/clear/delete play history entries)
+- `song_tag.go`: Custom tag management (tag CRUD, song binding/unbinding, tag sync-to-file setting)
+- `theme_pack.go` / `theme_pack_catalog.go`: Theme pack management (import/delete/activate theme packs, catalog refresh and install)
+- `video_hls.go`: Video HLS proxy (video m3u8 rewriting and segment proxying)
+- `cover.go`: Cover serving and proxying
+- `folder_browse.go`: Folder browsing (filesystem directory/file listing)
+- `logs.go`: Log file export (`/logs/export`)
 - `log.go`: Log-level read/write (`/settings/log-level`)
-- `equalizer_setting.go` / `library_browse_setting.go` / `tab_config_setting.go` / `user_preferences_setting.go`: Isolated config endpoints (strongly-typed `/settings/*` configuration)
+- `equalizer_setting.go` / `library_browse_setting.go` / `tab_config_setting.go` / `user_preferences_setting.go` / `plugin_order_setting.go`: Isolated config endpoints (strongly-typed `/settings/*` configuration)
 - `version.go`: Version information
 - `health.go`: Health checks
 - `response.go`: Utility functions for unified JSON responses and error responses
+
+> The above lists the main files and is not exhaustive; see the source code or Swagger for the full list.
 
 #### middleware/ - Middleware
 
@@ -100,7 +114,7 @@ Holds the project's core business logic, organized by functional module:
 
 - `database.go`: The `DB` interface (`Close / RunInTx / each *Repository()` getter)
 - `sqlite.go`: The `SQLiteDB` implementation (`Open()` runs goose Up plus WAL/busy_timeout and other pragmas; `RunInTx` transaction wrapper)
-- `unit_of_work.go`: The `UnitOfWork` struct, a set of Repositories scoped to a transaction (the `Songs / Playlists / PlaylistSongs` fields, all bound to the same `*sql.Tx`)
+- `unit_of_work.go`: The `UnitOfWork` struct, a set of Repositories scoped to a transaction (the `Songs / Playlists / PlaylistSongs / PlayHistory / SongArtists` fields, all bound to the same `*sql.Tx`)
 - `errors.go`: Domain errors (sentinels such as `ErrNotFound` / `ErrConflict`)
 - `filters.go`: Shared squirrel helpers (sort whitelist, `applyOrder`, `applyPagination`)
 - `config_repository.go`: Config repository (`ConfigRepository`)
@@ -110,6 +124,13 @@ Holds the project's core business logic, organized by functional module:
 - `token_repository.go`: Authentication token repository
 - `jsplugin_repository.go`: JS plugin repository
 - `plugin_storage_repository.go`: JS plugin KV storage repository (backend store behind the `host.storage` bridge)
+- `play_history_repository.go`: Play history repository
+- `song_tag_repository.go`: Custom tag repository
+- `song_artist_repository.go`: Song-artist association repository
+- `theme_pack_repository.go`: Theme pack repository
+
+> The above lists the main files and is not exhaustive; see the source code for the full list.
+
 - `migrations/`: goose migration source files (`0001_init.sql`, etc., bundled via `embed.FS` and auto-Up'd on startup)
 - `queries/`: sqlc inputs (one `*.sql` per table; run `make sqlc` to generate code)
 - `sqlc/`: sqlc outputs (`*.sql.go`, **checked into the repo**, no sqlc CLI dependency at runtime)
@@ -121,12 +142,14 @@ Holds the project's core business logic, organized by functional module:
 - `auth_service.go`: Authentication service (JWT dual-token generation/verification, token management, secret generation)
 - `config_service.go`: Configuration service (database config management, supports reading/writing JSON format)
 - `metadata.go`: Metadata extraction service (uses hanxi/tag to extract tags and covers, ffprobe for technical parameters). Title strategy: prefer the tag's title when present, and fall back to the filename only when it's missing (no more longest-common-substring concatenation)
-- `cover_finder.go`: External cover lookup (`FindExternalCover`) and save (`SaveExternalCover`, content-hash deduplication)
 - `cover_thumb_cache.go`: Cover thumbnail disk LRU cache (`{dataDir}/cover_thumbs/`, 200 MB cap, CatmullRom scaling)
 - `scanner.go`: File scanning service (recursively scans the music directory, supports directory exclusion and format filtering)
 - `scan_progress.go`: Scan progress tracking (async scan state management)
 - `song_service.go`: Song service (CRUD, bulk operations, duration backfill)
+- `song_tag_service.go`: Custom tag service (tag CRUD, song binding/unbinding, tag sync-to-file)
+- `play_history_service.go`: Play history service (record play context, aggregated queries, clearing)
 - `playlist_service.go`: Playlist service (CRUD, song management, auto-creation)
+- `theme_pack_service.go`: Theme pack service (import/delete/activate theme packs, catalog refresh and install)
 - `upgrade_service.go`: Version upgrade service (fetch version info, perform upgrade, reset)
 - `cache_service.go`: Music cache service (LRU eviction, custom cache directory, capacity limit configuration)
 - `cache_service_song.go`: Song-level helpers for the cache service (hit lookup, concurrent-download deduplication, associated cleanup, streaming-proxy callbacks, etc.)
@@ -135,6 +158,9 @@ Holds the project's core business logic, organized by functional module:
 - `song_downloader.go`: Song persistence service (plugin infrastructure: persists remote songs to the local `music_path` via the `songs.download` Bridge API)
 - `internal_url.go`: Internal loopback URL construction (assembles relative URLs into `http://127.0.0.1:{port}/...?access_token=...`, for convert/cache to call plugins)
 - `whitelist.go`: Domain whitelist validation (SSRF protection, blocks access to intranet addresses)
+
+> The above lists the main files and is not exhaustive; see the source code for the full list.
+
 - `source/`: Audio source adapter subpackage — `fetcher` (HTTP data retrieval + URL parsing), `resolver` (cross-plugin fallback), `validator` (parameter validation), `orchestrator` (orchestration, includes `ResolveURL` which only resolves without downloading), `metrics` (metrics). See the interface bindings in `internal/app/source_adapters.go` for the concrete implementations
 
 #### jsplugin/ - JS plugin management layer
@@ -193,7 +219,7 @@ Holds reusable public packages:
   | AIFF/AIF | ID3v2.3 (ID3 chunk) + NAME/AUTH | USLT (ID3 chunk) | APIC (ID3 chunk) |
 
   - Other extensions return `ErrUnsupportedWrite`; callers degrade to a log entry and do not block the main flow
-- Command-line tools: `cmd/tag`, `cmd/sum`, `cmd/check`
+- Command-line tools: `cmd/tag`
 
 ## Build System
 
@@ -234,12 +260,17 @@ type DB interface {
     Close() error
     RunInTx(ctx context.Context, fn func(context.Context, *UnitOfWork) error) error
 
+    JSPluginRepository() *JSPluginRepository
+    TokenRepository() *TokenRepository
+    ConfigRepository() *ConfigRepository
     SongRepository() *SongRepository
     PlaylistRepository() *PlaylistRepository
     PlaylistSongRepository() *PlaylistSongRepository
-    ConfigRepository() *ConfigRepository
-    TokenRepository() *TokenRepository
-    JSPluginRepository() *JSPluginRepository
+    PlayHistoryRepository() *PlayHistoryRepository
+    PluginStorageRepository() *PluginStorageRepository
+    ThemePackRepository() *ThemePackRepository
+    SongTagRepository() *SongTagRepository
+    SongArtistRepository() *SongArtistRepository
 }
 ```
 
@@ -268,6 +299,24 @@ The backend provides a RESTful API, mainly including:
 - `/api/v1/settings/log-level` - Log level (GET/PUT)
 - `/api/v1/settings/scan-auto-create-playlists` - Whether to auto-create directory playlists after scanning (GET/PUT)
 - `/api/v1/settings/scan-playlist-mode` - Directory playlist grouping mode: directory/top_level/bubble_up (GET/PUT)
+- `/api/v1/settings/remote-title-source` - Remote song title source configuration (GET/PUT)
+- `/api/v1/settings/volume-normalize` - Volume normalization configuration (GET/PUT)
+- `/api/v1/settings/tag-sync-to-file` - Tag sync-to-file toggle (GET/PUT)
+- `/api/v1/settings/theme-catalog-url` - Theme pack catalog URL (GET/PUT)
+- `/api/v1/settings/proxy-private-allowlist` - Proxy private address allowlist (GET/PUT)
+- `/api/v1/settings/github-proxy` - GitHub proxy configuration (GET/PUT)
+- `/api/v1/settings/plugin-keep-alive` - Plugin keep-alive configuration (GET/PUT)
+- `/api/v1/settings/plugin-auto-update` - Plugin auto-update configuration (GET/PUT)
+- `/api/v1/settings/plugin-order` - Plugin ordering configuration (GET/PUT)
+- `/api/v1/settings/scan-title-source` - Scan title source configuration (GET/PUT)
+- `/api/v1/settings/scan-auto-fingerprint` - Auto-fingerprint after scan toggle (GET/PUT)
+- `/api/v1/settings/auto-scan` - Scheduled auto-scan configuration (GET/PUT)
+- `/api/v1/play-history` - Play history (GET/DELETE)
+- `/api/v1/song-tags/*` - Custom tag management (CRUD, song binding/unbinding)
+- `/api/v1/theme-packs/*` - Theme pack management (list/import/delete/activate/catalog refresh)
+
+> The above lists the main endpoints and is not exhaustive; see the Swagger docs for the full API.
+
 - `/api/v1/version` - Version information endpoint
 - `/api/v1/health` - Health check endpoint
 

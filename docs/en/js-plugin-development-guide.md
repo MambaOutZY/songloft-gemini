@@ -59,7 +59,7 @@ npm install   # or pnpm install / yarn install
 The scaffolder interactively guides you through the following configuration:
 
 1. **Basic info** — directory name, plugin display name, entryPath, description, author
-2. **Permission selection** (multi-select) — `storage`, `persistent-storage`, `songs.read`, `songs.write`, `playlists.read`, `playlists.write`, `inter-plugin`, `command`, `jsenv`, `fs`, `fs:music`, `fs:external`, `websocket`, `net`
+2. **Permission selection** (multi-select) — `storage`, `persistent-storage`, `songs.read`, `songs.write`, `playlists.read`, `playlists.write`, `tags.read`, `tags.write`, `inter-plugin`, `command`, `jsenv`, `fs`, `fs:music`, `fs:external`, `websocket`, `net`, `net:insecure-tls` (wildcard sugars `songs.*`, `playlists.*`, `tags.*`, `fs.*` can be used in the manifest)
 3. **Add-on feature templates** (multi-select, skippable) — static pages (`static/`), executable management (`bin/`), Lynx native rendering (`renderEngine: "lynx"`, ReactLynx + cross-platform native UI)
 4. **Package manager** — npm / pnpm / yarn
 
@@ -613,6 +613,61 @@ async function playlistsExample() {
 }
 ```
 
+### songloft.tags — Tag Operations
+
+Requires permission: `tags.read` (read) or `tags.write` (modify); or the wildcard sugar `tags.*`.
+
+```javascript
+async function tagsExample() {
+    // —— Read operations (requires tags.read) ——
+
+    // Get tag list (supports filtering, sorting, pagination)
+    var tags = await songloft.tags.list({
+        keyword: "",     // optional, fuzzy search by name
+        orderBy: "",     // optional, sort field
+        order: "",       // optional, "asc" | "desc"
+        limit: 100,      // optional, default 100
+        offset: 0        // optional, default 0
+    });
+
+    // Get a single tag by ID
+    var tag = await songloft.tags.getById(1);
+
+    // Get all tags associated with a given song
+    var songTags = await songloft.tags.getSongTags(42);
+
+    // —— Write operations (requires tags.write) ——
+
+    // Create a tag
+    var newTag = await songloft.tags.create({ name: "My Tag", color: "#ff6600" });
+
+    // Update a tag
+    await songloft.tags.update({ id: 1, name: "New Name", color: "#00cc00" });
+
+    // Delete a tag
+    await songloft.tags.delete(1);
+
+    // Batch-bind songs to a tag (returns { bound: <actual count> })
+    var result = await songloft.tags.bindSongs({ tagId: 1, songIds: [10, 20, 30] });
+
+    // Batch-unbind songs (returns { unbound: <actual count> })
+    var result2 = await songloft.tags.unbindSongs({ tagId: 1, songIds: [10, 20] });
+}
+```
+
+**Method reference:**
+
+| Method | Permission | Parameters | Returns |
+|------|------|------|------|
+| `list(options?)` | `tags.read` | `{ keyword?, orderBy?, order?, limit?, offset? }` | Tag[] |
+| `getById(id)` | `tags.read` | `id: number` | Tag |
+| `getSongTags(songId)` | `tags.read` | `songId: number` | Tag[] |
+| `create(options)` | `tags.write` | `{ name: string, color: string }` | Tag |
+| `update(options)` | `tags.write` | `{ id: number, name: string, color: string }` | void |
+| `delete(id)` | `tags.write` | `id: number` | void |
+| `bindSongs(options)` | `tags.write` | `{ tagId: number, songIds: number[] }` | `{ bound: number }` |
+| `unbindSongs(options)` | `tags.write` | `{ tagId: number, songIds: number[] }` | `{ unbound: number }` |
+
 ### songloft.comm — Inter-Plugin Communication
 
 Requires permission: `inter-plugin`
@@ -879,6 +934,9 @@ Consistent with `AllPermissions` in the backend's `internal/jsplugin/permissions
 | `playlists.read` | Read playlists and the songs within them |
 | `playlists.write` | Create/modify/delete playlists and their songs |
 | `playlists.*` | Playlist read/write wildcard (all-in-one sugar) |
+| `tags.read` | Read custom tags and song-tag associations |
+| `tags.write` | Create/modify/delete tags, bind/unbind songs |
+| `tags.*` | Tag read/write wildcard (all-in-one sugar) |
 | `inter-plugin` | Inter-plugin communication |
 | `command` | Execute external commands / manage executables |
 | `jsenv` | Create/run child JS sandbox environments |
@@ -889,6 +947,7 @@ Consistent with `AllPermissions` in the backend's `internal/jsplugin/permissions
 | `persistent-storage` | Read/write persistent storage that remains after the plugin is uninstalled |
 | `net` | Use raw network sockets (UDP / outbound TCP) |
 | `net:insecure-tls` | Allow `fetch` to skip TLS certificate verification via `X-Fetch-Insecure` (self-signed / bare-IP access to self-hosted devices). **Not covered by `net`; must be declared separately** |
+| `fs.*` | File system wildcard (covers `fs`, `fs:music`, `fs:external`) |
 
 > Note: capabilities such as network requests (`fetch`), timers (`setTimeout/setInterval`), and logging **require no permission declaration**; they are default host capabilities.
 
@@ -896,6 +955,7 @@ Consistent with `AllPermissions` in the backend's `internal/jsplugin/permissions
 
 A permission ending in `.*` acts as all-in-one sugar at the declaration layer, and the runner uses prefix matching when checking. For example, declaring `playlists.*`
 covers both `playlists.read` and `playlists.write`; whereas declaring only `playlists.read` cannot call write interfaces.
+Currently available wildcard sugars: `songs.*`, `playlists.*`, `tags.*`, `fs.*`.
 
 ### Principle of Least Privilege
 

@@ -35,40 +35,73 @@ clients/player/lib/
 │   ├── app_config.dart              # API config, deployment mode, version number
 │   └── constants.dart               # App constants
 ├── core/                            # Core infrastructure
-│   ├── audio/
+│   ├── a11y/                        # Accessibility
+│   │   ├── web_semantics_controller.dart  # Web semantics tree controller
+│   │   └── semantics_pointer_override*.dart  # Pointer event semantics override (conditional import)
+│   ├── audio/                       # Audio playback engine (20 files)
 │   │   ├── audio_service.dart       # SongloftAudioHandler (audio playback, notification bar controls)
-│   │   └── system_volume_provider.dart  # System volume Provider (based on volume_controller)
+│   │   ├── songloft_just_audio_platform.dart  # Custom JustAudio platform registration
+│   │   ├── songloft_mediakit_player.dart      # libmpv native player wrapper
+│   │   ├── songloft_web_audio_player.dart     # Web HTML5 Audio + hls.js player
+│   │   ├── equalizer_service*.dart            # Equalizer service (mpv / web dual implementations)
+│   │   ├── smtc_service*.dart                 # Windows SMTC media controls (conditional import)
+│   │   ├── video_controller_provider.dart     # Video surface controller Provider
+│   │   ├── system_volume_provider.dart        # System volume Provider
+│   │   └── media_browse_data_source.dart      # Android Auto media browse data source
 │   ├── backend/                     # Bundle local mode (embedded backend abstraction layer)
 │   │   ├── embedded_backend_service.dart   # Unified interface (mobile MethodChannel / desktop subprocess dispatch)
 │   │   ├── desktop_backend_service.dart    # Desktop: start the songloft-server subprocess
+│   │   ├── native_contract_service.dart    # Native service contract
 │   │   ├── run_mode_provider.dart          # RunMode enum (local/remote) + persistence Provider
 │   │   └── backend_lifecycle.dart          # WidgetsBindingObserver: auto-restart backend on foreground resume
-│   ├── env/
-│   │   └── (reserved)                # Environment info
-│   ├── platform/
-│   │   └── live_activity_service.dart  # iOS Dynamic Island / Live Activity integration
-│   ├── tracely/
-│   │   └── tracely_client.dart       # Tracely frontend monitoring-report client
-│   ├── network/
+│   ├── network/                     # Network layer (19 files)
 │   │   ├── api_client.dart          # Dio HTTP client wrapper
 │   │   ├── api_exceptions.dart      # API exception definitions
-│   │   └── auth_interceptor.dart    # JWT Token auto-refresh interceptor
+│   │   ├── auth_interceptor.dart    # JWT Token auto-refresh interceptor
+│   │   ├── base_url_provider.dart   # Base URL Provider
+│   │   ├── server_probe.dart        # Server probing
+│   │   ├── servers_provider.dart    # Multi-server management Provider
+│   │   ├── lan_address.dart         # LAN address discovery
+│   │   ├── github_proxy_fallback.dart  # GitHub proxy fallback
+│   │   └── ...                      # TLS / redirect / media proxy conditional imports
+│   ├── platform/
+│   │   ├── live_activity_service.dart   # iOS Dynamic Island / Live Activity integration
+│   │   └── home_widget_service.dart     # Desktop widget service
 │   ├── router/
 │   │   └── app_router.dart          # GoRouter route configuration (with auth guard)
-│   ├── storage/
+│   ├── storage/                     # Local storage (6 files)
 │   │   ├── app_preferences.dart     # SharedPreferences wrapper
+│   │   ├── secure_storage.dart      # Secure storage (Token caching)
 │   │   ├── lyric_cache_service.dart # Local lyric caching
-│   │   └── secure_storage.dart      # Secure storage (Token caching)
+│   │   ├── song_cache_service.dart  # Song cache service
+│   │   ├── playback_state_storage.dart  # Playback state persistence
+│   │   └── preference_sync_service.dart # Preference sync service
 │   ├── theme/
-│   │   ├── app_theme.dart           # Material 3 theme (light/dark, responsive)
+│   │   ├── app_theme.dart           # Material 3 theme + SongloftThemeExtension (incl. Liquid Glass tokens)
 │   │   ├── app_dimensions.dart      # Size and border-radius constants
 │   │   ├── responsive.dart          # Responsive breakpoints and utility extensions
-│   │   └── (reserved)               # Theme extensions
-│   └── utils/
-│       ├── color_extraction.dart    # Cover color extraction
-│       ├── formatters.dart          # Formatting utilities (duration, file size, etc.)
-│       ├── platform_utils.dart      # Platform detection utilities
-│       └── url_helper.dart          # URL building helpers (base_url concatenation, token appending, etc.)
+│   │   └── widgets/                 # Theme components
+│   │       ├── glass_surface.dart   # Glass effect container
+│   │       └── glass_capsule_bar.dart  # Glass capsule navigation bar
+│   ├── tracely/
+│   │   └── tracely_client.dart      # Tracely frontend monitoring-report client
+│   ├── updater/                     # App updates (5 files)
+│   │   ├── backend_patch_service.dart   # Backend hot-patch service
+│   │   ├── patch_update_service.dart    # Patch update service
+│   │   ├── patch_update_dialog.dart     # Patch update dialog
+│   │   ├── channel_release_resolver.dart  # Update channel resolver
+│   │   └── version_compare.dart         # Version number comparison
+│   ├── utils/                       # Utilities (31 files)
+│   │   ├── color_extraction.dart    # Cover color extraction
+│   │   ├── formatters.dart          # Formatting utilities (duration, file size, etc.)
+│   │   ├── platform_utils.dart      # Platform detection utilities
+│   │   ├── url_helper.dart          # URL building helpers (base_url concatenation, token appending, etc.)
+│   │   ├── audio_format_helper.dart # Audio format helper
+│   │   ├── window_tray_manager.dart # Window tray management
+│   │   └── ...                      # Web platform helpers (cache clearing, fullscreen, WebGL recovery, etc.)
+│   ├── plugin_iframe_gate.dart      # Plugin iframe gate (conditional import entry)
+│   ├── plugin_iframe_gate_web.dart  # Web iframe gate implementation
+│   └── plugin_iframe_gate_stub.dart # Non-web platform stub
 ├── features/                        # Feature modules
 │   ├── auth/                        # Authentication module
 │   │   ├── data/
@@ -82,93 +115,199 @@ clients/player/lib/
 │   │           └── auth_provider.dart
 │   ├── startup/                     # Startup flow module
 │   │   └── presentation/
-│   │       └── startup_gate.dart    # Startup gate: local mode auto-bootstrap / remote mode server probe
+│   │       ├── startup_gate.dart    # Startup gate: local mode auto-bootstrap / remote mode server probe
+│   │       └── web_update_gate.dart # Web forced-update gate
 │   ├── home/                        # Home module
+│   │   ├── domain/
+│   │   │   └── home_grid_config.dart  # Home grid layout configuration
 │   │   └── presentation/
-│   │       ├── home_page.dart       # Home page (playlist carousel, JS plugin grid)
-│   │       ├── plugin_webview_page.dart      # JS plugin WebView page (conditional import)
-│   │       ├── plugin_webview_page_native.dart  # Native platform WebView implementation
-│   │       ├── plugin_webview_page_stub.dart    # Web platform stub
+│   │       ├── home_page.dart         # Home page (playlist carousel, stats strip, JS plugin grid)
+│   │       ├── plugin_host_bridge.dart     # Plugin host bridge (native WebView callHandler registration)
+│   │       ├── plugin_host_dispatch.dart   # Plugin host dispatch (transport-agnostic, web-safe)
+│   │       ├── plugin_webview_page.dart    # JS plugin WebView page (conditional import)
+│   │       ├── plugin_tab_page.dart        # Plugin tab page (conditional import)
+│   │       ├── providers/
+│   │       │   └── home_grid_config_provider.dart
+│   │       ├── render/              # Plugin render engine (WebView / WebF)
+│   │       │   ├── plugin_render_view.dart
+│   │       │   ├── plugin_render_controller.dart
+│   │       │   ├── plugin_render_surface_webf.dart
+│   │       │   ├── plugin_render_surface_webview.dart
+│   │       │   └── ...              # Render helpers (fonts, color scheme, file bridge, etc.)
 │   │       └── widgets/
-│   │           └── playlist_carousel.dart   # Playlist carousel component
+│   │           ├── playlist_carousel.dart  # Playlist carousel component
+│   │           ├── hero_card.dart          # Hero card
+│   │           ├── stats_strip.dart        # Stats strip
+│   │           └── section_header.dart     # Section header
 │   ├── jsplugin/                    # JS plugin module
 │   │   ├── data/
-│   │   │   └── jsplugin_api.dart    # JS plugin API (with JSPlugin model, upload, update check)
+│   │   │   ├── jsplugin_api.dart    # JS plugin API (with JSPlugin model, upload, update check)
+│   │   │   └── plugin_order.dart    # Plugin ordering
 │   │   └── presentation/
 │   │       ├── providers/
-│   │       │   └── jsplugin_provider.dart   # JSPluginApi Provider / jsPluginsProvider
+│   │       │   └── jsplugin_provider.dart
 │   │       └── widgets/
-│   │           ├── jsplugin_grid.dart       # JS plugin entry grid (used on home page)
-│   │           └── jsplugin_manager.dart    # JS plugin management panel (used on settings page)
-│   ├── library/                     # Song library module
+│   │           ├── jsplugin_grid.dart      # JS plugin entry grid (used on home page)
+│   │           ├── jsplugin_manager.dart   # JS plugin management panel (used on settings page)
+│   │           ├── plugin_registry.dart    # Plugin repository browser
+│   │           ├── plugin_icon.dart        # Plugin icon
+│   │           └── plugin_icon_utils.dart  # Icon utilities
+│   ├── library/                     # Song library module (incl. category / folder / tag browsing)
 │   │   ├── data/
 │   │   │   ├── songs_api.dart       # Song API
-│   │   │   └── songs_repository.dart
+│   │   │   ├── songs_repository.dart
+│   │   │   └── song_tags_api.dart   # Song tag API
+│   │   ├── domain/
+│   │   │   ├── repositories/
+│   │   │   │   └── songs_repository_interface.dart
+│   │   │   └── use_cases/
+│   │   │       └── favorite_service.dart  # Favorite service
 │   │   └── presentation/
-│   │       ├── library_page.dart    # Song library page
-│   │       ├── song_edit_page.dart  # Song edit page
+│   │       ├── library_page.dart          # Library page (multi-view: songs / playlists / categories / folders / tags)
+│   │       ├── song_edit_page.dart        # Song edit page
+│   │       ├── category_songs_page.dart   # Category song list page
+│   │       ├── folder_content_page.dart   # Folder content page
+│   │       ├── tag_songs_page.dart        # Tag song list page
 │   │       ├── providers/
 │   │       │   ├── songs_provider.dart
-│   │       │   └── favorite_provider.dart
+│   │       │   ├── favorite_provider.dart
+│   │       │   ├── category_provider.dart # Category browsing Provider
+│   │       │   ├── folder_provider.dart   # Folder browsing Provider
+│   │       │   └── song_tag_provider.dart # Song tag Provider
 │   │       └── widgets/
-│   │           ├── song_list_tile.dart   # Song list item
-│   │           └── song_filter_bar.dart  # Song filter bar
+│   │           ├── song_list_tile.dart        # Song list item
+│   │           ├── library_view_switcher.dart # View switcher
+│   │           ├── facet_grid_view.dart       # Facet grid view (albums, artists, etc.)
+│   │           ├── folder_browse_view.dart    # Folder browse view
+│   │           └── tag_grid_view.dart         # Tag grid view
 │   ├── player/                      # Player module
+│   │   ├── data/
+│   │   │   └── play_history_api.dart  # Play history API
 │   │   ├── domain/
-│   │   │   ├── player_state.dart    # Player state definitions
-│   │   │   └── lyric_parser.dart    # LRC lyric parser
+│   │   │   ├── player_state.dart      # Player state definitions
+│   │   │   ├── lyric_parser.dart      # LRC lyric parser
+│   │   │   ├── playback_context.dart  # Playback context
+│   │   │   ├── equalizer_setting.dart # Equalizer settings
+│   │   │   └── use_cases/             # Domain use cases (8)
+│   │   │       ├── play_queue.dart        # Play queue management
+│   │   │       ├── queue_loader.dart      # Queue loader
+│   │   │       ├── play_mode_resolver.dart  # Play mode resolver
+│   │   │       ├── prefetch_strategy.dart   # Prefetch strategy
+│   │   │       ├── sleep_timer_logic.dart   # Sleep timer
+│   │   │       └── ...                     # Retry policy, resume state, etc.
 │   │   └── presentation/
-│   │       ├── queue_page.dart      # Play queue page
-│   │       ├── providers/
-│   │       │   └── player_provider.dart
-│   │       └── widgets/
-│   │           ├── desktop_player.dart    # Desktop player (mini/sidebar form)
+│   │       ├── queue_page.dart        # Play queue page
+│   │       ├── lyric_adjust_page.dart # Lyric time offset adjustment page
+│   │       ├── providers/             # Providers (10)
+│   │       │   ├── player_provider.dart     # Core playback Provider
+│   │       │   ├── lyric_provider.dart      # Lyric Provider
+│   │       │   ├── equalizer_provider.dart  # Equalizer Provider
+│   │       │   ├── audio_track_provider.dart  # Audio track switch Provider
+│   │       │   ├── play_history_provider.dart # Play history Provider
+│   │       │   └── ...                       # Web video sync, etc.
+│   │       ├── utils/
+│   │       │   ├── full_player_route.dart   # Full-screen player route helper
+│   │       │   └── player_song_actions.dart # Player song actions
+│   │       └── widgets/               # Player widgets (25)
+│   │           ├── desktop_player.dart       # Desktop player bar
 │   │           ├── desktop_full_player.dart  # Desktop fullscreen player
-│   │           ├── mobile_player.dart     # Mobile fullscreen player
-│   │           ├── mini_player.dart       # Mini player bar
-│   │           ├── play_controls.dart     # Playback control buttons
-│   │           ├── popup_controls.dart    # Popup control panel
-│   │           ├── progress_bar.dart      # Progress bar
-│   │           ├── volume_control.dart    # Volume control
-│   │           ├── lyrics_view.dart       # Lyrics display
-│   │           └── playlist_drawer.dart   # Playlist drawer
+│   │           ├── mobile_player.dart        # Mobile fullscreen player
+│   │           ├── mini_player.dart          # Mini player bar
+│   │           ├── side_player.dart          # Side player panel
+│   │           ├── play_controls.dart        # Playback control buttons
+│   │           ├── popup_controls.dart       # Popup control panel
+│   │           ├── progress_bar.dart         # Progress bar
+│   │           ├── volume_control.dart       # Volume control
+│   │           ├── lyrics_view.dart          # Lyrics display
+│   │           ├── karaoke_line.dart         # Karaoke word-by-word highlight
+│   │           ├── playlist_drawer.dart      # Playlist drawer
+│   │           ├── equalizer_panel.dart      # Equalizer panel
+│   │           ├── video_player_surface.dart # Video player surface
+│   │           ├── play_history_sheet.dart   # Play history sheet
+│   │           ├── vinyl_ring.dart           # Vinyl record animation
+│   │           └── ...                       # Audio track control, video stage, shortcut scope, etc.
 │   ├── playlist/                    # Playlist module
 │   │   ├── data/
 │   │   │   ├── playlist_api.dart    # Playlist CRUD
 │   │   │   └── playlist_repository.dart
 │   │   ├── domain/
-│   │   │   └── playlist.dart        # Playlist model
+│   │   │   ├── playlist.dart          # Playlist model
+│   │   │   ├── repositories/
+│   │   │   │   └── playlist_repository_interface.dart
+│   │   │   └── use_cases/
+│   │   │       ├── playlist_sort.dart      # Playlist sorting
+│   │   │       └── pinyin_comparator.dart  # Pinyin comparator
 │   │   └── presentation/
-│   │       ├── playlists_page.dart   # Playlist list page
 │   │       ├── playlist_detail_page.dart  # Playlist detail page
 │   │       ├── providers/
 │   │       │   ├── playlist_provider.dart
 │   │       │   └── playlist_view_provider.dart
-│   │       └── widgets/
-│   │           ├── playlist_card.dart         # Playlist card
-│   │           ├── playlist_list_item.dart     # Playlist list item
-│   │           └── song_cover_picker_modal.dart  # Song cover picker modal
+│   │       └── widgets/               # Playlist widgets (10)
+│   │           ├── playlist_browse_view.dart     # Playlist browse view
+│   │           ├── playlist_card.dart            # Playlist card
+│   │           ├── playlist_list_item.dart       # Playlist list item
+│   │           ├── playlist_search_field.dart    # Playlist search field
+│   │           ├── playlist_edit_dialog.dart     # Playlist edit dialog
+│   │           ├── playlist_form_dialog.dart     # Playlist form dialog
+│   │           ├── playlist_song_tile.dart       # Playlist song item
+│   │           ├── song_cover_picker_modal.dart  # Song cover picker modal
+│   │           └── ...                          # Cover editing, adapters, etc.
 │   ├── settings/                    # Settings module
-│       ├── data/
-│       │   ├── cache_api.dart       # Music cache API (stats, cleanup, config, directory validation)
-│       │   ├── config_api.dart      # Config API
-│       │   ├── directory_api.dart   # Directory browsing API (used by the music directory picker)
-│       │   ├── frontend_version_api.dart  # Frontend version check API
-│       │   ├── scan_api.dart        # Scan API
-│       │   └── upgrade_api.dart     # Upgrade API
-│       └── presentation/
-│           ├── settings_page.dart   # Settings page
-│           ├── providers/
-│           │   └── settings_provider.dart
-│           └── widgets/
-│               ├── cache_manager.dart        # Music cache management panel (with custom cache directory dialog)
-│               ├── config_manager.dart       # Config management
-│               ├── exclude_dir_manager.dart  # Scan exclude directory management
-│               ├── frontend_upgrade_dialog.dart  # Frontend upgrade dialog
-│               ├── scan_manager.dart         # Scan management
-│               ├── theme_selector.dart       # Theme selector
-│               ├── token_manager.dart        # Token management
-│               └── upgrade_dialog.dart       # Backend upgrade dialog
+│   │   ├── data/                    # Data layer (12 files)
+│   │   │   ├── cache_api.dart       # Music cache API
+│   │   │   ├── config_api.dart      # Generic config API (/configs/{key})
+│   │   │   ├── settings_api.dart    # Business settings API (/settings/* endpoint wrapper)
+│   │   │   ├── directory_api.dart   # Directory browsing API
+│   │   │   ├── scan_api.dart        # Scan API
+│   │   │   ├── theme_pack_api.dart  # Theme pack API (incl. ThemePack / ThemePackColors models)
+│   │   │   ├── upgrade_api.dart     # Upgrade API
+│   │   │   ├── frontend_version_api.dart  # Frontend version check API
+│   │   │   ├── log_export_service.dart    # Log export service
+│   │   │   └── ...                        # Log share conditional imports
+│   │   ├── domain/
+│   │   │   ├── key_binding.dart            # Key binding
+│   │   │   └── player_shortcut_action.dart # Player shortcut actions
+│   │   └── presentation/
+│   │       ├── settings_page.dart           # Settings page (entry)
+│   │       ├── servers_page.dart            # Server management page
+│   │       ├── duplicate_check_page.dart    # Duplicate song check page
+│   │       ├── client_download_page.dart    # Client download page
+│   │       ├── licenses_page.dart           # Open source licenses page
+│   │       ├── shortcut_settings_page.dart  # Shortcut settings page
+│   │       ├── providers/
+│   │       │   ├── settings_provider.dart
+│   │       │   ├── theme_pack_provider.dart
+│   │       │   ├── shortcut_settings_provider.dart
+│   │       │   ├── cache_download_provider.dart
+│   │       │   └── song_cache_provider.dart
+│   │       └── widgets/             # Settings widgets (18)
+│   │           ├── settings_master_detail.dart    # Master-detail layout
+│   │           ├── settings_category_content.dart # Category content
+│   │           ├── section_card.dart              # Section card
+│   │           ├── scan_manager.dart              # Scan management
+│   │           ├── cache_manager.dart             # Cache management
+│   │           ├── config_manager.dart            # Config management
+│   │           ├── exclude_dir_manager.dart       # Exclude directory management
+│   │           ├── theme_selector.dart            # Theme selector
+│   │           ├── theme_pack_manager.dart        # Theme pack management
+│   │           ├── theme_catalog.dart             # Online theme catalog
+│   │           ├── token_manager.dart             # Token management
+│   │           ├── language_selector.dart         # Language selector
+│   │           ├── home_grid_selector.dart        # Home layout selector
+│   │           ├── upgrade_dialog.dart            # Backend upgrade dialog
+│   │           ├── frontend_upgrade_dialog.dart   # Frontend upgrade dialog
+│   │           ├── github_proxy_dialog.dart       # GitHub proxy dialog
+│   │           ├── metadata_refresh_manager.dart  # Metadata refresh management
+│   │           └── shortcut_recorder.dart         # Shortcut recorder
+│   ├── desktop_lyric/               # Desktop lyrics module
+│   │   ├── desktop_lyric_controller.dart    # Desktop lyric controller
+│   │   ├── desktop_lyric_main.dart          # Desktop lyric entry point
+│   │   ├── desktop_lyric_ipc.dart           # Desktop lyric IPC
+│   │   ├── desktop_lyric_font_size.dart     # Font size configuration
+│   │   ├── android_floating_lyric_controller.dart  # Android floating lyric controller
+│   │   └── presentation/
+│   │       ├── desktop_lyric_app.dart       # Desktop lyric window app
+│   │       └── desktop_lyric_view.dart      # Desktop lyric view
 │   └── dlna/                        # DLNA casting module
 │       ├── data/
 │       │   └── dlna_service.dart    # DLNA/UPnP device discovery and casting service
@@ -180,26 +319,53 @@ clients/player/lib/
 │           └── widgets/
 │               ├── cast_button.dart       # Cast button
 │               └── device_sheet.dart      # Device picker sheet
-└── shared/                          # Shared modules
-    ├── layouts/
-    │   ├── shell_layout.dart        # ShellRoute main layout (navigation + player)
-    │   └── adaptive_scaffold.dart   # Adaptive scaffold
-    ├── models/
-    │   ├── song.dart                # Song model
-    │   ├── pagination.dart          # Pagination model
-    │   └── api_response.dart        # API response model
-    ├── utils/
-    │   └── responsive_snackbar.dart # Responsive SnackBar
-    └── widgets/                     # Shared components (11 total)
-        ├── cover_image.dart         # Cover image component
-        ├── favorite_button.dart     # Favorite button
-        ├── scrolling_text.dart      # Scrolling text
-        ├── confirm_dialog.dart      # Confirmation dialog
-        ├── add_to_playlist_modal.dart  # Add-to-playlist modal
-        ├── song_picker_modal.dart   # Song picker modal
-        ├── empty_state.dart         # Empty state
-        ├── error_view.dart          # Error view
-        └── loading_indicator.dart   # Loading indicator
+├── l10n/                            # Internationalization
+│   ├── app_en.arb                   # English
+│   ├── app_zh.arb                   # Chinese
+│   ├── app_es.arb                   # Spanish
+│   ├── app_localizations.dart       # Generated localization class
+│   └── l10n_holder.dart             # Global l10n accessor
+├── shared/                          # Shared modules
+│   ├── constants/
+│   │   └── github_proxy.dart        # GitHub proxy constants
+│   ├── layouts/
+│   │   ├── shell_layout.dart        # ShellRoute main layout (navigation + player)
+│   │   ├── adaptive_scaffold.dart   # Adaptive scaffold
+│   │   └── active_destinations.dart # Dynamic navigation destinations
+│   ├── mixins/
+│   │   └── song_list_actions.dart   # Song list actions mixin
+│   ├── models/
+│   │   ├── song.dart                # Song model
+│   │   ├── artist.dart              # Artist model
+│   │   ├── library_stats.dart       # Library stats model
+│   │   ├── pagination.dart          # Pagination model
+│   │   └── api_response.dart        # API response model
+│   ├── utils/
+│   │   └── responsive_snackbar.dart # Responsive SnackBar
+│   └── widgets/                     # Shared components (22)
+│       ├── cover_image.dart         # Cover image component
+│       ├── network_cover_image.dart # Network cover image
+│       ├── favorite_button.dart     # Favorite button
+│       ├── scrolling_text.dart      # Scrolling text
+│       ├── confirm_dialog.dart      # Confirmation dialog
+│       ├── delete_song_dialog.dart  # Delete song dialog
+│       ├── add_to_playlist_modal.dart  # Add-to-playlist modal
+│       ├── song_picker_modal.dart   # Song picker modal
+│       ├── manage_tags_modal.dart   # Tag management modal
+│       ├── browse_card.dart         # Browse card
+│       ├── browse_collection_view.dart  # Browse collection view
+│       ├── entity_detail_scaffold.dart  # Entity detail scaffold
+│       ├── song_tile.dart           # Song tile
+│       ├── filter_pill.dart         # Filter pill
+│       ├── directory_picker_sheet.dart  # Directory picker sheet
+│       ├── directory_tree_selector.dart # Directory tree selector
+│       ├── draggable_scrollbar_overlay.dart  # Draggable scrollbar overlay
+│       ├── scroll_to_top_fab.dart   # Scroll-to-top FAB
+│       ├── selection_action_button.dart  # Multi-select action button
+│       ├── empty_state.dart         # Empty state
+│       ├── error_view.dart          # Error view
+│       └── loading_indicator.dart   # Loading indicator
+└── main.dart                        # App entry point
 ```
 
 ## Page Structure
@@ -209,12 +375,24 @@ clients/player/lib/
 | Page | Route | Description |
 |------|------|------|
 | Login | `/login` | Login page (standalone route, does not use ShellRoute) |
-| Home | `/` | Playlist carousel, JS plugin grid |
-| Library | `/library` | List of all songs, search, filtering |
-| Playlists | `/playlists` | Playlist list |
+| Home | `/` | Playlist carousel, stats strip, JS plugin grid |
+| Library | `/library` | Multi-view: songs / playlists / categories / folders / tags |
+| Category songs | `/library/categories/:field?value=` | Song list by album, artist, etc. |
+| Folders | `/library/folders?path=` | Folder content drill-down page |
+| Tag songs | `/library/tags/:tagId?name=` | Song list for a tag |
+| Playlists | `/playlists` | **Merged into Library**, redirects to `/library` |
 | Playlist detail | `/playlists/:id` | Playlist details and song list |
-| Settings | `/settings` | Theme, scanning, JS plugins, tokens, upgrade, about |
+| Settings | `/settings` | Master-detail layout, categorized (appearance, scan, cache, network, etc.) |
+| Settings category | `/settings/category/:index` | Settings category detail (mobile secondary page) |
+| Servers | `/settings/servers` | Multi-server management |
+| Duplicate check | `/settings/duplicate-check` | Duplicate song detection |
+| Shortcuts | `/settings/shortcuts` | Keyboard shortcuts (desktop) |
+| Client download | `/settings/download` | Client download (visible on Web) |
+| Plugin registry | `/settings/plugin-registry` | Plugin repository browser and install |
+| Licenses | `/settings/licenses` | Open source licenses |
 | Plugin | `/plugin?url=&name=` | JS plugin WebView page (fullscreen, standalone route) |
+| Plugin tab | `/plugin-tab/:entryPath` | Plugin tab page (managed by ShellLayout) |
+| Full player | `/player` | Full-screen player (standalone route, dispatches Mobile/Desktop by screen type) |
 
 ### Authentication Guard
 
@@ -250,7 +428,7 @@ ShellLayout (ShellRoute builder)
 - **Primary color**: M3 Blue baseline (`#415F91`)
 - **Color scheme**: `ColorScheme.fromSeed(seedColor: Color(0xFF415F91))`
 - **Theme mode**: light / dark / follow system
-- **Font fallback**: NotoSansSC (Chinese support)
+- **Font fallback**: NotoSansSC (Chinese) / NotoSansKR (Korean)
 
 ### Responsive Theme
 

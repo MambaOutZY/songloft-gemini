@@ -165,8 +165,8 @@ err := db.RunInTx(ctx, func(ctx context.Context, uow *database.UnitOfWork) error
 ```
 
 - `RunInTx` automatically commits / rolls back; if `fn` returns an err, it rolls back
-- `uow.Songs` / `uow.Playlists` / `uow.PlaylistSongs` are **fields** (not methods), pointing to Repository instances bound to the current `*sql.Tx`, sharing the same connection, and won't trigger `SQLITE_BUSY`
-- The service layer injects the `database.DB` interface (`Close / RunInTx / individual Repository getters`); call `RunInTx` when you need a transaction, and directly call `db.SongRepository()` etc. for non-transactional reads/writes. See `internal/services/convert_service.go`
+- `uow.Songs` / `uow.Playlists` / `uow.PlaylistSongs` / `uow.PlayHistory` / `uow.SongArtists` are **fields** (not methods), pointing to Repository instances bound to the current `*sql.Tx`, sharing the same connection, and won't trigger `SQLITE_BUSY`
+- The service layer injects the `database.DB` interface (`Close / RunInTx / individual Repository getters`); call `RunInTx` when you need a transaction, and directly call `db.SongRepository()` etc. for non-transactional reads/writes. See the `RunInTx` usage in `internal/services/song_service.go` and `internal/services/play_history_service.go`
 
 ### Don't Do This
 

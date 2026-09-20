@@ -6,6 +6,7 @@ This document explains the color system used in the Songloft project and the gui
 
 - [Flutter Material 3 Color System](#flutter-material-3-color-system)
 - [Theme Configuration](#theme-configuration)
+- [Theme Pack System](#theme-pack-system)
 - [Color Usage Guidelines](#color-usage-guidelines)
 - [Responsive Theme Adaptation](#responsive-theme-adaptation)
 
@@ -20,17 +21,25 @@ The Songloft Flutter frontend uses the **Material 3** design system, generating 
 ```dart
 // clients/player/lib/core/theme/app_theme.dart
 class AppTheme {
-  static const Color _seedColor = Color(0xFF415F91); // M3 Blue baseline
+  static const Color _defaultSeedColor = Color(0xFF415F91); // M3 Blue baseline
 
-  static ThemeData lightTheme({ScreenType screenType = ScreenType.mobile}) {
-    return _buildTheme(Brightness.light, screenType);
+  static ThemeData lightTheme({
+    ScreenType screenType = ScreenType.mobile,
+    ThemePack? themePack, // Optional theme pack override
+  }) {
+    return _buildTheme(Brightness.light, screenType, themePack);
   }
 
-  static ThemeData darkTheme({ScreenType screenType = ScreenType.mobile}) {
-    return _buildTheme(Brightness.dark, screenType);
+  static ThemeData darkTheme({
+    ScreenType screenType = ScreenType.mobile,
+    ThemePack? themePack,
+  }) {
+    return _buildTheme(Brightness.dark, screenType, themePack);
   }
 }
 ```
+
+When a `themePack` is provided, the seedColor is replaced by the one defined in the theme pack, generating an entirely different palette.
 
 ### Advantages
 
@@ -73,13 +82,14 @@ Theme switching is implemented through the `ThemeSelector` component, with state
 
 ```dart
 ThemeData(
-  fontFamilyFallback: const ['NotoSansSC', 'sans-serif'],
+  fontFamilyFallback: const ['NotoSansSC', 'NotoSansKR', 'sans-serif'],
   // ...
 )
 ```
 
 - Uses the system font by default
 - Chinese falls back to **Noto Sans SC** (bundled with the app)
+- Korean falls back to **Noto Sans KR** (bundled with the app)
 
 ### Component Theme Customization
 
@@ -93,6 +103,70 @@ ThemeData(
   // ...
 )
 ```
+
+---
+
+## Theme Pack System
+
+Songloft supports customizing the app’s color scheme and visual style via `.songloft-theme` theme packs. Theme mode (light/dark/system) and theme packs are independent — one theme pack defines both light and dark color schemes.
+
+### SongloftThemeExtension
+
+Custom parameters specific to theme packs are injected via the `ThemeExtension` mechanism:
+
+```dart
+class SongloftThemeExtension extends ThemeExtension<SongloftThemeExtension> {
+  // Original fields
+  final List<Color>? playerGradientColors; // Player gradient colors
+  final double cardRadius;                 // Card border radius (default AppRadius.md)
+  final double controlRadius;              // Control border radius (default AppRadius.md)
+  final double navigationRadius;           // Navigation border radius (default AppRadius.md)
+
+  // Liquid Glass tokens
+  final Color glassFill;          // Glass fill (light default 0xB8FFFFFF)
+  final Color glassFillStrong;    // Strong glass fill (light default 0xD9FFFFFF)
+  final Color glassBorder;        // Glass border (light default 0x73FFFFFF)
+  final Color glassHighlight;     // Glass highlight (light default 0x99FFFFFF)
+  final Color glassGlow;          // Glass primary glow (= glassBase, light default #3BAEEF)
+  final Color glassGlowFaint;     // Faint glow (glassBase @ 0.10)
+  final Color glassSheen;         // Sheen (glassBase @ 0.18)
+  final String navigationStyle;   // Navigation bar style: 'standard' | 'capsule' (default 'standard')
+}
+```
+
+`glassGlow` / `glassGlowFaint` / `glassSheen` are all derived from **glassBase**: glassBase comes from `ThemePackColors.glassColor`; without a theme pack it falls back to `#3BAEEF` (light) / `#5BC0F5` (dark).
+
+Usage in components:
+
+```dart
+final ext = Theme.of(context).extension<SongloftThemeExtension>();
+if (ext?.playerGradientColors != null) {
+  // Use the theme pack gradient
+}
+// Liquid Glass example
+Container(
+  decoration: BoxDecoration(
+    color: ext?.glassFill,
+    border: Border.all(color: ext?.glassBorder ?? Colors.transparent),
+  ),
+)
+```
+
+### How Theme Packs Affect the Color System
+
+When a user activates a theme pack:
+
+1. **seedColor is replaced**: A new full palette is generated from the theme pack’s `light.seedColor` / `dark.seedColor`
+2. **surface/background can be overridden**: If the theme pack specifies `backgroundColor` or `surfaceColor`, they `copyWith` override the auto-generated values
+3. **Player gradient overlay**: Colors defined by `playerGradient` are overlaid on the cover art’s dynamic colors at 40% opacity
+4. **Border radii**: `cardRadius`, `controlRadius`, `navigationRadius` are injected into component themes
+5. **Liquid Glass tint**: `glassColor` serves as glassBase to derive `glassGlow` / `glassGlowFaint` / `glassSheen`; light and dark can specify different values
+6. **Navigation bar style**: `navigationStyle` controls the navigation bar appearance — `'standard'` (default indicator) or `'capsule'` (capsule bar)
+
+### Related Documents
+
+- 📖 [Theme Pack Development Guide](/theme-pack-guide) — Detailed creation workflow and best practices
+- 🎨 [Online Theme Repository](https://github.com/songloft-org/songloft-themes) — Community theme packs
 
 ---
 
@@ -199,6 +273,16 @@ Songloft uses the `palette_generator` library to extract dominant colors from so
 
 ## Changelog
 
+- **2026-09-20**: Liquid Glass theme system
+  - `SongloftThemeExtension` adds 8 Liquid Glass token fields (`glassFill`, `glassFillStrong`, `glassBorder`, `glassHighlight`, `glassGlow`, `glassGlowFaint`, `glassSheen`, `navigationStyle`)
+  - `ThemePackColors` adds `glassColor` field, driving Liquid Glass tint
+  - `ThemePack` adds `navigationStyle` field (`'standard'` / `'capsule'`)
+  - Font fallback adds NotoSansKR (Korean)
+- **2026-07-31**: Added theme pack system
+  - Support for `.songloft-theme` packs to customize colors, radii, and player gradient
+  - Added `SongloftThemeExtension` custom theme extension
+  - `AppTheme.lightTheme()` / `darkTheme()` accept an optional `ThemePack` parameter
+  - Online theme catalog: browse and install from [songloft-themes](https://github.com/songloft-org/songloft-themes)
 - **2026-04-14**: Migrated to the Flutter Material 3 color system
   - Main frontend migrated to Flutter, using `ColorScheme.fromSeed` for automatic palette generation
   - seedColor: M3 Blue baseline (`#415F91`)

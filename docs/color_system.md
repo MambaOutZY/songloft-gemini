@@ -82,13 +82,14 @@ Songloft 支持三种主题模式：
 
 ```dart
 ThemeData(
-  fontFamilyFallback: const ['NotoSansSC', 'sans-serif'],
+  fontFamilyFallback: const ['NotoSansSC', 'NotoSansKR', 'sans-serif'],
   // ...
 )
 ```
 
 - 默认使用系统字体
 - 中文回退到 **Noto Sans SC**（随应用打包）
+- 韩文回退到 **Noto Sans KR**（随应用打包）
 
 ### 组件主题定制
 
@@ -115,12 +116,25 @@ Songloft 支持通过 `.songloft-theme` 主题包自定义应用的配色和视�
 
 ```dart
 class SongloftThemeExtension extends ThemeExtension<SongloftThemeExtension> {
+  // 原有字段
   final List<Color>? playerGradientColors; // 播放器渐变色
-  final double cardRadius;                 // 卡片圆角
-  final double controlRadius;              // 控件圆角
-  final double navigationRadius;           // 导航圆角
+  final double cardRadius;                 // 卡片圆角（默认 AppRadius.md）
+  final double controlRadius;              // 控件圆角（默认 AppRadius.md）
+  final double navigationRadius;           // 导航圆角（默认 AppRadius.md）
+
+  // Liquid Glass 令牌
+  final Color glassFill;          // 玻璃填充（亮色默认 0xB8FFFFFF）
+  final Color glassFillStrong;    // 强玻璃填充（亮色默认 0xD9FFFFFF）
+  final Color glassBorder;        // 玻璃边框（亮色默认 0x73FFFFFF）
+  final Color glassHighlight;     // 玻璃高光（亮色默认 0x99FFFFFF）
+  final Color glassGlow;          // 玻璃主发光色（= glassBase，亮色默认 #3BAEEF）
+  final Color glassGlowFaint;     // 弱发光（glassBase @ 0.10）
+  final Color glassSheen;         // 光泽（glassBase @ 0.18）
+  final String navigationStyle;   // 导航栏样式：'standard' | 'capsule'（默认 'standard'）
 }
 ```
+
+`glassGlow` / `glassGlowFaint` / `glassSheen` 三者均基于 **glassBase** 派生：glassBase 从主题包 `ThemePackColors.glassColor` 取值，无主题包时亮色回落 `#3BAEEF`，暗色回落 `#5BC0F5`。
 
 在组件中使用：
 
@@ -129,6 +143,13 @@ final ext = Theme.of(context).extension<SongloftThemeExtension>();
 if (ext?.playerGradientColors != null) {
   // 使用主题包的渐变色
 }
+// Liquid Glass 示例
+Container(
+  decoration: BoxDecoration(
+    color: ext?.glassFill,
+    border: Border.all(color: ext?.glassBorder ?? Colors.transparent),
+  ),
+)
 ```
 
 ### 主题包如何影响颜色系统
@@ -139,6 +160,8 @@ if (ext?.playerGradientColors != null) {
 2. **surface/background 可覆盖**：如果主题包指定了 `backgroundColor` 或 `surfaceColor`，会 `copyWith` 覆盖自动生成的值
 3. **播放器渐变叠加**：`playerGradient` 定义的颜色以 40% 透明度叠加在封面动态取色之上
 4. **圆角半径**：`cardRadius`、`controlRadius`、`navigationRadius` 注入到组件主题中
+5. **Liquid Glass 色调**：`glassColor` 作为 glassBase 派生 `glassGlow` / `glassGlowFaint` / `glassSheen`；亮暗色可分别指定
+6. **导航栏样式**：`navigationStyle` 控制导航栏外观——`'standard'`（默认指示器）或 `'capsule'`（胶囊栏）
 
 ### 相关文档
 
@@ -250,6 +273,11 @@ Songloft 使用 `palette_generator` 库从歌曲封面图片中提取主色调�
 
 ## 更新日志
 
+- **2026-09-20**: Liquid Glass 主题系统
+  - `SongloftThemeExtension` 新增 8 个 Liquid Glass 令牌字段（`glassFill`、`glassFillStrong`、`glassBorder`、`glassHighlight`、`glassGlow`、`glassGlowFaint`、`glassSheen`、`navigationStyle`）
+  - `ThemePackColors` 新增 `glassColor` 字段，驱动 Liquid Glass 色调
+  - `ThemePack` 新增 `navigationStyle` 字段（`'standard'` / `'capsule'`）
+  - 字体回退新增 NotoSansKR（韩文）
 - **2026-07-31**: 新增主题包系统
   - 支持 `.songloft-theme` 主题包自定义配色、圆角、播放器渐变
   - 新增 `SongloftThemeExtension` 自定义主题扩展

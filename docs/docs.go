@@ -5967,6 +5967,83 @@ const docTemplate = `{
                 }
             }
         },
+        "/settings/theme-catalog-url": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前配置的主题目录远程 URL，未配置时返回默认值",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "主题包"
+                ],
+                "summary": "获取主题目录 URL",
+                "responses": {
+                    "200": {
+                        "description": "当前目录 URL",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "设置主题目录的远程 URL，同时清除本地目录缓存。URL 不能为空",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "主题包"
+                ],
+                "summary": "更新主题目录 URL",
+                "parameters": [
+                    {
+                        "description": "包含 url 字段的 JSON 对象",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的目录 URL",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "URL 为空或请求格式错误",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/settings/user-preferences": {
             "get": {
                 "security": [

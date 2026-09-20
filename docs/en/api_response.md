@@ -69,4 +69,4 @@ For binary stream endpoints such as playback (`/songs/{id}/play`), proxying (`/p
 | Return data | `respondJSON(w, status, data)` — `data` is serialized directly as top-level JSON |
 | Return an error | `respondError(w, status, message, err)` — automatically builds `{error, detail}` |
 | Middleware error | `respondAuthError(w, status, message, err)` — same format as `respondError` |
-| jsplugin error | `writePluginUnavailable` — also uses the `{error, detail}` fields |
+| jsplugin error | `writePluginUnavailable` — also uses the `{error, detail}` fields, where `detail` contains a semantic error code (e.g. `plugin_disabled` / `plugin_not_found` / `plugin_unavailable`) rather than a low-level technical error message |

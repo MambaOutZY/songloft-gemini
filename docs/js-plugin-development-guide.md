@@ -59,7 +59,7 @@ npm install   # 或 pnpm install / yarn install
 脚手架会交互式引导你完成以下配置：
 
 1. **基本信息** — 目录名、插件显示名称、entryPath、简介、作者
-2. **权限选择**（多选） — `storage`、`persistent-storage`、`songs.read`、`songs.write`、`playlists.read`、`playlists.write`、`inter-plugin`、`command`、`jsenv`、`fs`、`fs:music`、`fs:external`、`websocket`、`net`
+2. **权限选择**（多选） — `storage`、`persistent-storage`、`songs.read`、`songs.write`、`playlists.read`、`playlists.write`、`tags.read`、`tags.write`、`inter-plugin`、`command`、`jsenv`、`fs`、`fs:music`、`fs:external`、`websocket`、`net`、`net:insecure-tls`（通配符糖 `songs.*`、`playlists.*`、`tags.*`、`fs.*` 可在 manifest 中使用）
 3. **附加功能模板**（多选，可跳过） — 静态页面 (`static/`)、可执行文件管理 (`bin/`)、Lynx 原生渲染 (`renderEngine: "lynx"`，ReactLynx + 跨平台原生 UI)
 4. **包管理器** — npm / pnpm / yarn
 
@@ -611,6 +611,61 @@ async function playlistsExample() {
 }
 ```
 
+### songloft.tags — 自定义标签
+
+需要权限：`tags.read`（读取）或 `tags.write`（修改）；或者通配符糖 `tags.*`。
+
+```javascript
+async function tagsExample() {
+    // —— 读取操作（需要 tags.read）——
+
+    // 获取标签列表（支持筛选、排序、分页）
+    var tags = await songloft.tags.list({
+        keyword: "",     // 可选，按名称模糊搜索
+        orderBy: "",     // 可选，排序字段
+        order: "",       // 可选，"asc" | "desc"
+        limit: 100,      // 可选，默认 100
+        offset: 0        // 可选，默认 0
+    });
+
+    // 根据 ID 获取单个标签
+    var tag = await songloft.tags.getById(1);
+
+    // 获取指定歌曲关联的所有标签
+    var songTags = await songloft.tags.getSongTags(42);
+
+    // —— 写入操作（需要 tags.write）——
+
+    // 创建标签
+    var newTag = await songloft.tags.create({ name: "我的标签", color: "#ff6600" });
+
+    // 更新标签
+    await songloft.tags.update({ id: 1, name: "新名称", color: "#00cc00" });
+
+    // 删除标签
+    await songloft.tags.delete(1);
+
+    // 批量绑定歌曲到标签（返回 { bound: <实际绑定数> }）
+    var result = await songloft.tags.bindSongs({ tagId: 1, songIds: [10, 20, 30] });
+
+    // 批量解绑歌曲（返回 { unbound: <实际解绑数> }）
+    var result2 = await songloft.tags.unbindSongs({ tagId: 1, songIds: [10, 20] });
+}
+```
+
+**方法参考：**
+
+| 方法 | 权限 | 参数 | 返回 |
+|------|------|------|------|
+| `list(options?)` | `tags.read` | `{ keyword?, orderBy?, order?, limit?, offset? }` | Tag[] |
+| `getById(id)` | `tags.read` | `id: number` | Tag |
+| `getSongTags(songId)` | `tags.read` | `songId: number` | Tag[] |
+| `create(options)` | `tags.write` | `{ name: string, color: string }` | Tag |
+| `update(options)` | `tags.write` | `{ id: number, name: string, color: string }` | void |
+| `delete(id)` | `tags.write` | `id: number` | void |
+| `bindSongs(options)` | `tags.write` | `{ tagId: number, songIds: number[] }` | `{ bound: number }` |
+| `unbindSongs(options)` | `tags.write` | `{ tagId: number, songIds: number[] }` | `{ unbound: number }` |
+
 ### songloft.comm — 插件间通信
 
 需要权限：`inter-plugin`
@@ -877,6 +932,9 @@ globalThis.onHTTPRequest = (req: HTTPRequest) => router.handle(req);
 | `playlists.read` | 读取歌单及歌单中的歌曲 |
 | `playlists.write` | 创建/修改/删除歌单及其歌曲 |
 | `playlists.*` | 歌单读写通配符（一把梭糖） |
+| `tags.read` | 读取自定义标签及歌曲-标签关联 |
+| `tags.write` | 创建/修改/删除标签、绑定/解绑歌曲 |
+| `tags.*` | 标签读写通配符（一把梭糖） |
 | `inter-plugin` | 插件间通信 |
 | `command` | 执行外部命令/管理可执行文件 |
 | `jsenv` | 创建/执行子 JS 沙箱环境 |
@@ -887,6 +945,7 @@ globalThis.onHTTPRequest = (req: HTTPRequest) => router.handle(req);
 | `persistent-storage` | 读写卸载插件后仍保留的持久化存储 |
 | `net` | 使用原始网络 socket（UDP / 出站 TCP） |
 | `net:insecure-tls` | 允许 `fetch` 带 `X-Fetch-Insecure` 跳过 TLS 证书校验（自签 / 裸 IP 访问的自建设备）。**不被 `net` 覆盖，必须单独声明** |
+| `fs.*` | 文件系统通配符（覆盖 `fs`、`fs:music`、`fs:external`） |
 
 > 注意：网络请求 (`fetch`)、定时器 (`setTimeout/setInterval`)、日志等能力**无需权限声明**，是默认宿主能力。
 
@@ -894,6 +953,7 @@ globalThis.onHTTPRequest = (req: HTTPRequest) => router.handle(req);
 
 以 `.*` 结尾的权限在声明层作为一把梭糖，runner 在检查时用前缀匹配。例如声明 `playlists.*`
 既包括 `playlists.read` 也包括 `playlists.write`；而单声明 `playlists.read` 时无法调用写接口。
+当前可用的通配符糖：`songs.*`、`playlists.*`、`tags.*`、`fs.*`。
 
 ### 最小权限原则
 

@@ -35,40 +35,73 @@ clients/player/lib/
 │   ├── app_config.dart              # API 配置、部署模式、版本号
 │   └── constants.dart               # 应用常量
 ├── core/                            # 核心基础设施
-│   ├── audio/
+│   ├── a11y/                        # 无障碍辅助
+│   │   ├── web_semantics_controller.dart  # Web 端语义树控制器
+│   │   └── semantics_pointer_override*.dart  # 指针事件语义覆盖（条件导入）
+│   ├── audio/                       # 音频播放引擎（20 个文件）
 │   │   ├── audio_service.dart       # SongloftAudioHandler（音频播放、通知栏控制）
-│   │   └── system_volume_provider.dart  # 系统音量 Provider（基于 volume_controller）
+│   │   ├── songloft_just_audio_platform.dart  # 自定义 JustAudio 平台注册
+│   │   ├── songloft_mediakit_player.dart      # libmpv 原生播放器封装
+│   │   ├── songloft_web_audio_player.dart     # Web 端 HTML5 Audio + hls.js 播放器
+│   │   ├── equalizer_service*.dart            # 均衡器服务（mpv / web 双实现）
+│   │   ├── smtc_service*.dart                 # Windows SMTC 媒体控制（条件导入）
+│   │   ├── video_controller_provider.dart     # 视频画面控制器 Provider
+│   │   ├── system_volume_provider.dart        # 系统音量 Provider
+│   │   └── media_browse_data_source.dart      # Android Auto 媒体浏览数据源
 │   ├── backend/                     # Bundle 本地模式（嵌入后端抽象层）
 │   │   ├── embedded_backend_service.dart   # 统一接口（移动端 MethodChannel / 桌面端子进程分发）
 │   │   ├── desktop_backend_service.dart    # 桌面端：启动 songloft-server 子进程
+│   │   ├── native_contract_service.dart    # 原生端服务协议
 │   │   ├── run_mode_provider.dart          # RunMode 枚举（local/remote）+ 持久化 Provider
 │   │   └── backend_lifecycle.dart          # WidgetsBindingObserver：前台恢复自动重启后端
-│   ├── env/
-│   │   └── (reserved)                # 环境信息
-│   ├── platform/
-│   │   └── live_activity_service.dart  # iOS 灵动岛/实时活动集成
-│   ├── tracely/
-│   │   └── tracely_client.dart       # Tracely 前端监控上报客户端
-│   ├── network/
+│   ├── network/                     # 网络层（19 个文件）
 │   │   ├── api_client.dart          # Dio HTTP 客户端封装
 │   │   ├── api_exceptions.dart      # API 异常定义
-│   │   └── auth_interceptor.dart    # JWT Token 自动刷新拦截器
+│   │   ├── auth_interceptor.dart    # JWT Token 自动刷新拦截器
+│   │   ├── base_url_provider.dart   # 基础 URL Provider
+│   │   ├── server_probe.dart        # 服务器探测
+│   │   ├── servers_provider.dart    # 多服务器管理 Provider
+│   │   ├── lan_address.dart         # 局域网地址发现
+│   │   ├── github_proxy_fallback.dart  # GitHub 代理回退
+│   │   └── ...                      # TLS / 重定向 / 媒体代理等条件导入
+│   ├── platform/
+│   │   ├── live_activity_service.dart   # iOS 灵动岛 / 实时活动集成
+│   │   └── home_widget_service.dart     # 桌面小组件服务
 │   ├── router/
 │   │   └── app_router.dart          # GoRouter 路由配置（含认证守卫）
-│   ├── storage/
+│   ├── storage/                     # 本地存储（6 个文件）
 │   │   ├── app_preferences.dart     # SharedPreferences 封装
+│   │   ├── secure_storage.dart      # 安全存储（Token 缓存）
 │   │   ├── lyric_cache_service.dart # 歌词本地缓存
-│   │   └── secure_storage.dart      # 安全存储（Token 缓存）
+│   │   ├── song_cache_service.dart  # 歌曲缓存服务
+│   │   ├── playback_state_storage.dart  # 播放状态持久化
+│   │   └── preference_sync_service.dart # 偏好同步服务
 │   ├── theme/
-│   │   ├── app_theme.dart           # Material 3 主题（亮色/暗色，响应式）
+│   │   ├── app_theme.dart           # Material 3 主题 + SongloftThemeExtension（含 Liquid Glass 令牌）
 │   │   ├── app_dimensions.dart      # 尺寸和圆角常量
 │   │   ├── responsive.dart          # 响应式断点和工具扩展
-│   │   └── (reserved)               # 主题扩展
-│   └── utils/
-│       ├── color_extraction.dart    # 封面颜色提取
-│       ├── formatters.dart          # 格式化工具（时长、文件大小等）
-│       ├── platform_utils.dart      # 平台检测工具
-│       └── url_helper.dart          # URL 构建辅助（base_url 拼接、token 附加等）
+│   │   └── widgets/                 # 主题组件
+│   │       ├── glass_surface.dart   # 玻璃效果容器
+│   │       └── glass_capsule_bar.dart  # 玻璃胶囊导航栏
+│   ├── tracely/
+│   │   └── tracely_client.dart      # Tracely 前端监控上报客户端
+│   ├── updater/                     # 应用更新（5 个文件）
+│   │   ├── backend_patch_service.dart   # 后端热补丁服务
+│   │   ├── patch_update_service.dart    # 补丁更新服务
+│   │   ├── patch_update_dialog.dart     # 补丁更新对话框
+│   │   ├── channel_release_resolver.dart  # 更新渠道解析
+│   │   └── version_compare.dart         # 版本号比较
+│   ├── utils/                       # 工具库（31 个文件）
+│   │   ├── color_extraction.dart    # 封面颜色提取
+│   │   ├── formatters.dart          # 格式化工具（时长、文件大小等）
+│   │   ├── platform_utils.dart      # 平台检测工具
+│   │   ├── url_helper.dart          # URL 构建辅助（base_url 拼接、token 附加等）
+│   │   ├── audio_format_helper.dart # 音频格式辅助
+│   │   ├── window_tray_manager.dart # 窗口托盘管理
+│   │   └── ...                      # Web 平台相关辅助（缓存清理、全屏、WebGL 恢复等）
+│   ├── plugin_iframe_gate.dart      # 插件 iframe 门控（条件导入入口）
+│   ├── plugin_iframe_gate_web.dart  # Web 端 iframe 门控实现
+│   └── plugin_iframe_gate_stub.dart # 非 Web 平台 stub
 ├── features/                        # 功能模块
 │   ├── auth/                        # 认证模块
 │   │   ├── data/
@@ -82,93 +115,199 @@ clients/player/lib/
 │   │           └── auth_provider.dart
 │   ├── startup/                     # 启动流程模块
 │   │   └── presentation/
-│   │       └── startup_gate.dart    # 启动守门：本地模式自动引导 / 远程模式探测服务器
+│   │       ├── startup_gate.dart    # 启动守门：本地模式自动引导 / 远程模式探测服务器
+│   │       └── web_update_gate.dart # Web 端强制更新门控
 │   ├── home/                        # 首页模块
+│   │   ├── domain/
+│   │   │   └── home_grid_config.dart  # 首页网格布局配置
 │   │   └── presentation/
-│   │       ├── home_page.dart       # 首页（歌单轮播、JS 插件网格）
-│   │       ├── plugin_webview_page.dart      # JS 插件 WebView 页面（条件导入）
-│   │       ├── plugin_webview_page_native.dart  # 原生平台 WebView 实现
-│   │       ├── plugin_webview_page_stub.dart    # Web 平台 stub
+│   │       ├── home_page.dart         # 首页（歌单轮播、统计条、JS 插件网格）
+│   │       ├── plugin_host_bridge.dart     # 插件宿主桥接（原生 WebView callHandler 注册）
+│   │       ├── plugin_host_dispatch.dart   # 插件宿主分发（传输无关、web-safe）
+│   │       ├── plugin_webview_page.dart    # JS 插件 WebView 页面（条件导入）
+│   │       ├── plugin_tab_page.dart        # 插件 Tab 页面（条件导入）
+│   │       ├── providers/
+│   │       │   └── home_grid_config_provider.dart
+│   │       ├── render/              # 插件渲染引擎（WebView / WebF）
+│   │       │   ├── plugin_render_view.dart
+│   │       │   ├── plugin_render_controller.dart
+│   │       │   ├── plugin_render_surface_webf.dart
+│   │       │   ├── plugin_render_surface_webview.dart
+│   │       │   └── ...              # 渲染辅助（字体、配色、文件桥接等）
 │   │       └── widgets/
-│   │           └── playlist_carousel.dart   # 歌单轮播组件
+│   │           ├── playlist_carousel.dart  # 歌单轮播组件
+│   │           ├── hero_card.dart          # Hero 卡片
+│   │           ├── stats_strip.dart        # 统计条
+│   │           └── section_header.dart     # 区块标题
 │   ├── jsplugin/                    # JS 插件模块
 │   │   ├── data/
-│   │   │   └── jsplugin_api.dart    # JS 插件 API（含 JSPlugin 模型、上传、更新检查）
+│   │   │   ├── jsplugin_api.dart    # JS 插件 API（含 JSPlugin 模型、上传、更新检查）
+│   │   │   └── plugin_order.dart    # 插件排序
 │   │   └── presentation/
 │   │       ├── providers/
-│   │       │   └── jsplugin_provider.dart   # JSPluginApi Provider / jsPluginsProvider
+│   │       │   └── jsplugin_provider.dart
 │   │       └── widgets/
-│   │           ├── jsplugin_grid.dart       # JS 插件入口网格（首页用）
-│   │           └── jsplugin_manager.dart    # JS 插件管理面板（设置页用）
-│   ├── library/                     # 歌曲库模块
+│   │           ├── jsplugin_grid.dart      # JS 插件入口网格（首页用）
+│   │           ├── jsplugin_manager.dart   # JS 插件管理面板（设置页用）
+│   │           ├── plugin_registry.dart    # 插件仓库浏览
+│   │           ├── plugin_icon.dart        # 插件图标
+│   │           └── plugin_icon_utils.dart  # 图标辅助
+│   ├── library/                     # 歌曲库模块（含分类 / 文件夹 / 标签浏览）
 │   │   ├── data/
 │   │   │   ├── songs_api.dart       # 歌曲 API
-│   │   │   └── songs_repository.dart
+│   │   │   ├── songs_repository.dart
+│   │   │   └── song_tags_api.dart   # 歌曲标签 API
+│   │   ├── domain/
+│   │   │   ├── repositories/
+│   │   │   │   └── songs_repository_interface.dart
+│   │   │   └── use_cases/
+│   │   │       └── favorite_service.dart  # 收藏服务
 │   │   └── presentation/
-│   │       ├── library_page.dart    # 歌曲库页面
-│   │       ├── song_edit_page.dart  # 歌曲编辑页面
+│   │       ├── library_page.dart          # 歌曲库页面（多视图切换：歌曲 / 歌单 / 分类 / 文件夹 / 标签）
+│   │       ├── song_edit_page.dart        # 歌曲编辑页面
+│   │       ├── category_songs_page.dart   # 分类歌曲列表页
+│   │       ├── folder_content_page.dart   # 文件夹内容页
+│   │       ├── tag_songs_page.dart        # 标签歌曲列表页
 │   │       ├── providers/
 │   │       │   ├── songs_provider.dart
-│   │       │   └── favorite_provider.dart
+│   │       │   ├── favorite_provider.dart
+│   │       │   ├── category_provider.dart # 分类浏览 Provider
+│   │       │   ├── folder_provider.dart   # 文件夹浏览 Provider
+│   │       │   └── song_tag_provider.dart # 歌曲标签 Provider
 │   │       └── widgets/
-│   │           ├── song_list_tile.dart   # 歌曲列表项
-│   │           └── song_filter_bar.dart  # 歌曲筛选栏
+│   │           ├── song_list_tile.dart        # 歌曲列表项
+│   │           ├── library_view_switcher.dart # 视图切换器
+│   │           ├── facet_grid_view.dart       # 分面网格视图（专辑 / 歌手等）
+│   │           ├── folder_browse_view.dart    # 文件夹浏览视图
+│   │           └── tag_grid_view.dart         # 标签网格视图
 │   ├── player/                      # 播放器模块
+│   │   ├── data/
+│   │   │   └── play_history_api.dart  # 播放历史 API
 │   │   ├── domain/
-│   │   │   ├── player_state.dart    # 播放器状态定义
-│   │   │   └── lyric_parser.dart    # LRC 歌词解析器
+│   │   │   ├── player_state.dart      # 播放器状态定义
+│   │   │   ├── lyric_parser.dart      # LRC 歌词解析器
+│   │   │   ├── playback_context.dart  # 播放上下文
+│   │   │   ├── equalizer_setting.dart # 均衡器设置
+│   │   │   └── use_cases/             # 领域用例（8 个）
+│   │   │       ├── play_queue.dart        # 播放队列管理
+│   │   │       ├── queue_loader.dart      # 队列加载器
+│   │   │       ├── play_mode_resolver.dart  # 播放模式解析
+│   │   │       ├── prefetch_strategy.dart   # 预取策略
+│   │   │       ├── sleep_timer_logic.dart   # 睡眠定时器
+│   │   │       └── ...                     # 重试策略、恢复状态等
 │   │   └── presentation/
-│   │       ├── queue_page.dart      # 播放队列页面
-│   │       ├── providers/
-│   │       │   └── player_provider.dart
-│   │       └── widgets/
-│   │           ├── desktop_player.dart    # 桌面端播放器（迷你/侧栏形式）
+│   │       ├── queue_page.dart        # 播放队列页面
+│   │       ├── lyric_adjust_page.dart # 歌词时间偏移调整页
+│   │       ├── providers/             # Provider（10 个）
+│   │       │   ├── player_provider.dart     # 核心播放 Provider
+│   │       │   ├── lyric_provider.dart      # 歌词 Provider
+│   │       │   ├── equalizer_provider.dart  # 均衡器 Provider
+│   │       │   ├── audio_track_provider.dart  # 音轨切换 Provider
+│   │       │   ├── play_history_provider.dart # 播放历史 Provider
+│   │       │   └── ...                       # Web 视频同步等
+│   │       ├── utils/
+│   │       │   ├── full_player_route.dart   # 全屏播放器路由辅助
+│   │       │   └── player_song_actions.dart # 播放器歌曲操作
+│   │       └── widgets/               # 播放器组件（25 个）
+│   │           ├── desktop_player.dart       # 桌面端播放器栏
 │   │           ├── desktop_full_player.dart  # 桌面端全屏播放器
-│   │           ├── mobile_player.dart     # 移动端全屏播放器
-│   │           ├── mini_player.dart       # 迷你播放器条
-│   │           ├── play_controls.dart     # 播放控制按钮
-│   │           ├── popup_controls.dart    # 弹出式控制面板
-│   │           ├── progress_bar.dart      # 进度条
-│   │           ├── volume_control.dart    # 音量控制
-│   │           ├── lyrics_view.dart       # 歌词显示
-│   │           └── playlist_drawer.dart   # 播放列表抽屉
+│   │           ├── mobile_player.dart        # 移动端全屏播放器
+│   │           ├── mini_player.dart          # 迷你播放器条
+│   │           ├── side_player.dart          # 侧边播放器面板
+│   │           ├── play_controls.dart        # 播放控制按钮
+│   │           ├── popup_controls.dart       # 弹出式控制面板
+│   │           ├── progress_bar.dart         # 进度条
+│   │           ├── volume_control.dart       # 音量控制
+│   │           ├── lyrics_view.dart          # 歌词显示
+│   │           ├── karaoke_line.dart         # 卡拉OK 逐字高亮
+│   │           ├── playlist_drawer.dart      # 播放列表抽屉
+│   │           ├── equalizer_panel.dart      # 均衡器面板
+│   │           ├── video_player_surface.dart # 视频播放器画面
+│   │           ├── play_history_sheet.dart   # 播放历史面板
+│   │           ├── vinyl_ring.dart           # 黑胶唱片动画
+│   │           └── ...                       # 音轨控制、视频舞台、快捷键域等
 │   ├── playlist/                    # 歌单模块
 │   │   ├── data/
 │   │   │   ├── playlist_api.dart    # 歌单 CRUD
 │   │   │   └── playlist_repository.dart
 │   │   ├── domain/
-│   │   │   └── playlist.dart        # 歌单模型
+│   │   │   ├── playlist.dart          # 歌单模型
+│   │   │   ├── repositories/
+│   │   │   │   └── playlist_repository_interface.dart
+│   │   │   └── use_cases/
+│   │   │       ├── playlist_sort.dart      # 歌单排序
+│   │   │       └── pinyin_comparator.dart  # 拼音比较器
 │   │   └── presentation/
-│   │       ├── playlists_page.dart   # 歌单列表页
 │   │       ├── playlist_detail_page.dart  # 歌单详情页
 │   │       ├── providers/
 │   │       │   ├── playlist_provider.dart
 │   │       │   └── playlist_view_provider.dart
-│   │       └── widgets/
-│   │           ├── playlist_card.dart         # 歌单卡片
-│   │           ├── playlist_list_item.dart     # 歌单列表项
-│   │           └── song_cover_picker_modal.dart  # 歌曲封面选择弹窗
+│   │       └── widgets/               # 歌单组件（10 个）
+│   │           ├── playlist_browse_view.dart     # 歌单浏览视图
+│   │           ├── playlist_card.dart            # 歌单卡片
+│   │           ├── playlist_list_item.dart       # 歌单列表项
+│   │           ├── playlist_search_field.dart    # 歌单搜索框
+│   │           ├── playlist_edit_dialog.dart     # 歌单编辑对话框
+│   │           ├── playlist_form_dialog.dart     # 歌单表单对话框
+│   │           ├── playlist_song_tile.dart       # 歌单内歌曲项
+│   │           ├── song_cover_picker_modal.dart  # 歌曲封面选择弹窗
+│   │           └── ...                          # 封面编辑、适配器等
 │   ├── settings/                    # 设置模块
-│       ├── data/
-│       │   ├── cache_api.dart       # 音乐缓存 API（统计、清理、配置、目录验证）
-│       │   ├── config_api.dart      # 配置 API
-│       │   ├── directory_api.dart   # 目录浏览 API（音乐目录选择器用）
-│       │   ├── frontend_version_api.dart  # 前端版本检查 API
-│       │   ├── scan_api.dart        # 扫描 API
-│       │   └── upgrade_api.dart     # 升级 API
-│       └── presentation/
-│           ├── settings_page.dart   # 设置页面
-│           ├── providers/
-│           │   └── settings_provider.dart
-│           └── widgets/
-│               ├── cache_manager.dart        # 音乐缓存管理面板（含自定义缓存目录对话框）
-│               ├── config_manager.dart       # 配置管理
-│               ├── exclude_dir_manager.dart  # 扫描排除目录管理
-│               ├── frontend_upgrade_dialog.dart  # 前端升级对话框
-│               ├── scan_manager.dart         # 扫描管理
-│               ├── theme_selector.dart       # 主题选择器
-│               ├── token_manager.dart        # 令牌管理
-│               └── upgrade_dialog.dart       # 后端升级对话框
+│   │   ├── data/                    # 数据层（12 个文件）
+│   │   │   ├── cache_api.dart       # 音乐缓存 API
+│   │   │   ├── config_api.dart      # 通用配置 API（/configs/{key}）
+│   │   │   ├── settings_api.dart    # 业务设置 API（/settings/* 端点封装）
+│   │   │   ├── directory_api.dart   # 目录浏览 API
+│   │   │   ├── scan_api.dart        # 扫描 API
+│   │   │   ├── theme_pack_api.dart  # 主题包 API（含 ThemePack / ThemePackColors 模型）
+│   │   │   ├── upgrade_api.dart     # 升级 API
+│   │   │   ├── frontend_version_api.dart  # 前端版本检查 API
+│   │   │   ├── log_export_service.dart    # 日志导出服务
+│   │   │   └── ...                        # 日志分享条件导入
+│   │   ├── domain/
+│   │   │   ├── key_binding.dart            # 快捷键绑定
+│   │   │   └── player_shortcut_action.dart # 播放器快捷操作
+│   │   └── presentation/
+│   │       ├── settings_page.dart           # 设置页面（入口）
+│   │       ├── servers_page.dart            # 服务器管理页面
+│   │       ├── duplicate_check_page.dart    # 重复歌曲检查页面
+│   │       ├── client_download_page.dart    # 客户端下载页面
+│   │       ├── licenses_page.dart           # 开源许可证页面
+│   │       ├── shortcut_settings_page.dart  # 快捷键设置页面
+│   │       ├── providers/
+│   │       │   ├── settings_provider.dart
+│   │       │   ├── theme_pack_provider.dart
+│   │       │   ├── shortcut_settings_provider.dart
+│   │       │   ├── cache_download_provider.dart
+│   │       │   └── song_cache_provider.dart
+│   │       └── widgets/             # 设置组件（18 个）
+│   │           ├── settings_master_detail.dart    # 主从布局
+│   │           ├── settings_category_content.dart # 分类内容
+│   │           ├── section_card.dart              # 区块卡片
+│   │           ├── scan_manager.dart              # 扫描管理
+│   │           ├── cache_manager.dart             # 缓存管理
+│   │           ├── config_manager.dart            # 配置管理
+│   │           ├── exclude_dir_manager.dart       # 排除目录管理
+│   │           ├── theme_selector.dart            # 主题选择器
+│   │           ├── theme_pack_manager.dart        # 主题包管理
+│   │           ├── theme_catalog.dart             # 在线主题目录
+│   │           ├── token_manager.dart             # 令牌管理
+│   │           ├── language_selector.dart         # 语言选择器
+│   │           ├── home_grid_selector.dart        # 首页布局选择器
+│   │           ├── upgrade_dialog.dart            # 后端升级对话框
+│   │           ├── frontend_upgrade_dialog.dart   # 前端升级对话框
+│   │           ├── github_proxy_dialog.dart       # GitHub 代理对话框
+│   │           ├── metadata_refresh_manager.dart  # 元数据刷新管理
+│   │           └── shortcut_recorder.dart         # 快捷键录制器
+│   ├── desktop_lyric/               # 桌面歌词模块
+│   │   ├── desktop_lyric_controller.dart    # 桌面歌词控制器
+│   │   ├── desktop_lyric_main.dart          # 桌面歌词入口
+│   │   ├── desktop_lyric_ipc.dart           # 桌面歌词进程间通信
+│   │   ├── desktop_lyric_font_size.dart     # 字号配置
+│   │   ├── android_floating_lyric_controller.dart  # Android 悬浮歌词控制器
+│   │   └── presentation/
+│   │       ├── desktop_lyric_app.dart       # 桌面歌词窗口应用
+│   │       └── desktop_lyric_view.dart      # 桌面歌词视图
 │   └── dlna/                        # DLNA 投屏模块
 │       ├── data/
 │       │   └── dlna_service.dart    # DLNA/UPnP 设备发现与投屏服务
@@ -180,26 +319,53 @@ clients/player/lib/
 │           └── widgets/
 │               ├── cast_button.dart       # 投屏按钮
 │               └── device_sheet.dart      # 设备选择面板
-└── shared/                          # 共享模块
-    ├── layouts/
-    │   ├── shell_layout.dart        # ShellRoute 主布局（导航 + 播放器）
-    │   └── adaptive_scaffold.dart   # 自适应脚手架
-    ├── models/
-    │   ├── song.dart                # 歌曲模型
-    │   ├── pagination.dart          # 分页模型
-    │   └── api_response.dart        # API 响应模型
-    ├── utils/
-    │   └── responsive_snackbar.dart # 响应式 SnackBar
-    └── widgets/                     # 共享组件（11 个）
-        ├── cover_image.dart         # 封面图片组件
-        ├── favorite_button.dart     # 收藏按钮
-        ├── scrolling_text.dart      # 滚动文本
-        ├── confirm_dialog.dart      # 确认对话框
-        ├── add_to_playlist_modal.dart  # 添加到歌单弹窗
-        ├── song_picker_modal.dart   # 歌曲选择弹窗
-        ├── empty_state.dart         # 空状态
-        ├── error_view.dart          # 错误视图
-        └── loading_indicator.dart   # 加载指示器
+├── l10n/                            # 国际化
+│   ├── app_en.arb                   # 英文
+│   ├── app_zh.arb                   # 中文
+│   ├── app_es.arb                   # 西班牙文
+│   ├── app_localizations.dart       # 生成的本地化类
+│   └── l10n_holder.dart             # 全局 l10n 访问器
+├── shared/                          # 共享模块
+│   ├── constants/
+│   │   └── github_proxy.dart        # GitHub 代理常量
+│   ├── layouts/
+│   │   ├── shell_layout.dart        # ShellRoute 主布局（导航 + 播放器）
+│   │   ├── adaptive_scaffold.dart   # 自适应脚手架
+│   │   └── active_destinations.dart # 动态导航目的地
+│   ├── mixins/
+│   │   └── song_list_actions.dart   # 歌曲列表操作 Mixin
+│   ├── models/
+│   │   ├── song.dart                # 歌曲模型
+│   │   ├── artist.dart              # 艺术家模型
+│   │   ├── library_stats.dart       # 曲库统计模型
+│   │   ├── pagination.dart          # 分页模型
+│   │   └── api_response.dart        # API 响应模型
+│   ├── utils/
+│   │   └── responsive_snackbar.dart # 响应式 SnackBar
+│   └── widgets/                     # 共享组件（22 个）
+│       ├── cover_image.dart         # 封面图片组件
+│       ├── network_cover_image.dart # 网络封面图片
+│       ├── favorite_button.dart     # 收藏按钮
+│       ├── scrolling_text.dart      # 滚动文本
+│       ├── confirm_dialog.dart      # 确认对话框
+│       ├── delete_song_dialog.dart  # 删除歌曲对话框
+│       ├── add_to_playlist_modal.dart  # 添加到歌单弹窗
+│       ├── song_picker_modal.dart   # 歌曲选择弹窗
+│       ├── manage_tags_modal.dart   # 标签管理弹窗
+│       ├── browse_card.dart         # 浏览卡片
+│       ├── browse_collection_view.dart  # 浏览集合视图
+│       ├── entity_detail_scaffold.dart  # 实体详情脚手架
+│       ├── song_tile.dart           # 歌曲磁贴
+│       ├── filter_pill.dart         # 筛选胶囊
+│       ├── directory_picker_sheet.dart  # 目录选择面板
+│       ├── directory_tree_selector.dart # 目录树选择器
+│       ├── draggable_scrollbar_overlay.dart  # 可拖拽滚动条
+│       ├── scroll_to_top_fab.dart   # 回到顶部按钮
+│       ├── selection_action_button.dart  # 多选操作按钮
+│       ├── empty_state.dart         # 空状态
+│       ├── error_view.dart          # 错误视图
+│       └── loading_indicator.dart   # 加载指示器
+└── main.dart                        # 应用入口
 ```
 
 ## 页面结构
@@ -209,12 +375,24 @@ clients/player/lib/
 | 页面 | 路由 | 说明 |
 |------|------|------|
 | 登录 | `/login` | 登录页面（独立路由，不使用 ShellRoute） |
-| 首页 | `/` | 歌单轮播、JS 插件网格 |
-| 歌曲库 | `/library` | 所有歌曲列表、搜索、筛选 |
-| 歌单 | `/playlists` | 歌单列表 |
+| 首页 | `/` | 歌单轮播、统计条、JS 插件网格 |
+| 曲库 | `/library` | 多视图：歌曲 / 歌单 / 分类 / 文件夹 / 标签 |
+| 分类歌曲 | `/library/categories/:field?value=` | 按专辑、歌手等分类查看歌曲列表 |
+| 文件夹 | `/library/folders?path=` | 文件夹内容下钻页 |
+| 标签歌曲 | `/library/tags/:tagId?name=` | 标签下的歌曲列表 |
+| 歌单列表 | `/playlists` | **已合并至曲库**，访问时重定向到 `/library` |
 | 歌单详情 | `/playlists/:id` | 歌单详情和歌曲列表 |
-| 设置 | `/settings` | 主题、扫描、JS 插件、令牌、升级、关于 |
-| 插件 | `/plugin?url=&name=` | JS 插件 WebView 页面（全屏，独立路由） |
+| 设置 | `/settings` | 主从布局，按分类展示（外观、扫描、缓存、网络等） |
+| 设置分类 | `/settings/category/:index` | 设置分类详情（移动端二级页） |
+| 服务器管理 | `/settings/servers` | 多服务器管理 |
+| 重复检查 | `/settings/duplicate-check` | 重复歌曲检测 |
+| 快捷键 | `/settings/shortcuts` | 键盘快捷键设置（桌面端） |
+| 客户端下载 | `/settings/download` | 客户端下载（Web 端可见） |
+| 插件商店 | `/settings/plugin-registry` | 插件仓库浏览与安装 |
+| 许可证 | `/settings/licenses` | 开源许可证 |
+| 插件页 | `/plugin?url=&name=` | JS 插件 WebView 页面（全屏，独立路由） |
+| 插件 Tab | `/plugin-tab/:entryPath` | 插件 Tab 页面（由 ShellLayout 管理） |
+| 全屏播放器 | `/player` | 全屏播放器（独立路由，按屏幕类型分派 Mobile/Desktop） |
 
 ### 认证守卫
 
@@ -250,7 +428,7 @@ ShellLayout (ShellRoute builder)
 - **主色调**: M3 Blue baseline (`#415F91`)
 - **配色方案**: `ColorScheme.fromSeed(seedColor: Color(0xFF415F91))`
 - **主题模式**: 亮色 / 暗色 / 跟随系统
-- **字体回退**: NotoSansSC（中文支持）
+- **字体回退**: NotoSansSC（中文）/ NotoSansKR（韩文）
 
 ### 响应式主题
 

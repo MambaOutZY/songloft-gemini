@@ -26,17 +26,20 @@ Songloft 支持通过 `.songloft-theme` 主题包自定义应用的配色、圆�
   "light": {
     "seedColor": "#6750A4",
     "backgroundColor": "#FFF7FF",
-    "surfaceColor": "#FFFFFF"
+    "surfaceColor": "#FFFFFF",
+    "glassColor": "#9C7CF4"
   },
   "dark": {
     "seedColor": "#D0BCFF",
     "backgroundColor": "#141218",
-    "surfaceColor": "#211F26"
+    "surfaceColor": "#211F26",
+    "glassColor": "#B39DDB"
   },
   "playerGradient": ["#4A148C", "#1A237E"],
   "cardRadius": 16,
   "controlRadius": 20,
-  "navigationRadius": 18
+  "navigationRadius": 18,
+  "navigationStyle": "standard"
 }
 ```
 
@@ -62,6 +65,7 @@ Songloft 支持通过 `.songloft-theme` 主题包自定义应用的配色、圆�
 | `seedColor` | string | ✅ | 种子色，`#RRGGBB` 格式。Material 3 会基于此颜色自动生成 `primary`、`secondary`、`tertiary` 等完整调色板 |
 | `backgroundColor` | string | 否 | 覆盖默认背景色，`#RRGGBB` 格式 |
 | `surfaceColor` | string | 否 | 覆盖默认表面色（卡片、弹窗背景），`#RRGGBB` 格式 |
+| `glassColor` | string | 否 | Liquid Glass 基准色（将派生 `glassGlow` / `glassGlowFaint` / `glassSheen`），`#RRGGBB` 格式。无此字段时亮色回落 `#3BAEEF`，暗色回落 `#5BC0F5` |
 
 #### seedColor 的工作原理
 
@@ -84,6 +88,12 @@ Songloft 使用 Flutter 的 `ColorScheme.fromSeed()` 方法，从 seedColor 自�
 | `cardRadius` | number | 否 | 0-100 | 卡片组件的圆角半径 |
 | `controlRadius` | number | 否 | 0-100 | 输入框、按钮等控件的圆角半径 |
 | `navigationRadius` | number | 否 | 0-100 | 导航指示器的圆角半径 |
+
+### 导航栏样式
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `navigationStyle` | string | 否 | 导航栏外观样式。`"standard"`（默认）= 标准导航指示器；`"capsule"` = 胶囊形玻璃导航栏（与 Liquid Glass 主题配合使用） |
 
 ## 制作流程
 
@@ -170,23 +180,26 @@ Songloft 使用 Flutter 的 `ColorScheme.fromSeed()` 方法，从 seedColor 自�
   "schemaVersion": 1,
   "id": "songloft.neon-night",
   "name": "Neon Night",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Songloft",
   "description": "A dark theme with purple and blue neon accents",
   "light": {
     "seedColor": "#6750A4",
     "backgroundColor": "#FFF7FF",
-    "surfaceColor": "#FFFFFF"
+    "surfaceColor": "#FFFFFF",
+    "glassColor": "#9C7CF4"
   },
   "dark": {
     "seedColor": "#D0BCFF",
     "backgroundColor": "#141218",
-    "surfaceColor": "#211F26"
+    "surfaceColor": "#211F26",
+    "glassColor": "#B39DDB"
   },
   "playerGradient": ["#4A148C", "#1A237E"],
   "cardRadius": 16,
   "controlRadius": 20,
-  "navigationRadius": 18
+  "navigationRadius": 18,
+  "navigationStyle": "standard"
 }
 ```
 
@@ -199,23 +212,26 @@ Songloft 使用 Flutter 的 `ColorScheme.fromSeed()` 方法，从 seedColor 自�
   "schemaVersion": 1,
   "id": "songloft.sakura",
   "name": "Sakura",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Songloft",
   "description": "A warm cherry-blossom theme with pink accents",
   "light": {
     "seedColor": "#D81B60",
     "backgroundColor": "#FFF0F5",
-    "surfaceColor": "#FFFFFF"
+    "surfaceColor": "#FFFFFF",
+    "glassColor": "#F06292"
   },
   "dark": {
     "seedColor": "#F48FB1",
     "backgroundColor": "#1A0A10",
-    "surfaceColor": "#261418"
+    "surfaceColor": "#261418",
+    "glassColor": "#F48FB1"
   },
   "playerGradient": ["#880E4F", "#4A148C"],
   "cardRadius": 14,
   "controlRadius": 16,
-  "navigationRadius": 14
+  "navigationRadius": 14,
+  "navigationStyle": "standard"
 }
 ```
 

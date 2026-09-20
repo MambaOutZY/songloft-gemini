@@ -69,4 +69,4 @@
 | 返回数据 | `respondJSON(w, status, data)` — `data` 直接序列化为顶层 JSON |
 | 返回错误 | `respondError(w, status, message, err)` — 自动构建 `{error, detail}` |
 | 中间件错误 | `respondAuthError(w, status, message, err)` — 与 `respondError` 格式一致 |
-| jsplugin 错误 | `writePluginUnavailable` — 同样使用 `{error, detail}` 字段 |
+| jsplugin 错误 | `writePluginUnavailable` — 同样使用 `{error, detail}` 字段，其中 `detail` 存放的是语义错误代码（如 `plugin_disabled` / `plugin_not_found` / `plugin_unavailable`）而非底层技术错误信息 |

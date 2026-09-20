@@ -165,8 +165,8 @@ err := db.RunInTx(ctx, func(ctx context.Context, uow *database.UnitOfWork) error
 ```
 
 - `RunInTx` 自动 commit / rollback,`fn` 返回 err 则回滚
-- `uow.Songs` / `uow.Playlists` / `uow.PlaylistSongs` 是**字段**(不是方法),指向绑定到当前 `*sql.Tx` 的 Repository 实例,共享同一连接,不会触发 `SQLITE_BUSY`
-- service 层注入 `database.DB` 接口(`Close / RunInTx / 各 Repository getter`),需要事务时调用 `RunInTx`,需要无事务读写时直接 `db.SongRepository()` 等。参考 `internal/services/convert_service.go`
+- `uow.Songs` / `uow.Playlists` / `uow.PlaylistSongs` / `uow.PlayHistory` / `uow.SongArtists` 是**字段**（不是方法），指向绑定到当前 `*sql.Tx` 的 Repository 实例，共享同一连接，不会触发 `SQLITE_BUSY`
+- service 层注入 `database.DB` 接口（`Close / RunInTx / 各 Repository getter`），需要事务时调用 `RunInTx`，需要无事务读写时直接 `db.SongRepository()` 等。参考 `internal/services/song_service.go` 和 `internal/services/play_history_service.go` 中的 `RunInTx` 用法
 
 ### 不要这么干
 

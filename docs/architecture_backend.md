@@ -5,7 +5,7 @@
 - **Go 版本**: 1.26+
 - **Web 框架**: Chi v5.2.4
 - **认证方式**: JWT 双 Token 认证（Access Token + Refresh Token）
-- **数据库**: SQLite 3 (modernc.org/sqlite v1.46.1，纯 Go CGO-free 实现)
+- **数据库**: SQLite 3 (modernc.org/sqlite v1.49.1，纯 Go CGO-free 实现)
 - **数据库访问栈**:
   - `pressly/goose v3` — schema 迁移（启动时自动 `Up`，文件在 `migrations/000N_xxx.sql`）
   - `sqlc-dev/sqlc` — 固定 SQL 生成类型安全代码（`queries/*.sql` → `sqlc/*.sql.go`，CLI 时生成）
@@ -65,6 +65,11 @@ HTTP Server (main.go)
 
 - `types.go`: 应用配置结构体 `AppConfig`（端口、数据库路径、用户名密码等）
 
+#### fileutil/ - 文件工具
+
+- `cover_finder.go`: 外部封面查找（`FindExternalCover`）与保存（`SaveExternalCover`，按内容哈希去重存储）
+- `file_move.go`: 跨分区文件移动（`os.Rename` 失败时回退到拷贝+删除）
+
 #### handlers/ - 请求处理器
 
 - `auth.go`: 认证相关请求（登录、刷新令牌、登出、令牌管理）
@@ -79,11 +84,20 @@ HTTP Server (main.go)
 - `hls.go`: HLS 电台代理（服务端拉取并改写 m3u8、代理切片/key/init 段；`/settings/hls-proxy` 开关）
 - `cache.go`: 音乐缓存管理（统计、清理、配置、自定义目录验证）
 - `backup.go`: 数据备份与恢复（歌单/歌曲导出导入）
+- `play_history.go`: 播放历史管理（获取/清除/删除播放历史记录）
+- `song_tag.go`: 自定义标签管理（标签 CRUD、歌曲绑定/解绑、标签同步写入文件设置）
+- `theme_pack.go` / `theme_pack_catalog.go`: 主题包管理（导入/删除/激活主题包、目录刷新与安装）
+- `video_hls.go`: 视频 HLS 代理（视频 m3u8 改写与切片代理）
+- `cover.go`: 封面服务与代理
+- `folder_browse.go`: 文件夹浏览（文件系统目录/文件列表）
+- `logs.go`: 日志文件导出（`/logs/export`）
 - `log.go`: 日志等级读写（`/settings/log-level`）
-- `equalizer_setting.go` / `library_browse_setting.go` / `tab_config_setting.go` / `user_preferences_setting.go`: 各孤立配置端点（`/settings/*` 强类型配置）
+- `equalizer_setting.go` / `library_browse_setting.go` / `tab_config_setting.go` / `user_preferences_setting.go` / `plugin_order_setting.go`: 各孤立配置端点（`/settings/*` 强类型配置）
 - `version.go`: 版本信息
 - `health.go`: 健康检查
 - `response.go`: 统一 JSON 响应和错误响应工具函数
+
+> 以上列表为主要文件，非穷举；完整列表以代码/Swagger 为准。
 
 #### middleware/ - 中间件
 
@@ -100,7 +114,7 @@ HTTP Server (main.go)
 
 - `database.go`: `DB` 接口（`Close / RunInTx / 各 *Repository()` getter）
 - `sqlite.go`: `SQLiteDB` 实现（`Open()` 含 goose Up + WAL/busy_timeout 等 pragma，`RunInTx` 事务封装）
-- `unit_of_work.go`: `UnitOfWork` 结构，事务作用域内的 Repository 集合（`Songs / Playlists / PlaylistSongs` 字段，绑定到同一 `*sql.Tx`）
+- `unit_of_work.go`: `UnitOfWork` 结构，事务作用域内的 Repository 集合（`Songs / Playlists / PlaylistSongs / PlayHistory / SongArtists` 字段，绑定到同一 `*sql.Tx`）
 - `errors.go`: 领域错误（`ErrNotFound` / `ErrConflict` 等哨兵）
 - `filters.go`: squirrel 共用辅助（排序白名单、`applyOrder`、`applyPagination`）
 - `config_repository.go`: 配置仓储（`ConfigRepository`）
@@ -110,6 +124,13 @@ HTTP Server (main.go)
 - `token_repository.go`: 认证令牌仓储
 - `jsplugin_repository.go`: JS 插件仓储
 - `plugin_storage_repository.go`: JS 插件 KV 存储仓储（`host.storage` 桥接的后端存储）
+- `play_history_repository.go`: 播放历史仓储
+- `song_tag_repository.go`: 自定义标签仓储
+- `song_artist_repository.go`: 歌曲-艺术家关联仓储
+- `theme_pack_repository.go`: 主题包仓储
+
+> 以上列表为主要文件，非穷举；完整以代码为准。
+
 - `migrations/`: goose 迁移源文件（`0001_init.sql` 等，通过 `embed.FS` 打包，启动时自动 Up）
 - `queries/`: sqlc 输入（每张表一个 `*.sql`，跑 `make sqlc` 生成代码）
 - `sqlc/`: sqlc 输出（`*.sql.go`，**已入库**，运行时不依赖 sqlc CLI）
@@ -121,12 +142,14 @@ HTTP Server (main.go)
 - `auth_service.go`: 认证服务（JWT 双 Token 生成/验证、令牌管理、密钥生成）
 - `config_service.go`: 配置服务（数据库配置管理，支持 JSON 格式读写）
 - `metadata.go`: 元数据提取服务（使用 hanxi/tag 提取标签和封面，ffprobe 获取技术参数）。标题策略:tag 有 title 优先用,缺失才用文件名(不再做最长公共子串拼接)
-- `cover_finder.go`: 外部封面查找（`FindExternalCover`）与保存（`SaveExternalCover`，按内容哈希去重存储）
 - `cover_thumb_cache.go`: 封面缩略图磁盘 LRU 缓存（`{dataDir}/cover_thumbs/`，上限 200MB，CatmullRom 缩放）
 - `scanner.go`: 文件扫描服务（递归扫描音乐目录，支持排除目录和格式过滤）
 - `scan_progress.go`: 扫描进度追踪（异步扫描状态管理）
 - `song_service.go`: 歌曲服务（CRUD、批量操作、时长回填）
+- `song_tag_service.go`: 自定义标签服务（标签 CRUD、歌曲绑定/解绑、标签同步写入文件）
+- `play_history_service.go`: 播放历史服务（记录播放上下文、聚合查询、清除）
 - `playlist_service.go`: 歌单服务（CRUD、歌曲管理、自动创建）
+- `theme_pack_service.go`: 主题包服务（导入/删除/激活主题包、目录刷新与安装）
 - `upgrade_service.go`: 版本升级服务（获取版本信息、执行升级、重置）
 - `cache_service.go`: 音乐缓存服务（LRU 淘汰、自定义缓存目录、容量上限配置）
 - `cache_service_song.go`: 缓存服务针对 song 维度的辅助（命中查找、并发下载去重、关联清理、流式代理回调等）
@@ -135,6 +158,9 @@ HTTP Server (main.go)
 - `song_downloader.go`: 歌曲持久化服务（插件基础设施：通过 `songs.download` Bridge API 将远程歌曲持久化到本地 `music_path`）
 - `internal_url.go`: 内部回环 URL 构造（把相对 URL 拼成 `http://127.0.0.1:{port}/...?access_token=...`，给 convert/cache 调插件用）
 - `whitelist.go`: 域名白名单校验（SSRF 防护，阻止内网地址访问）
+
+> 以上列表为主要文件，非穷举；完整文件列表以代码为准。
+
 - `source/`: 音源适配子包 — `fetcher`（HTTP 取数据 + URL 解析）、`resolver`（跨插件 fallback）、`validator`（参数校验）、`orchestrator`（编排，含 `ResolveURL` 仅解析不下载）、`metrics`（指标）。具体实现见 `internal/app/source_adapters.go` 的接口绑定
 
 #### jsplugin/ - JS 插件管理层
@@ -193,7 +219,7 @@ HTTP Server (main.go)
   | AIFF/AIF | ID3v2.3 (ID3 chunk) + NAME/AUTH | USLT (ID3 chunk) | APIC (ID3 chunk) |
 
   - 其它扩展名返回 `ErrUnsupportedWrite`,调用方降级为日志、不阻塞主流程
-- 命令行工具:`cmd/tag`、`cmd/sum`、`cmd/check`
+- 命令行工具:`cmd/tag`
 
 ## 构建系统
 
@@ -234,12 +260,17 @@ type DB interface {
     Close() error
     RunInTx(ctx context.Context, fn func(context.Context, *UnitOfWork) error) error
 
+    JSPluginRepository() *JSPluginRepository
+    TokenRepository() *TokenRepository
+    ConfigRepository() *ConfigRepository
     SongRepository() *SongRepository
     PlaylistRepository() *PlaylistRepository
     PlaylistSongRepository() *PlaylistSongRepository
-    ConfigRepository() *ConfigRepository
-    TokenRepository() *TokenRepository
-    JSPluginRepository() *JSPluginRepository
+    PlayHistoryRepository() *PlayHistoryRepository
+    PluginStorageRepository() *PluginStorageRepository
+    ThemePackRepository() *ThemePackRepository
+    SongTagRepository() *SongTagRepository
+    SongArtistRepository() *SongArtistRepository
 }
 ```
 
@@ -268,6 +299,24 @@ Service 层注入 `database.DB` 接口；单表写直接拿 `db.SongRepository()
 - `/api/v1/settings/log-level` - 日志等级（GET/PUT）
 - `/api/v1/settings/scan-auto-create-playlists` - 扫描后是否自动创建目录歌单（GET/PUT）
 - `/api/v1/settings/scan-playlist-mode` - 目录歌单归并模式 directory/top_level/bubble_up（GET/PUT）
+- `/api/v1/settings/remote-title-source` - 网络歌曲标题来源配置（GET/PUT）
+- `/api/v1/settings/volume-normalize` - 音量均衡配置（GET/PUT）
+- `/api/v1/settings/tag-sync-to-file` - 标签同步写入文件开关（GET/PUT）
+- `/api/v1/settings/theme-catalog-url` - 主题包目录 URL（GET/PUT）
+- `/api/v1/settings/proxy-private-allowlist` - 代理私有地址白名单（GET/PUT）
+- `/api/v1/settings/github-proxy` - GitHub 代理配置（GET/PUT）
+- `/api/v1/settings/plugin-keep-alive` - 插件保活配置（GET/PUT）
+- `/api/v1/settings/plugin-auto-update` - 插件自动更新配置（GET/PUT）
+- `/api/v1/settings/plugin-order` - 插件排序配置（GET/PUT）
+- `/api/v1/settings/scan-title-source` - 扫描标题来源配置（GET/PUT）
+- `/api/v1/settings/scan-auto-fingerprint` - 扫描后自动计算指纹开关（GET/PUT）
+- `/api/v1/settings/auto-scan` - 定时自动扫描配置（GET/PUT）
+- `/api/v1/play-history` - 播放历史（GET/DELETE）
+- `/api/v1/song-tags/*` - 自定义标签管理（CRUD、歌曲绑定/解绑）
+- `/api/v1/theme-packs/*` - 主题包管理（列表/导入/删除/激活/目录刷新）
+
+> 以上列表为主要端点，非穷举；完整 API 请参考 Swagger 文档。
+
 - `/api/v1/version` - 版本信息接口
 - `/api/v1/health` - 健康检查接口
 

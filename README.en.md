@@ -29,7 +29,7 @@
   <a href="https://github.com/songloft-org/songloft/issues/2">👥 WeChat Group</a> •
   <a href="https://t.me/songloft_dev">💬 Telegram Group</a> •
   <a href="https://t.me/songloft">📣 Telegram Channel</a> •
-  <a href="https://github.com/songloft-org/songloft/issues/6">📸 Screenshots</a>
+  <a href="#screenshots">📸 Screenshots</a>
 </p>
 
 > ### 💚 A labor of love · Beware of scams
@@ -215,7 +215,7 @@ The following third-party clients are independently maintained by community deve
 | [Amcfy Music (箭头音乐)](https://www.amcfy.com/) | Android / iOS / HarmonyOS / Windows / macOS | Modern multi-platform music player compatible with various music server protocols |
 | [Stream Music (音流)](https://music.aqzscn.cn/) | Android / iOS / macOS / Windows | Cross-platform NAS music player supporting multiple self-hosted music services |
 | [XGPlayer (流云音盒)](https://xgplayer.com/) | HarmonyOS | Lossless music player for HarmonyOS aggregating local, cloud, WebDAV and NAS libraries |
-| [Cloudflow Music (流云音乐)](https://ly.pyzo.top/) | iOS | Cloud music player supporting WebDAV, Navidrome and various cloud storage services |
+| [Cloudflow Music (流云音乐)](http://music.lyzo.top/) | iOS | Cloud music player supporting WebDAV, Navidrome and various cloud storage services |
 
 > 💡 Third-party clients are maintained by their respective developers and are not directly affiliated with the Songloft project. If you encounter issues, please contact the corresponding client's developer.
 ## 🚀 Quick Start
@@ -596,7 +596,7 @@ Running into problems? See [Frequently Asked Questions and Solutions](https://so
 - 💬 Join the WeChat group: [WeChat group QR code](https://github.com/songloft-org/songloft/issues/2)
 - 💬 Join the Telegram group: [songloft_dev](https://t.me/songloft_dev)
 - 📣 Subscribe to the Telegram channel: [Songloft](https://t.me/songloft)
-- 🐧 QQ group: 979995241 (if full, search for a new group)
+- 🐧 QQ group: 220515636 (if full, search for a new group)
 
 ## 📝 Changelog
 
