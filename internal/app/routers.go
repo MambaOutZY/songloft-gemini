@@ -131,7 +131,6 @@ func (a *App) setupAPIV1Router() {
 			// 认证相关
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Get("/auth/tokens", authHandler.ListTokens)
-			r.Get("/auth/tokens/{token_id}", authHandler.GetTokenInfo)
 			r.Delete("/auth/tokens/{token_id}", authHandler.RevokeToken)
 
 			// 歌曲管理模块

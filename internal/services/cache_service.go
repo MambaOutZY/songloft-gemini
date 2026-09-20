@@ -333,19 +333,28 @@ func (c *CacheService) EvictLRU() {
 	}
 
 	// 计算堆容量：取索引大小的 1/4 与最小值中的较大者，但不超过索引总数
-	heapCap := len(c.lruIndex) / 4
+	c.lruMu.RLock()
+	indexSize := len(c.lruIndex)
+	c.lruMu.RUnlock()
+
+	heapCap := indexSize / 4
 	if heapCap < minLRUHeapCap {
 		heapCap = minLRUHeapCap
 	}
-	if indexSize := len(c.lruIndex); heapCap > indexSize && indexSize > 0 {
+	if heapCap > indexSize && indexSize > 0 {
 		heapCap = indexSize
 	}
 
+	// 第一阶段：无锁遍历文件系统收集文件信息
+	type fileInfo struct {
+		hash     string
+		filePath string
+		size     int64
+		modTime  time.Time
+	}
+	var files []fileInfo
 	var totalSize int64
-	h := &lruMaxHeap{}
-	heap.Init(h)
 
-	c.lruMu.RLock()
 	err := filepath.Walk(c.getCacheDir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -360,18 +369,41 @@ func (c *CacheService) EvictLRU() {
 		ext := filepath.Ext(name)
 		hash := strings.TrimSuffix(name, ext)
 
-		lastAccess := info.ModTime()
-		if t, ok := c.lruIndex[hash]; ok {
+		files = append(files, fileInfo{
+			hash:     hash,
+			filePath: path,
+			size:     info.Size(),
+			modTime:  info.ModTime(),
+		})
+		totalSize += info.Size()
+		return nil
+	})
+	if err != nil {
+		slog.Warn("遍历缓存目录失败", "error", err)
+		return
+	}
+
+	if totalSize <= maxSize {
+		return // 未超限，无需淘汰
+	}
+
+	// 第二阶段：持读锁查询 lruIndex 获取访问时间，构建最大堆
+	h := &lruMaxHeap{}
+	heap.Init(h)
+
+	c.lruMu.RLock()
+	for _, f := range files {
+		lastAccess := f.modTime
+		if t, ok := c.lruIndex[f.hash]; ok {
 			lastAccess = t
 		}
 
 		entry := lruEntry{
-			hash:       hash,
-			filePath:   path,
-			size:       info.Size(),
+			hash:       f.hash,
+			filePath:   f.filePath,
+			size:       f.size,
 			lastAccess: lastAccess,
 		}
-		totalSize += info.Size()
 
 		// 维护固定大小的最大堆（堆顶为最新访问），保留最旧的 heapCap 个文件
 		if h.Len() < heapCap {
@@ -381,19 +413,8 @@ func (c *CacheService) EvictLRU() {
 			(*h)[0] = entry
 			heap.Fix(h, 0)
 		}
-
-		return nil
-	})
+	}
 	c.lruMu.RUnlock()
-
-	if err != nil {
-		slog.Warn("遍历缓存目录失败", "error", err)
-		return
-	}
-
-	if totalSize <= maxSize {
-		return // 未超限，无需淘汰
-	}
 
 	// 将堆中的候选文件按访问时间升序排序（最旧的在前），依次淘汰
 	candidates := []lruEntry(*h)

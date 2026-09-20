@@ -47,8 +47,6 @@ func (c *catalogCache) set(url string, data *models.ThemeCatalogIndex) {
 	c.fetchedAt = time.Now()
 }
 
-var themeCache catalogCache
-
 // RefreshCatalog 获取远程主题目录
 // @Summary 获取在线主题目录
 // @Description 从远程 URL 获取主题目录索引，并标注各主题的安装状态
@@ -77,7 +75,7 @@ func (h *ThemePackHandler) RefreshCatalog(w http.ResponseWriter, r *http.Request
 
 	// 检查缓存
 	if !req.Force {
-		if cached := themeCache.get(catalogURL); cached != nil {
+		if cached := h.cache.get(catalogURL); cached != nil {
 			entries := h.resolveInstallStates(r.Context(), cached, catalogURL)
 			respondJSON(w, http.StatusOK, map[string]interface{}{
 				"themes": entries,
@@ -94,7 +92,7 @@ func (h *ThemePackHandler) RefreshCatalog(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	themeCache.set(catalogURL, catalog)
+	h.cache.set(catalogURL, catalog)
 
 	entries := h.resolveInstallStates(r.Context(), catalog, catalogURL)
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -168,7 +166,7 @@ func (h *ThemePackHandler) InstallFromCatalog(w http.ResponseWriter, r *http.Req
 	}
 
 	// 清除缓存以刷新安装状态
-	themeCache.set("", nil)
+	h.cache.set("", nil)
 
 	respondJSON(w, http.StatusOK, result)
 }
@@ -197,7 +195,7 @@ func (h *ThemePackHandler) UpdateCatalogURLSetting(w http.ResponseWriter, r *htt
 		return
 	}
 	// 清除缓存
-	themeCache.set("", nil)
+	h.cache.set("", nil)
 	respondJSON(w, http.StatusOK, map[string]string{"url": req.URL})
 }
 

@@ -1325,7 +1325,7 @@ type CleanResult struct {
 func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, error) {
 	filter := &database.SongFilter{
 		Type:  models.TypeLocal,
-		Limit: 100000,
+		Limit: models.MaxPaginationLimit,
 	}
 
 	songs, err := s.songs.List(ctx, filter)

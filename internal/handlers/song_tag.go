@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -325,7 +326,8 @@ func (h *SongTagHandler) syncTagsToFile(songID int64) {
 	if !h.configService.GetBool("tag_sync_to_file", false) {
 		return
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	song, err := h.songService.GetByID(ctx, songID)
 	if err != nil || song.FilePath == "" {
 		return
@@ -428,11 +430,31 @@ func (h *SongTagHandler) BatchUnbind(w http.ResponseWriter, r *http.Request) {
 
 const tagSyncToFileConfigKey = "tag_sync_to_file"
 
+// GetTagSyncToFile 获取标签同步到文件开关
+// @Summary 获取标签同步到文件开关
+// @Description 获取“自定义标签同步写入音频文件 SONGLOFT_TAGS 字段”开关的当前状态。开启后，每次修改歌曲标签时会同步写入音频文件元数据。默认关闭。
+// @Tags 歌曲管理
+// @Produce json
+// @Success 200 {object} map[string]bool "开关状态 {enabled: bool}"
+// @Security BearerAuth
+// @Router /settings/tag-sync-to-file [get]
 func (h *SongTagHandler) GetTagSyncToFile(w http.ResponseWriter, r *http.Request) {
 	enabled := h.configService.GetBool(tagSyncToFileConfigKey, false)
 	respondJSON(w, http.StatusOK, map[string]bool{"enabled": enabled})
 }
 
+// UpdateTagSyncToFile 保存标签同步到文件开关
+// @Summary 保存标签同步到文件开关
+// @Description 开启/关闭“自定义标签同步写入音频文件”功能。开启后，对歌曲执行 SetSongTags 时会将标签列表写入音频文件的 SONGLOFT_TAGS 自定义字段。
+// @Tags 歌曲管理
+// @Accept json
+// @Produce json
+// @Param request body object true "开关设置 {enabled: bool}"
+// @Success 200 {object} map[string]bool "保存后的开关状态 {enabled: bool}"
+// @Failure 400 {object} map[string]string "请求格式错误"
+// @Failure 500 {object} map[string]string "保存配置失败"
+// @Security BearerAuth
+// @Router /settings/tag-sync-to-file [put]
 func (h *SongTagHandler) UpdateTagSyncToFile(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Enabled bool `json:"enabled"`

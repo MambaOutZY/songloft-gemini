@@ -514,18 +514,22 @@ func (s *UpgradeService) backupCurrentBinary() error {
 		return nil
 	}
 
-	// 读取当前文件
-	data, err := os.ReadFile(binaryTarget)
+	src, err := os.Open(binaryTarget)
 	if err != nil {
 		return fmt.Errorf("failed to read current binary: %w", err)
 	}
+	defer src.Close()
 
-	// 写入备份文件
-	if err := os.WriteFile(binaryBackup, data, 0755); err != nil {
+	dst, err := os.OpenFile(binaryBackup, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
 		return fmt.Errorf("failed to write backup: %w", err)
 	}
+	defer dst.Close()
 
-	return nil
+	if _, err := io.Copy(dst, src); err != nil {
+		return fmt.Errorf("failed to write backup: %w", err)
+	}
+	return dst.Close()
 }
 
 // restoreBackup 从备份还原
@@ -535,18 +539,22 @@ func (s *UpgradeService) restoreBackup() error {
 		return fmt.Errorf("backup file not found")
 	}
 
-	// 读取备份文件
-	data, err := os.ReadFile(binaryBackup)
+	src, err := os.Open(binaryBackup)
 	if err != nil {
 		return fmt.Errorf("failed to read backup: %w", err)
 	}
+	defer src.Close()
 
-	// 还原到目标位置
-	if err := os.WriteFile(binaryTarget, data, 0755); err != nil {
+	dst, err := os.OpenFile(binaryTarget, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
 		return fmt.Errorf("failed to restore backup: %w", err)
 	}
+	defer dst.Close()
 
-	return nil
+	if _, err := io.Copy(dst, src); err != nil {
+		return fmt.Errorf("failed to restore backup: %w", err)
+	}
+	return dst.Close()
 }
 
 // ResetToBaseImage 回退到 Docker 镜像底包

@@ -1102,44 +1102,6 @@ definitions:
       version:
         type: string
     type: object
-  models.TokenInfo:
-    properties:
-      client_info:
-        description: 客户端信息
-        example: Mozilla/5.0 AppleWebKit/605.1.15
-        type: string
-      created_at:
-        description: 创建时间
-        example: "2024-01-01T12:00:00Z"
-        type: string
-      expires_at:
-        description: 过期时间
-        example: "2024-01-08T12:00:00Z"
-        type: string
-      revoked_at:
-        description: 撤销时间
-        example: "2024-01-01T12:00:00Z"
-        type: string
-      revoked_by:
-        description: 撤销者
-        example: user
-        type: string
-      revoked_reason:
-        description: 撤销原因
-        example: 用户主动登出
-        type: string
-      token_id:
-        description: 令牌 ID
-        example: abc123
-        type: string
-      token_type:
-        description: 令牌类型
-        enum:
-        - access
-        - refresh
-        example: access
-        type: string
-    type: object
   models.UpdateConfigRequest:
     properties:
       value:
@@ -1746,36 +1708,6 @@ paths:
       security:
       - BearerAuth: []
       summary: 撤销令牌
-      tags:
-      - 认证管理
-    get:
-      consumes:
-      - application/json
-      description: 获取指定令牌的详细信息
-      parameters:
-      - description: 令牌ID
-        in: path
-        name: token_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 令牌信息
-          schema:
-            $ref: '#/definitions/models.TokenInfo'
-        "401":
-          description: 未授权
-          schema:
-            $ref: '#/definitions/models.ErrorResponse'
-        "404":
-          description: 令牌不存在
-          schema:
-            $ref: '#/definitions/models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取令牌信息
       tags:
       - 认证管理
   /cache-manage/clean:
@@ -5419,6 +5351,61 @@ paths:
       summary: 保存底部导航栏 Tab 配置
       tags:
       - 设置
+  /settings/tag-sync-to-file:
+    get:
+      description: 获取“自定义标签同步写入音频文件 SONGLOFT_TAGS 字段”开关的当前状态。开启后，每次修改歌曲标签时会同步写入音频文件元数据。默认关闭。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '开关状态 {enabled: bool}'
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取标签同步到文件开关
+      tags:
+      - 歌曲管理
+    put:
+      consumes:
+      - application/json
+      description: 开启/关闭“自定义标签同步写入音频文件”功能。开启后，对歌曲执行 SetSongTags 时会将标签列表写入音频文件的 SONGLOFT_TAGS
+        自定义字段。
+      parameters:
+      - description: '开关设置 {enabled: bool}'
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '保存后的开关状态 {enabled: bool}'
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: 请求格式错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 保存配置失败
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保存标签同步到文件开关
+      tags:
+      - 歌曲管理
   /settings/user-preferences:
     get:
       description: 获取用户跨设备同步的偏好设置，包括主题、播放模式、视图模式、音质、缓存上限和音量。未配置时返回默认值。

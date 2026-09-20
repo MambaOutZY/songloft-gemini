@@ -16,6 +16,7 @@ import (
 type ThemePackHandler struct {
 	service       *services.ThemePackService
 	configService *services.ConfigService
+	cache         catalogCache
 }
 
 // NewThemePackHandler 创建主题包处理器

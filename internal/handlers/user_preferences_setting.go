@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -43,6 +44,39 @@ func (h *ConfigHandler) GetUserPreferencesSetting(w http.ResponseWriter, r *http
 	respondJSON(w, http.StatusOK, cfg)
 }
 
+// validateUserPreferences 校验用户偏好设置字段的合法性。
+func validateUserPreferences(p *userPreferencesSetting) error {
+	validThemeModes := map[string]bool{"system": true, "light": true, "dark": true}
+	if p.ThemeMode != "" && !validThemeModes[p.ThemeMode] {
+		return fmt.Errorf("theme_mode 必须是 system/light/dark 之一，当前值: %s", p.ThemeMode)
+	}
+
+	validPlayModes := map[string]bool{"order": true, "loop": true, "single": true, "random": true, "singlePlay": true}
+	if p.PlayMode != "" && !validPlayModes[p.PlayMode] {
+		return fmt.Errorf("play_mode 必须是 order/loop/single/random/singlePlay 之一，当前值: %s", p.PlayMode)
+	}
+
+	validViewModes := map[string]bool{"grid": true, "list": true}
+	if p.PlaylistViewMode != "" && !validViewModes[p.PlaylistViewMode] {
+		return fmt.Errorf("playlist_view_mode 必须是 grid/list 之一，当前值: %s", p.PlaylistViewMode)
+	}
+
+	validQualities := map[string]bool{"original": true, "128": true, "192": true, "320": true}
+	if p.AudioQuality != "" && !validQualities[p.AudioQuality] {
+		return fmt.Errorf("audio_quality 必须是 original/128/192/320 之一，当前值: %s", p.AudioQuality)
+	}
+
+	if p.Volume < 0 || p.Volume > 100 {
+		return fmt.Errorf("volume 必须在 0-100 之间，当前值: %g", p.Volume)
+	}
+
+	if p.LocalCacheMaxSize < 0 {
+		return fmt.Errorf("local_cache_max_size 不能为负数，当前值: %d", p.LocalCacheMaxSize)
+	}
+
+	return nil
+}
+
 // UpdateUserPreferencesSetting 保存用户偏好设置
 // @Summary 保存用户偏好设置
 // @Description 保存用户跨设备同步的偏好设置。客户端登录后拉取、修改偏好时推送，实现多设备间偏好同步。
@@ -59,6 +93,10 @@ func (h *ConfigHandler) UpdateUserPreferencesSetting(w http.ResponseWriter, r *h
 	var req userPreferencesSetting
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "请求格式错误", err)
+		return
+	}
+	if err := validateUserPreferences(&req); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
 	if err := h.configService.SetJSON(userPreferencesKey, req); err != nil {

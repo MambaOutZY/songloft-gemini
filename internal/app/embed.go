@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"html"
 	"io/fs"
 	"log/slog"
 	"mime"
@@ -141,6 +142,6 @@ const litePageHTML = `<!DOCTYPE html>
 func (a *App) serveLitePage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	html := strings.Replace(litePageHTML, "%s", a.config.BasePath, 1)
-	_, _ = w.Write([]byte(html))
+	page := strings.Replace(litePageHTML, "%s", html.EscapeString(a.config.BasePath), 1)
+	_, _ = w.Write([]byte(page))
 }

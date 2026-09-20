@@ -232,6 +232,8 @@ func (h *JSPluginHandler) handleRegistryRefresh(w http.ResponseWriter, r *http.R
 	// 使用脱离请求的 context：即使客户端中途断开，拉取仍会完成并写入缓存，
 	// 下一次请求可直接命中缓存而非再等 15 秒。
 	fetchCtx := context.WithoutCancel(r.Context())
+	fetchCtx, cancel := context.WithTimeout(fetchCtx, 30*time.Second)
+	defer cancel()
 
 	// 复用 handler 持有的 RegistryService：结果在 TTL 内缓存，翻页与搜索都在
 	// 缓存的完整列表上做切片/过滤，不再重拉整棵注册表树。force=true 时绕过缓存。

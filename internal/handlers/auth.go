@@ -217,20 +217,3 @@ func (h *AuthHandler) RevokeToken(w http.ResponseWriter, r *http.Request) {
 		Message: "令牌已撤销",
 	})
 }
-
-// GetTokenInfo 获取令牌信息
-// @Summary 获取令牌信息
-// @Description 获取指定令牌的详细信息
-// @Tags 认证管理
-// @Accept json
-// @Produce json
-// @Param token_id path string true "令牌ID"
-// @Success 200 {object} models.TokenInfo "令牌信息"
-// @Failure 401 {object} models.ErrorResponse "未授权"
-// @Failure 404 {object} models.ErrorResponse "令牌不存在"
-// @Security BearerAuth
-// @Router /auth/tokens/{token_id} [get]
-func (h *AuthHandler) GetTokenInfo(w http.ResponseWriter, r *http.Request) {
-	// 这个接口将在后续实现中添加
-	respondError(w, http.StatusNotImplemented, "功能未实现", nil)
-}

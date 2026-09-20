@@ -254,14 +254,22 @@ func (s *AuthService) Logout(ctx context.Context, accessToken, clientID string) 
 	}
 
 	for _, token := range tokens {
-		// 检查是否属于同一客户端
-		if token.ClientInfo == clientID {
-			if err := s.tokens.Revoke(ctx, token.TokenID, clientID, "logout"); err != nil {
-				return fmt.Errorf("failed to revoke refresh token: %w", err)
-			}
-			// 清除缓存
-			s.deleteTokenCache(token.TokenID)
+		// 解析 refresh token 的 JWT 获取 ClientID，按 clientID 匹配同一客户端
+		parsed, parseErr := jwt.ParseWithClaims(token.TokenID, &Claims{}, func(t *jwt.Token) (interface{}, error) {
+			return s.secret, nil
+		})
+		if parseErr != nil {
+			continue
 		}
+		claims, ok := parsed.Claims.(*Claims)
+		if !ok || claims.ClientID != clientID {
+			continue
+		}
+		if err := s.tokens.Revoke(ctx, token.TokenID, clientID, "logout"); err != nil {
+			return fmt.Errorf("failed to revoke refresh token: %w", err)
+		}
+		// 清除缓存
+		s.deleteTokenCache(token.TokenID)
 	}
 
 	return nil

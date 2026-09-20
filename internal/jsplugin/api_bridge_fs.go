@@ -173,6 +173,10 @@ func (h *BridgeHandler) fsWriteFile(data string) (string, error) {
 
 	var content []byte
 	if req.Encoding == "base64" {
+		// base64 编码膨胀系数约 4/3，解码前预检避免先分配大内存再检查
+		if len(req.Data) > maxFSFileSize*4/3+4 {
+			return "", fmt.Errorf("fs.writeFile: data exceeds %dMB limit", maxFSFileSize>>20)
+		}
 		content, err = base64.StdEncoding.DecodeString(req.Data)
 		if err != nil {
 			return "", fmt.Errorf("fs.writeFile: invalid base64: %w", err)
