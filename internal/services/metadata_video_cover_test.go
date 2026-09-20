@@ -11,7 +11,7 @@ import (
 
 // TestExtractCoverFromVideoFile_FFmpegNotConfigured：FFMpegPath 为空时应直接返回错误，不 spawn 任何进程。
 func TestExtractCoverFromVideoFile_FFmpegNotConfigured(t *testing.T) {
-	ext := &MetadataExtractor{config: &MetadataConfig{FFMpegPath: ""}}
+	ext := NewMetadataExtractor(&MetadataConfig{FFMpegPath: ""})
 	_, err := ext.ExtractCoverFromVideoFile(context.Background(), "/does/not/matter.mp4", 10)
 	if err == nil {
 		t.Fatal("expected error when ffmpeg not configured, got nil")
@@ -45,10 +45,10 @@ func TestExtractCoverFromVideoFile_RealFFmpeg(t *testing.T) {
 	}
 
 	coverStorage := t.TempDir()
-	ext := &MetadataExtractor{config: &MetadataConfig{
+	ext := NewMetadataExtractor(&MetadataConfig{
 		FFMpegPath:       ffmpegPath,
 		CoverStoragePath: coverStorage,
-	}}
+	})
 
 	coverPath, err := ext.ExtractCoverFromVideoFile(context.Background(), videoPath, 3.0)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestExtractCoverFromVideoFile_ZeroDuration(t *testing.T) {
 	}
 
 	coverStorage := t.TempDir()
-	ext := &MetadataExtractor{config: &MetadataConfig{FFMpegPath: ffmpegPath, CoverStoragePath: coverStorage}}
+	ext := NewMetadataExtractor(&MetadataConfig{FFMpegPath: ffmpegPath, CoverStoragePath: coverStorage})
 	coverPath, err := ext.ExtractCoverFromVideoFile(context.Background(), videoPath, 0)
 	if err != nil {
 		t.Fatalf("ExtractCoverFromVideoFile duration=0 failed: %v", err)

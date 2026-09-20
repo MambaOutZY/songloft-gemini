@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"songloft/internal/httputil"
@@ -61,19 +62,19 @@ type inflightDownload struct {
 
 // CacheService 音乐缓存服务
 type CacheService struct {
-	cacheDir        string
-	defaultCacheDir string
+	cacheDir        atomic.Value // string；setCacheDir/UpdateCacheConfig 并发写、多处读，用 atomic 保护
+	defaultCacheDir string       // 只在 NewCacheService 设置，之后只读
 	configService   *ConfigService
 	downloadClient  *http.Client // 用于纯外链 GET（cache_service_song.downloadExternalToTemp）
 	lruIndex        map[string]time.Time
 	lruMu           sync.RWMutex
 	orchestrator    CacheSongFetcher // 下载编排器(按 song.ID),由 app.go 注入
-	ffmpegPath      string           // ffmpeg 可执行文件路径,由 app.go 注入
+	ffmpegPath      atomic.Value     // string；ffmpeg 可执行文件路径,由 app.go 注入（SetFFmpegPath 并发写）
 	transcodeSem    chan struct{}    // 转码串行信号量（默认 size=1），防止并发 ffmpeg 争抢 CPU
-	// 缓存落盘转码设置（field-cache，沿用 cacheDir 无锁惯例）：从 CacheConfig 读取，
+	// 缓存落盘转码设置（原子字段）：从 CacheConfig 读取，
 	// NewCacheService/UpdateCacheConfig 时同步。cacheTranscodeFormat 为空表示不转码。
-	cacheTranscodeFormat  string
-	cacheTranscodeBitrate int
+	cacheTranscodeFormat  atomic.Value // string
+	cacheTranscodeBitrate atomic.Int64
 	// asyncCacheInflight 按 song.ID 去重流式代理触发的后台全量下载（AsyncDownloadAndCache）。
 	// 流式播放路径不走 CacheService.Get 的 inflight，重试/并发 206 会各自触发一次全量下载，
 	// 在慢网下互相抢带宽全败——这里去重，同一首同时只跑一个后台下载（songloft-org/songloft#286）。
@@ -85,12 +86,15 @@ type CacheService struct {
 	listSongsWithCache func(ctx context.Context) ([]*models.Song, error)
 	// 缓存完成回调：完整元数据兜底提取
 	onCacheComplete func(ctx context.Context, song *models.Song, filePath string)
+	// shutdownCtx 绑定后台 ffmpeg 转码等 goroutine 的生命周期，App 关闭时由 Shutdown 取消。
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
 }
 
 // NewCacheService 创建缓存服务
 func NewCacheService(defaultCacheDir string, configService *ConfigService) *CacheService {
+	ctx, cancel := context.WithCancel(context.Background())
 	cs := &CacheService{
-		cacheDir:        defaultCacheDir,
 		defaultCacheDir: defaultCacheDir,
 		configService:   configService,
 		lruIndex:        make(map[string]time.Time),
@@ -98,18 +102,47 @@ func NewCacheService(defaultCacheDir string, configService *ConfigService) *Cach
 		// download client(无整请求超时);停滞检测交给 downloadExternalToTemp 里的
 		// StallReader,避免慢速大文件被固定超时掐断。(issue #265)
 		downloadClient: httputil.NewDownloadClient(),
+		shutdownCtx:    ctx,
+		shutdownCancel: cancel,
 	}
+	cs.cacheDir.Store(defaultCacheDir)
 	var cfg CacheConfig
 	if err := configService.GetJSON(cacheConfigKey, &cfg); err == nil {
 		if cfg.CacheDir != "" {
-			cs.cacheDir = cfg.CacheDir
+			cs.cacheDir.Store(cfg.CacheDir)
 			slog.Info("使用自定义缓存目录", "path", cfg.CacheDir)
 		}
-		cs.cacheTranscodeFormat = NormalizeTranscodeFormat(cfg.TranscodeFormat)
-		cs.cacheTranscodeBitrate = ParseBitrate(cfg.TranscodeQuality)
+		cs.cacheTranscodeFormat.Store(NormalizeTranscodeFormat(cfg.TranscodeFormat))
+		cs.cacheTranscodeBitrate.Store(int64(ParseBitrate(cfg.TranscodeQuality)))
 	}
 	cs.loadLRUIndex()
 	return cs
+}
+
+// getCacheDir 原子读取当前缓存目录。
+func (c *CacheService) getCacheDir() string {
+	s, _ := c.cacheDir.Load().(string)
+	return s
+}
+
+// getFFmpegPath 原子读取 ffmpeg 可执行文件路径（未配置时为空）。
+func (c *CacheService) getFFmpegPath() string {
+	s, _ := c.ffmpegPath.Load().(string)
+	return s
+}
+
+// getCacheTranscodeFormat 原子读取缓存落盘转码目标格式（空表示不转码）。
+func (c *CacheService) getCacheTranscodeFormat() string {
+	s, _ := c.cacheTranscodeFormat.Load().(string)
+	return s
+}
+
+// Shutdown 取消 shutdownCtx，通知后台 ffmpeg 转码等 goroutine 尽快退出。
+// 由 app.Close 在应用关闭时调用。
+func (c *CacheService) Shutdown() {
+	if c.shutdownCancel != nil {
+		c.shutdownCancel()
+	}
 }
 
 // SetCachePathCallbacks 注入缓存路径更新回调（由 app.go 调用）。
@@ -172,7 +205,7 @@ func (c *CacheService) loadLRUIndex() {
 	defer c.lruMu.Unlock()
 
 	count := 0
-	err := filepath.Walk(c.cacheDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(c.getCacheDir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // 跳过无法访问的文件
 		}
@@ -205,7 +238,7 @@ func (c *CacheService) GetCacheStats() CacheStats {
 		MaxSize: c.getMaxCacheSize(),
 	}
 
-	err := filepath.Walk(c.cacheDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(c.getCacheDir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -232,7 +265,7 @@ func (c *CacheService) CleanCache() error {
 	defer c.lruMu.Unlock()
 
 	// 删除缓存目录下的所有内容
-	entries, err := os.ReadDir(c.cacheDir)
+	entries, err := os.ReadDir(c.getCacheDir())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -241,7 +274,7 @@ func (c *CacheService) CleanCache() error {
 	}
 
 	for _, entry := range entries {
-		path := filepath.Join(c.cacheDir, entry.Name())
+		path := filepath.Join(c.getCacheDir(), entry.Name())
 		if err := os.RemoveAll(path); err != nil {
 			slog.Warn("删除缓存文件失败", "path", path, "error", err)
 		}
@@ -313,7 +346,7 @@ func (c *CacheService) EvictLRU() {
 	heap.Init(h)
 
 	c.lruMu.RLock()
-	err := filepath.Walk(c.cacheDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(c.getCacheDir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -383,7 +416,7 @@ func (c *CacheService) EvictLRU() {
 		}
 		totalSize -= entry.size
 		delete(c.lruIndex, entry.hash)
-		cleanEmptyParentDirs(filepath.Dir(entry.filePath), c.cacheDir)
+		cleanEmptyParentDirs(filepath.Dir(entry.filePath), c.getCacheDir())
 		evicted++
 		slog.Debug("LRU 淘汰缓存文件", "hash", entry.hash, "size", entry.size)
 	}
@@ -430,7 +463,7 @@ func (c *CacheService) GetCacheConfigResponse() CacheConfigResponse {
 // cacheTranscodeSettings 返回当前缓存落盘转码格式与码率（field-cache）。
 // 格式为空时表示不转码。
 func (c *CacheService) cacheTranscodeSettings() (format string, bitrate int) {
-	return c.cacheTranscodeFormat, c.cacheTranscodeBitrate
+	return c.getCacheTranscodeFormat(), int(c.cacheTranscodeBitrate.Load())
 }
 
 // NormalizeTranscodeFormat 规范化并校验缓存转码目标格式。
@@ -447,7 +480,7 @@ func NormalizeTranscodeFormat(s string) string {
 
 // UpdateCacheConfig 更新缓存配置
 func (c *CacheService) UpdateCacheConfig(cfg CacheConfig) error {
-	oldDir := c.cacheDir
+	oldDir := c.getCacheDir()
 	if err := c.configService.SetJSON(cacheConfigKey, cfg); err != nil {
 		return fmt.Errorf("更新缓存配置失败: %w", err)
 	}
@@ -460,9 +493,9 @@ func (c *CacheService) UpdateCacheConfig(cfg CacheConfig) error {
 		c.setCacheDir(newDir)
 	}
 
-	// 同步缓存落盘转码设置（field-cache，即时生效，无需重启）
-	c.cacheTranscodeFormat = NormalizeTranscodeFormat(cfg.TranscodeFormat)
-	c.cacheTranscodeBitrate = ParseBitrate(cfg.TranscodeQuality)
+	// 同步缓存落盘转码设置（原子字段，即时生效，无需重启）
+	c.cacheTranscodeFormat.Store(NormalizeTranscodeFormat(cfg.TranscodeFormat))
+	c.cacheTranscodeBitrate.Store(int64(ParseBitrate(cfg.TranscodeQuality)))
 
 	go c.EvictLRU()
 	return nil
@@ -488,7 +521,7 @@ func (c *CacheService) setCacheDir(dir string) {
 		slog.Error("创建缓存目录失败", "path", dir, "error", err)
 		return
 	}
-	c.cacheDir = dir
+	c.cacheDir.Store(dir)
 	c.lruMu.Lock()
 	c.lruIndex = make(map[string]time.Time)
 	c.lruMu.Unlock()

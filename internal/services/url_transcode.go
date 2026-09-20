@@ -50,7 +50,7 @@ func (c *CacheService) StreamTranscodedURL(ctx context.Context, w io.Writer, opt
 	if opts.UpstreamURL == "" {
 		return fmt.Errorf("%w: empty url", ErrURLTranscodeUnavailable)
 	}
-	ffmpegPath := c.ffmpegPath
+	ffmpegPath := c.getFFmpegPath()
 	if ffmpegPath == "" {
 		return fmt.Errorf("%w: ffmpeg not configured", ErrURLTranscodeUnavailable)
 	}

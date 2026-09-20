@@ -178,7 +178,7 @@ func TestFfmpegArgs(t *testing.T) {
 }
 
 func TestTranscodedFileName(t *testing.T) {
-	cs := &CacheService{cacheDir: "/tmp/test"}
+	cs := newTestCacheService("/tmp/test", "", "")
 
 	// 本地歌曲（无 cacheKey），无 bitrate
 	local := &models.Song{ID: 42, Type: "local"}
@@ -216,7 +216,7 @@ func TestTranscodedFileName(t *testing.T) {
 
 func TestFindTranscodedFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	cs := &CacheService{cacheDir: tmpDir}
+	cs := newTestCacheService(tmpDir, "", "")
 
 	song := &models.Song{ID: 100, Type: "local", Format: "wma"}
 

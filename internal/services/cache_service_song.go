@@ -74,7 +74,7 @@ var ErrNoOrchestrator = errors.New("source orchestrator not configured")
 func (c *CacheService) getCachePath(songID int64, key string) (dir string, base string) {
 	first := songID / 100 % 1000   // 第一层目录
 	second := songID / 10000 % 100 // 第二层目录,大致使每个目录文件数可控
-	dir = filepath.Join(c.cacheDir, strconv.FormatInt(first, 10), strconv.FormatInt(second, 10))
+	dir = filepath.Join(c.getCacheDir(), strconv.FormatInt(first, 10), strconv.FormatInt(second, 10))
 	idStr := strconv.FormatInt(songID, 10)
 	if key == "" {
 		base = idStr
@@ -178,7 +178,7 @@ func (c *CacheService) EvictSong(songID int64, cachePath string) error {
 		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
 			slog.Warn("cache: remove structured file failed", "path", cachePath, "error", err)
 		}
-		cleanEmptyParentDirs(filepath.Dir(cachePath), c.cacheDir)
+		cleanEmptyParentDirs(filepath.Dir(cachePath), c.getCacheDir())
 		if c.clearCachePath != nil {
 			_ = c.clearCachePath(context.Background(), songID)
 		}
@@ -355,7 +355,7 @@ func (c *CacheService) EnsureCachedFormat(ctx context.Context, song *models.Song
 		return cachedPath
 	}
 	fmtName, bitrate := c.cacheTranscodeSettings()
-	if fmtName == "" || c.ffmpegPath == "" {
+	if fmtName == "" || c.getFFmpegPath() == "" {
 		return cachedPath
 	}
 	srcFmt := NormalizeFormat(strings.TrimPrefix(filepath.Ext(cachedPath), "."))

@@ -10,6 +10,21 @@ import (
 	"songloft/internal/models"
 )
 
+// newTestCacheService 构造仅设置并发安全 atomic 字段的 CacheService，供测试使用。
+func newTestCacheService(cacheDir, ffmpegPath, transcodeFormat string) *CacheService {
+	cs := &CacheService{}
+	if cacheDir != "" {
+		cs.cacheDir.Store(cacheDir)
+	}
+	if ffmpegPath != "" {
+		cs.ffmpegPath.Store(ffmpegPath)
+	}
+	if transcodeFormat != "" {
+		cs.cacheTranscodeFormat.Store(transcodeFormat)
+	}
+	return cs
+}
+
 func TestNormalizeTranscodeFormat(t *testing.T) {
 	tests := []struct {
 		input string
@@ -54,7 +69,7 @@ func TestEnsureCachedFormat_Noop(t *testing.T) {
 
 	t.Run("format not configured", func(t *testing.T) {
 		dir := t.TempDir()
-		cs := &CacheService{cacheDir: dir, ffmpegPath: "/bin/echo"} // ffmpeg 有，但未配置格式
+		cs := newTestCacheService(dir, "/bin/echo", "") // ffmpeg 有，但未配置格式
 		src := writeCacheFile(t, dir, "src.mkv")
 		got := cs.EnsureCachedFormat(context.Background(), song, src)
 		if got != src {
@@ -67,7 +82,7 @@ func TestEnsureCachedFormat_Noop(t *testing.T) {
 
 	t.Run("ffmpeg unavailable", func(t *testing.T) {
 		dir := t.TempDir()
-		cs := &CacheService{cacheDir: dir, cacheTranscodeFormat: "mp3"} // 配了格式但无 ffmpeg
+		cs := newTestCacheService(dir, "", "mp3") // 配了格式但无 ffmpeg
 		src := writeCacheFile(t, dir, "src.mkv")
 		got := cs.EnsureCachedFormat(context.Background(), song, src)
 		if got != src {
@@ -77,7 +92,7 @@ func TestEnsureCachedFormat_Noop(t *testing.T) {
 
 	t.Run("already target format", func(t *testing.T) {
 		dir := t.TempDir()
-		cs := &CacheService{cacheDir: dir, ffmpegPath: "/bin/echo", cacheTranscodeFormat: "mp3"}
+		cs := newTestCacheService(dir, "/bin/echo", "mp3")
 		// 复制真实 MP3 样本，让 tag.ReadFrom 能识别为 MP3
 		src := filepath.Join(dir, "src.mp3")
 		data, err := os.ReadFile("../../pkg/tag/testdata/with_tags/sample.id3v23.mp3")
@@ -94,7 +109,7 @@ func TestEnsureCachedFormat_Noop(t *testing.T) {
 	})
 
 	t.Run("nil song / empty path", func(t *testing.T) {
-		cs := &CacheService{ffmpegPath: "/bin/echo", cacheTranscodeFormat: "mp3"}
+		cs := newTestCacheService("", "/bin/echo", "mp3")
 		if got := cs.EnsureCachedFormat(context.Background(), nil, "/x.mkv"); got != "/x.mkv" {
 			t.Errorf("nil song: got %q, want unchanged", got)
 		}
@@ -107,12 +122,8 @@ func TestEnsureCachedFormat_Noop(t *testing.T) {
 func TestEnsureCachedFormat_DegradeOnFailure(t *testing.T) {
 	dir := t.TempDir()
 	// ffmpeg 路径指向不存在的可执行文件 → runFFmpeg 启动失败 → 优雅降级保留原码
-	cs := &CacheService{
-		cacheDir:             dir,
-		ffmpegPath:           filepath.Join(dir, "nonexistent-ffmpeg"),
-		cacheTranscodeFormat: "mp3",
-		transcodeSem:         make(chan struct{}, 1),
-	}
+	cs := newTestCacheService(dir, filepath.Join(dir, "nonexistent-ffmpeg"), "mp3")
+	cs.transcodeSem = make(chan struct{}, 1)
 	song := &models.Song{ID: 9, Type: "remote", URL: "http://example.com/b.mkv"}
 	src := writeCacheFile(t, dir, "src.mkv")
 

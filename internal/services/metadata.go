@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/hanxi/tag"
@@ -34,7 +35,7 @@ type MetadataConfig struct {
 
 // MetadataExtractor 元数据提取器
 type MetadataExtractor struct {
-	config *MetadataConfig
+	config atomic.Pointer[MetadataConfig]
 }
 
 // RemoteProbeResult 远程 URL 元数据探测结果
@@ -179,38 +180,47 @@ func NewMetadataExtractor(config *MetadataConfig) *MetadataExtractor {
 			config.FFProbePath = ""
 		}
 	}
-	return &MetadataExtractor{
-		config: config,
-	}
+	m := &MetadataExtractor{}
+	m.config.Store(config)
+	return m
 }
 
 // SetTitleSource 更新标题来源配置（配置变更时调用）
 func (m *MetadataExtractor) SetTitleSource(titleSource string) {
-	m.config.TitleSource = titleSource
+	old := m.config.Load()
+	cp := *old
+	cp.TitleSource = titleSource
+	m.config.Store(&cp)
 }
 
 // SetFFMpegPath 更新 ffmpeg 路径配置（配置变更时调用）
 func (m *MetadataExtractor) SetFFMpegPath(path string) {
+	old := m.config.Load()
+	cp := *old
 	if path != "" {
 		if resolved, err := safeLookPath(path); err == nil {
-			m.config.FFMpegPath = resolved
+			cp.FFMpegPath = resolved
 		} else {
 			slog.Warn("ffmpeg not found", "path", path, "error", err)
-			m.config.FFMpegPath = ""
+			cp.FFMpegPath = ""
 		}
 	} else {
-		m.config.FFMpegPath = ""
+		cp.FFMpegPath = ""
 	}
+	m.config.Store(&cp)
 }
 
 // SetHTTPClient 注入 HTTP 客户端（用于 tag 库远程探测 Range 请求）
 func (m *MetadataExtractor) SetHTTPClient(client *http.Client) {
-	m.config.HTTPClient = client
+	old := m.config.Load()
+	cp := *old
+	cp.HTTPClient = client
+	m.config.Store(&cp)
 }
 
 // CoverStoragePath 返回封面存储根目录路径。
 func (m *MetadataExtractor) CoverStoragePath() string {
-	return m.config.CoverStoragePath
+	return m.config.Load().CoverStoragePath
 }
 
 // Extract 提取音频文件的元数据
@@ -279,8 +289,9 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 	slog.Info("Extract title", "fileName", fileName, "title", metadata.Title)
 
 	// 仅在 tag 库未能获取时长时，回退到 ffprobe 补充技术参数
+	cfg := m.config.Load()
 	var probe *FFProbeOutput
-	if metadata.Duration == 0 && m.config.FFProbePath != "" {
+	if metadata.Duration == 0 && cfg.FFProbePath != "" {
 		probeOutput, err := m.runFFProbe(ctx, filePath)
 		if err != nil {
 			slog.Warn("ffprobe failed, continuing without probe data", "filePath", filePath, "err", err)
@@ -379,7 +390,7 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 	// 视频轨探测：对可能含视频画面的容器（mp4/mov/mkv/webm/avi/ts 等）用 ffprobe 判定是否含真实视频流。
 	// 注意：含视频轨的 mp4/mov 会被 tag 库成功读取（拿到时长），不会进入上面的 ffprobe 分支，
 	// 故这里必须对视频容器候选独立探测；已探测过（mkv 等无 tag 的容器）则复用 probe，避免重复调用。
-	if m.config.FFProbePath != "" && isVideoContainerCandidate(filePath) {
+	if cfg.FFProbePath != "" && isVideoContainerCandidate(filePath) {
 		if probe == nil {
 			if p, err := m.runFFProbe(ctx, filePath); err == nil {
 				probe = p
@@ -393,7 +404,7 @@ func (m *MetadataExtractor) Extract(ctx context.Context, filePath string) (*Meta
 	}
 
 	// ffprobe 回退可能补齐了 title，需要在标签提取完成后再进行智能合并
-	if m.config.TitleSource == "filename" {
+	if cfg.TitleSource == "filename" {
 		metadata.Title = fileName
 	} else {
 		metadata.Title = mergeTitle(fileName, metadata.Title)
@@ -554,7 +565,8 @@ func (m *MetadataExtractor) ProbeMetadataFromURL(ctx context.Context, rawURL str
 	result := &RemoteProbeResult{}
 
 	// 阶段 1：tag 库优先
-	if m.config.HTTPClient != nil {
+	cfg := m.config.Load()
+	if cfg.HTTPClient != nil {
 		if err := m.probeWithTagLib(ctx, rawURL, headers, result); err != nil {
 			slog.Debug("tag lib probe failed, will fallback to ffprobe", "url", rawURL, "error", err)
 		}
@@ -576,7 +588,7 @@ func (m *MetadataExtractor) ProbeMetadataFromURL(ctx context.Context, rawURL str
 
 // probeWithTagLib 通过 HTTP Range + tag 库提取元数据。
 func (m *MetadataExtractor) probeWithTagLib(ctx context.Context, rawURL string, headers map[string]string, result *RemoteProbeResult) error {
-	reader, err := httputil.NewHTTPReadSeekerWithHeaders(m.config.HTTPClient, rawURL, headers)
+	reader, err := httputil.NewHTTPReadSeekerWithHeaders(m.config.Load().HTTPClient, rawURL, headers)
 	if err != nil {
 		return fmt.Errorf("create http reader: %w", err)
 	}
@@ -655,7 +667,8 @@ func ffprobeHeaders(headers map[string]string, withRange bool) map[string]string
 // runFFProbeOnURL 执行一次 ffprobe 远程探测；withRange 时注入「Range: bytes=0-」。
 // result 只在本次成功解析后才被更新，失败重试不会残留脏数据。
 func (m *MetadataExtractor) runFFProbeOnURL(ctx context.Context, rawURL string, headers map[string]string, result *RemoteProbeResult, withRange bool) error {
-	if m.config.FFProbePath == "" {
+	cfg := m.config.Load()
+	if cfg.FFProbePath == "" {
 		return fmt.Errorf("ffprobe not configured")
 	}
 	args := []string{"-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-analyzeduration", "10000000"}
@@ -664,7 +677,7 @@ func (m *MetadataExtractor) runFFProbeOnURL(ctx context.Context, rawURL string, 
 		args = append(args, "-headers", h)
 	}
 	args = append(args, rawURL)
-	cmd := exec.CommandContext(ctx, m.config.FFProbePath, args...)
+	cmd := exec.CommandContext(ctx, cfg.FFProbePath, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("ffprobe url: %w", err)
@@ -720,7 +733,8 @@ func (m *MetadataExtractor) runFFProbeOnURL(ctx context.Context, rawURL string, 
 // 仅在 FFMpegPath 已配置时可用，失败不应阻塞主流程。
 // headers 为自定义请求头，nil 表示无额外头。
 func (m *MetadataExtractor) ExtractCoverFromURL(ctx context.Context, url string, headers map[string]string) (string, error) {
-	if m.config.FFMpegPath == "" {
+	cfg := m.config.Load()
+	if cfg.FFMpegPath == "" {
 		return "", fmt.Errorf("ffmpeg not configured")
 	}
 
@@ -732,7 +746,7 @@ func (m *MetadataExtractor) ExtractCoverFromURL(ctx context.Context, url string,
 		args = append(args, "-headers", h)
 	}
 	args = append(args, "-i", url, "-an", "-vcodec", "copy", "-f", "image2pipe", "pipe:1")
-	cmd := exec.CommandContext(coverCtx, m.config.FFMpegPath, args...)
+	cmd := exec.CommandContext(coverCtx, cfg.FFMpegPath, args...)
 
 	var buf bytes.Buffer
 	cmd.Stdout = &limitedWriter{w: &buf, limit: maxCoverSize}
@@ -753,7 +767,8 @@ func (m *MetadataExtractor) ExtractCoverFromURL(ctx context.Context, url string,
 // duration<=0 或 seek 位置过小时用 0 秒；否则取 duration*0.10。
 // 输出短边不超过 720 的 JPEG，交由 SaveCoverData 走内容哈希去重。
 func (m *MetadataExtractor) ExtractCoverFromVideoFile(ctx context.Context, filePath string, duration float64) (string, error) {
-	if m.config.FFMpegPath == "" {
+	cfg := m.config.Load()
+	if cfg.FFMpegPath == "" {
 		return "", fmt.Errorf("ffmpeg not configured")
 	}
 
@@ -781,7 +796,7 @@ func (m *MetadataExtractor) ExtractCoverFromVideoFile(ctx context.Context, fileP
 		"-vcodec", "mjpeg",
 		"pipe:1",
 	)
-	cmd := exec.CommandContext(frameCtx, m.config.FFMpegPath, args...)
+	cmd := exec.CommandContext(frameCtx, cfg.FFMpegPath, args...)
 
 	var buf bytes.Buffer
 	cmd.Stdout = &limitedWriter{w: &buf, limit: maxCoverSize}
@@ -916,7 +931,7 @@ func (m *MetadataExtractor) generateCoverPath(coverData []byte, ext string) stri
 	// 构建完整路径：/app/data/covers/{hash2}/{hash4}/{content_hash}.{ext}
 	// 使用完整的内容哈希作为文件名，相同封面自动去重
 	filename := fmt.Sprintf("%s%s", hashStr, fileExt)
-	return filepath.Join(m.config.CoverStoragePath, dir1, dir2, filename)
+	return filepath.Join(m.config.Load().CoverStoragePath, dir1, dir2, filename)
 }
 
 // FindLyricFile 查找对应的歌词文件（委托到 FindSidecarLyricFile）
@@ -936,14 +951,14 @@ func (m *MetadataExtractor) ReadLyricFile(lrcPath string) (string, error) {
 
 // IsFFProbeAvailable 检查 ffprobe 是否可用
 func (m *MetadataExtractor) IsFFProbeAvailable() bool {
-	return m.config.FFProbePath != ""
+	return m.config.Load().FFProbePath != ""
 }
 
 // buildFFProbeCommandContext 构建带上下文的 ffprobe 命令
 func (m *MetadataExtractor) buildFFProbeCommandContext(ctx context.Context, filePath string) *exec.Cmd {
 	return exec.CommandContext(
 		ctx,
-		m.config.FFProbePath,
+		m.config.Load().FFProbePath,
 		"-v", "quiet",
 		"-print_format", "json",
 		"-show_format",

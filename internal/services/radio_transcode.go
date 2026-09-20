@@ -40,7 +40,7 @@ type RadioTranscodeOptions struct {
 //   - ErrRadioTranscodeUnavailable：转码在写出任何字节前失败，调用方应降级为原样代理（此时 w 未被写入）。
 //   - 其他 error：转码已开始（w 已写入部分字节）后中途失败，无法再降级。
 func (c *CacheService) StreamTranscodedRadio(ctx context.Context, w io.Writer, opts RadioTranscodeOptions) error {
-	ffmpegPath := c.ffmpegPath
+	ffmpegPath := c.getFFmpegPath()
 	if ffmpegPath == "" {
 		return fmt.Errorf("%w: ffmpeg not configured", ErrRadioTranscodeUnavailable)
 	}

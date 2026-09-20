@@ -102,13 +102,13 @@ func (c *CacheService) normalizeLoudnessTag() string {
 func (c *CacheService) SetFFmpegPath(path string) {
 	if path != "" {
 		if resolved, err := safeLookPath(path); err == nil {
-			c.ffmpegPath = resolved
+			c.ffmpegPath.Store(resolved)
 		} else {
 			slog.Warn("ffmpeg not found for transcoding", "path", path, "error", err)
-			c.ffmpegPath = ""
+			c.ffmpegPath.Store("")
 		}
 	} else {
-		c.ffmpegPath = ""
+		c.ffmpegPath.Store("")
 	}
 }
 
@@ -330,7 +330,7 @@ func (c *CacheService) runFFmpeg(ctx context.Context, srcPath, dstPath string, s
 		args = append(args, "-f", muxer, "-y", dstPath)
 	}
 
-	ffmpegPath := c.ffmpegPath
+	ffmpegPath := c.getFFmpegPath()
 	if ffmpegPath == "" {
 		ffmpegPath = "ffmpeg"
 	}
@@ -393,9 +393,9 @@ type AudioTrackInfo struct {
 // CacheService 仅持有 ffmpegPath（由 app.go 注入）；ffprobe 通常与 ffmpeg 同目录，
 // 故优先取其同级 ffprobe，其次在 PATH 中查找，最后回退裸名 "ffprobe"。
 func (c *CacheService) resolveFFprobePath() string {
-	if c.ffmpegPath != "" {
-		dir := filepath.Dir(c.ffmpegPath)
-		base := filepath.Base(c.ffmpegPath)
+	if fp := c.getFFmpegPath(); fp != "" {
+		dir := filepath.Dir(fp)
+		base := filepath.Base(fp)
 		if probeName := strings.Replace(base, "ffmpeg", "ffprobe", 1); probeName != base {
 			cand := filepath.Join(dir, probeName)
 			if fi, err := os.Stat(cand); err == nil && !fi.IsDir() {

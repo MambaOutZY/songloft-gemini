@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"songloft/internal/database/sqlc"
@@ -110,7 +111,7 @@ type MetadataRefresher struct {
 	updateTags        func(ctx context.Context, params sqlc.UpdateSongTagFieldsParams) error
 	resolveURL        func(ctx context.Context, song *models.Song) (string, map[string]string, error)
 	extractor         *MetadataExtractor
-	remoteTitleSource func() string // "tag": 用标签覆盖 title; "filename"(默认): 不覆盖
+	remoteTitleSource atomic.Value // stores func() string; "tag": 用标签覆盖 title; "filename"(默认): 不覆盖
 
 	refreshInflight sync.Map // songID -> struct{}, 防止同一首歌并发提取
 }
@@ -134,15 +135,16 @@ func NewMetadataRefresher(
 
 // SetRemoteTitleSource 注入远程歌曲标题来源配置回调。
 func (d *MetadataRefresher) SetRemoteTitleSource(fn func() string) {
-	d.remoteTitleSource = fn
+	d.remoteTitleSource.Store(fn)
 }
 
 // shouldOverrideTitle 返回是否应用 tag 标题覆盖。
 func (d *MetadataRefresher) shouldOverrideTitle() bool {
-	if d.remoteTitleSource == nil {
+	v := d.remoteTitleSource.Load()
+	if v == nil {
 		return false
 	}
-	return d.remoteTitleSource() == "tag"
+	return v.(func() string)() == "tag"
 }
 
 func (d *MetadataRefresher) Start() error {

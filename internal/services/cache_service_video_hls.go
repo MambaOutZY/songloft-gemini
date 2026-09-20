@@ -20,7 +20,7 @@ func (c *CacheService) VideoHLSTranscode(ctx context.Context, srcPath string, so
 	if song == nil {
 		return "", fmt.Errorf("song is nil")
 	}
-	if c.ffmpegPath == "" {
+	if c.getFFmpegPath() == "" {
 		return "", fmt.Errorf("ffmpeg not available")
 	}
 
@@ -78,11 +78,16 @@ func (c *CacheService) VideoHLSTranscode(ctx context.Context, srcPath string, so
 		return "", ctx.Err()
 	}
 
-	// 使用独立 context 运行 ffmpeg（不绑定 HTTP request 生命周期）。
-	// 采用「边转边播」策略：等待首个 segment 就绪后立即返回 playlist，
-	// hls.js 以 EVENT 模式播放，定期重新拉取 playlist 发现新 segment，
+	// 使用 CacheService 的 shutdownCtx 运行 ffmpeg（不绑定 HTTP request 生命周期，
+	// 但绑定 App 生命周期：App 关闭时 Shutdown 取消该 ctx，后台 ffmpeg 随之退出，
+	// 不再泄漏成孤儿进程）。采用「边转边播」策略：等待首个 segment 就绪后立即返回
+	// playlist，hls.js 以 EVENT 模式播放，定期重新拉取 playlist 发现新 segment，
 	// 单 video 元素架构下音画天然同步、无 idle 问题。
-	bgCtx := context.Background()
+	// shutdownCtx 为 nil（未经 NewCacheService 构造，如部分单测）时回退到 Background。
+	bgCtx := c.shutdownCtx
+	if bgCtx == nil {
+		bgCtx = context.Background()
+	}
 	go func() {
 		defer func() {
 			<-c.transcodeSem
@@ -115,7 +120,7 @@ func (c *CacheService) VideoHLSDir(songID int64) string {
 
 // videoHLSDir 内部方法，返回视频 HLS 缓存目录。
 func (c *CacheService) videoHLSDir(songID int64) string {
-	return filepath.Join(c.cacheDir, "video_hls", fmt.Sprintf("%d", songID))
+	return filepath.Join(c.getCacheDir(), "video_hls", fmt.Sprintf("%d", songID))
 }
 
 // runVideoHLSFFmpeg 执行 ffmpeg 将视频转码为 HLS 分片。
@@ -149,7 +154,7 @@ func (c *CacheService) runVideoHLSFFmpeg(ctx context.Context, srcPath, outDir st
 		playlistPath,
 	}
 
-	cmd := exec.CommandContext(ctx, c.ffmpegPath, args...)
+	cmd := exec.CommandContext(ctx, c.getFFmpegPath(), args...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 

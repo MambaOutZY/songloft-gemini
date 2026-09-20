@@ -26,18 +26,21 @@ var (
 )
 
 // configuredFFmpegPath 由 app 启动时从 config 表的 ffmpeg_path 注入，空则回退到 PATH 查找。
-var configuredFFmpegPath string
+var configuredFFmpegPath atomic.Value // stores string
 
 // SetFingerprintFFmpegPath 注入 ffmpeg 可执行文件路径（config 表的 ffmpeg_path）。
 // 必须在首次 IsChromaprintAvailable 之前调用，否则 sync.Once 已经用 PATH 结果定型。
 func SetFingerprintFFmpegPath(path string) {
-	configuredFFmpegPath = path
+	configuredFFmpegPath.Store(path)
 }
 
 // IsChromaprintAvailable 检测 ffmpeg 是否支持 chromaprint muxer（首次调用时检测，结果缓存）。
 func IsChromaprintAvailable() bool {
 	chromaprintOnce.Do(func() {
-		name := configuredFFmpegPath
+		name := ""
+		if v := configuredFFmpegPath.Load(); v != nil {
+			name = v.(string)
+		}
 		if name == "" {
 			name = "ffmpeg"
 		}

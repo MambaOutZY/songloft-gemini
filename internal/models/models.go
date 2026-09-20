@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -187,21 +188,47 @@ func (s *Song) CoverURLPath() string {
 	if s.CoverPath != "" || s.CoverURL != "" {
 		return fmt.Sprintf("/api/v1/songs/%d/cover?v=%d", s.ID, s.UpdatedAt.Unix())
 	}
-	if s.Type == TypeLocal && HasCoverProvider != nil && HasCoverProvider() {
+	if s.Type == TypeLocal && GetHasCoverProvider() != nil && GetHasCoverProvider()() {
 		return fmt.Sprintf("/api/v1/songs/%d/cover?v=%d", s.ID, s.UpdatedAt.Unix())
 	}
 	return ""
 }
 
-// HasLyricProvider 由上层(app 初始化时)注入，报告当前是否存在已启用的歌词提供者插件。
+// hasLyricProvider 由上层(app 初始化时)注入，报告当前是否存在已启用的歌词提供者插件。
 // LyricURLPath 用它决定是否对本地无歌词歌曲放行歌词 URL —— 有歌词插件时才放行，
-// 避免没装插件的用户对全库无歌词歌发出注定 404 的请求。未注入(nil)时视作"无插件"。
-var HasLyricProvider func() bool
+// 避免没装插件的用户对全库无歌词歌发出注定 404 的请求。未注入(nil)时视作“无插件”。
+var hasLyricProvider atomic.Value // stores func() bool
 
-// HasCoverProvider 由上层(app 初始化时)注入，报告当前是否存在已启用的封面提供者插件。
+// hasCoverProvider 由上层(app 初始化时)注入，报告当前是否存在已启用的封面提供者插件。
 // CoverURLPath 用它决定是否对本地无封面歌曲放行封面 URL —— 有封面插件时才放行，
-// 避免没装插件的用户对全库无封面歌发出注定 404 的请求。未注入(nil)时视作"无插件"。
-var HasCoverProvider func() bool
+// 避免没装插件的用户对全库无封面歌发出注定 404 的请求。未注入(nil)时视作“无插件”。
+var hasCoverProvider atomic.Value // stores func() bool
+
+// SetHasLyricProvider 注入歌词提供者检查函数（启动时调用）。
+func SetHasLyricProvider(fn func() bool) {
+	hasLyricProvider.Store(fn)
+}
+
+// GetHasLyricProvider 返回当前歌词提供者检查函数，未注入时返回 nil。
+func GetHasLyricProvider() func() bool {
+	if v := hasLyricProvider.Load(); v != nil {
+		return v.(func() bool)
+	}
+	return nil
+}
+
+// SetHasCoverProvider 注入封面提供者检查函数（启动时调用）。
+func SetHasCoverProvider(fn func() bool) {
+	hasCoverProvider.Store(fn)
+}
+
+// GetHasCoverProvider 返回当前封面提供者检查函数，未注入时返回 nil。
+func GetHasCoverProvider() func() bool {
+	if v := hasCoverProvider.Load(); v != nil {
+		return v.(func() bool)
+	}
+	return nil
+}
 
 // LyricURLPath 返回客户端用的统一歌词 URL。
 // 有歌词时(无论来源):返回 /api/v1/songs/{id}/lyric 端点。
@@ -225,7 +252,7 @@ func (s *Song) LyricURLPath() string {
 	// 本地无歌词歌曲：仅当存在已启用的歌词提供者插件时才放行,让客户端发起请求触发自动搜索。
 	// 否则(没装/没启用歌词插件)保持返回空,行为与历史一致 —— 不平白让客户端对全库发 404 请求。
 	// 限定 TypeLocal：radio 是直播流、不参与歌词搜索,不应因存在歌词插件被放行。(#303)
-	if s.Type == TypeLocal && HasLyricProvider != nil && HasLyricProvider() {
+	if s.Type == TypeLocal && GetHasLyricProvider() != nil && GetHasLyricProvider()() {
 		return fmt.Sprintf("/api/v1/songs/%d/lyric", s.ID)
 	}
 	return ""

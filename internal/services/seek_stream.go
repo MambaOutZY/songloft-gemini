@@ -182,7 +182,7 @@ func (c *CacheService) StreamSeekedMP3(ctx, connCtx context.Context, w io.Writer
 		!opts.ForceTranscode && opts.Bitrate == 0 {
 		return fmt.Errorf("%w: nothing to do (no seek/normalize/speed/transcode)", ErrSeekStreamUnavailable)
 	}
-	ffmpegPath := c.ffmpegPath
+	ffmpegPath := c.getFFmpegPath()
 	if ffmpegPath == "" {
 		return fmt.Errorf("%w: ffmpeg not configured", ErrSeekStreamUnavailable)
 	}

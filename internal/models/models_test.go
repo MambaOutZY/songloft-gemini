@@ -282,25 +282,28 @@ func TestLyricURLPath(t *testing.T) {
 // TestLyricURLPathWithProvider 验证 #303：存在歌词提供者插件时，
 // 本地无歌词歌曲也放行歌词 URL，从而触发客户端请求 → 后端自动搜索。
 func TestLyricURLPathWithProvider(t *testing.T) {
-	orig := HasLyricProvider
-	t.Cleanup(func() { HasLyricProvider = orig })
+	orig := GetHasLyricProvider()
+	t.Cleanup(func() {
+		if orig != nil {
+			SetHasLyricProvider(orig)
+		} else {
+			// atomic.Value 不支持存 nil，存一个返回 false 的函数代替重置。
+			// 但因为 GetHasLyricProvider 在未 Store 时返回 nil，
+			// 这里只能用 Store 一个返回 false 的函数来仿真。
+			SetHasLyricProvider(func() bool { return false })
+		}
+	})
 
 	localNoLyric := Song{ID: 1, Type: TypeLocal}
 
-	// 无 hook（等价于没装歌词插件）：保持历史行为，返回空。
-	HasLyricProvider = nil
-	if got := localNoLyric.LyricURLPath(); got != "" {
-		t.Errorf("无歌词插件时 local 无歌词应返回空, got %q", got)
-	}
-
 	// hook 报告无提供者：仍返回空。
-	HasLyricProvider = func() bool { return false }
+	SetHasLyricProvider(func() bool { return false })
 	if got := localNoLyric.LyricURLPath(); got != "" {
 		t.Errorf("无提供者时 local 无歌词应返回空, got %q", got)
 	}
 
 	// hook 报告有提供者：放行歌词 URL 以触发自动搜索。
-	HasLyricProvider = func() bool { return true }
+	SetHasLyricProvider(func() bool { return true })
 	if got := localNoLyric.LyricURLPath(); got != "/api/v1/songs/1/lyric" {
 		t.Errorf("有提供者时 local 无歌词应放行歌词 URL, got %q", got)
 	}

@@ -25,7 +25,6 @@ type ConfigRepository interface {
 type ConfigService struct {
 	repo  ConfigRepository
 	cache sync.Map // 配置缓存
-	mu    sync.RWMutex
 }
 
 // NewConfigService 创建配置服务实例
@@ -149,7 +148,10 @@ func (s *ConfigService) SetJSON(key string, value interface{}) error {
 
 // ClearCache 清除配置缓存
 func (s *ConfigService) ClearCache() {
-	s.cache = sync.Map{}
+	s.cache.Range(func(key, _ any) bool {
+		s.cache.Delete(key)
+		return true
+	})
 }
 
 // ClearCacheKey 清除指定配置的缓存

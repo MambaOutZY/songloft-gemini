@@ -45,19 +45,19 @@ func TestStreamSeekedMP3Unavailable(t *testing.T) {
 		},
 		{
 			name: "ffmpeg 可执行文件不存在",
-			cs:   &CacheService{ffmpegPath: filepath.Join(dir, "nonexistent-ffmpeg")},
+			cs:   newTestCacheService("", filepath.Join(dir, "nonexistent-ffmpeg"), ""),
 			opts: SeekStreamOptions{SourcePath: src, StartSecond: 30},
 		},
 		{
 			name: "ffmpeg 退出但零输出",
-			cs:   &CacheService{ffmpegPath: "/bin/true"},
+			cs:   newTestCacheService("", "/bin/true", ""),
 			opts: SeekStreamOptions{SourcePath: src, StartSecond: 30},
 		},
 		{
 			// StartSecond 0 只在 Normalize / Speed / ForceTranscode / Bitrate 至少有一个时合法，
 			// 四者全无就是「没活干」，调用方应改走 http.ServeFile（支持 Range 且更快）。
 			name: "起播秒数非正且无均衡/变速/转码理由",
-			cs:   &CacheService{ffmpegPath: "/bin/echo"},
+			cs:   newTestCacheService("", "/bin/echo", ""),
 			opts: SeekStreamOptions{SourcePath: src, StartSecond: 0},
 		},
 	}
@@ -88,7 +88,7 @@ func TestStreamSeekedMP3FFmpegArgs(t *testing.T) {
 		if err := os.WriteFile(src, []byte("x"), 0644); err != nil {
 			t.Fatalf("write src: %v", err)
 		}
-		cs := &CacheService{ffmpegPath: "/bin/echo"}
+		cs := newTestCacheService("", "/bin/echo", "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: 61.5, RemainingSecond: 100,
@@ -137,7 +137,7 @@ func TestStreamSeekedMP3NormalizeArgs(t *testing.T) {
 
 	run := func(t *testing.T, startSecond float64) string {
 		t.Helper()
-		cs := &CacheService{ffmpegPath: "/bin/echo"}
+		cs := newTestCacheService("", "/bin/echo", "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: startSecond, RemainingSecond: 100, Normalize: true,
@@ -189,7 +189,7 @@ func TestStreamSeekedMP3SpeedArgs(t *testing.T) {
 	}
 
 	t.Run("纯变速从头起播", func(t *testing.T) {
-		cs := &CacheService{ffmpegPath: "/bin/echo"}
+		cs := newTestCacheService("", "/bin/echo", "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: 0, RemainingSecond: 100, Speed: 1.5,
@@ -211,7 +211,7 @@ func TestStreamSeekedMP3SpeedArgs(t *testing.T) {
 	})
 
 	t.Run("变速叠加 seek", func(t *testing.T) {
-		cs := &CacheService{ffmpegPath: "/bin/echo"}
+		cs := newTestCacheService("", "/bin/echo", "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: 42, RemainingSecond: 100, Speed: 2.0,
@@ -227,7 +227,7 @@ func TestStreamSeekedMP3SpeedArgs(t *testing.T) {
 	})
 
 	t.Run("变速叠加均衡滤镜顺序", func(t *testing.T) {
-		cs := &CacheService{ffmpegPath: "/bin/echo"}
+		cs := newTestCacheService("", "/bin/echo", "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 			SourcePath: src, StartSecond: 0, RemainingSecond: 100, Normalize: true, Speed: 1.25,
@@ -269,7 +269,7 @@ func TestStreamSeekedMP3TranscodeArgs(t *testing.T) {
 			t.Fatalf("write src: %v", err)
 		}
 		opts.SourcePath = src
-		cs := &CacheService{ffmpegPath: "/bin/echo"}
+		cs := newTestCacheService("", "/bin/echo", "")
 		var buf bytes.Buffer
 		if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, opts); err != nil {
 			t.Fatalf("StreamSeekedMP3: %v", err)
@@ -398,7 +398,7 @@ func TestStreamSeekedMP3AbortedByActivity(t *testing.T) {
 		t.Skipf("generate sample mp3 failed: %v (%s)", err, out)
 	}
 
-	cs := &CacheService{ffmpegPath: ffmpegPath}
+	cs := newTestCacheService("", ffmpegPath, "")
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	connCtx := context.Background() // 模拟底层 TCP 连接仍存活，客户端仍在读
 
@@ -475,7 +475,7 @@ func TestStreamSeekedMP3NormalizeRealFFmpeg(t *testing.T) {
 		t.Skipf("generate sample mp3 failed: %v (%s)", err, out)
 	}
 
-	cs := &CacheService{ffmpegPath: ffmpegPath}
+	cs := newTestCacheService("", ffmpegPath, "")
 	var buf bytes.Buffer
 	if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 		SourcePath: src, StartSecond: 0, RemainingSecond: 6, Normalize: true,
@@ -512,7 +512,7 @@ func TestStreamSeekedMP3RealFFmpeg(t *testing.T) {
 		t.Skipf("generate sample mp3 failed: %v (%s)", err, out)
 	}
 
-	cs := &CacheService{ffmpegPath: ffmpegPath}
+	cs := newTestCacheService("", ffmpegPath, "")
 	var buf bytes.Buffer
 	if err := cs.StreamSeekedMP3(context.Background(), context.Background(), &buf, SeekStreamOptions{
 		SourcePath: src, StartSecond: 4, RemainingSecond: 2,

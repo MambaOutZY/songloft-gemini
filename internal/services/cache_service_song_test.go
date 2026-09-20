@@ -14,7 +14,7 @@ import (
 // 这是 issue #79 的残留点：原先 <-dl.done 是单 channel 等待，无法响应等待者的 ctx。
 func TestCacheGet_InflightWaiterCanceledByOwnCtx(t *testing.T) {
 	tmpDir := t.TempDir()
-	cs := &CacheService{cacheDir: tmpDir}
+	cs := newTestCacheService(tmpDir, "", "")
 
 	song := &models.Song{ID: 9001, Type: "remote", URL: "http://example.invalid/song.mp3"}
 
@@ -57,7 +57,7 @@ func TestCacheGet_InflightWaiterCanceledByOwnCtx(t *testing.T) {
 // TestGetOrTranscode_InflightWaiterCanceledByOwnCtx 与上类似，覆盖转码 inflight 路径。
 func TestGetOrTranscode_InflightWaiterCanceledByOwnCtx(t *testing.T) {
 	tmpDir := t.TempDir()
-	cs := &CacheService{cacheDir: tmpDir}
+	cs := newTestCacheService(tmpDir, "", "")
 
 	song := &models.Song{ID: 9002, Type: "local", Format: "wma"}
 	targetFormat := "mp3"

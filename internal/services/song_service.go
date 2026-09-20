@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hanxi/tag"
@@ -81,13 +82,14 @@ type SongService struct {
 	songs               SongRepository
 	tx                  Transactor
 	metadataExtractor   *MetadataExtractor
-	scanner             *Scanner
+	scanner             atomic.Pointer[Scanner] // 配置变更时经 SetScanner 原子替换，doScanAndImport 等在 goroutine 中读取
 	scanProgressManager *ScanProgressManager
 	configService       *ConfigService
 	playlistAutoCreator PlaylistAutoCreator
-	cacheService        *CacheService       // 可选;由 app.go 通过 SetCacheService 注入,Delete 时清理 cache 残留
-	fingerprintService  *FingerprintService // 可选;扫描完成后自动计算指纹
-	songTagService      *SongTagService     // 可选;扫描时从文件 SONGLOFT_TAGS 自动导入标签
+	// 以下可选依赖由 app.go 通过 Set* 注入，扫描/删除在 goroutine 中读取，用 atomic.Pointer 保证并发安全。
+	cacheService       atomic.Pointer[CacheService]       // 可选;Delete/BatchDelete 时清理 cache 残留
+	fingerprintService atomic.Pointer[FingerprintService] // 可选;扫描完成后自动计算指纹
+	songTagService     atomic.Pointer[SongTagService]     // 可选;扫描时从文件 SONGLOFT_TAGS 自动导入标签
 }
 
 // NewSongService 创建歌曲服务
@@ -99,36 +101,37 @@ func NewSongService(
 	configService *ConfigService,
 	playlistAutoCreator PlaylistAutoCreator,
 ) *SongService {
-	return &SongService{
+	svc := &SongService{
 		songs:               songs,
 		tx:                  tx,
 		metadataExtractor:   metadataExtractor,
-		scanner:             scanner,
 		scanProgressManager: NewScanProgressManager(),
 		configService:       configService,
 		playlistAutoCreator: playlistAutoCreator,
 	}
+	svc.scanner.Store(scanner)
+	return svc
 }
 
 // SetScanner 更新扫描器引用（配置变更时调用）
 func (s *SongService) SetScanner(scanner *Scanner) {
-	s.scanner = scanner
+	s.scanner.Store(scanner)
 }
 
 // SetCacheService 注入 cache 服务,使 Delete/BatchDelete 能联动清理 cache 文件。
 // 避免歌曲被删后 cache 残留,在 DB 重置/ID 复用场景下被新 song 误命中。
 func (s *SongService) SetCacheService(cs *CacheService) {
-	s.cacheService = cs
+	s.cacheService.Store(cs)
 }
 
 // SetFingerprintService 注入指纹服务，扫描完成后自动计算缺失指纹。
 func (s *SongService) SetFingerprintService(fs *FingerprintService) {
-	s.fingerprintService = fs
+	s.fingerprintService.Store(fs)
 }
 
 // SetSongTagService 注入标签服务，扫描时从 SONGLOFT_TAGS 字段自动导入标签。
 func (s *SongService) SetSongTagService(ts *SongTagService) {
-	s.songTagService = ts
+	s.songTagService.Store(ts)
 }
 
 type scanTagImport struct {
@@ -138,7 +141,8 @@ type scanTagImport struct {
 
 // importSongloftTags 扫描后从文件 SONGLOFT_TAGS 字段批量创建/关联标签。
 func (s *SongService) importSongloftTags(ctx context.Context, items []scanTagImport) {
-	if s.songTagService == nil || len(items) == 0 {
+	ts := s.songTagService.Load()
+	if ts == nil || len(items) == 0 {
 		return
 	}
 	for _, item := range items {
@@ -146,7 +150,7 @@ func (s *SongService) importSongloftTags(ctx context.Context, items []scanTagImp
 		if len(tagNames) == 0 {
 			continue
 		}
-		if err := s.songTagService.BindByNames(ctx, item.songID, tagNames); err != nil {
+		if err := ts.BindByNames(ctx, item.songID, tagNames); err != nil {
 			slog.Warn("导入文件标签失败", "songID", item.songID, "tags", item.tags, "error", err)
 		}
 	}
@@ -289,12 +293,12 @@ func (s *SongService) Delete(ctx context.Context, id int64, deleteFiles bool) er
 	if deleteFiles && song != nil && song.Type == models.TypeLocal && song.FilePath != "" && song.CueSourcePath == "" {
 		s.removeLocalFileIfUnreferenced(ctx, song.FilePath)
 	}
-	if s.cacheService != nil {
+	if cacheSvc := s.cacheService.Load(); cacheSvc != nil {
 		cachePath := ""
 		if song != nil {
 			cachePath = song.CachePath
 		}
-		if err := s.cacheService.EvictSong(id, cachePath); err != nil {
+		if err := cacheSvc.EvictSong(id, cachePath); err != nil {
 			slog.Warn("evict cache after song delete failed", "songId", id, "error", err)
 		}
 	}
@@ -338,9 +342,9 @@ func (s *SongService) BatchDelete(ctx context.Context, ids []int64, deleteFiles 
 	for fp := range filePathSet {
 		s.removeLocalFileIfUnreferenced(ctx, fp)
 	}
-	if s.cacheService != nil {
+	if cacheSvc := s.cacheService.Load(); cacheSvc != nil {
 		for _, id := range ids {
-			if err := s.cacheService.EvictSong(id, cachePaths[id]); err != nil {
+			if err := cacheSvc.EvictSong(id, cachePaths[id]); err != nil {
 				slog.Warn("evict cache after batch delete failed", "songId", id, "error", err)
 			}
 		}
@@ -575,7 +579,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 		}
 	}()
 
-	scanResult, err := s.scanner.ScanFilesWithCueInDirs(ctx, scopeRoots, func(count int) {
+	scanResult, err := s.scanner.Load().ScanFilesWithCueInDirs(ctx, scopeRoots, func(count int) {
 		s.scanProgressManager.SetDiscoveredFiles(count)
 	})
 	if err != nil {
@@ -725,7 +729,7 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 
 				var fileSize int64
 				var fileModTime time.Time
-				if fileInfo, err := s.scanner.GetFileInfo(item.filePath); err == nil {
+				if fileInfo, err := s.scanner.Load().GetFileInfo(item.filePath); err == nil {
 					fileSize = fileInfo.Size
 					fileModTime = fileInfo.ModTime
 				}
@@ -841,10 +845,11 @@ func (s *SongService) runCueProcessing(ctx context.Context, scanResult *ScanResu
 // 修复因历史版本 music_path 配置变更导致的同一文件存在相对/绝对两条记录的问题。
 // 有绝对路径副本的删除相对路径行；无副本的 UPDATE 为绝对路径。
 func (s *SongService) deduplicateLocalSongPaths(ctx context.Context) {
-	if s.scanner == nil {
+	sc := s.scanner.Load()
+	if sc == nil {
 		return
 	}
-	musicPath := s.scanner.GetMusicPath()
+	musicPath := sc.GetMusicPath()
 	if musicPath == "" || !filepath.IsAbs(musicPath) {
 		return
 	}
@@ -927,8 +932,8 @@ func (s *SongService) runAutoCreatePlaylists(ctx context.Context) {
 		coverStoragePath = s.metadataExtractor.CoverStoragePath()
 	}
 	var musicPath string
-	if s.scanner != nil {
-		musicPath = s.scanner.GetMusicPath()
+	if sc := s.scanner.Load(); sc != nil {
+		musicPath = sc.GetMusicPath()
 	}
 	if _, err := s.playlistAutoCreator.AutoCreate(ctx, playlistMode, autoCreateExcludeDirs, coverStoragePath, musicPath); err != nil {
 		slog.Warn("自动创建歌单失败", "playlist_mode", playlistMode, "error", err)
@@ -945,10 +950,11 @@ func (s *SongService) runAutoFingerprint() {
 		slog.Info("auto fingerprint disabled, skipping")
 		return
 	}
-	if s.fingerprintService == nil || !IsChromaprintAvailable() {
+	fs := s.fingerprintService.Load()
+	if fs == nil || !IsChromaprintAvailable() {
 		return
 	}
-	if _, err := s.fingerprintService.ComputeMissing(); err != nil {
+	if _, err := fs.ComputeMissing(); err != nil {
 		slog.Info("auto fingerprint skipped", "reason", err)
 	}
 }
@@ -1337,11 +1343,12 @@ func (s *SongService) CleanInvalidSongs(ctx context.Context) (*CleanResult, erro
 		shouldClean := false
 		reason := ""
 
+		scanner := s.scanner.Load()
 		if _, err := os.Stat(song.FilePath); os.IsNotExist(err) {
 			shouldClean = true
 			reason = "file_not_found"
 			result.FileNotFound++
-		} else if s.scanner != nil && s.scanner.IsFileInExcludedArea(song.FilePath) {
+		} else if scanner != nil && scanner.IsFileInExcludedArea(song.FilePath) {
 			shouldClean = true
 			reason = "in_excluded_dir"
 			result.InExcludedDir++
@@ -1573,10 +1580,11 @@ type organizePlan struct {
 
 // resolveMusicPath 返回当前 music_path；未配置时报错。
 func (s *SongService) resolveMusicPath() (string, error) {
-	if s.scanner == nil {
+	scanner := s.scanner.Load()
+	if scanner == nil {
 		return "", fmt.Errorf("music_path 未配置")
 	}
-	musicPath := s.scanner.GetMusicPath()
+	musicPath := scanner.GetMusicPath()
 	if musicPath == "" {
 		return "", fmt.Errorf("music_path 未设置")
 	}

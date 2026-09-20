@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -141,27 +142,29 @@ func handlePluginAssets(w http.ResponseWriter, r *http.Request) {
 
 // webCoreDir 缓存 web-core 静态资源目录路径（Lynx 插件 Flutter 兼容用）。
 // 首次请求时自动探测：优先 data/web-core/，其次可执行文件同目录的 web-core/。
-var webCoreDir string
+var (
+	webCoreDirOnce sync.Once
+	webCoreDir     string
+)
 
 func resolveWebCoreDir() string {
-	if webCoreDir != "" {
-		return webCoreDir
-	}
-	// 优先数据目录
-	candidates := []string{
-		"data/web-core",
-		"web-core",
-	}
-	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "web-core"))
-	}
-	for _, dir := range candidates {
-		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			webCoreDir = dir
-			return dir
+	webCoreDirOnce.Do(func() {
+		// 优先数据目录
+		candidates := []string{
+			"data/web-core",
+			"web-core",
 		}
-	}
-	return ""
+		if exe, err := os.Executable(); err == nil {
+			candidates = append(candidates, filepath.Join(filepath.Dir(exe), "web-core"))
+		}
+		for _, dir := range candidates {
+			if info, err := os.Stat(dir); err == nil && info.IsDir() {
+				webCoreDir = dir
+				return
+			}
+		}
+	})
+	return webCoreDir
 }
 
 // handleWebCoreAssets 服务 @lynx-js/web-core 的静态资源（Lynx 插件在 Flutter

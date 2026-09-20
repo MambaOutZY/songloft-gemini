@@ -24,7 +24,8 @@ func TestAsyncDownloadAndCache_DedupsBySongID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cs := &CacheService{cacheDir: t.TempDir(), downloadClient: srv.Client()}
+	cs := newTestCacheService(t.TempDir(), "", "")
+	cs.downloadClient = srv.Client()
 	song := &models.Song{ID: 4242, Type: "remote", PluginEntryPath: "ytdlp", DedupKey: "vid_p1"}
 
 	// 模拟该歌的后台下载已在进行中：预置 inflight 标记
