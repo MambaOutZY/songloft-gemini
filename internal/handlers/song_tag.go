@@ -56,11 +56,7 @@ func (h *SongTagHandler) List(w http.ResponseWriter, r *http.Request) {
 	keyword := q.Get("keyword")
 	sort := q.Get("sort")
 	order := q.Get("order")
-	limit, _ := strconv.Atoi(q.Get("limit"))
-	offset, _ := strconv.Atoi(q.Get("offset"))
-	if limit <= 0 {
-		limit = 60
-	}
+	limit, offset := parsePagination(r, 60, 0)
 
 	ctx := r.Context()
 	tags, err := h.tagService.List(ctx, keyword, sort, order, limit, offset)
@@ -218,12 +214,7 @@ func (h *SongTagHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "无效的标签 ID", err)
 		return
 	}
-	q := r.URL.Query()
-	limit, _ := strconv.Atoi(q.Get("limit"))
-	offset, _ := strconv.Atoi(q.Get("offset"))
-	if limit <= 0 {
-		limit = 100
-	}
+	limit, offset := parsePagination(r, 100, 0)
 
 	ctx := r.Context()
 	songIDs, err := h.tagService.ListSongIDs(ctx, id, limit, offset)

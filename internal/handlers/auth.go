@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"songloft/internal/database"
 	"songloft/internal/middleware"
@@ -152,23 +151,7 @@ func (h *AuthHandler) ListTokens(w http.ResponseWriter, r *http.Request) {
 
 	// 解析查询参数
 	tokenType := r.URL.Query().Get("type")
-	limitStr := r.URL.Query().Get("limit")
-	offsetStr := r.URL.Query().Get("offset")
-
-	limit := models.DefaultPaginationLimit
-	offset := 0
-
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil {
-			limit = l
-		}
-	}
-
-	if offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil {
-			offset = o
-		}
-	}
+	limit, offset := parsePagination(r, models.DefaultPaginationLimit, 0)
 
 	// 构建过滤条件
 	filter := &database.TokenFilter{

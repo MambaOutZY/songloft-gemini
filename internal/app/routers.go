@@ -86,7 +86,7 @@ func (a *App) setupAPIV1Router() {
 	})
 	versionHandler := handlers.NewVersionHandler()
 	healthHandler := handlers.NewHealthHandler()
-	upgradeHandler := handlers.NewUpgradeHandler(a.upgradeService, a.configService)
+	upgradeHandler := handlers.NewUpgradeHandler(a.upgradeService, a.configService, filepath.Dir(a.config.DBPath))
 	proxyHandler := handlers.NewProxyHandler(a.configService)
 	proxyHandler.SetCacheService(a.cacheService)
 

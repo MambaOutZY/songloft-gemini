@@ -196,10 +196,10 @@ func fetchContentLengthByHead(client *http.Client, url string, headers map[strin
 }
 
 // fetchContentLengthByRange HEAD 不可用时的兜底：GET + Range: bytes=0-0。
-// - 206：从 Content-Range「bytes 0-0/total」解析总大小；
-// - 416：部分服务器以「bytes */total」回告总大小，同样可解析；
-// - 200：服务器忽略 Range 返回全量，Content-Length 即总大小
-//   （响应头已到手，body 不读取直接断开，不会拉取文件内容）。
+//   - 206：从 Content-Range「bytes 0-0/total」解析总大小；
+//   - 416：部分服务器以「bytes */total」回告总大小，同样可解析；
+//   - 200：服务器忽略 Range 返回全量，Content-Length 即总大小
+//     （响应头已到手，body 不读取直接断开，不会拉取文件内容）。
 func fetchContentLengthByRange(client *http.Client, url string, headers map[string]string) (int64, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {

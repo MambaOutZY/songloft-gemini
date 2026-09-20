@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"songloft/internal/models"
 	"songloft/internal/services"
@@ -15,8 +16,8 @@ import (
 // githubProxyConfigKey GitHub 更新代理配置的 config key
 const githubProxyConfigKey = "github_proxy"
 
-// binaryTemp 上传/下载的临时二进制文件路径（与 services 包的 binaryTemp 一致）
-const binaryTemp = "/app/data/songloft.new"
+// binaryTempName 上传/下载的临时二进制文件名
+const binaryTempName = "songloft.new"
 
 // githubProxySetting GitHub 更新代理配置。
 type githubProxySetting struct {
@@ -27,14 +28,21 @@ type githubProxySetting struct {
 type UpgradeHandler struct {
 	upgradeService *services.UpgradeService
 	configService  *services.ConfigService
+	dataDir        string // 数据目录，用于派生临时文件路径
 }
 
 // NewUpgradeHandler 创建升级处理器
-func NewUpgradeHandler(upgradeService *services.UpgradeService, configService *services.ConfigService) *UpgradeHandler {
+func NewUpgradeHandler(upgradeService *services.UpgradeService, configService *services.ConfigService, dataDir string) *UpgradeHandler {
 	return &UpgradeHandler{
 		upgradeService: upgradeService,
 		configService:  configService,
+		dataDir:        dataDir,
 	}
+}
+
+// binaryTempPath 返回临时二进制文件的完整路径。
+func (h *UpgradeHandler) binaryTempPath() string {
+	return filepath.Join(h.dataDir, binaryTempName)
 }
 
 // GetVersions 获取可用版本信息
@@ -91,7 +99,7 @@ func (h *UpgradeHandler) GetVersions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	slog.Info("GetVersions", "response", response)
+	slog.Info("GetVersions", "current_version", version.GetVersion())
 
 	respondJSON(w, http.StatusOK, response)
 }
@@ -334,7 +342,8 @@ func (h *UpgradeHandler) UploadBinary(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	// 写入临时文件
-	out, err := os.Create(binaryTemp)
+	tmpPath := h.binaryTempPath()
+	out, err := os.Create(tmpPath)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "创建临时文件失败", err)
 		return
@@ -342,23 +351,23 @@ func (h *UpgradeHandler) UploadBinary(w http.ResponseWriter, r *http.Request) {
 	defer out.Close()
 
 	if _, err := io.Copy(out, file); err != nil {
-		os.Remove(binaryTemp)
+		os.Remove(tmpPath)
 		respondError(w, http.StatusInternalServerError, "保存上传文件失败", err)
 		return
 	}
 	out.Close()
 
 	// 设置可执行权限并测试（不触发进度更新）
-	if err := h.upgradeService.ValidateBinary(binaryTemp); err != nil {
-		os.Remove(binaryTemp)
+	if err := h.upgradeService.ValidateBinary(tmpPath); err != nil {
+		os.Remove(tmpPath)
 		respondError(w, http.StatusBadRequest, "上传的文件不是有效的可执行文件", err)
 		return
 	}
 
 	// 提取版本信息
-	info, err := h.upgradeService.ExtractBinaryInfo(binaryTemp)
+	info, err := h.upgradeService.ExtractBinaryInfo(tmpPath)
 	if err != nil {
-		os.Remove(binaryTemp)
+		os.Remove(tmpPath)
 		respondError(w, http.StatusBadRequest, "无法识别上传文件的版本信息", err)
 		return
 	}
@@ -383,7 +392,7 @@ func (h *UpgradeHandler) ConfirmUploadUpgrade(w http.ResponseWriter, r *http.Req
 	}
 
 	// 检查上传文件是否存在
-	if _, err := os.Stat(binaryTemp); os.IsNotExist(err) {
+	if _, err := os.Stat(h.binaryTempPath()); os.IsNotExist(err) {
 		respondError(w, http.StatusBadRequest, "未找到已上传的升级文件，请先上传", nil)
 		return
 	}

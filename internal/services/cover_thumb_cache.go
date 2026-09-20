@@ -84,6 +84,9 @@ func (c *CoverThumbCache) Put(hash string, data []byte) (string, error) {
 		return "", fmt.Errorf("重命名缓存文件失败：%w", err)
 	}
 
+	// 等待异步 scan 完成，确保 totalSize 已统计完毕再判断是否需要淘汰
+	<-c.ready
+
 	c.mu.Lock()
 	c.totalSize += int64(len(data))
 	needEvict := c.totalSize > c.maxSize

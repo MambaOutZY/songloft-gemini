@@ -151,7 +151,7 @@ func (h *VideoHLSHandler) serveM3U8(w http.ResponseWriter, r *http.Request, path
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Write(data)
+	_, _ = w.Write(data) // 已写 header，无法回退
 }
 
 // injectTokenInURI 在 HLS 标签的 URI="..." 属性值中追加 access_token。

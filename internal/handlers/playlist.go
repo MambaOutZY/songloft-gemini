@@ -62,8 +62,6 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 
 	playlistType := r.URL.Query().Get("type")
 	keyword := r.URL.Query().Get("keyword")
-	limitStr := r.URL.Query().Get("limit")
-	offsetStr := r.URL.Query().Get("offset")
 
 	// song_source 直接进 SQL 的 s.type 比较，必须白名单校验，不能透传任意值。
 	songSource := r.URL.Query().Get("song_source")
@@ -72,20 +70,7 @@ func (h *PlaylistHandler) ListPlaylists(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	limit := models.DefaultPaginationLimit
-	offset := 0
-
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil {
-			limit = l
-		}
-	}
-
-	if offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil {
-			offset = o
-		}
-	}
+	limit, offset := parsePagination(r, models.DefaultPaginationLimit, 0)
 
 	var excludeLabels []string
 	excludeLabelsStr := r.URL.Query().Get("exclude_labels")
@@ -521,19 +506,7 @@ func (h *PlaylistHandler) GetPlaylistSongs(w http.ResponseWriter, r *http.Reques
 
 	q := r.URL.Query()
 
-	limit := models.DefaultPaginationLimit
-	offset := 0
-
-	if limitStr := q.Get("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil {
-			limit = l
-		}
-	}
-	if offsetStr := q.Get("offset"); offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil {
-			offset = o
-		}
-	}
+	limit, offset := parsePagination(r, models.DefaultPaginationLimit, 0)
 
 	filter := database.PlaylistSongFilter{
 		Keyword: q.Get("keyword"),

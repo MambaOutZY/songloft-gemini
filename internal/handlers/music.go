@@ -384,29 +384,9 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 	songType := r.URL.Query().Get("type")
 	keyword := r.URL.Query().Get("keyword")
 	pathPrefix := r.URL.Query().Get("path_prefix")
-	limitStr := r.URL.Query().Get("limit")
-	offsetStr := r.URL.Query().Get("offset")
 	orderBy, order := parseSongSort(r.URL.Query().Get("sort"), r.URL.Query().Get("order"))
 
-	limit := models.DefaultPaginationLimit
-	offset := 0
-
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil {
-			limit = l
-		}
-	}
-
-	// 限制最大分页大小，防止过大的查询导致性能问题
-	if limit > models.MaxPaginationLimit {
-		limit = models.MaxPaginationLimit
-	}
-
-	if offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil {
-			offset = o
-		}
-	}
+	limit, offset := parsePagination(r, models.DefaultPaginationLimit, models.MaxPaginationLimit)
 
 	// 构建过滤条件
 	filter := &database.SongFilter{
@@ -469,13 +449,7 @@ func (h *SongHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
 func (h *SongHandler) ListRandomSongs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	limit := 50
-	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 {
-		limit = l
-	}
-	if limit > 500 {
-		limit = 500
-	}
+	limit, _ := parsePagination(r, 50, 500)
 
 	filter := &database.SongFilter{
 		Type:                  r.URL.Query().Get("type"),
@@ -603,17 +577,7 @@ func (h *SongHandler) ListSongFacets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	keyword := r.URL.Query().Get("keyword")
-	limit := models.DefaultPaginationLimit
-	offset := 0
-	if l, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && l > 0 {
-		limit = l
-	}
-	if limit > models.MaxPaginationLimit {
-		limit = models.MaxPaginationLimit
-	}
-	if o, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && o > 0 {
-		offset = o
-	}
+	limit, offset := parsePagination(r, models.DefaultPaginationLimit, models.MaxPaginationLimit)
 
 	filter := &database.FacetFilter{
 		Keyword: keyword,

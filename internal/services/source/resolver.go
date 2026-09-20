@@ -234,19 +234,28 @@ func (r *SourceResolver) cacheGet(key string) []MusicSource {
 	return e.sources
 }
 
+const maxResolverCacheEntries = 5000
+
 func (r *SourceResolver) cachePut(key string, sources []MusicSource) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.cache[key] = &resolverCacheEntry{
-		sources: sources,
-		expiry:  time.Now().Add(r.opts.CacheTTL),
-	}
-	// 顺便清掉过期项,避免缓存无限增长
+
+	// 顺便清掉过期项，避免缓存无限增长
 	now := time.Now()
 	for k, v := range r.cache {
 		if now.After(v.expiry) {
 			delete(r.cache, k)
 		}
+	}
+
+	// 容量上限：超过阀值时清空重建（TTL 只有 5min，全清代价低）
+	if len(r.cache) >= maxResolverCacheEntries {
+		r.cache = make(map[string]*resolverCacheEntry)
+	}
+
+	r.cache[key] = &resolverCacheEntry{
+		sources: sources,
+		expiry:  now.Add(r.opts.CacheTTL),
 	}
 }
 

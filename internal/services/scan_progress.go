@@ -111,8 +111,11 @@ func (m *ScanProgressManager) Start() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 如果已经在扫描中，返回 false
-	if m.progress.Status == ScanStatusScanning || m.progress.Status == ScanStatusImporting {
+	// 只有终态（idle/completed/failed/cancelled）才能开始新扫描
+	switch m.progress.Status {
+	case ScanStatusIdle, ScanStatusCompleted, ScanStatusFailed, ScanStatusCancelled:
+		// OK
+	default:
 		return false
 	}
 
@@ -260,12 +263,16 @@ func (m *ScanProgressManager) SetLocalSongCount(count int) {
 	m.progress.LocalSongCount = count
 }
 
-// Reset 重置进度（仅在空闲或完成状态下可用）
+// Reset 重置进度（仅在非活跃状态下可用）
 func (m *ScanProgressManager) Reset() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.progress.Status == ScanStatusScanning || m.progress.Status == ScanStatusImporting {
+	// 只有终态（idle/completed/failed/cancelled）才能重置
+	switch m.progress.Status {
+	case ScanStatusIdle, ScanStatusCompleted, ScanStatusFailed, ScanStatusCancelled:
+		// OK
+	default:
 		return false
 	}
 

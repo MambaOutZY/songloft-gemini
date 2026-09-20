@@ -12,6 +12,7 @@ import (
 
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/encoding/korean"
+	xunicode "golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 
 	"github.com/hanxi/tag"
@@ -19,6 +20,16 @@ import (
 
 // ParseFile 解析 .cue 文件，自动检测编码并转为 UTF-8
 func ParseFile(path string) (*CUESheet, error) {
+	const maxCUEFileSize = 1 << 20 // 1MB
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("stat cue file: %w", err)
+	}
+	if info.Size() > maxCUEFileSize {
+		return nil, fmt.Errorf("CUE file too large: %d bytes (max %d)", info.Size(), maxCUEFileSize)
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read cue file: %w", err)
@@ -223,27 +234,21 @@ func decodeWithTransform(data []byte, t transform.Transformer) (string, error) {
 }
 
 func decodeUTF16LE(data []byte) string {
-	if len(data)%2 != 0 {
-		data = data[:len(data)-1]
+	decoder := xunicode.UTF16(xunicode.LittleEndian, xunicode.IgnoreBOM).NewDecoder()
+	result, err := decoder.Bytes(data)
+	if err != nil {
+		return string(data)
 	}
-	var buf strings.Builder
-	for i := 0; i+1 < len(data); i += 2 {
-		r := rune(data[i]) | rune(data[i+1])<<8
-		buf.WriteRune(r)
-	}
-	return buf.String()
+	return string(result)
 }
 
 func decodeUTF16BE(data []byte) string {
-	if len(data)%2 != 0 {
-		data = data[:len(data)-1]
+	decoder := xunicode.UTF16(xunicode.BigEndian, xunicode.IgnoreBOM).NewDecoder()
+	result, err := decoder.Bytes(data)
+	if err != nil {
+		return string(data)
 	}
-	var buf strings.Builder
-	for i := 0; i+1 < len(data); i += 2 {
-		r := rune(data[i])<<8 | rune(data[i+1])
-		buf.WriteRune(r)
-	}
-	return buf.String()
+	return string(result)
 }
 
 func hasMojibakeHeuristic(data []byte) bool {
