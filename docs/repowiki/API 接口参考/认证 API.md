@@ -139,32 +139,6 @@ Songloft 使用 JWT 双令牌认证机制：
 - **401**: 未授权
 - **500**: 获取失败
 
-### GET /api/v1/auth/tokens/{token_id}
-
-获取指定令牌的详细信息。
-
-- **认证**: Bearer Token
-- **路径参数**: `token_id`（string，令牌 ID）
-- **200**: 返回 `TokenInfo` 对象：
-
-```json
-{
-  "token_id": "abc123",
-  "token_type": "access",
-  "client_info": "Mozilla/5.0...",
-  "expires_at": "2024-01-08T12:00:00Z",
-  "created_at": "2024-01-01T12:00:00Z",
-  "revoked_at": null,
-  "revoked_by": "",
-  "revoked_reason": ""
-}
-```
-
-- **401**: 未授权
-- **404**: 令牌不存在
-
-> **注意**: 当前实现返回 `501 Not Implemented`，功能待后续完善。
-
 ### DELETE /api/v1/auth/tokens/{token_id}
 
 撤销指定的令牌，使其立即失效。可用于远程踢出其他设备的登录会话。
