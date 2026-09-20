@@ -16,6 +16,11 @@ import (
 	"songloft/internal/httputil"
 )
 
+const (
+	maxManifestSize  = 1 << 20   // 1MB，manifest 级别
+	maxPluginZIPSize = 100 << 20 // 100MB，插件 ZIP 包
+)
+
 // UpdateInfo 远程更新信息
 type UpdateInfo struct {
 	CurrentVersion string `json:"current_version"`
@@ -526,9 +531,12 @@ func (pm *PackageManager) checkUpdate(pluginID int64, githubProxy string, proxyD
 		return nil, fmt.Errorf("update check returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxManifestSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("read update response: %w", err)
+	}
+	if int64(len(body)) > maxManifestSize {
+		return nil, fmt.Errorf("update response body exceeds %d bytes", maxManifestSize)
 	}
 
 	// 解析远程 plugin.json 或更新信息
@@ -585,9 +593,12 @@ func (pm *PackageManager) DownloadUpdate(pluginID int64, githubProxy string, for
 		return nil, fmt.Errorf("download returned status %d", resp.StatusCode)
 	}
 
-	zipData, err := io.ReadAll(resp.Body)
+	zipData, err := io.ReadAll(io.LimitReader(resp.Body, maxPluginZIPSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("read download body: %w", err)
+	}
+	if int64(len(zipData)) > maxPluginZIPSize {
+		return nil, fmt.Errorf("plugin zip exceeds %d bytes", maxPluginZIPSize)
 	}
 
 	// [3] 执行更新

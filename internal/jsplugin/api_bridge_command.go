@@ -25,10 +25,13 @@ import (
 )
 
 const (
-	maxExecTimeout     = 300 * time.Second
-	defaultExecTimeout = 60 * time.Second
-	maxOutputSize      = 10 << 20  // 10MB per stdout/stderr
-	maxDownloadSize    = 500 << 20 // 500MB
+	maxExecTimeout        = 300 * time.Second
+	defaultExecTimeout    = 60 * time.Second
+	maxOutputSize         = 10 << 20  // 10MB per stdout/stderr
+	maxDownloadSize       = 500 << 20 // 500MB
+	maxExtractFiles       = 200       // 单次解压最大文件数
+	maxExtractTotalBytes  = 500 << 20 // 单次解压最大总字节数（500MB）
+	maxProcessesPerPlugin = 10        // 单插件最大后台进程数
 )
 
 var binFilenameRegexp = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
@@ -169,6 +172,16 @@ func (h *BridgeHandler) commandStart(data string) (string, error) {
 
 	if _, loaded := h.processes.Load(req.Name); loaded {
 		return "", fmt.Errorf("commandStart: process %q is already running", req.Name)
+	}
+
+	// 计算当前插件的活跃进程数
+	var activeCount int
+	h.processes.Range(func(key, value any) bool {
+		activeCount++
+		return true
+	})
+	if activeCount >= maxProcessesPerPlugin {
+		return "", fmt.Errorf("commandStart: too many active processes (max %d)", maxProcessesPerPlugin)
 	}
 
 	resolved, err := h.resolveProgram(req.Program)
@@ -324,6 +337,8 @@ func (h *BridgeHandler) extractTgz(tgzPath, destDir, targetName string) error {
 
 	tr := tar.NewReader(gz)
 	extracted := 0
+	var fileCount int
+	var totalBytes int64
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -335,6 +350,15 @@ func (h *BridgeHandler) extractTgz(tgzPath, destDir, targetName string) error {
 
 		if hdr.Typeflag != tar.TypeReg {
 			continue
+		}
+
+		fileCount++
+		if fileCount > maxExtractFiles {
+			return fmt.Errorf("tar bomb: too many files (max %d)", maxExtractFiles)
+		}
+		totalBytes += hdr.Size
+		if totalBytes > maxExtractTotalBytes {
+			return fmt.Errorf("tar bomb: total size exceeds limit (max %d bytes)", maxExtractTotalBytes)
 		}
 
 		baseName := filepath.Base(hdr.Name)

@@ -226,6 +226,18 @@ func (h *BridgeHandler) fsAppendFile(data string) (string, error) {
 		return "", fmt.Errorf("fs.appendFile: mkdir: %w", err)
 	}
 
+	// 检查追加后是否超出文件大小限制
+	var existingSize int64
+	if info, statErr := os.Stat(absPath); statErr == nil {
+		existingSize = info.Size()
+	} else if !os.IsNotExist(statErr) {
+		return "", fmt.Errorf("fs.appendFile: stat: %w", statErr)
+	}
+	if existingSize+int64(len(content)) > maxFSFileSize {
+		return "", fmt.Errorf("fs.appendFile: file size would exceed limit: existing %d + append %d > max %d",
+			existingSize, len(content), maxFSFileSize)
+	}
+
 	f, err := os.OpenFile(absPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return "", fmt.Errorf("fs.appendFile: %w", err)

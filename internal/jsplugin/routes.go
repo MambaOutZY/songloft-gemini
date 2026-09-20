@@ -28,6 +28,8 @@ import (
 //go:embed assets/*
 var pluginAssets embed.FS
 
+const maxPluginBodySize = 50 << 20 // 50MB，对齐 multipart 上传需求
+
 // assetVersions 缓存公共资源（theme.css / components.css / common.js /
 // webf-shims.css / webf-shims.js）内容哈希的前 8 位 hex，用于给 injectHTMLHead
 // 注入的资源 URL 加 ?v=<hash> 做 cache-busting。
@@ -662,7 +664,16 @@ func (m *Manager) forwardToJSRuntime(w http.ResponseWriter, r *http.Request, ent
 	}
 
 	// 3. 构建 HTTPRequestData
-	body, _ := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxPluginBodySize+1))
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "read body failed", err.Error())
+		return
+	}
+	if int64(len(body)) > maxPluginBodySize {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large",
+			fmt.Sprintf("max %d bytes", maxPluginBodySize))
+		return
+	}
 	reqData := &HTTPRequestData{
 		Method:  r.Method,
 		Path:    normalizedPath,
