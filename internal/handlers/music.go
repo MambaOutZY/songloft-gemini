@@ -1427,8 +1427,8 @@ func (h *SongHandler) UpdateSongLyrics(w http.ResponseWriter, r *http.Request) {
 
 	status, err := h.songService.UpdateLyrics(ctx, id, lyricCol, req.LyricSource, lyricURLCol)
 	if err != nil {
-		if err.Error() == "song not found" {
-			respondError(w, http.StatusNotFound, "歌曲不存在", err)
+		if errors.Is(err, database.ErrNotFound) {
+			respondError(w, http.StatusNotFound, "歌曲不存在", nil)
 			return
 		}
 		respondError(w, http.StatusInternalServerError, "更新歌词失败", err)
@@ -1591,7 +1591,7 @@ func (h *SongHandler) GetSongPlay(w http.ResponseWriter, r *http.Request) {
 	case models.TypeRemote:
 		h.serveRemote(w, r, song, opts)
 	default:
-		http.Error(w, "unsupported song type", http.StatusInternalServerError)
+		respondError(w, http.StatusInternalServerError, "unsupported song type", nil)
 	}
 }
 
@@ -1737,7 +1737,7 @@ func (h *SongHandler) tryLiveTranscodeStream(w http.ResponseWriter, r *http.Requ
 	if plan != nil && plan.unsatisfiable {
 		// start 越过了资源末尾。此时一个字节都还没写，直接以 416 接管响应。
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", plan.totalBytes))
-		http.Error(w, "range not satisfiable", http.StatusRequestedRangeNotSatisfiable)
+		respondError(w, http.StatusRequestedRangeNotSatisfiable, "range not satisfiable", nil)
 		return true
 	}
 
@@ -2217,7 +2217,7 @@ func (h *SongHandler) serveLocal(w http.ResponseWriter, r *http.Request, song *m
 		path, err := h.cacheService.GetOrTranscode(trackedCtx, srcPath, song, services.NormalizeFormat(targetFormat), bitrate, -1, normalize)
 		if err != nil {
 			slog.Warn("CUE track extraction failed", "songId", song.ID, "error", err)
-			http.Error(w, "CUE track extraction failed", http.StatusInternalServerError)
+			respondError(w, http.StatusInternalServerError, "CUE track extraction failed", nil)
 			return
 		}
 		srcPath = path
@@ -2379,7 +2379,7 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, song.URL, nil)
 	if err != nil {
 		slog.Warn("radio stream request failed", "url", song.URL, "error", err)
-		http.Error(w, "resource fetch failed", http.StatusInternalServerError)
+		respondError(w, http.StatusInternalServerError, "resource fetch failed", nil)
 		return
 	}
 	// 直连电台流用媒体播放器风格 UA，绝不用浏览器 UA：streamtheworld 等防盗链电台
@@ -2406,7 +2406,7 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 	resp, err := h.radioClient.Do(upstreamReq)
 	if err != nil {
 		slog.Warn("radio stream fetch failed", "url", song.URL, "error", err)
-		http.Error(w, "resource fetch failed", http.StatusBadGateway)
+		respondError(w, http.StatusBadGateway, "resource fetch failed", nil)
 		return
 	}
 	defer resp.Body.Close()
@@ -2439,7 +2439,10 @@ func (h *SongHandler) serveRadio(w http.ResponseWriter, r *http.Request, song *m
 	}
 	w.Header().Set("Cache-Control", "no-cache, no-store")
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, body)
+	// 电台是无限直播流，w.WriteHeader 已调用，流式输出已开始
+	if _, err := io.Copy(w, body); err != nil && !errors.Is(err, context.Canceled) {
+		slog.Debug("radio stream copy failed", "error", err)
+	}
 }
 
 // normalizeAudioContentType 把上游返回的非标准音频 MIME 归一化为浏览器 / 解码器能识别的标准值。
@@ -2538,7 +2541,7 @@ func (h *SongHandler) serveRemote(w http.ResponseWriter, r *http.Request, song *
 			if h.reassigner != nil {
 				h.reassigner.AsyncReassign(song.ID, sk)
 			}
-			http.Error(w, "source unavailable: "+err.Error(), http.StatusBadGateway)
+			respondError(w, http.StatusBadGateway, "source unavailable", nil)
 			return
 		}
 		playURL = resolved.URL

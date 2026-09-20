@@ -344,7 +344,7 @@ func ServeRemoteResourceWithOptions(w http.ResponseWriter, r *http.Request, reso
 	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
 	if err != nil {
 		slog.Warn("remote resource request creation failed", "url", resourceURL, "error", err)
-		http.Error(w, errorMessage, http.StatusInternalServerError)
+		respondError(w, http.StatusInternalServerError, errorMessage, nil)
 		return
 	}
 
@@ -375,7 +375,7 @@ func ServeRemoteResourceWithOptions(w http.ResponseWriter, r *http.Request, reso
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
 		slog.Warn("remote resource fetch failed", "url", resourceURL, "error", err)
-		http.Error(w, errorMessage, errorStatus)
+		respondError(w, errorStatus, errorMessage, nil)
 		return
 	}
 	defer resp.Body.Close()
@@ -390,8 +390,10 @@ func ServeRemoteResourceWithOptions(w http.ResponseWriter, r *http.Request, reso
 	// 透传上游状态码（支持 200、206 Partial Content 等）
 	w.WriteHeader(resp.StatusCode)
 
-	// 流式转发响应体
-	io.Copy(w, resp.Body)
+	// 流式转发响应体（w.WriteHeader 已调用，流式输出已开始）
+	if _, err := io.Copy(w, resp.Body); err != nil && !errors.Is(err, context.Canceled) {
+		slog.Debug("proxy stream copy failed", "error", err)
+	}
 }
 
 // ServeRemoteResourceWithCache 流式代理上游音频到客户端，并触发后台缓存。
@@ -411,7 +413,7 @@ func ServeRemoteResourceWithCache(
 	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, resourceURL, nil)
 	if err != nil {
 		slog.Warn("remote resource request creation failed", "url", resourceURL, "error", err)
-		http.Error(w, "resource fetch failed", http.StatusInternalServerError)
+		respondError(w, http.StatusInternalServerError, "resource fetch failed", nil)
 		return
 	}
 
@@ -446,7 +448,7 @@ func ServeRemoteResourceWithCache(
 	resp, err := client.Do(upstreamReq)
 	if err != nil {
 		slog.Warn("remote resource fetch failed", "url", resourceURL, "error", err)
-		http.Error(w, "resource fetch failed", http.StatusBadGateway)
+		respondError(w, http.StatusBadGateway, "resource fetch failed", nil)
 		if r.Context().Err() != nil && onCacheMiss != nil {
 			go onCacheMiss()
 		}
@@ -463,7 +465,10 @@ func ServeRemoteResourceWithCache(
 		ext := services.GetExtFromContentType(contentType)
 		tmpFile, tmpErr := os.CreateTemp("", "songloft-proxy-cache-*"+ext)
 		if tmpErr != nil {
-			io.Copy(w, resp.Body)
+			// w.WriteHeader 已调用，临时文件创建失败时直接流式转发
+			if _, err := io.Copy(w, resp.Body); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Debug("proxy stream copy failed (no cache)", "error", err)
+			}
 			return
 		}
 		tmpPath := tmpFile.Name()
@@ -481,12 +486,18 @@ func ServeRemoteResourceWithCache(
 			}
 		}
 	case http.StatusPartialContent:
-		io.Copy(w, resp.Body)
+		// w.WriteHeader 已调用，流式转发 partial content
+		if _, err := io.Copy(w, resp.Body); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Debug("proxy partial content copy failed", "error", err)
+		}
 		if onCacheMiss != nil {
 			go onCacheMiss()
 		}
 	default:
 		slog.Warn("remote resource upstream error", "url", upstreamReq.URL.String(), "status", resp.StatusCode)
-		io.Copy(w, resp.Body)
+		// w.WriteHeader 已调用，流式转发上游错误响应
+		if _, err := io.Copy(w, resp.Body); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Debug("proxy upstream error copy failed", "error", err)
+		}
 	}
 }

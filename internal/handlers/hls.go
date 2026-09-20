@@ -548,7 +548,7 @@ func (h *HLSHandler) servePlaylist(w http.ResponseWriter, r *http.Request, song 
 	resp, err := h.client.Do(req)
 	if err != nil {
 		slog.Warn("hls playlist upstream fetch failed", "url", upstreamURL, "error", err)
-		http.Error(w, "playlist fetch failed", http.StatusBadGateway)
+		respondError(w, http.StatusBadGateway, "playlist fetch failed", nil)
 		return
 	}
 	defer resp.Body.Close()
@@ -561,19 +561,22 @@ func (h *HLSHandler) servePlaylist(w http.ResponseWriter, r *http.Request, song 
 			w.Header().Set("Content-Type", ct)
 		}
 		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
+		// 上游 4xx/5xx 透传，w.WriteHeader 已调用，流式输出已开始
+		if _, err := io.Copy(w, resp.Body); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Debug("hls playlist upstream error copy failed", "error", err)
+		}
 		return
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxPlaylistBytes+1))
 	if err != nil {
 		slog.Warn("hls playlist read failed", "url", upstreamURL, "error", err)
-		http.Error(w, "playlist read failed", http.StatusBadGateway)
+		respondError(w, http.StatusBadGateway, "playlist read failed", nil)
 		return
 	}
 	if len(body) > maxPlaylistBytes {
 		slog.Warn("hls playlist too large", "url", upstreamURL, "limit", maxPlaylistBytes)
-		http.Error(w, "playlist too large", http.StatusBadGateway)
+		respondError(w, http.StatusBadGateway, "playlist too large", nil)
 		return
 	}
 
@@ -588,7 +591,7 @@ func (h *HLSHandler) servePlaylist(w http.ResponseWriter, r *http.Request, song 
 	rewritten, err := rewriteM3U8(body, base, h.makeRewriter(song.ID, pathPrefix, accessToken))
 	if err != nil {
 		slog.Warn("hls playlist rewrite failed", "url", upstreamURL, "error", err)
-		http.Error(w, "playlist rewrite failed", http.StatusBadGateway)
+		respondError(w, http.StatusBadGateway, "playlist rewrite failed", nil)
 		return
 	}
 
@@ -609,7 +612,7 @@ func (h *HLSHandler) serveSegment(w http.ResponseWriter, r *http.Request, song *
 
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, nil)
 	if err != nil {
-		http.Error(w, "segment request build failed", http.StatusInternalServerError)
+		respondError(w, http.StatusInternalServerError, "segment request build failed", nil)
 		return
 	}
 	req.Header.Set("User-Agent", streamUserAgent)
@@ -623,7 +626,7 @@ func (h *HLSHandler) serveSegment(w http.ResponseWriter, r *http.Request, song *
 	resp, err := h.client.Do(req)
 	if err != nil {
 		slog.Debug("hls segment upstream fetch failed", "url", upstreamURL, "error", err)
-		http.Error(w, "segment fetch failed", http.StatusBadGateway)
+		respondError(w, http.StatusBadGateway, "segment fetch failed", nil)
 		return
 	}
 	defer resp.Body.Close()
@@ -636,7 +639,10 @@ func (h *HLSHandler) serveSegment(w http.ResponseWriter, r *http.Request, song *
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body) // HEAD 时 stdlib 自动 discard
+	// w.WriteHeader 已调用，流式转发切片字节
+	if _, err := io.Copy(w, resp.Body); err != nil && !errors.Is(err, context.Canceled) {
+		slog.Debug("hls segment copy failed", "error", err)
+	} // HEAD 时 stdlib 自动 discard
 }
 
 // checkOrigin 同源校验 + IsHostnameAllowed 兜底。

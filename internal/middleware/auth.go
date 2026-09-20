@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -29,7 +30,9 @@ func respondAuthError(w http.ResponseWriter, status int, message string, err err
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.Error("json encode failed", "error", err)
+	}
 }
 
 // PublicPathChecker 用于检查请求路径是否为公开路径（无需 JWT）。

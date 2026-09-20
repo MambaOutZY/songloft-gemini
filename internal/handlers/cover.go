@@ -84,7 +84,7 @@ func serveCoverFile(w http.ResponseWriter, r *http.Request, path string, thumbCa
 	info, err := os.Stat(path)
 	if err != nil {
 		slog.Warn("封面文件不可读，返回 404", "path", path, "error", err)
-		http.Error(w, "cover not found", http.StatusNotFound)
+		respondError(w, http.StatusNotFound, "cover not found", nil)
 		return
 	}
 
@@ -174,7 +174,9 @@ func serveCachedThumb(w http.ResponseWriter, cachedPath, etag string) {
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "public, max-age=31536000")
-	io.Copy(w, f)
+	if _, err := io.Copy(w, f); err != nil {
+		slog.Debug("cover thumb copy failed", "error", err)
+	}
 }
 
 // coverThumbHashHex 返回缩略图缓存键的十六进制字符串（与 ETag 同源，去掉引号格式）。

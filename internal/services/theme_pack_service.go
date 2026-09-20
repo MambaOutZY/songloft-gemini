@@ -113,7 +113,9 @@ func (s *ThemePackService) Get(ctx context.Context, themeID string) (*ThemePackR
 	}
 
 	var data models.ThemePackData
-	_ = json.Unmarshal([]byte(row.RawJSON), &data)
+	if err := json.Unmarshal([]byte(row.RawJSON), &data); err != nil {
+		return nil, fmt.Errorf("corrupt theme pack data (id=%d): %w", row.ID, err)
+	}
 
 	return &ThemePackResponse{
 		ID:            row.ID,
