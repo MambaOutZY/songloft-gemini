@@ -533,15 +533,16 @@ func (q *Queries) ListFailedFingerprints(ctx context.Context) ([]ListFailedFinge
 }
 
 const listLocalSongPaths = `-- name: ListLocalSongPaths :many
-SELECT id, file_path, duration, cue_source_path, lyric_source FROM songs WHERE type = 'local'
+SELECT id, file_path, duration, cue_source_path, lyric_source, file_modified_at FROM songs WHERE type = 'local'
 `
 
 type ListLocalSongPathsRow struct {
-	ID            int64
-	FilePath      string
-	Duration      float64
-	CueSourcePath string
-	LyricSource   string
+	ID             int64
+	FilePath       string
+	Duration       float64
+	CueSourcePath  string
+	LyricSource    string
+	FileModifiedAt sql.NullTime
 }
 
 func (q *Queries) ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsRow, error) {
@@ -559,6 +560,7 @@ func (q *Queries) ListLocalSongPaths(ctx context.Context) ([]ListLocalSongPathsR
 			&i.Duration,
 			&i.CueSourcePath,
 			&i.LyricSource,
+			&i.FileModifiedAt,
 		); err != nil {
 			return nil, err
 		}

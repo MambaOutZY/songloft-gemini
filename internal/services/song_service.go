@@ -553,6 +553,16 @@ const (
 	fileStabilityThreshold = 10 * time.Second // 文件修改时间距今小于此值视为正在写入
 )
 
+// fileModTimeMatches 比对库中记录的 file_modified_at 与磁盘当前 mtime。
+// SQLite 存储的时间戳精度到秒；stored 为 nil（老记录尚未回填）时视为匹配，
+// 避免升级后一次性触发全库重扫（用户如需刷新历史文件，可通过 reimport 手动触发）。
+func fileModTimeMatches(stored *time.Time, current time.Time) bool {
+	if stored == nil {
+		return true
+	}
+	return stored.Unix() == current.Unix()
+}
+
 // doScanAndImport 执行实际的扫描和导入操作
 // 优化策略：
 //  1. 预过滤：快速跳过已存在的文件，减少不必要的处理
@@ -624,16 +634,26 @@ func (s *SongService) doScanAndImport(ctx context.Context, reimport bool, scopeR
 		}
 
 		info, exists := existingPaths[filePath]
-		if exists && !reimport && info.Duration > 0 && !needsSidecarLyricImport(info, filePath, scanResult.LyricDirs) {
-			s.scanProgressManager.UpdateProgress(filePath, ProgressUpdateSkipped)
-			continue
-		}
 
 		// 文件稳定性检测：跳过修改时间在最近 10 秒内的文件，
 		// 避免导入正在拷贝中的不完整文件。
+		var currentModTime time.Time
+		var haveStat bool
 		if stat, err := os.Stat(filePath); err == nil {
-			if time.Since(stat.ModTime()) < fileStabilityThreshold {
+			currentModTime = stat.ModTime()
+			haveStat = true
+			if time.Since(currentModTime) < fileStabilityThreshold {
 				slog.Debug("跳过正在写入的文件", "filePath", filePath)
+				s.scanProgressManager.UpdateProgress(filePath, ProgressUpdateSkipped)
+				continue
+			}
+		}
+
+		// 已存在的记录：duration 齐备、无 sidecar 需求、且 file_modified_at 与磁盘 mtime 一致时才跳过。
+		// mtime 不一致 → 用户可能修改了内嵌 USLT 等元数据，需要重新提取（内嵌歌词由
+		// shouldApplyScanLyric 决定是否覆盖 DB，manual 源受保护）。
+		if exists && !reimport && info.Duration > 0 && !needsSidecarLyricImport(info, filePath, scanResult.LyricDirs) {
+			if !haveStat || fileModTimeMatches(info.FileModifiedAt, currentModTime) {
 				s.scanProgressManager.UpdateProgress(filePath, ProgressUpdateSkipped)
 				continue
 			}

@@ -218,10 +218,11 @@ func (r *SongRepository) FilterOrphanSongIDs(ctx context.Context, ids []int64) (
 
 // LocalPathInfo 本地歌曲路径信息，用于扫描去重与不完整记录检测。
 type LocalPathInfo struct {
-	SongID        int64
-	Duration      float64
-	CueSourcePath string
-	LyricSource   string
+	SongID         int64
+	Duration       float64
+	CueSourcePath  string
+	LyricSource    string
+	FileModifiedAt *time.Time
 }
 
 // RelativePathSong 用于路径规范化清理。
@@ -241,7 +242,12 @@ func (r *SongRepository) ListLocalPaths(ctx context.Context) (map[string]LocalPa
 		if row.CueSourcePath != "" {
 			continue
 		}
-		paths[row.FilePath] = LocalPathInfo{SongID: row.ID, Duration: row.Duration, CueSourcePath: row.CueSourcePath, LyricSource: row.LyricSource}
+		info := LocalPathInfo{SongID: row.ID, Duration: row.Duration, CueSourcePath: row.CueSourcePath, LyricSource: row.LyricSource}
+		if row.FileModifiedAt.Valid {
+			t := row.FileModifiedAt.Time
+			info.FileModifiedAt = &t
+		}
+		paths[row.FilePath] = info
 	}
 	return paths, nil
 }
