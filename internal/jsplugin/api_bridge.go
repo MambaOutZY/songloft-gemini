@@ -1180,6 +1180,7 @@ func (h *BridgeHandler) handleSongs(action, data string) (string, error) {
 				Lyric          string  `json:"lyric"`
 				LyricSource    string  `json:"lyricSource"`
 				LyricRemoteURL string  `json:"lyricRemoteUrl"`
+				IsVideo        bool    `json:"isVideo"`
 			} `json:"songs"`
 		}
 		if err := json.Unmarshal([]byte(data), &req); err != nil {
@@ -1200,6 +1201,7 @@ func (h *BridgeHandler) handleSongs(action, data string) (string, error) {
 				Lyric:           s.Lyric,
 				LyricSource:     s.LyricSource,
 				LyricRemoteURL:  s.LyricRemoteURL,
+				IsVideo:         s.IsVideo,
 			}
 		}
 		songs, err := h.songService.AddRemoteSongs(ctx, inputs)
