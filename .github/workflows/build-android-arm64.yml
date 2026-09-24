@@ -1,0 +1,100 @@
+name: Build Android APK (Xiaomi 14 arm64-v8a)
+
+on:
+  push:
+    branches:
+      - songloft-gemini
+  workflow_dispatch:
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.26'
+  FLUTTER_VERSION: '3.44.6'
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Xiaomi 14 APK (arm64-v8a)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Init submodules
+        run: |
+          git submodule update --init --recursive -- clients/player
+          git submodule update --init --recursive -- pkg/tag
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+
+      - name: Build Go backend as Android .aar
+        env:
+          VERSION: dev
+        run: make build-go-mobile-android
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: |
+          cd clients/player
+          flutter pub get
+
+      - name: Compute native contract hash (bake asset)
+        run: |
+          cd clients/player
+          HASHES=$(./scripts/compute_native_contract.sh \
+            --export-surface ../mobile/export_surface.txt \
+            --write-asset android/app/src/main/assets/native_contract.json)
+          echo "native_contract.json = $HASHES"
+
+      - name: Build APK (arm64-v8a only)
+        run: |
+          cd clients/player
+          GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+          flutter build apk --release --target-platform android-arm64 \
+            --dart-define=HAS_BACKEND=true \
+            --dart-define=FRONTEND_VERSION=dev \
+            --dart-define=FRONTEND_BUILD_TIME=$BUILD_TIME \
+            --dart-define=FRONTEND_GIT_COMMIT=$GIT_COMMIT \
+            --dart-define=FLUTTER_BINDING=${{ env.FLUTTER_VERSION }}
+
+      - name: Collect APK
+        run: |
+          mkdir -p output
+          find clients/player/build/app/outputs -name "*.apk" -exec cp {} output/songloft-xiaomi14-arm64-v8a.apk \;
+          ls -lh output/
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: songloft-xiaomi14-arm64-v8a
+          path: output/songloft-xiaomi14-arm64-v8a.apk
+          retention-days: 30
